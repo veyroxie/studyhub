@@ -23,10 +23,18 @@
     const counts = { Total: displayStudents.length, Active: 0, Inactive: 0, New: 0, Waitlisted: 0 };
     displayStudents.forEach(function(s) { if (counts[s.status] !== undefined) counts[s.status]++; });
 
+    const { registrations } = App.Store.get();
+    const pendingRegs = (registrations || []).filter(function(r) { return r.status === 'pending'; });
+
     container.innerHTML = ''
       + '<div class="flex items-center justify-between mb-6">'
       +   '<h1 class="text-2xl font-bold text-slate-800">Students</h1>'
+      +   '<div class="flex gap-2">'
+      +   (isAdmin && pendingRegs.length > 0
+            ? '<button onclick="App.Students._pendingModal()" class="px-4 py-2 text-sm bg-amber-500 text-white rounded-lg hover:bg-amber-600 flex items-center gap-2"><span class="w-5 h-5 bg-white text-amber-600 text-xs font-bold rounded-full flex items-center justify-center">' + pendingRegs.length + '</span>Pending</button>'
+            : '')
       +   (isAdmin ? '<button onclick="App.Students._addModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Add Student</button>' : '')
+      +   '</div>'
       + '</div>'
 
       + '<div class="grid grid-cols-5 gap-4 mb-6">'
@@ -320,6 +328,71 @@
     });
   }
 
+  function _pendingModal() {
+    const { registrations } = App.Store.get();
+    const pending = (registrations || []).filter(function(r) { return r.status === 'pending'; });
+
+    App.Utils.showModal(
+      '<div class="p-6">'
+      + '<h2 class="text-xl font-bold mb-1">Pending Registrations</h2>'
+      + '<p class="text-sm text-slate-500 mb-5">' + pending.length + ' application' + (pending.length !== 1 ? 's' : '') + ' awaiting review</p>'
+      + (pending.length === 0
+          ? '<div class="py-8 text-center text-slate-400">No pending registrations</div>'
+          : '<div class="space-y-4 max-h-[60vh] overflow-y-auto pr-1">'
+          + pending.map(function(reg) {
+              return '<div class="border border-slate-200 rounded-xl p-4">'
+                + '<div class="flex items-start justify-between gap-3 mb-3">'
+                +   '<div>'
+                +     '<div class="font-semibold text-slate-800">' + reg.studentFirstName + ' ' + reg.studentLastName + '</div>'
+                +     '<div class="text-xs text-slate-500 mt-0.5">Parent: ' + reg.parentName + ' · ' + reg.email + '</div>'
+                +   '</div>'
+                +   '<span class="text-xs text-slate-400 shrink-0">' + App.Utils.formatDate(reg.submittedOn) + '</span>'
+                + '</div>'
+                + '<div class="grid grid-cols-2 gap-2 text-xs text-slate-600 mb-3">'
+                + (reg.phone ? '<div><span class="text-slate-400">Phone:</span> ' + reg.phone + '</div>' : '')
+                + (reg.studentDob ? '<div><span class="text-slate-400">DOB:</span> ' + App.Utils.formatDate(reg.studentDob) + '</div>' : '')
+                + (reg.studentGender ? '<div><span class="text-slate-400">Gender:</span> ' + reg.studentGender + '</div>' : '')
+                + (reg.classInterest ? '<div class="col-span-2"><span class="text-slate-400">Interested in:</span> ' + reg.classInterest + '</div>' : '')
+                + (reg.emergencyName ? '<div class="col-span-2"><span class="text-slate-400">Emergency:</span> ' + reg.emergencyName + ' · ' + reg.emergencyPhone + '</div>' : '')
+                + (reg.notes ? '<div class="col-span-2"><span class="text-slate-400">Notes:</span> ' + reg.notes + '</div>' : '')
+                + '</div>'
+                + '<div class="flex gap-2">'
+                +   '<button onclick="App.Students._approveReg(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium">Approve</button>'
+                +   '<button onclick="App.Students._rejectReg(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100 font-medium border border-red-200">Reject</button>'
+                + '</div>'
+                + '</div>';
+            }).join('')
+          + '</div>')
+      + '<div class="mt-4 flex justify-end"><button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Close</button></div>'
+      + '</div>'
+    );
+  }
+
+  async function _approveReg(regId) {
+    try {
+      const result = await App.Api.post('/api/registrations/' + regId + '/approve', {});
+      if (result) {
+        App.Utils.hideModal();
+        App.Utils.showToast('Approved! Temp password: ' + result.tempPassword, 'success');
+        await App.Api.loadSnapshot();
+        App.Notifs.refresh();
+        App.Router.refresh();
+      }
+    } catch(err) {
+      App.Utils.showToast(err.message || 'Approval failed', 'error');
+    }
+  }
+
+  async function _rejectReg(regId) {
+    if (!confirm('Reject this registration?')) return;
+    await App.Api.del('/api/registrations/' + regId);
+    await App.Api.loadSnapshot();
+    App.Notifs.refresh();
+    App.Utils.hideModal();
+    App.Utils.showToast('Registration rejected', 'info');
+    App.Router.refresh();
+  }
+
   function _infoRow(label, value) {
     return '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-0.5">' + label + '</div><div class="font-medium text-slate-700">' + value + '</div></div>';
   }
@@ -327,5 +400,5 @@
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  App.Students = { render: render, _onSearch: _onSearch, _onFilter: _onFilter, _viewModal: _viewModal, _editModal: _editModal, _switchTab: _switchTab, _addModal: _addModal };
+  App.Students = { render: render, _onSearch: _onSearch, _onFilter: _onFilter, _viewModal: _viewModal, _editModal: _editModal, _switchTab: _switchTab, _addModal: _addModal, _pendingModal: _pendingModal, _approveReg: _approveReg, _rejectReg: _rejectReg };
 })();

@@ -1,0 +1,302 @@
+(function() {
+  window.App = window.App || {};
+
+  var _open = false;
+  var _readIds = {};  // id -> true, persisted in sessionStorage
+  var _SS_KEY = 'sh_notif_read';
+
+  function _loadRead() {
+    try { _readIds = JSON.parse(sessionStorage.getItem(_SS_KEY) || '{}'); } catch(e) { _readIds = {}; }
+  }
+  function _saveRead() {
+    try { sessionStorage.setItem(_SS_KEY, JSON.stringify(_readIds)); } catch(e) {}
+  }
+  _loadRead();
+
+  // ── Build notification list from store ──────────────────────────────────────
+  function build() {
+    if (!App.Store) return [];
+    var state = App.Store.get();
+    var invoices   = state.invoices   || [];
+    var students   = state.students   || [];
+    var staff      = state.staff      || [];
+    var attendance = state.attendance || [];
+
+    var notifs = [];
+    var today = App.Utils.today();
+    var now   = new Date();
+    var in7   = new Date(now); in7.setDate(now.getDate() + 7);
+    var isAdmin = App.currentRole === 'admin';
+
+    if (isAdmin) {
+      // Pending registrations
+      var regs = state.registrations || [];
+      var pending = regs.filter(function(r) { return r.status === 'pending'; });
+      if (pending.length > 0) {
+        notifs.push({
+          id: 'pending-regs',
+          type: 'registration',
+          severity: 'info',
+          title: pending.length + ' pending registration' + (pending.length > 1 ? 's' : ''),
+          body: 'New enrolment applications awaiting review',
+          action: 'students'
+        });
+      }
+
+      // Overdue invoices
+      invoices.filter(function(i) { return i.status === 'Overdue'; })
+        .forEach(function(inv) {
+          var stu = students.find(function(s) { return s.id === inv.studentId; });
+          notifs.push({
+            id: 'inv-overdue-' + inv.id,
+            type: 'billing',
+            severity: 'error',
+            title: 'Overdue invoice',
+            body: (stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + ' · ' + App.Utils.formatCurrency(inv.amount),
+            action: 'billing'
+          });
+        });
+
+      // Due within 7 days
+      invoices.filter(function(i) {
+        if (i.status !== 'Unpaid') return false;
+        var d = new Date(i.dueDate);
+        return d >= now && d <= in7;
+      }).forEach(function(inv) {
+        var stu  = students.find(function(s) { return s.id === inv.studentId; });
+        var days = Math.ceil((new Date(inv.dueDate) - now) / 86400000);
+        notifs.push({
+          id: 'inv-soon-' + inv.id,
+          type: 'billing',
+          severity: 'warning',
+          title: 'Payment due soon',
+          body: (stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + ' · due in ' + days + ' day' + (days !== 1 ? 's' : ''),
+          action: 'billing'
+        });
+      });
+
+      // Staff late today
+      attendance.filter(function(a) { return a.personType === 'staff' && a.date === today && a.status === 'Late'; })
+        .forEach(function(rec) {
+          var s = staff.find(function(x) { return x.id === rec.personId; });
+          notifs.push({
+            id: 'att-staff-late-' + rec.id,
+            type: 'attendance',
+            severity: 'warning',
+            title: 'Staff late today',
+            body: s ? s.fullName : rec.personId,
+            action: 'attendance'
+          });
+        });
+
+      // Staff absent today
+      attendance.filter(function(a) { return a.personType === 'staff' && a.date === today && a.status === 'Absent'; })
+        .forEach(function(rec) {
+          var s = staff.find(function(x) { return x.id === rec.personId; });
+          notifs.push({
+            id: 'att-staff-absent-' + rec.id,
+            type: 'attendance',
+            severity: 'error',
+            title: 'Staff absent today',
+            body: s ? s.fullName : rec.personId,
+            action: 'attendance'
+          });
+        });
+
+      // Students late or absent today
+      attendance.filter(function(a) {
+        return a.personType === 'student' && a.date === today && (a.status === 'Late' || a.status === 'Absent');
+      }).forEach(function(rec) {
+        var stu = students.find(function(s) { return s.id === rec.personId; });
+        notifs.push({
+          id: 'att-stu-' + rec.id,
+          type: 'attendance',
+          severity: rec.status === 'Absent' ? 'error' : 'warning',
+          title: 'Student ' + rec.status.toLowerCase() + ' today',
+          body: stu ? stu.firstName + ' ' + stu.lastName : rec.personId,
+          action: 'attendance'
+        });
+      });
+
+    } else {
+      // Parent / client view
+      var myIds = students
+        .filter(function(s) { return s.contact === App.clientParent; })
+        .map(function(s) { return s.id; });
+
+      // Overdue invoices for their children
+      invoices.filter(function(i) { return i.status === 'Overdue' && myIds.indexOf(i.studentId) > -1; })
+        .forEach(function(inv) {
+          var stu = students.find(function(s) { return s.id === inv.studentId; });
+          notifs.push({
+            id: 'inv-overdue-' + inv.id,
+            type: 'billing',
+            severity: 'error',
+            title: 'Payment overdue',
+            body: (stu ? stu.firstName : inv.studentId) + ' · ' + App.Utils.formatCurrency(inv.amount),
+            action: 'billing'
+          });
+        });
+
+      // Due soon for their children
+      invoices.filter(function(i) {
+        if (i.status !== 'Unpaid' || myIds.indexOf(i.studentId) === -1) return false;
+        var d = new Date(i.dueDate);
+        return d >= now && d <= in7;
+      }).forEach(function(inv) {
+        var stu  = students.find(function(s) { return s.id === inv.studentId; });
+        var days = Math.ceil((new Date(inv.dueDate) - now) / 86400000);
+        notifs.push({
+          id: 'inv-soon-' + inv.id,
+          type: 'billing',
+          severity: 'warning',
+          title: 'Payment due soon',
+          body: (stu ? stu.firstName : inv.studentId) + ' · due in ' + days + ' day' + (days !== 1 ? 's' : ''),
+          action: 'billing'
+        });
+      });
+
+      // Their kids late or absent today
+      attendance.filter(function(a) {
+        return a.personType === 'student'
+          && myIds.indexOf(a.personId) > -1
+          && a.date === today
+          && (a.status === 'Late' || a.status === 'Absent');
+      }).forEach(function(rec) {
+        var stu = students.find(function(s) { return s.id === rec.personId; });
+        notifs.push({
+          id: 'att-stu-' + rec.id,
+          type: 'attendance',
+          severity: rec.status === 'Absent' ? 'error' : 'warning',
+          title: (stu ? stu.firstName : 'Your child') + ' was ' + rec.status.toLowerCase() + ' today',
+          body: 'Attendance recorded' + (rec.checkIn ? ' at ' + App.Utils.formatTime(rec.checkIn) : ''),
+          action: 'attendance'
+        });
+      });
+    }
+
+    return notifs;
+  }
+
+  // ── Badge ────────────────────────────────────────────────────────────────────
+  function updateBadge() {
+    var count = build().filter(function(n) { return !_readIds[n.id]; }).length;
+    var badge = document.getElementById('notif-badge');
+    if (!badge) return;
+    if (count > 0) {
+      badge.textContent = count > 99 ? '99+' : String(count);
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
+
+  // ── Panel rendering ──────────────────────────────────────────────────────────
+  var _ICONS = {
+    billing:      '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><path stroke-linecap="round" d="M1 10h22"/></svg>',
+    attendance:   '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path stroke-linecap="round" d="M9 12l2 2 4-4"/></svg>',
+    registration: '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>'
+  };
+  var _COLORS = {
+    error:   { icon: 'bg-red-100 text-red-600',    dot: 'bg-red-500'    },
+    warning: { icon: 'bg-amber-100 text-amber-600', dot: 'bg-amber-400'  },
+    info:    { icon: 'bg-blue-100 text-blue-600',   dot: 'bg-blue-500'   }
+  };
+
+  function _renderPanel(notifs) {
+    var panel = document.getElementById('notif-panel');
+    if (!panel) return;
+    var unread = notifs.filter(function(n) { return !_readIds[n.id]; }).length;
+
+    var header = '<div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">'
+      + '<div class="flex items-center gap-2">'
+      +   '<span class="font-semibold text-slate-800 text-sm">Notifications</span>'
+      +   (unread > 0 ? '<span class="min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">' + unread + '</span>' : '')
+      + '</div>'
+      + (unread > 0 ? '<button onclick="App.Notifs.markAllRead()" class="text-xs text-blue-600 hover:text-blue-800 font-medium">Mark all read</button>' : '')
+      + '</div>';
+
+    if (notifs.length === 0) {
+      panel.innerHTML = header
+        + '<div class="py-10 text-center">'
+        +   '<div class="text-2xl mb-2">&#10003;</div>'
+        +   '<div class="text-sm text-slate-400">All caught up!</div>'
+        + '</div>';
+      return;
+    }
+
+    var items = notifs.map(function(n) {
+      var isRead  = !!_readIds[n.id];
+      var colors  = _COLORS[n.severity] || _COLORS.info;
+      var icon    = _ICONS[n.type] || _ICONS.billing;
+      return '<div onclick="App.Notifs._clickNotif(\'' + n.action + '\',\'' + n.id + '\')"'
+        + ' class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors border-b border-slate-50 last:border-0' + (isRead ? ' opacity-50' : '') + '">'
+        + '<div class="w-8 h-8 rounded-lg ' + colors.icon + ' flex items-center justify-center shrink-0 mt-0.5">' + icon + '</div>'
+        + '<div class="flex-1 min-w-0">'
+        +   '<div class="flex items-center gap-1.5">'
+        +     '<span class="text-sm font-medium text-slate-800 leading-snug">' + n.title + '</span>'
+        +     (!isRead ? '<span class="w-1.5 h-1.5 rounded-full ' + colors.dot + ' shrink-0"></span>' : '')
+        +   '</div>'
+        +   '<div class="text-xs text-slate-500 mt-0.5 truncate">' + n.body + '</div>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+
+    panel.innerHTML = header
+      + '<div class="overflow-y-auto" style="max-height:400px">' + items + '</div>';
+  }
+
+  // ── Public API ───────────────────────────────────────────────────────────────
+  function toggle() {
+    _open = !_open;
+    var panel    = document.getElementById('notif-panel');
+    var backdrop = document.getElementById('notif-backdrop');
+    if (!panel || !backdrop) return;
+    if (_open) {
+      _renderPanel(build());
+      panel.classList.remove('hidden');
+      backdrop.classList.remove('hidden');
+    } else {
+      panel.classList.add('hidden');
+      backdrop.classList.add('hidden');
+    }
+  }
+
+  function close() {
+    _open = false;
+    var panel    = document.getElementById('notif-panel');
+    var backdrop = document.getElementById('notif-backdrop');
+    if (panel)    panel.classList.add('hidden');
+    if (backdrop) backdrop.classList.add('hidden');
+  }
+
+  function markAllRead() {
+    build().forEach(function(n) { _readIds[n.id] = true; });
+    _saveRead();
+    updateBadge();
+    _renderPanel(build());
+  }
+
+  function _clickNotif(page, id) {
+    _readIds[id] = true;
+    _saveRead();
+    close();
+    updateBadge();
+    App.Router.navigate(page);
+  }
+
+  function refresh() {
+    updateBadge();
+    if (_open) _renderPanel(build());
+  }
+
+  App.Notifs = {
+    build: build,
+    toggle: toggle,
+    close: close,
+    markAllRead: markAllRead,
+    _clickNotif: _clickNotif,
+    refresh: refresh,
+    updateBadge: updateBadge
+  };
+})();

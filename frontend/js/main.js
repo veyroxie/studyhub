@@ -34,7 +34,9 @@
         App.Login.hide();
         applyRole();
         App.Dev.init();
-        App.Router.navigate('calendar');
+        App.Router.navigate('dashboard');
+        App.Notifs.updateBadge();
+        if (App.Billing && App.Billing.checkLoginNotifications) App.Billing.checkLoginNotifications();
       } catch(err) {
         errEl.textContent = err.message || 'Login failed';
         errEl.classList.remove('hidden');
@@ -74,10 +76,12 @@
     // If currently on an admin-only page, redirect to calendar
     const current = App.Router.current();
     if (isClient && adminOnlyPages.indexOf(current) > -1) {
-      App.Router.navigate('calendar');
+      App.Router.navigate('dashboard');
     } else if (current) {
       App.Router.refresh();
     }
+
+    App.Notifs.refresh();
   }
 
   function toggleRole() {
@@ -129,6 +133,7 @@
 
   document.addEventListener('DOMContentLoaded', function() {
     // Register all modules
+    App.Router.register('dashboard',     App.Dashboard);
     App.Router.register('calendar',      App.Calendar);
     App.Router.register('communication', App.Communication);
     App.Router.register('students',      App.Students);
@@ -202,7 +207,8 @@
           App.Login.hide();
           App.Dev.init();
           applyRole();
-          App.Router.navigate('calendar');
+          App.Router.navigate('dashboard');
+          App.Notifs.updateBadge();
           App.Api.connectWS();
         });
       } else {

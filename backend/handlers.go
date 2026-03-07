@@ -37,6 +37,9 @@ func handleSnapshot(db *sql.DB) http.HandlerFunc {
 			Attendance:    listAttendance(db, c),
 			Payroll:       listPayroll(db, c),
 		}
+		if c != nil && (c.Role == "admin" || c.Role == "superadmin") {
+			snap.Registrations = listRegistrations(db)
+		}
 		respond(w, snap)
 	}
 }
@@ -456,6 +459,88 @@ func handleUsers(db *sql.DB) http.HandlerFunc {
 func handleUserDelete(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		db.Exec(`DELETE FROM users WHERE id=?`, chi.URLParam(r, "id"))
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// ── Registrations ─────────────────────────────────────────────────────────────
+
+func listRegistrations(db *sql.DB) []Registration {
+	rows, err := db.Query(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes,submitted_on,status FROM registrations WHERE status='pending' ORDER BY submitted_on DESC`)
+	if err != nil { return []Registration{} }
+	defer rows.Close()
+	out := []Registration{}
+	for rows.Next() {
+		var reg Registration
+		rows.Scan(&reg.ID, &reg.ParentName, &reg.Email, &reg.Phone, &reg.EmergencyName, &reg.EmergencyPhone,
+			&reg.StudentFirstName, &reg.StudentLastName, &reg.StudentDOB, &reg.StudentGender,
+			&reg.ClassInterest, &reg.Notes, &reg.SubmittedOn, &reg.Status)
+		out = append(out, reg)
+	}
+	return out
+}
+
+// POST /api/register — public, no auth required
+func handleRegister(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var reg Registration
+		if err := json.NewDecoder(r.Body).Decode(&reg); err != nil {
+			http.Error(w, "bad request", 400); return
+		}
+		if reg.ParentName == "" || reg.Email == "" || reg.StudentFirstName == "" {
+			http.Error(w, "parent name, email and student first name are required", 400); return
+		}
+		reg.ID = generateID("REG")
+		reg.SubmittedOn = today()
+		reg.Status = "pending"
+		_, err := db.Exec(`INSERT INTO registrations(id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes,submitted_on,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			reg.ID, reg.ParentName, reg.Email, reg.Phone, reg.EmergencyName, reg.EmergencyPhone,
+			reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
+			reg.ClassInterest, reg.Notes, reg.SubmittedOn, reg.Status)
+		if err != nil { http.Error(w, "could not save registration", 500); return }
+		w.WriteHeader(http.StatusCreated)
+		respond(w, map[string]string{"id": reg.ID, "status": "pending"})
+	}
+}
+
+// POST /api/registrations/{id}/approve — admin only
+func handleRegistrationApprove(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var reg Registration
+		err := db.QueryRow(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes FROM registrations WHERE id=?`, id).
+			Scan(&reg.ID, &reg.ParentName, &reg.Email, &reg.Phone, &reg.EmergencyName, &reg.EmergencyPhone,
+				&reg.StudentFirstName, &reg.StudentLastName, &reg.StudentDOB, &reg.StudentGender,
+				&reg.ClassInterest, &reg.Notes)
+		if err != nil { http.Error(w, "registration not found", 404); return }
+
+		// Create student record
+		stuID := generateID("STU")
+		db.Exec(`INSERT OR IGNORE INTO students(id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			stuID, reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
+			reg.ParentName, reg.Email, reg.Phone, "The Study Hub", "New", today(), "[]", "[]", reg.Notes)
+
+		// Create parent user account with temp password
+		tempPassword := "Parent" + id[len(id)-4:]
+		hash, _ := hashPassword(tempPassword)
+		db.Exec(`INSERT OR IGNORE INTO users(email,password_hash,role,name) VALUES(?,?,?,?)`,
+			strings.ToLower(strings.TrimSpace(reg.Email)), hash, "parent", reg.ParentName)
+
+		// Mark registration approved
+		db.Exec(`UPDATE registrations SET status='approved' WHERE id=?`, id)
+
+		respond(w, map[string]string{
+			"studentId":    stuID,
+			"tempPassword": tempPassword,
+			"message":      "Student created. Share temp password with parent.",
+		})
+	}
+}
+
+// DELETE /api/registrations/{id} — admin only (reject)
+func handleRegistrationReject(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		db.Exec(`UPDATE registrations SET status='rejected' WHERE id=?`, chi.URLParam(r, "id"))
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

@@ -2,8 +2,9 @@
   window.App = window.App || {};
 
   const TITLES = {
+    dashboard:     'Dashboard',
     calendar:      'Class Schedule',
-    communication: 'Communication',
+    communication: 'Announcements',
     students:      'Students',
     billing:       'Bills & Payments',
     staff:         'Staff',

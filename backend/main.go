@@ -52,6 +52,7 @@ func main() {
 	// ── Public routes (no auth needed) ───────────────────────────────────────
 	r.With(rateLimitLogin).Post("/api/auth/login", handleLogin(db))
 	r.Post("/api/auth/logout", handleLogout)
+	r.Post("/api/register", handleRegister(db))
 	r.Get("/ws", hub.handleWS())
 
 	// ── Authenticated routes ──────────────────────────────────────────────────
@@ -95,12 +96,14 @@ func main() {
 			r.Post("/", handleAttendance(db, hub))
 		})
 
-		// Admin-only: user management
+		// Admin-only: user management + registration review
 		r.Group(func(r chi.Router) {
 			r.Use(requireAdmin)
 			r.Get("/api/users", handleUsers(db))
 			r.Post("/api/users", handleUsers(db))
 			r.Delete("/api/users/{id}", handleUserDelete(db))
+			r.Post("/api/registrations/{id}/approve", handleRegistrationApprove(db))
+			r.Delete("/api/registrations/{id}", handleRegistrationReject(db))
 		})
 	})
 

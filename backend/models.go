@@ -124,6 +124,23 @@ type Payroll struct {
 	PaidOn     *string  `json:"paidOn"`
 }
 
+type Registration struct {
+	ID               string `json:"id"`
+	ParentName       string `json:"parentName"`
+	Email            string `json:"email"`
+	Phone            string `json:"phone"`
+	EmergencyName    string `json:"emergencyName"`
+	EmergencyPhone   string `json:"emergencyPhone"`
+	StudentFirstName string `json:"studentFirstName"`
+	StudentLastName  string `json:"studentLastName"`
+	StudentDOB       string `json:"studentDob"`
+	StudentGender    string `json:"studentGender"`
+	ClassInterest    string `json:"classInterest"`
+	Notes            string `json:"notes"`
+	SubmittedOn      string `json:"submittedOn"`
+	Status           string `json:"status"` // pending | approved | rejected
+}
+
 // Snapshot is what GET /api/snapshot returns — identical shape to App.DATA
 type Snapshot struct {
 	Students      []Student      `json:"students"`
@@ -133,4 +150,5 @@ type Snapshot struct {
 	Announcements []Announcement `json:"announcements"`
 	Attendance    []Attendance   `json:"attendance"`
 	Payroll       []Payroll      `json:"payroll"`
+	Registrations []Registration `json:"registrations,omitempty"`
 }

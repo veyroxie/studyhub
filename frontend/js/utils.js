@@ -93,6 +93,9 @@
       };
       return map[color] || map.blue;
     },
+    esc(str) {
+      return String(str || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    },
     today() {
       return new Date().toISOString().slice(0, 10);
     },

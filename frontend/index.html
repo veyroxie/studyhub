@@ -80,6 +80,10 @@
 
     <!-- Nav -->
     <nav class="flex-1 p-3 space-y-0.5 overflow-y-auto">
+      <button data-page="dashboard"     class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span>Dashboard</span>
+      </button>
       <button data-page="calendar"      class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path stroke-linecap="round" d="M16 2v4M8 2v4M3 10h18"/></svg>
         <span>Schedule</span>
@@ -137,6 +141,24 @@
           <select id="parent-select" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-slate-700 bg-white"></select>
         </div>
 
+        <!-- Notification bell -->
+        <div class="relative z-40" id="notif-bell-wrap">
+          <button id="notif-bell-btn" onclick="App.Notifs.toggle()" title="Notifications"
+            class="relative w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+            </svg>
+            <span id="notif-badge"
+              class="hidden absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 pointer-events-none">
+              0
+            </span>
+          </button>
+          <!-- Notification panel -->
+          <div id="notif-panel"
+            class="hidden absolute right-0 top-11 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+          </div>
+        </div>
+
         <!-- Role toggle -->
         <button id="role-toggle-btn" class="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-lg border-2 transition-all bg-blue-50 text-blue-700 border-blue-300">
           Admin
@@ -151,6 +173,7 @@
 
     <!-- Page content -->
     <main class="flex-1 overflow-auto p-6">
+      <div id="dashboard-page"      class="page"></div>
       <div id="calendar-page"      class="page"></div>
       <div id="communication-page" class="page"></div>
       <div id="students-page"      class="page"></div>
@@ -210,12 +233,17 @@
 
 </div><!-- /app -->
 
+<!-- Notification backdrop (closes panel on outside click) -->
+<div id="notif-backdrop" class="hidden fixed inset-0 z-30" onclick="App.Notifs.close()"></div>
+
 <!-- Scripts — order matters -->
 <script src="js/data.js"></script>
 <script src="js/store.js"></script>
 <script src="js/api.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/router.js"></script>
+<script src="js/notifs.js"></script>
+<script src="js/modules/dashboard.js"></script>
 <script src="js/modules/calendar.js"></script>
 <script src="js/modules/communication.js"></script>
 <script src="js/modules/students.js"></script>

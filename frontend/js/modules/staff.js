@@ -92,7 +92,10 @@
           + '</tbody></table>')
         + '</div>' : '')
 
-      + '<div class="mt-4 flex justify-end"><button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Close</button></div>'
+      + '<div class="mt-4 flex justify-between">'
+      + (isAdmin ? '<button onclick="App.Utils.hideModal(); setTimeout(function(){App.Staff._editModal(\'' + staffId + '\')},50)" class="px-4 py-2 text-sm bg-slate-700 text-white rounded-lg hover:bg-slate-800">Edit Details</button>' : '<div></div>')
+      + '<button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Close</button>'
+      + '</div>'
       + '</div>'
     );
   }
@@ -155,6 +158,70 @@
     });
   }
 
+  function _editModal(staffId) {
+    const state = App.Store.get();
+    const s = state.staff.find(function(x) { return x.id === staffId; });
+    if (!s) return;
+
+    App.Utils.showModal(
+      '<div class="p-6">'
+      + '<h2 class="text-xl font-bold mb-4">Edit Staff — ' + s.fullName + '</h2>'
+      + '<form id="edit-staff-form" class="space-y-4">'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Full Name', '<input name="fullName" class="form-input" value="' + App.Utils.esc(s.fullName) + '" required>')
+      + _field('Display Name', '<input name="name" class="form-input" value="' + App.Utils.esc(s.name) + '" required>')
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Role</label>'
+      + '<select name="role" class="form-input">'
+      + ['Teacher','Senior Teacher','Admin'].map(function(r) {
+          return '<option' + (s.role === r ? ' selected' : '') + '>' + r + '</option>';
+        }).join('')
+      + '</select></div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Status</label>'
+      + '<select name="status" class="form-input">'
+      + ['Active','Inactive'].map(function(st) {
+          return '<option' + (s.status === st ? ' selected' : '') + '>' + st + '</option>';
+        }).join('')
+      + '</select></div>'
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Email', '<input name="email" type="email" class="form-input" value="' + App.Utils.esc(s.email || '') + '">')
+      + _field('Phone', '<input name="phone" class="form-input" value="' + App.Utils.esc(s.phone || '') + '">')
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Monthly Salary (RM)', '<input name="salary" type="number" min="0" class="form-input" value="' + (s.salary || 0) + '">')
+      + _field('Join Date', '<input name="joinDate" type="date" class="form-input" value="' + (s.joinDate || '') + '">')
+      + '</div>'
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>'
+      + '</div>'
+      + '</form>'
+      + '</div>'
+    );
+
+    document.getElementById('edit-staff-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const updated = Object.assign({}, s, {
+        fullName: fd.get('fullName'),
+        name: fd.get('name'),
+        role: fd.get('role'),
+        status: fd.get('status'),
+        email: fd.get('email'),
+        phone: fd.get('phone'),
+        salary: parseFloat(fd.get('salary')) || 0,
+        joinDate: fd.get('joinDate')
+      });
+      const st = App.Store.get();
+      App.Store.set({ staff: st.staff.map(function(x) { return x.id === staffId ? updated : x; }) });
+      App.Utils.hideModal();
+      App.Utils.showToast(updated.fullName + ' updated!', 'success');
+      App.Router.refresh();
+    });
+  }
+
   function _infoRow(label, value) {
     return '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-0.5">' + label + '</div><div class="font-medium text-slate-700">' + (value || '—') + '</div></div>';
   }
@@ -162,5 +229,5 @@
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  App.Staff = { render: render, _viewModal: _viewModal, _switchTab: _switchTab, _addModal: _addModal };
+  App.Staff = { render: render, _viewModal: _viewModal, _switchTab: _switchTab, _addModal: _addModal, _editModal: _editModal };
 })();

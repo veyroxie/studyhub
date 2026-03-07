@@ -144,6 +144,24 @@ func createSchema(db *sql.DB) error {
 		status      TEXT DEFAULT 'Pending',
 		paid_on     TEXT
 	);
+
+	CREATE TABLE IF NOT EXISTS registrations (
+		id                 TEXT PRIMARY KEY,
+		tenant_id          INTEGER NOT NULL DEFAULT 1,
+		parent_name        TEXT NOT NULL,
+		email              TEXT NOT NULL,
+		phone              TEXT,
+		emergency_name     TEXT,
+		emergency_phone    TEXT,
+		student_first_name TEXT NOT NULL,
+		student_last_name  TEXT NOT NULL,
+		student_dob        TEXT,
+		student_gender     TEXT,
+		class_interest     TEXT,
+		notes              TEXT,
+		submitted_on       TEXT,
+		status             TEXT DEFAULT 'pending'
+	);
 	`)
 	return err
 }

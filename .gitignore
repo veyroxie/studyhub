@@ -22,3 +22,6 @@ services/analytics/venv/
 # OS
 .DS_Store
 Thumbs.db
+
+
+notes.txt
