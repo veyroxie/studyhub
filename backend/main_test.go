@@ -1,0 +1,641 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
+)
+
+// ── test helpers ──────────────────────────────────────────────────────────────
+
+func setupTestApp(t *testing.T) (*chi.Mux, func()) {
+	t.Helper()
+	db := initDB(":memory:")
+	seedIfEmpty(db)
+
+	hub := newHub()
+	r := chi.NewRouter()
+	r.Use(cors.Handler(cors.Options{AllowedOrigins: []string{"*"}, AllowedMethods: []string{"GET","POST","PUT","DELETE"}, AllowedHeaders: []string{"Authorization","Content-Type"}}))
+
+	r.Post("/api/auth/login", handleLogin(db))
+	r.Get("/ws", hub.handleWS())
+	r.Group(func(r chi.Router) {
+		r.Use(jwtMiddleware)
+		r.Get("/api/snapshot", handleSnapshot(db))
+		r.Get("/api/students", handleStudents(db))
+		r.Post("/api/students", handleStudents(db))
+		r.Put("/api/students/{id}", handleStudent(db))
+		r.Delete("/api/students/{id}", handleStudent(db))
+		r.Get("/api/classes", handleClasses(db))
+		r.Post("/api/classes", handleClasses(db))
+		r.Get("/api/staff", handleStaff(db))
+		r.Post("/api/staff", handleStaff(db))
+		r.Get("/api/invoices", handleInvoices(db))
+		r.Post("/api/invoices", handleInvoices(db))
+		r.Put("/api/invoices/{id}/pay", handleInvoicePay(db))
+		r.Get("/api/announcements", handleAnnouncements(db))
+		r.Post("/api/announcements", handleAnnouncements(db))
+		r.Delete("/api/announcements/{id}", handleAnnouncementDelete(db))
+		r.Get("/api/attendance", handleAttendance(db, hub))
+		r.Post("/api/attendance", handleAttendance(db, hub))
+		r.Group(func(r chi.Router) {
+			r.Use(requireAdmin)
+			r.Get("/api/users", handleUsers(db))
+			r.Post("/api/users", handleUsers(db))
+			r.Delete("/api/users/{id}", handleUserDelete(db))
+		})
+	})
+
+	return r, func() { db.Close() }
+}
+
+func getAdminToken(t *testing.T, r *chi.Mux) string {
+	t.Helper()
+	return getToken(t, r, "admin@studyhub.com", "admin123")
+}
+
+func getParentToken(t *testing.T, r *chi.Mux) string {
+	t.Helper()
+	return getToken(t, r, "seeduser27@example.com", "parent123")
+}
+
+func getToken(t *testing.T, r *chi.Mux, email, password string) string {
+	t.Helper()
+	body := fmt.Sprintf(`{"email":%q,"password":%q}`, email, password)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("login failed: status %d, body: %s", w.Code, w.Body.String())
+	}
+	var resp loginResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	return resp.Token
+}
+
+func doRequest(r *chi.Mux, method, path, token string, body any) *httptest.ResponseRecorder {
+	var bodyReader *strings.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		bodyReader = strings.NewReader(string(b))
+	} else {
+		bodyReader = strings.NewReader("")
+	}
+	req := httptest.NewRequest(method, path, bodyReader)
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+// ── Auth tests ────────────────────────────────────────────────────────────────
+
+func TestLogin_Admin_Success(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	w := doRequest(r, "POST", "/api/auth/login", "", map[string]string{"email": "admin@studyhub.com", "password": "admin123"})
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d: %s", w.Code, w.Body.String()) }
+	var resp loginResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Token == "" { t.Fatal("expected non-empty token") }
+	if resp.Role != "admin" { t.Fatalf("expected role admin got %s", resp.Role) }
+}
+
+func TestLogin_Parent_Success(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	w := doRequest(r, "POST", "/api/auth/login", "", map[string]string{"email": "seeduser27@example.com", "password": "parent123"})
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d", w.Code) }
+	var resp loginResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Role != "parent" { t.Fatalf("expected role parent got %s", resp.Role) }
+}
+
+func TestLogin_WrongPassword(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	w := doRequest(r, "POST", "/api/auth/login", "", map[string]string{"email": "admin@studyhub.com", "password": "wrongpass"})
+	if w.Code != http.StatusUnauthorized { t.Fatalf("expected 401 got %d", w.Code) }
+}
+
+func TestLogin_NonExistentUser(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	w := doRequest(r, "POST", "/api/auth/login", "", map[string]string{"email": "ghost@nowhere.com", "password": "abc"})
+	if w.Code != http.StatusUnauthorized { t.Fatalf("expected 401 got %d", w.Code) }
+}
+
+func TestLogin_EmptyBody(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	req := httptest.NewRequest("POST", "/api/auth/login", bytes.NewReader([]byte("not json")))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code == http.StatusOK { t.Fatal("should not succeed with bad body") }
+}
+
+func TestNoToken_Returns401(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	w := doRequest(r, "GET", "/api/students", "", nil)
+	if w.Code != http.StatusUnauthorized { t.Fatalf("expected 401 got %d", w.Code) }
+}
+
+func TestBadToken_Returns401(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	w := doRequest(r, "GET", "/api/students", "not.a.real.token", nil)
+	if w.Code != http.StatusUnauthorized { t.Fatalf("expected 401 got %d", w.Code) }
+}
+
+// ── Snapshot tests ────────────────────────────────────────────────────────────
+
+func TestSnapshot_Admin_HasAllFields(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	w := doRequest(r, "GET", "/api/snapshot", token, nil)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d", w.Code) }
+	var snap Snapshot
+	json.NewDecoder(w.Body).Decode(&snap)
+	if len(snap.Students) == 0 { t.Error("expected students in snapshot") }
+	if len(snap.Classes) == 0 { t.Error("expected classes in snapshot") }
+	if len(snap.Staff) == 0 { t.Error("expected staff in snapshot") }
+	if len(snap.Invoices) == 0 { t.Error("expected invoices in snapshot") }
+	if len(snap.Announcements) == 0 { t.Error("expected announcements in snapshot") }
+	if len(snap.Payroll) == 0 { t.Error("expected payroll in snapshot") }
+}
+
+func TestSnapshot_Parent_FilteredData(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getParentToken(t, r)
+	w := doRequest(r, "GET", "/api/snapshot", token, nil)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d", w.Code) }
+	var snap Snapshot
+	json.NewDecoder(w.Body).Decode(&snap)
+	// Parent should only see their own children
+	for _, s := range snap.Students {
+		if s.Contact != "seeduser27@example.com" {
+			t.Errorf("parent got student they don't own: %s", s.ID)
+		}
+	}
+	// Parent should not see payroll
+	if len(snap.Payroll) != 0 { t.Error("parent should not see payroll") }
+	// Parent should not see staff salaries
+	for _, st := range snap.Staff {
+		if st.Salary != 0 { t.Errorf("parent should not see salary for %s", st.Name) }
+	}
+}
+
+// ── Students tests ────────────────────────────────────────────────────────────
+
+func TestStudents_List_Admin(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	w := doRequest(r, "GET", "/api/students", token, nil)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d", w.Code) }
+	var students []Student
+	json.NewDecoder(w.Body).Decode(&students)
+	if len(students) < 12 { t.Errorf("expected at least 12 students got %d", len(students)) }
+}
+
+func TestStudents_Create_Admin(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	newStudent := Student{
+		FirstName: "Test", LastName: "Child", DOB: "2015-06-15",
+		Gender: "Male", ParentName: "Test Parent",
+		Contact: "testparent@test.com", Phone: "60110000003",
+		Branch: "The Study Hub", Status: "New",
+		EnrolledClasses: []string{}, Siblings: []string{},
+	}
+	w := doRequest(r, "POST", "/api/students", token, newStudent)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d: %s", w.Code, w.Body.String()) }
+	var created Student
+	json.NewDecoder(w.Body).Decode(&created)
+	if created.FirstName != "Test" { t.Errorf("expected firstName Test got %s", created.FirstName) }
+	if created.ID == "" { t.Error("expected non-empty ID") }
+}
+
+func TestStudents_Create_Parent_Forbidden(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getParentToken(t, r)
+	w := doRequest(r, "POST", "/api/students", token, Student{FirstName: "Hack"})
+	if w.Code != http.StatusForbidden { t.Fatalf("expected 403 got %d", w.Code) }
+}
+
+func TestStudents_Update(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	// First get the list to find an ID
+	w := doRequest(r, "GET", "/api/students", token, nil)
+	var students []Student
+	json.NewDecoder(w.Body).Decode(&students)
+	if len(students) == 0 { t.Skip("no students to update") }
+
+	s := students[0]
+	s.Notes = "updated-note"
+	w2 := doRequest(r, "PUT", "/api/students/"+s.ID, token, s)
+	if w2.Code != http.StatusOK { t.Fatalf("expected 200 got %d", w2.Code) }
+}
+
+func TestStudents_MissingName_ShouldNotCrash(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	w := doRequest(r, "POST", "/api/students", token, map[string]string{"status": "Active"})
+	// Should respond without panicking (empty name is allowed by DB, just bad data)
+	if w.Code >= 500 { t.Fatalf("should not 500 on missing name, got %d", w.Code) }
+}
+
+// ── Classes tests ─────────────────────────────────────────────────────────────
+
+func TestClasses_List(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	w := doRequest(r, "GET", "/api/classes", token, nil)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d", w.Code) }
+	var classes []Class
+	json.NewDecoder(w.Body).Decode(&classes)
+	if len(classes) < 8 { t.Errorf("expected at least 8 classes got %d", len(classes)) }
+}
+
+func TestClasses_Create(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	cls := Class{Name: "Test Class", Day: "Wednesday", Time: "10:00", EndTime: "11:00", Capacity: 5, Color: "green"}
+	w := doRequest(r, "POST", "/api/classes", token, cls)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d: %s", w.Code, w.Body.String()) }
+}
+
+func TestClasses_TeacherIDs_RoundTrip(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	cls := Class{Name: "Multi Teacher", Day: "Friday", Time: "14:00", EndTime: "15:00", Capacity: 6, TeacherIDs: []string{"s1", "s2"}}
+	w := doRequest(r, "POST", "/api/classes", token, cls)
+	var created Class
+	json.NewDecoder(w.Body).Decode(&created)
+	if len(created.TeacherIDs) != 2 { t.Errorf("expected 2 teacher IDs got %d", len(created.TeacherIDs)) }
+}
+
+// ── Invoices tests ────────────────────────────────────────────────────────────
+
+func TestInvoices_List_Admin(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	w := doRequest(r, "GET", "/api/invoices", token, nil)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d", w.Code) }
+	var invoices []Invoice
+	json.NewDecoder(w.Body).Decode(&invoices)
+	if len(invoices) == 0 { t.Error("expected invoices") }
+}
+
+func TestInvoices_Parent_OnlySeesOwn(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getParentToken(t, r)
+	w := doRequest(r, "GET", "/api/invoices", token, nil)
+	var invoices []Invoice
+	json.NewDecoder(w.Body).Decode(&invoices)
+	// All returned invoices should belong to STU001 or STU002 (Sawauchi children)
+	validIDs := map[string]bool{"STU001": true, "STU002": true}
+	for _, inv := range invoices {
+		if !validIDs[inv.StudentID] {
+			t.Errorf("parent got invoice for wrong student: %s", inv.StudentID)
+		}
+	}
+}
+
+func TestInvoices_Create_And_MarkPaid(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	inv := Invoice{StudentID: "STU001", Description: "Test Invoice", Type: "Adhoc", Amount: 99.50, DueDate: "2026-04-30"}
+	w := doRequest(r, "POST", "/api/invoices", token, inv)
+	if w.Code != http.StatusOK { t.Fatalf("create invoice: expected 200 got %d: %s", w.Code, w.Body.String()) }
+	var created Invoice
+	json.NewDecoder(w.Body).Decode(&created)
+	if created.Status != "Unpaid" { t.Errorf("new invoice should be Unpaid got %s", created.Status) }
+
+	// Mark paid
+	w2 := doRequest(r, "PUT", "/api/invoices/"+created.ID+"/pay", token, nil)
+	if w2.Code != http.StatusOK { t.Fatalf("mark paid: expected 200 got %d", w2.Code) }
+}
+
+func TestInvoices_NegativeAmount_ShouldStore(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	// Negative amounts should be rejected or stored — check no crash
+	inv := Invoice{StudentID: "STU001", Description: "Bad Invoice", Amount: -50}
+	w := doRequest(r, "POST", "/api/invoices", token, inv)
+	if w.Code >= 500 { t.Fatalf("should not 500 on negative amount, got %d", w.Code) }
+}
+
+// ── Announcements tests ───────────────────────────────────────────────────────
+
+func TestAnnouncements_List(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	w := doRequest(r, "GET", "/api/announcements", token, nil)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d", w.Code) }
+	var anns []Announcement
+	json.NewDecoder(w.Body).Decode(&anns)
+	if len(anns) == 0 { t.Error("expected announcements") }
+}
+
+func TestAnnouncements_Create_And_Delete(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	ann := Announcement{Title: "Test Notice", Message: "This is a test.", Audience: "All Parents", Type: "Notice"}
+	w := doRequest(r, "POST", "/api/announcements", token, ann)
+	if w.Code != http.StatusOK { t.Fatalf("create: expected 200 got %d: %s", w.Code, w.Body.String()) }
+	var created Announcement
+	json.NewDecoder(w.Body).Decode(&created)
+	if created.ID == "" { t.Fatal("expected ID in created announcement") }
+
+	// Delete it
+	w2 := doRequest(r, "DELETE", "/api/announcements/"+created.ID, token, nil)
+	if w2.Code != http.StatusNoContent { t.Fatalf("delete: expected 204 got %d", w2.Code) }
+}
+
+func TestAnnouncements_Create_Parent_Forbidden(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getParentToken(t, r)
+	w := doRequest(r, "POST", "/api/announcements", token, Announcement{Title: "Hack", Message: "...", Type: "Notice"})
+	if w.Code != http.StatusForbidden { t.Fatalf("expected 403 got %d", w.Code) }
+}
+
+// ── Attendance tests ──────────────────────────────────────────────────────────
+
+func TestAttendance_List(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	w := doRequest(r, "GET", "/api/attendance", token, nil)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d", w.Code) }
+}
+
+func TestAttendance_CheckIn_Student(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	classID := "c3"
+	checkIn := "16:00"
+	att := Attendance{
+		PersonID: "STU001", PersonType: "student",
+		Date: "2026-03-10", ClassID: &classID,
+		CheckIn: &checkIn, Status: "Present",
+	}
+	w := doRequest(r, "POST", "/api/attendance", token, att)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d: %s", w.Code, w.Body.String()) }
+}
+
+func TestAttendance_CheckIn_Then_CheckOut(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	classID := "c3"
+	checkIn := "15:55"
+
+	// Check in
+	att := Attendance{PersonID: "STU002", PersonType: "student", Date: "2026-03-10", ClassID: &classID, CheckIn: &checkIn, Status: "Present"}
+	doRequest(r, "POST", "/api/attendance", token, att)
+
+	// Check out (upsert same record)
+	checkOut := "17:00"
+	att.CheckOut = &checkOut
+	w := doRequest(r, "POST", "/api/attendance", token, att)
+	if w.Code != http.StatusOK { t.Fatalf("checkout: expected 200 got %d", w.Code) }
+	var result Attendance
+	json.NewDecoder(w.Body).Decode(&result)
+	if result.CheckOut == nil { t.Error("expected checkOut to be set") }
+}
+
+func TestAttendance_Parent_OnlySeesOwnChildren(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getParentToken(t, r)
+	w := doRequest(r, "GET", "/api/attendance", token, nil)
+	var records []Attendance
+	json.NewDecoder(w.Body).Decode(&records)
+	// All records must belong to STU001 or STU002
+	validIDs := map[string]bool{"STU001": true, "STU002": true}
+	for _, rec := range records {
+		if !validIDs[rec.PersonID] {
+			t.Errorf("parent got attendance for wrong person: %s", rec.PersonID)
+		}
+	}
+}
+
+// ── Staff tests ───────────────────────────────────────────────────────────────
+
+func TestStaff_List(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	w := doRequest(r, "GET", "/api/staff", token, nil)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d", w.Code) }
+	var staff []Staff
+	json.NewDecoder(w.Body).Decode(&staff)
+	if len(staff) < 4 { t.Errorf("expected at least 4 staff got %d", len(staff)) }
+}
+
+func TestStaff_Create_Admin(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	s := Staff{Name: "New", FullName: "Teacher New", Role: "Teacher", Salary: 3000, JoinDate: "2026-03-01", Status: "Active"}
+	w := doRequest(r, "POST", "/api/staff", token, s)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d: %s", w.Code, w.Body.String()) }
+}
+
+// ── User management tests ─────────────────────────────────────────────────────
+
+func TestUsers_List_Admin(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	w := doRequest(r, "GET", "/api/users", token, nil)
+	if w.Code != http.StatusOK { t.Fatalf("expected 200 got %d", w.Code) }
+}
+
+func TestUsers_List_Parent_Forbidden(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getParentToken(t, r)
+	w := doRequest(r, "GET", "/api/users", token, nil)
+	if w.Code != http.StatusForbidden { t.Fatalf("expected 403 got %d", w.Code) }
+}
+
+func TestUsers_Create_And_Login(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+
+	w := doRequest(r, "POST", "/api/users", token, userCreateReq{
+		Email: "newparent@test.com", Password: "testpass123", Role: "parent", Name: "New Parent",
+	})
+	if w.Code != http.StatusCreated { t.Fatalf("create user: expected 201 got %d: %s", w.Code, w.Body.String()) }
+
+	// New user should be able to log in
+	w2 := doRequest(r, "POST", "/api/auth/login", "", map[string]string{"email": "newparent@test.com", "password": "testpass123"})
+	if w2.Code != http.StatusOK { t.Fatalf("new user login: expected 200 got %d", w2.Code) }
+}
+
+func TestUsers_DuplicateEmail_Returns409(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	// admin@studyhub.com already exists from seed
+	w := doRequest(r, "POST", "/api/users", token, userCreateReq{Email: "admin@studyhub.com", Password: "whatever", Role: "admin"})
+	if w.Code != http.StatusConflict { t.Fatalf("expected 409 got %d", w.Code) }
+}
+
+// ── Edge case & security tests ────────────────────────────────────────────────
+
+func TestXSS_InStudentName(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	// XSS payload in name — should be stored as-is (HTML escaping is frontend's job)
+	// but must not crash the server
+	s := Student{FirstName: "<script>alert(1)</script>", LastName: "Test", Status: "Active", EnrolledClasses: []string{}, Siblings: []string{}}
+	w := doRequest(r, "POST", "/api/students", token, s)
+	if w.Code >= 500 { t.Fatalf("XSS payload caused server error: %d", w.Code) }
+}
+
+func TestSQLInjection_InLogin(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	w := doRequest(r, "POST", "/api/auth/login", "", map[string]string{
+		"email":    "' OR '1'='1",
+		"password": "' OR '1'='1",
+	})
+	if w.Code == http.StatusOK { t.Fatal("SQL injection succeeded — critical security issue") }
+}
+
+func TestVeryLongInput(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	s := Student{
+		FirstName:       strings.Repeat("A", 10000),
+		LastName:        "Test",
+		Status:          "Active",
+		EnrolledClasses: []string{},
+		Siblings:        []string{},
+	}
+	w := doRequest(r, "POST", "/api/students", token, s)
+	if w.Code >= 500 { t.Fatalf("long input caused server crash: %d", w.Code) }
+}
+
+// ── Validation tests ──────────────────────────────────────────────────────────
+
+func TestLogin_InvalidEmailFormat(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	cases := []string{"notanemail", "@nodomain.com", "missing@", "spaces in@email.com", ""}
+	for _, email := range cases {
+		w := doRequest(r, "POST", "/api/auth/login", "", map[string]string{"email": email, "password": "admin123"})
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("email %q: expected 400 got %d", email, w.Code)
+		}
+	}
+}
+
+func TestLogin_EmptyPassword(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	w := doRequest(r, "POST", "/api/auth/login", "", map[string]string{"email": "admin@studyhub.com", "password": ""})
+	if w.Code != http.StatusBadRequest { t.Fatalf("expected 400 got %d", w.Code) }
+}
+
+func TestCreateUser_InvalidEmail(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	w := doRequest(r, "POST", "/api/users", token, userCreateReq{Email: "bademail", Password: "validpass123", Role: "parent"})
+	if w.Code != http.StatusBadRequest { t.Fatalf("expected 400 got %d", w.Code) }
+}
+
+func TestCreateUser_ShortPassword(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	cases := []string{"", "1", "short", "1234567"} // all under 8 chars
+	for _, pw := range cases {
+		w := doRequest(r, "POST", "/api/users", token, userCreateReq{Email: "valid@test.com", Password: pw, Role: "parent"})
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("password %q: expected 400 got %d", pw, w.Code)
+		}
+	}
+}
+
+func TestCreateUser_ExactlyEightChars_Allowed(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	w := doRequest(r, "POST", "/api/users", token, userCreateReq{Email: "eight@test.com", Password: "12345678", Role: "parent"})
+	if w.Code != http.StatusCreated { t.Fatalf("8-char password should be valid, got %d: %s", w.Code, w.Body.String()) }
+}
+
+func TestCreateUser_ValidEmailFormats(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	// These should all succeed
+	validEmails := []string{
+		"user@example.com",
+		"user+tag@example.co.uk",
+		"user.name@subdomain.domain.com",
+	}
+	for i, email := range validEmails {
+		w := doRequest(r, "POST", "/api/users", token, userCreateReq{
+			Email: email, Password: "validpass123", Role: "parent", Name: fmt.Sprintf("User %d", i),
+		})
+		if w.Code != http.StatusCreated {
+			t.Errorf("valid email %q: expected 201 got %d: %s", email, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestConcurrentRequests(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	done := make(chan bool, 20)
+	for i := 0; i < 20; i++ {
+		go func(i int) {
+			w := doRequest(r, "GET", "/api/snapshot", token, nil)
+			if w.Code != http.StatusOK {
+				t.Errorf("concurrent request %d failed: %d", i, w.Code)
+			}
+			done <- true
+		}(i)
+	}
+	for i := 0; i < 20; i++ { <-done }
+}

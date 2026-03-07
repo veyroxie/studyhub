@@ -1,0 +1,24 @@
+# Secrets — never commit
+backend/.env
+*.env
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
+# Go build output
+backend/studyhub
+
+# Python
+__pycache__/
+*.pyc
+services/analytics/.venv/
+services/analytics/venv/
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db

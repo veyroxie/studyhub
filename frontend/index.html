@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Hub — Education Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-slate-50">
+
+<!-- ========================
+     LOGIN SCREEN
+========================= -->
+<div id="login-screen" class="fixed inset-0 z-[100] bg-slate-900 flex items-center justify-center p-4">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-8">
+      <div class="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4">🦉</div>
+      <h1 class="text-2xl font-bold text-white">Study Hub</h1>
+      <p class="text-slate-400 text-sm mt-1">Education Management System</p>
+    </div>
+
+    <div class="bg-slate-800 rounded-2xl p-6 shadow-2xl border border-slate-700">
+      <div id="login-error" class="hidden mb-4 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm"></div>
+      <form id="login-form" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-1.5">Email</label>
+          <input id="login-email" type="email" placeholder="admin@studyhub.com" required
+            class="w-full px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
+          <input id="login-password" type="password" placeholder="••••••••" required
+            class="w-full px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm">
+        </div>
+        <button type="submit" id="login-btn"
+          class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl transition-colors text-sm">
+          Sign In
+        </button>
+      </form>
+
+      <!-- Dev quick-login buttons -->
+      <div class="mt-5 pt-4 border-t border-slate-700">
+        <p class="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">Dev quick login</p>
+        <div class="flex gap-2">
+          <button onclick="App.Login.quickLogin('admin@studyhub.com','admin123')"
+            class="flex-1 py-1.5 text-xs bg-blue-900/50 hover:bg-blue-900 text-blue-300 rounded-lg border border-blue-700/50 font-medium transition-colors">
+            Admin
+          </button>
+          <button onclick="App.Login.quickLogin('seeduser27@example.com','parent123')"
+            class="flex-1 py-1.5 text-xs bg-emerald-900/50 hover:bg-emerald-900 text-emerald-300 rounded-lg border border-emerald-700/50 font-medium transition-colors">
+            Parent
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-center text-xs text-slate-600 mt-4">The Study Hub &copy; 2026</p>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+<div class="flex h-screen overflow-hidden">
+
+  <!-- ========================
+       SIDEBAR
+  ========================= -->
+  <aside class="w-60 bg-slate-900 text-white flex flex-col shrink-0">
+    <!-- Logo -->
+    <div class="px-5 py-4 border-b border-slate-700/60">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center text-lg font-bold shrink-0">🦉</div>
+        <div>
+          <div class="font-bold text-base leading-tight">Study Hub</div>
+          <div class="text-xs text-slate-400">Education Manager</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nav -->
+    <nav class="flex-1 p-3 space-y-0.5 overflow-y-auto">
+      <button data-page="calendar"      class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path stroke-linecap="round" d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span>Schedule</span>
+      </button>
+      <button data-page="communication" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        <span>Announcements</span>
+      </button>
+      <button data-page="students"      class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path stroke-linecap="round" d="M23 21v-2a4 4 0 00-3-3.87m-4-12a4 4 0 010 7.75"/></svg>
+        <span>Students</span>
+      </button>
+      <button data-page="billing"       class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><path stroke-linecap="round" d="M1 10h22"/></svg>
+        <span>Billing</span>
+      </button>
+      <button data-page="staff"         class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Staff</span>
+      </button>
+      <button data-page="attendance"    class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path stroke-linecap="round" d="M9 12l2 2 4-4"/></svg>
+        <span>Attendance</span>
+      </button>
+      <button data-page="analytics"     class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        <span>Analytics</span>
+      </button>
+    </nav>
+
+    <!-- Data controls (admin only) -->
+    <div class="p-3 border-t border-slate-700/60 space-y-1">
+      <div class="flex gap-1">
+        <button id="export-btn" title="Export data to JSON" class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">Export</button>
+        <button id="import-btn" title="Import data from JSON" class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">Import</button>
+        <button id="reset-btn" title="Reset to default data" class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-slate-700 hover:bg-red-800 text-slate-300 transition-colors">Reset</button>
+      </div>
+      <button id="logout-btn" class="w-full text-xs px-2 py-1.5 rounded-lg bg-slate-700 hover:bg-red-900 text-slate-300 hover:text-red-300 transition-colors">Sign Out</button>
+    </div>
+  </aside>
+
+  <!-- ========================
+       MAIN AREA
+  ========================= -->
+  <div class="flex-1 flex flex-col min-h-0 min-w-0">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-100 px-6 py-3 flex items-center justify-between shrink-0 gap-4">
+      <div id="page-title" class="text-base font-semibold text-slate-700"></div>
+
+      <div class="flex items-center gap-3">
+        <!-- Parent selector (visible in client mode) -->
+        <div id="parent-selector-wrap" class="hidden flex items-center gap-2">
+          <span class="text-xs text-slate-500 font-medium whitespace-nowrap">Viewing as:</span>
+          <select id="parent-select" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-slate-700 bg-white"></select>
+        </div>
+
+        <!-- Role toggle -->
+        <button id="role-toggle-btn" class="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-lg border-2 transition-all bg-blue-50 text-blue-700 border-blue-300">
+          Admin
+        </button>
+
+        <div class="w-px h-5 bg-slate-200"></div>
+
+        <!-- Date -->
+        <div class="text-xs text-slate-400 whitespace-nowrap">Mar 7, 2026</div>
+      </div>
+    </header>
+
+    <!-- Page content -->
+    <main class="flex-1 overflow-auto p-6">
+      <div id="calendar-page"      class="page"></div>
+      <div id="communication-page" class="page"></div>
+      <div id="students-page"      class="page"></div>
+      <div id="billing-page"       class="page"></div>
+      <div id="staff-page"         class="page"></div>
+      <div id="attendance-page"    class="page"></div>
+      <div id="analytics-page"     class="page"></div>
+    </main>
+  </div>
+</div>
+
+<!-- Modal overlay -->
+<div id="modal-overlay" class="fixed inset-0 bg-black/50 hidden z-50 items-center justify-center p-4">
+  <div id="modal-content" class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"></div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast" class="fixed bottom-6 right-6 z-50 hidden"></div>
+
+<!-- DEV TOOLBAR — floating bottom-left, remove in production -->
+<div id="dev-toolbar" class="fixed bottom-4 left-4 z-50 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700 overflow-hidden" style="min-width:260px">
+  <div class="flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-slate-700">
+    <div class="flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+      <span class="text-xs font-bold text-amber-400 tracking-widest uppercase">Dev Mode</span>
+    </div>
+    <button onclick="document.getElementById('dev-toolbar-body').classList.toggle('hidden')" class="text-slate-400 hover:text-white text-lg leading-none px-1">⌃</button>
+  </div>
+  <div id="dev-toolbar-body" class="p-4 space-y-3">
+    <!-- Role switcher -->
+    <div>
+      <div class="text-xs text-slate-400 mb-2 font-medium">View as</div>
+      <div class="flex gap-2">
+        <button id="dev-admin-btn" onclick="App.Dev.setRole('admin')"
+          class="flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all bg-blue-600 text-white border-blue-500">
+          Admin
+        </button>
+        <button id="dev-client-btn" onclick="App.Dev.setRole('client')"
+          class="flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all border-slate-600 text-slate-400 hover:bg-slate-700">
+          Parent
+        </button>
+      </div>
+    </div>
+    <!-- Parent picker (shown when in client mode) -->
+    <div id="dev-parent-wrap" class="hidden">
+      <div class="text-xs text-slate-400 mb-2 font-medium">Parent account</div>
+      <select id="dev-parent-select" onchange="App.Dev.setParent(this.value)"
+        class="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:ring-1 focus:ring-blue-500">
+      </select>
+    </div>
+    <!-- Current state display -->
+    <div class="border-t border-slate-700 pt-3">
+      <div id="dev-status" class="text-xs text-slate-400 leading-relaxed"></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /app -->
+
+<!-- Scripts — order matters -->
+<script src="js/data.js"></script>
+<script src="js/store.js"></script>
+<script src="js/api.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/router.js"></script>
+<script src="js/modules/calendar.js"></script>
+<script src="js/modules/communication.js"></script>
+<script src="js/modules/students.js"></script>
+<script src="js/modules/billing.js"></script>
+<script src="js/modules/staff.js"></script>
+<script src="js/modules/attendance.js"></script>
+<script src="js/modules/analytics.js"></script>
+<script src="js/main.js"></script>
+
+</body>
+</html>

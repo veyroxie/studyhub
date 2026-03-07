@@ -1,0 +1,63 @@
+# StudyHub — full stack in one command: docker compose up
+#
+# Services:
+#   api       — Go REST API + frontend static files  (port 8080)
+#   analytics — Python FastAPI microservice          (port 8001, internal only)
+#   db        — PostgreSQL (for production migration; SQLite used in dev)
+
+services:
+
+  # ── Go API ─────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DB_PATH: /data/studyhub.db
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:8080}
+      ANALYTICS_SERVICE_URL: http://analytics:8001
+    volumes:
+      - studyhub_data:/data
+    depends_on:
+      analytics:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Python Analytics Microservice ──────────────────────────────────────────
+  analytics:
+    build:
+      context: services/analytics
+      dockerfile: Dockerfile
+    expose:
+      - "8001"   # internal only — not exposed to host
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  # ── PostgreSQL (production upgrade path) ───────────────────────────────────
+  # Uncomment when you're ready to migrate from SQLite to Postgres.
+  # Update Go code to use lib/pq or pgx driver.
+  #
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_DB: studyhub
+  #     POSTGRES_USER: studyhub
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   restart: unless-stopped
+
+volumes:
+  studyhub_data:
+  # postgres_data:

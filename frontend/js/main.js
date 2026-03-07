@@ -1,0 +1,288 @@
+(function() {
+  window.App = window.App || {};
+
+  // ── Login ─────────────────────────────────────────────────────────────────
+  App.Login = {
+    show(msg) {
+      const errEl = document.getElementById('login-error');
+      if (errEl && msg) { errEl.textContent = msg; errEl.classList.remove('hidden'); }
+      document.getElementById('login-screen').classList.remove('hidden');
+      document.getElementById('app').classList.add('hidden');
+    },
+    hide() {
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+    },
+    async quickLogin(email, password) {
+      await App.Login._doLogin(email, password);
+    },
+    async _doLogin(email, password) {
+      const btn = document.getElementById('login-btn');
+      const errEl = document.getElementById('login-error');
+      if (btn) { btn.textContent = 'Signing in...'; btn.disabled = true; }
+      errEl.classList.add('hidden');
+      try {
+        const data = await App.Api.login(email, password);
+        App.currentRole = data.role === 'admin' ? 'admin' : 'client';
+        sessionStorage.setItem('sh_role', App.currentRole);
+        if (data.role === 'parent') {
+          App.clientParent = data.email;
+          sessionStorage.setItem('sh_parent', data.email);
+        }
+        // Load all data from backend
+        await App.Api.loadSnapshot();
+        App.Login.hide();
+        applyRole();
+        App.Dev.init();
+        App.Router.navigate('calendar');
+      } catch(err) {
+        errEl.textContent = err.message || 'Login failed';
+        errEl.classList.remove('hidden');
+      } finally {
+        if (btn) { btn.textContent = 'Sign In'; btn.disabled = false; }
+      }
+    }
+  };
+
+  // Role state
+  App.currentRole = sessionStorage.getItem('sh_role') || 'admin';
+  App.clientParent = sessionStorage.getItem('sh_parent') || '';
+
+  function applyRole() {
+    const isAdmin = App.currentRole === 'admin';
+    const isClient = !isAdmin;
+
+    // Toggle role button appearance
+    const roleBtn = document.getElementById('role-toggle-btn');
+    if (roleBtn) {
+      roleBtn.textContent = isAdmin ? 'Admin' : 'Parent View';
+      roleBtn.className = 'flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-lg border-2 transition-all '
+        + (isAdmin ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-emerald-50 text-emerald-700 border-emerald-300');
+    }
+
+    // Parent selector visibility
+    const parentSel = document.getElementById('parent-selector-wrap');
+    if (parentSel) parentSel.classList.toggle('hidden', isAdmin);
+
+    // Nav items visibility
+    const adminOnlyPages = ['staff', 'analytics'];
+    adminOnlyPages.forEach(function(page) {
+      const btn = document.querySelector('.nav-btn[data-page="' + page + '"]');
+      if (btn) btn.closest('li') ? btn.closest('li').classList.toggle('hidden', isClient) : btn.classList.toggle('hidden', isClient);
+    });
+
+    // If currently on an admin-only page, redirect to calendar
+    const current = App.Router.current();
+    if (isClient && adminOnlyPages.indexOf(current) > -1) {
+      App.Router.navigate('calendar');
+    } else if (current) {
+      App.Router.refresh();
+    }
+  }
+
+  function toggleRole() {
+    App.currentRole = App.currentRole === 'admin' ? 'client' : 'admin';
+    sessionStorage.setItem('sh_role', App.currentRole);
+    applyRole();
+    App.Utils.showToast('Switched to ' + (App.currentRole === 'admin' ? 'Admin' : 'Parent') + ' view', 'info');
+  }
+
+  function onParentChange(val) {
+    App.clientParent = val;
+    sessionStorage.setItem('sh_parent', val);
+    App.Router.refresh();
+  }
+
+  function exportData() {
+    App.Store.exportJSON();
+    App.Utils.showToast('Data exported!', 'success');
+  }
+
+  function importData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const ok = App.Store.importJSON(ev.target.result);
+        if (ok) {
+          App.Utils.showToast('Data imported successfully!', 'success');
+          App.Router.refresh();
+        } else {
+          App.Utils.showToast('Import failed — invalid file format', 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
+  function resetData() {
+    if (!confirm('Reset all data to defaults? This cannot be undone.')) return;
+    App.Store.reset();
+    App.Utils.showToast('Data reset to defaults', 'info');
+    App.Router.refresh();
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    // Register all modules
+    App.Router.register('calendar',      App.Calendar);
+    App.Router.register('communication', App.Communication);
+    App.Router.register('students',      App.Students);
+    App.Router.register('billing',       App.Billing);
+    App.Router.register('staff',         App.Staff);
+    App.Router.register('attendance',    App.Attendance);
+    App.Router.register('analytics',     App.Analytics);
+
+    // Init router (sets up nav button click handlers)
+    App.Router.init();
+
+    // Populate parent selector
+    const parentSelect = document.getElementById('parent-select');
+    if (parentSelect) {
+      const { students } = App.Store.get();
+      const uniqueParents = {};
+      students.forEach(function(s) { uniqueParents[s.contact] = s.parentName; });
+      parentSelect.innerHTML = Object.keys(uniqueParents).map(function(email) {
+        return '<option value="' + email + '">' + uniqueParents[email] + '</option>';
+      }).join('');
+      if (App.clientParent) parentSelect.value = App.clientParent;
+      else App.clientParent = parentSelect.value || Object.keys(uniqueParents)[0] || '';
+    }
+
+    // Wire up global actions
+    const roleBtn = document.getElementById('role-toggle-btn');
+    if (roleBtn) roleBtn.addEventListener('click', toggleRole);
+
+    const parentSel = document.getElementById('parent-select');
+    if (parentSel) parentSel.addEventListener('change', function() { onParentChange(this.value); });
+
+    document.getElementById('export-btn') && document.getElementById('export-btn').addEventListener('click', exportData);
+    document.getElementById('import-btn') && document.getElementById('import-btn').addEventListener('click', importData);
+    document.getElementById('reset-btn') && document.getElementById('reset-btn').addEventListener('click', resetData);
+    document.getElementById('logout-btn') && document.getElementById('logout-btn').addEventListener('click', function() {
+      App.Api.logout().then(function() { App.Login.show(); });
+    });
+
+    // Listen for parent notifications in client mode
+    try {
+      const ch = new BroadcastChannel('studyhub_notifs');
+      ch.onmessage = function(e) {
+        if (App.currentRole === 'client') {
+          const data = e.data;
+          const msg = data.type === 'CHECK_IN'
+            ? data.student + ' arrived at class at ' + App.Utils.formatTime(data.time)
+            : data.student + ' has left class at ' + App.Utils.formatTime(data.time);
+          App.Utils.showToast('📱 ' + msg, data.type === 'CHECK_IN' ? 'info' : 'success');
+        }
+      };
+    } catch(e) {}
+
+    // Wire login form
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+      loginForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+        App.Login._doLogin(email, password);
+      });
+    }
+
+    // Check if already logged in (reads HttpOnly cookie server-side)
+    App.Api.isLoggedIn().then(function(loggedIn) {
+      if (loggedIn) {
+        const user = App.Api.currentUser();
+        App.currentRole = (user && user.role === 'admin') ? 'admin' : 'client';
+        if (user && user.role === 'parent') App.clientParent = user.email;
+        return App.Api.loadSnapshot().then(function() {
+          App.Login.hide();
+          App.Dev.init();
+          applyRole();
+          App.Router.navigate('calendar');
+          App.Api.connectWS();
+        });
+      } else {
+        App.Login.show();
+      }
+    });
+  });
+
+  // ========================
+  // DEV TOOLBAR
+  // ========================
+  App.Dev = {
+    setRole: function(role) {
+      App.currentRole = role;
+      sessionStorage.setItem('sh_role', role);
+      applyRole();
+      App.Dev._update();
+      App.Utils.showToast('Dev: switched to ' + role + ' view', 'info');
+    },
+    setParent: function(email) {
+      App.clientParent = email;
+      sessionStorage.setItem('sh_parent', email);
+      const headerSel = document.getElementById('parent-select');
+      if (headerSel) headerSel.value = email;
+      App.Router.refresh();
+      App.Dev._update();
+    },
+    _update: function() {
+      const isAdmin = App.currentRole === 'admin';
+
+      // Role buttons
+      const adminBtn = document.getElementById('dev-admin-btn');
+      const clientBtn = document.getElementById('dev-client-btn');
+      if (adminBtn) {
+        adminBtn.className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all '
+          + (isAdmin ? 'bg-blue-600 text-white border-blue-500' : 'border-slate-600 text-slate-400 hover:bg-slate-700');
+      }
+      if (clientBtn) {
+        clientBtn.className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all '
+          + (!isAdmin ? 'bg-emerald-600 text-white border-emerald-500' : 'border-slate-600 text-slate-400 hover:bg-slate-700');
+      }
+
+      // Parent picker visibility
+      const wrap = document.getElementById('dev-parent-wrap');
+      if (wrap) wrap.classList.toggle('hidden', isAdmin);
+
+      // Status line
+      const statusEl = document.getElementById('dev-status');
+      if (statusEl) {
+        if (isAdmin) {
+          statusEl.innerHTML = '<span class="text-blue-400 font-semibold">Admin</span> — full access';
+        } else {
+          const { students } = App.Store.get();
+          const myStudents = students.filter(function(s) { return s.contact === App.clientParent; });
+          const names = myStudents.map(function(s) { return s.firstName; }).join(', ');
+          statusEl.innerHTML = '<span class="text-emerald-400 font-semibold">Parent</span>: ' + (App.clientParent || '—')
+            + '<br>Children: <span class="text-white">' + (names || 'none') + '</span>';
+        }
+      }
+    },
+    init: function() {
+      const { students } = App.Store.get();
+      const uniqueParents = {};
+      students.forEach(function(s) { uniqueParents[s.contact] = s.parentName; });
+
+      const devSel = document.getElementById('dev-parent-select');
+      if (devSel) {
+        devSel.innerHTML = Object.keys(uniqueParents).map(function(email) {
+          return '<option value="' + email + '">' + uniqueParents[email] + ' (' + email + ')</option>';
+        }).join('');
+        if (App.clientParent) devSel.value = App.clientParent;
+        else App.clientParent = Object.keys(uniqueParents)[0] || '';
+      }
+      App.Dev._update();
+    }
+  };
+
+  // Expose globally for HTML onclick handlers
+  App.toggleRole = toggleRole;
+  App.exportData = exportData;
+  App.importData = importData;
+  App.resetData = resetData;
+})();
