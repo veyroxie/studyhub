@@ -167,10 +167,11 @@ body.theme-c header { display: none !important; }
    PAGE TRANSITIONS
    ============================== */
 .page.active {
-  animation: pageIn 0.22s cubic-bezier(0.4,0,0.2,1);
+  display: block;
+  animation: pageIn 0.18s ease-out;
 }
 @keyframes pageIn {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(5px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
