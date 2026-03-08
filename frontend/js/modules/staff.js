@@ -10,9 +10,15 @@
       +   '<h1 class="text-2xl font-bold text-slate-800">Staff</h1>'
       +   (isAdmin ? '<button onclick="App.Staff._addModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Add Staff</button>' : '')
       + '</div>'
-      + '<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">'
-      + staff.map(function(s) { return _staffCard(s, classes, isAdmin); }).join('')
-      + '</div>';
+      + (staff.length === 0
+        ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">' + App.Utils.emptyState(
+            'No staff yet',
+            'Add your first staff member to get started.',
+            isAdmin ? '<button onclick="App.Staff._addModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Staff</button>' : ''
+          ) + '</div>'
+        : '<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">'
+          + staff.map(function(s) { return _staffCard(s, classes, isAdmin); }).join('')
+          + '</div>');
   }
 
   function _staffCard(s, classes, isAdmin) {

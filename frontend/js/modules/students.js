@@ -69,8 +69,13 @@
       +         '<th class="th">Parent / Contact</th><th class="th">Status</th><th class="th">Action</th>'
       +       '</tr></thead>'
       +       '<tbody class="divide-y divide-slate-50">'
-      +       (filtered.length === 0 ? '<tr><td colspan="' + colCount + '" class="px-6 py-12 text-center text-slate-400 text-sm">No students found</td></tr>' : '')
-      +       filtered.map(function(s) {
+      +       (filtered.length === 0
+          ? '<tr><td colspan="' + colCount + '" style="padding:0">' + App.Utils.emptyState(
+              (_search || _statusFilter !== 'All') ? 'No students match your filters' : 'No students yet',
+              (_search || _statusFilter !== 'All') ? 'Try adjusting your search or status filter.' : 'Add your first student to get started.',
+              (isAdmin && !(_search || _statusFilter !== 'All')) ? '<button onclick="App.Students._addModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Student</button>' : (_search || _statusFilter !== 'All') ? '<button onclick="App.Students._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer">Clear Filters</button>' : ''
+            ) + '</td></tr>'
+          : filtered.map(function(s) {
               const { classes } = App.Store.get();
               const enrolledNames = s.enrolledClasses.map(function(cid) {
                 const c = classes.find(function(x) { return x.id === cid; });
@@ -91,7 +96,7 @@
                 + '<td class="td">' + App.Utils.statusBadge(s.status) + '</td>'
                 + '<td class="td"><button onclick="App.Students._viewModal(\'' + s.id + '\')" class="text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">View</button></td>'
                 + '</tr>';
-            }).join('')
+            }).join(''))
       +       '</tbody>'
       +     '</table>'
       +   '</div>'
@@ -172,6 +177,7 @@
 
   function _onSearch(val) { _search = val; App.Router.refresh(); }
   function _onFilter(val) { _statusFilter = val; App.Router.refresh(); }
+  function _clearFilters() { _search = ''; _statusFilter = 'All'; App.Router.refresh(); }
 
   function _viewModal(studentId) {
     const { students, classes, invoices } = App.Store.get();
@@ -507,6 +513,7 @@
     _toggleSelect: _toggleSelect,
     _bulkDeselect: _bulkDeselect,
     _bulkMessage: _bulkMessage,
-    _bulkSendMessage: _bulkSendMessage
+    _bulkSendMessage: _bulkSendMessage,
+    _clearFilters: _clearFilters
   };
 })();

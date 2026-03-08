@@ -28,7 +28,11 @@
       + '</div>'
 
       + (filtered.length === 0
-        ? '<div class="bg-white rounded-xl border border-dashed border-slate-200 p-12 text-center"><p class="text-slate-400">No announcements yet</p></div>'
+        ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">' + App.Utils.emptyState(
+            _typeFilter !== 'All' ? 'No announcements match this filter' : 'No announcements yet',
+            _typeFilter !== 'All' ? 'Try selecting a different type filter.' : 'Post your first announcement to reach parents.',
+            (isAdmin && _typeFilter === 'All') ? '<button onclick="App.Communication._newModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ New Announcement</button>' : ''
+          ) + '</div>'
         : '<div class="space-y-3">' + filtered.map(function(ann) { return _annCard(ann, isAdmin); }).join('') + '</div>'
       );
   }

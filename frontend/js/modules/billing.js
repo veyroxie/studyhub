@@ -117,8 +117,13 @@
       +         (isAdmin ? '<th class="th w-10"></th>' : '')
       +       '</tr></thead>'
       +       '<tbody class="divide-y divide-slate-50">'
-      +       (filtered.length === 0 ? '<tr><td colspan="' + colCount + '" class="px-6 py-12 text-center text-slate-400 text-sm">No invoices found</td></tr>' : '')
-      +       filtered.map(function(inv) {
+      +       (filtered.length === 0
+          ? '<tr><td colspan="' + colCount + '" style="padding:0">' + App.Utils.emptyState(
+              (_filter !== 'All' || _studentFilter) ? 'No invoices match this filter' : 'No invoices yet',
+              (_filter !== 'All' || _studentFilter) ? 'Try selecting a different filter or student.' : 'Create your first invoice to start tracking payments.',
+              (isAdmin && _filter === 'All' && !_studentFilter) ? '<button onclick="App.Billing._createModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Create Invoice</button>' : ''
+            ) + '</td></tr>'
+          : filtered.map(function(inv) {
               const stu = students.find(function(s) { return s.id === inv.studentId; });
               const stuName = stu ? stu.firstName + ' ' + stu.lastName : inv.studentId;
               const isNearDue = inv.status === 'Unpaid' && new Date(inv.dueDate) <= in7 && new Date(inv.dueDate) >= today;
@@ -146,7 +151,7 @@
                   + '</div>'
                   + '</td>' : '')
                 + '</tr>';
-            }).join('')
+            }).join(''))
       +       '</tbody>'
       +     '</table>'
       +   '</div>'

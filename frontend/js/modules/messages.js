@@ -61,7 +61,7 @@
       +   '<p style="font-size:0.8rem;font-weight:700;color:#111;margin:0">Messages</p>'
       +   '<p style="font-size:0.7rem;color:#94a3b8;margin:2px 0 0">' + threads.length + ' conversations</p>'
       + '</div>'
-      + '<div style="flex:1;overflow-y:auto">' + (items || '<p style="padding:1.5rem;text-align:center;font-size:0.82rem;color:#94a3b8">No parents yet</p>') + '</div>'
+      + '<div style="flex:1;overflow-y:auto">' + (items || App.Utils.emptyState('No conversations yet', 'Students need to be added before messages appear.', '')) + '</div>'
       + '</div>';
   }
 
@@ -98,7 +98,7 @@
 
     return '<div style="flex:1;display:flex;flex-direction:column;background:#fff;min-width:0">'
       + header
-      + (parent ? (threadMsgs.length === 0 ? bubbles : bubbles) : '<div style="flex:1;display:flex;align-items:center;justify-content:center"><p style="color:#94a3b8;font-size:0.85rem">Select a conversation</p></div>')
+      + (parent ? bubbles : '<div style="flex:1">' + App.Utils.emptyState('No conversation selected', 'Select a conversation from the list to get started.', '') + '</div>')
       + compose
       + '</div>';
   }
