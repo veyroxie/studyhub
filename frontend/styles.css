@@ -216,6 +216,29 @@ body.theme-b header {
 }
 
 /* ==============================
+   MESSAGES PAGE
+   ============================== */
+#messages-page .msg-thread-panel {
+  border-right: 1px solid #f0ede8;
+}
+#msg-scroll {
+  scroll-behavior: smooth;
+}
+#msg-input:focus {
+  border-color: var(--gold) !important;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(201,162,39,0.12);
+}
+
+/* ==============================
+   CALENDAR MONTH VIEW
+   ============================== */
+.cal-month-table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+.cal-month-cell  { border: 1px solid #f0ede8; vertical-align: top; padding: 0.35rem; background: #fff; min-height: 90px; }
+.cal-month-cell.other-month { background: #fafaf8; }
+.cal-month-cell.today       { background: #fef9ec; }
+
+/* ==============================
    PRINT STYLES (Billing)
    ============================== */
 @media print {
