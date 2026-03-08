@@ -85,11 +85,11 @@
     },
     colorClasses(color) {
       const map = {
-        green:  { bg:'bg-emerald-100', border:'border-emerald-400', text:'text-emerald-800', dot:'bg-emerald-500' },
-        teal:   { bg:'bg-teal-100', border:'border-teal-400', text:'text-teal-800', dot:'bg-teal-500' },
-        orange: { bg:'bg-orange-100', border:'border-orange-400', text:'text-orange-800', dot:'bg-orange-500' },
-        blue:   { bg:'bg-blue-100', border:'border-blue-400', text:'text-blue-800', dot:'bg-blue-500' },
-        purple: { bg:'bg-purple-100', border:'border-purple-400', text:'text-purple-800', dot:'bg-purple-500' }
+        green:  { bg:'bg-emerald-100', border:'border-emerald-400', text:'text-emerald-800', dot:'bg-emerald-500', pill:'bg-emerald-100 text-emerald-800' },
+        teal:   { bg:'bg-teal-100',    border:'border-teal-400',    text:'text-teal-800',    dot:'bg-teal-500',    pill:'bg-teal-100 text-teal-800'    },
+        orange: { bg:'bg-orange-100',  border:'border-orange-400',  text:'text-orange-800',  dot:'bg-orange-500',  pill:'bg-orange-100 text-orange-800'  },
+        blue:   { bg:'bg-blue-100',    border:'border-blue-400',    text:'text-blue-800',    dot:'bg-blue-500',    pill:'bg-blue-100 text-blue-800'    },
+        purple: { bg:'bg-purple-100',  border:'border-purple-400',  text:'text-purple-800',  dot:'bg-purple-500',  pill:'bg-purple-100 text-purple-800'  }
       };
       return map[color] || map.blue;
     },

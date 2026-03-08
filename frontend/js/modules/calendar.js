@@ -22,6 +22,7 @@
   }
 
   let _weekStart = getWeekStart(new Date());
+  let _view = 'week'; // 'week' or 'month'
 
   function render(container) {
     const { classes, staff, students } = App.Store.get();
@@ -54,15 +55,23 @@
     const avgFill = classes.reduce(function(s, c) { return s + (c.enrolled / c.capacity); }, 0) / (classes.length || 1);
     const fullClasses = classes.filter(function(c) { return c.enrolled >= c.capacity; }).length;
 
-    container.innerHTML = ''
+    const viewToggle = '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px">'
+      + '<button onclick="App.Calendar._setView(\'week\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='week'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='week'?'#0a0a0a':'#94a3b8') + '">Week</button>'
+      + '<button onclick="App.Calendar._setView(\'month\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='month'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='month'?'#0a0a0a':'#94a3b8') + '">Month</button>'
+      + '</div>';
+
+    const headerHtml = ''
       + '<div class="flex items-center justify-between mb-6">'
       +   '<div>'
       +     '<h1 class="text-2xl font-bold text-slate-800">Class Schedule</h1>'
       +     '<p class="text-sm text-slate-500 mt-0.5">Week of ' + fmtShortDate(_weekStart) + ' – ' + fmtShortDate(weekDates[6]) + '</p>'
       +   '</div>'
       +   '<div class="flex items-center gap-3">'
-      +     '<button onclick="App.Calendar._prevWeek()" class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">&#8592; Prev</button>'
-      +     '<button onclick="App.Calendar._nextWeek()" class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">Next &#8594;</button>'
+      +     (_view === 'week'
+            ? '<button onclick="App.Calendar._prevWeek()" class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">&#8592; Prev</button>'
+            + '<button onclick="App.Calendar._nextWeek()" class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">Next &#8594;</button>'
+            : '')
+      +     viewToggle
       +     (isAdmin ? '<button onclick="App.Calendar._addClassModal()" class="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Add Class</button>' : '')
       +   '</div>'
       + '</div>'
@@ -76,7 +85,14 @@
       + _statCard('Full Classes', fullClasses, 'text-red-500')
       + _statCard('Avg Fill Rate', Math.round(avgFill * 100) + '%', 'text-emerald-600')
       + _statCard('Active Staff', staff.length, 'text-purple-600')
-      + '</div>'
+      + '</div>';
+
+    if (_view === 'month') {
+      container.innerHTML = headerHtml + _renderMonthView(classes, staff, enrolledClassIds, isAdmin);
+      return;
+    }
+
+    container.innerHTML = headerHtml
 
       // Calendar grid with vertical dividers between columns
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">'
@@ -99,6 +115,67 @@
               + '</div>';
           }).join('')
       +   '</div>'
+      + '</div>';
+  }
+
+  function _renderMonthView(classes, staff, enrolledClassIds, isAdmin) {
+    var today = new Date();
+    var year  = _weekStart.getFullYear();
+    var month = _weekStart.getMonth();
+    // First day of month
+    var firstDay = new Date(year, month, 1);
+    // Start grid from the Monday on or before firstDay
+    var startDow = firstDay.getDay(); // 0=Sun
+    var gridStart = new Date(firstDay);
+    gridStart.setDate(firstDay.getDate() - (startDow === 0 ? 6 : startDow - 1));
+
+    var DAYS_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    var DAY_NAMES  = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
+    var cells = '';
+    var d = new Date(gridStart);
+    var weeksShown = 0;
+    while (weeksShown < 6) {
+      var weekCells = '';
+      for (var di = 0; di < 7; di++) {
+        var dayName  = DAY_NAMES[di];
+        var isToday  = d.toDateString() === today.toDateString();
+        var inMonth  = d.getMonth() === month;
+        var dayCls   = classes.filter(function(c) {
+          if (c.day !== dayName) return false;
+          if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
+          return true;
+        });
+        weekCells += '<td style="border:1px solid #f0ede8;vertical-align:top;width:' + (100/7) + '%;min-height:90px;padding:0.35rem;background:' + (!inMonth ? '#fafaf8' : '#fff') + '">'
+          + '<div style="font-size:0.72rem;font-weight:' + (isToday ? '800' : '500') + ';color:' + (isToday ? 'var(--gold, #f59e0b)' : inMonth ? '#374151' : '#cbd5e1') + ';margin-bottom:3px;width:1.4rem;height:1.4rem;display:flex;align-items:center;justify-content:center;border-radius:50%;background:' + (isToday ? 'var(--gold-dim, #fef3c7)' : 'transparent') + '">' + d.getDate() + '</div>'
+          + dayCls.slice(0, 3).map(function(c) {
+              var colors = App.Utils.colorClasses(c.color);
+              return '<div style="font-size:0.65rem;font-weight:600;border-radius:4px;padding:1px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="' + colors.pill + '">' + App.Utils.formatTime(c.time) + ' ' + c.name + '</div>';
+            }).join('')
+          + (dayCls.length > 3 ? '<div style="font-size:0.63rem;color:#94a3b8">+' + (dayCls.length - 3) + ' more</div>' : '')
+          + '</td>';
+        d.setDate(d.getDate() + 1);
+      }
+      // Stop if we've passed the month and done at least 4 weeks
+      if (weeksShown >= 4 && d.getMonth() !== month) break;
+      cells += '<tr>' + weekCells + '</tr>';
+      weeksShown++;
+    }
+
+    var monthName = new Date(year, month, 1).toLocaleDateString('en-MY', { month:'long', year:'numeric' });
+
+    return '<div>'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
+      +   '<div style="display:flex;align-items:center;gap:0.5rem">'
+      +     '<button onclick="App.Calendar._prevMonth()" style="width:2rem;height:2rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center">‹</button>'
+      +     '<span style="font-size:0.95rem;font-weight:700;color:#111;min-width:160px;text-align:center">' + monthName + '</span>'
+      +     '<button onclick="App.Calendar._nextMonth()" style="width:2rem;height:2rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center">›</button>'
+      +   '</div>'
+      + '</div>'
+      + '<table style="width:100%;border-collapse:collapse;table-layout:fixed">'
+      +   '<thead><tr>' + DAYS_SHORT.map(function(d) { return '<th style="font-size:0.7rem;font-weight:600;color:#94a3b8;padding:0.4rem;text-align:center;border-bottom:1px solid #f0ede8">' + d + '</th>'; }).join('') + '</tr></thead>'
+      +   '<tbody>' + cells + '</tbody>'
+      + '</table>'
       + '</div>';
   }
 
@@ -141,6 +218,22 @@
     _weekStart = addDays(_weekStart, 7);
     App.Router.refresh();
   }
+
+  function _prevMonth() {
+    var d = new Date(_weekStart);
+    d.setMonth(d.getMonth() - 1);
+    _weekStart = d;
+    App.Router.refresh();
+  }
+
+  function _nextMonth() {
+    var d = new Date(_weekStart);
+    d.setMonth(d.getMonth() + 1);
+    _weekStart = d;
+    App.Router.refresh();
+  }
+
+  function _setView(v) { _view = v; App.Router.refresh(); }
 
   function _addClassModal() {
     App.Utils.showModal(
@@ -191,5 +284,5 @@
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal };
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth };
 })();

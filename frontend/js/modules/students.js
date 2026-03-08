@@ -133,6 +133,7 @@
       +   _infoRow('Branch', s.branch)
       +   _infoRow('Registered On', App.Utils.formatDate(s.registeredOn))
       +   (s.siblings && s.siblings.length ? _infoRow('Siblings', s.siblings.join(', ')) : '')
+      +   (s.emergency2Name ? _infoRow('Emergency Contact', s.emergency2Name + (s.emergency2Phone ? ' · ' + s.emergency2Phone : '')) : '')
       +   (s.notes ? _infoRow('Notes', s.notes) : '')
       +   '</div>'
       + '</div>'
@@ -200,6 +201,10 @@
       + ['Active','Inactive','New','Waitlisted'].map(function(st) { return '<option' + (s.status===st?' selected':'') + '>' + st + '</option>'; }).join('')
       + '</select></div>'
       + _multiClassField(s.enrolledClasses, state.classes)
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" value="' + (s.emergency2Name||'') + '" placeholder="e.g. Uncle David">')
+      + _field('Emergency Contact Phone', '<input name="emergency2Phone" class="form-input" value="' + (s.emergency2Phone||'') + '" placeholder="60123456789">')
+      + '</div>'
       + _field('Notes', '<textarea name="notes" class="form-input" rows="2">' + (s.notes||'') + '</textarea>')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -234,7 +239,9 @@
         phone: fd.get('phone'),
         status: fd.get('status'),
         enrolledClasses: newClasses,
-        notes: fd.get('notes')
+        notes: fd.get('notes'),
+        emergency2Name: fd.get('emergency2Name') || '',
+        emergency2Phone: fd.get('emergency2Phone') || ''
       });
 
       App.Store.set({ students: st.students.map(function(x) { return x.id === studentId ? updated : x; }), classes: newClasses2 });
@@ -264,6 +271,10 @@
       + _field('Phone (with country code)', '<input name="phone" class="form-input" placeholder="60123456789">')
       + '</div>'
       + _multiClassField([], classes)
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" placeholder="e.g. Uncle David">')
+      + _field('Emergency Contact Phone', '<input name="emergency2Phone" class="form-input" placeholder="60123456789">')
+      + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Student</button>'
@@ -291,7 +302,9 @@
         registeredOn: App.Utils.today(),
         enrolledClasses: selectedClasses,
         siblings: [],
-        notes: ''
+        notes: '',
+        emergency2Name: fd.get('emergency2Name') || '',
+        emergency2Phone: fd.get('emergency2Phone') || ''
       };
       const newClasses = state.classes.map(function(c) {
         return selectedClasses.indexOf(c.id) > -1 ? Object.assign({}, c, { enrolled: c.enrolled + 1 }) : c;

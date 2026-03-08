@@ -137,6 +137,7 @@
     App.Router.register('dashboard',     App.Dashboard);
     App.Router.register('calendar',      App.Calendar);
     App.Router.register('communication', App.Communication);
+    App.Router.register('messages',      App.Messages);
     App.Router.register('students',      App.Students);
     App.Router.register('billing',       App.Billing);
     App.Router.register('staff',         App.Staff);

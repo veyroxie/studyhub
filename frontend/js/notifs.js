@@ -28,6 +28,25 @@
     var in7   = new Date(now); in7.setDate(now.getDate() + 7);
     var isAdmin = App.currentRole === 'admin';
 
+    // Unread messages
+    var messages = state.messages || [];
+    var myUnread;
+    if (isAdmin) {
+      myUnread = messages.filter(function(m) { return m.fromRole === 'parent' && !m.read; });
+    } else {
+      myUnread = messages.filter(function(m) { return m.toParent === App.clientParent && m.fromRole === 'admin' && !m.read; });
+    }
+    if (myUnread.length > 0) {
+      notifs.push({
+        id: 'unread-msgs-' + myUnread.length,
+        type: 'billing',  // reuse billing icon
+        severity: 'info',
+        title: myUnread.length + ' unread message' + (myUnread.length !== 1 ? 's' : ''),
+        body: isAdmin ? 'From parents' : 'From Study Hub',
+        action: 'messages'
+      });
+    }
+
     if (isAdmin) {
       // Payments received today
       var paidToday = invoices.filter(function(i) { return i.status === 'Paid' && i.paidOn === today; });
