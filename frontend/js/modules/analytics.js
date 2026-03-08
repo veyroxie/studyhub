@@ -1,15 +1,80 @@
 (function() {
   window.App = window.App || {};
 
+  let _filterStudent = '';  // '' = all students
+  let _filterTeacher = '';  // '' = all staff
+  let _filterCategory = ''; // '' = all, or 'Academic', 'Non-academic', 'Workshop'
+  let _filterMonths = 6;    // number of months to show
+
   let _charts = {};
 
   function render(container) {
-    const { students, classes, invoices, attendance } = App.Store.get();
+    const { students, staff, classes, invoices, attendance } = App.Store.get();
 
-    container.innerHTML = ''
+    const filterBar = '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">'
+      + '<span style="font-size:0.78rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap">Filter by</span>'
+      // Student filter
+      + '<select onchange="App.Analytics._setStudent(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#374151">'
+      +   '<option value="">All Students</option>'
+      +   students.map(function(s) { return '<option value="' + s.id + '"' + (_filterStudent === s.id ? ' selected' : '') + '>' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</option>'; }).join('')
+      + '</select>'
+      // Teacher filter
+      + '<select onchange="App.Analytics._setTeacher(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#374151">'
+      +   '<option value="">All Tutors</option>'
+      +   staff.map(function(s) { return '<option value="' + s.id + '"' + (_filterTeacher === s.id ? ' selected' : '') + '>' + App.Utils.esc(s.name) + '</option>'; }).join('')
+      + '</select>'
+      // Category filter
+      + '<select onchange="App.Analytics._setCategory(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#374151">'
+      +   '<option value="">All Categories</option>'
+      +   ['Academic','Non-academic','Workshop'].map(function(c) { return '<option value="' + c + '"' + (_filterCategory === c ? ' selected' : '') + '>' + c + '</option>'; }).join('')
+      + '</select>'
+      // Month range filter
+      + '<select onchange="App.Analytics._setMonths(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#374151">'
+      +   [3,6,12].map(function(m) { return '<option value="' + m + '"' + (_filterMonths === m ? ' selected' : '') + '>Last ' + m + ' months</option>'; }).join('')
+      + '</select>'
+      + ((_filterStudent || _filterTeacher || _filterCategory || _filterMonths !== 6)
+          ? '<button onclick="App.Analytics._clearFilters()" style="padding:0.4rem 0.85rem;font-size:0.8rem;border:none;border-radius:8px;background:#f1f5f9;color:#64748b;cursor:pointer">Clear</button>'
+          : '')
+      + '</div>';
+
+    // --- Filter classes ---
+    let filteredClasses = classes;
+    if (_filterTeacher) filteredClasses = filteredClasses.filter(function(c) { return c.teacherIds.indexOf(_filterTeacher) > -1; });
+    if (_filterCategory) filteredClasses = filteredClasses.filter(function(c) { return c.category === _filterCategory; });
+    const filteredClassIds = filteredClasses.map(function(c) { return c.id; });
+
+    // --- Filter students ---
+    let filteredStudents = students;
+    if (_filterStudent) filteredStudents = filteredStudents.filter(function(s) { return s.id === _filterStudent; });
+    if (_filterTeacher || _filterCategory) {
+      filteredStudents = filteredStudents.filter(function(s) {
+        return s.enrolledClasses.some(function(cid) { return filteredClassIds.indexOf(cid) > -1; });
+      });
+    }
+
+    // --- Filter attendance ---
+    let filteredAttendance = attendance;
+    if (_filterStudent || _filterTeacher || _filterCategory) {
+      filteredAttendance = attendance.filter(function(a) {
+        if (a.personType !== 'student') return false;
+        if (_filterStudent && a.personId !== _filterStudent) return false;
+        if ((_filterTeacher || _filterCategory) && filteredClassIds.indexOf(a.classId) === -1) return false;
+        return true;
+      });
+    }
+
+    // --- Filter invoices ---
+    let filteredInvoices = invoices;
+    if (_filterStudent) filteredInvoices = filteredInvoices.filter(function(i) { return i.studentId === _filterStudent; });
+    if (_filterTeacher || _filterCategory) {
+      const stuIds = filteredStudents.map(function(s) { return s.id; });
+      filteredInvoices = filteredInvoices.filter(function(i) { return stuIds.indexOf(i.studentId) > -1; });
+    }
+
+    container.innerHTML = filterBar
       + '<div class="flex items-center justify-between mb-6">'
       +   '<h1 class="text-2xl font-bold text-slate-800">Analytics</h1>'
-      +   '<span class="text-sm text-slate-400">Last 6 months · as of March 2026</span>'
+      +   '<span class="text-sm text-slate-400">Last ' + _filterMonths + ' months · as of March 2026</span>'
       + '</div>'
       + '<div class="grid grid-cols-2 gap-5">'
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5"><h3 class="font-semibold text-slate-700 mb-4">Enrollment Trend</h3><canvas id="chart-enrollment" height="200"></canvas></div>'
@@ -22,10 +87,10 @@
     Object.keys(_charts).forEach(function(k) { if (_charts[k]) { _charts[k].destroy(); delete _charts[k]; } });
 
     setTimeout(function() {
-      _buildEnrollmentChart(students);
-      _buildFillRateChart(classes);
-      _buildRevenueChart(invoices);
-      _buildAttendanceChart(students, attendance);
+      _buildEnrollmentChart(filteredStudents);
+      _buildFillRateChart(filteredClasses);
+      _buildRevenueChart(filteredInvoices);
+      _buildAttendanceChart(filteredStudents, filteredAttendance);
     }, 50);
   }
 
@@ -43,7 +108,7 @@
   }
 
   function _buildEnrollmentChart(students) {
-    const m = _months(6);
+    const m = _months(_filterMonths);
     let cumulative = 0;
     const counts = m.keys.map(function(key) {
       const inMonth = students.filter(function(s) {
@@ -83,7 +148,7 @@
   }
 
   function _buildRevenueChart(invoices) {
-    const m = _months(6);
+    const m = _months(_filterMonths);
     const paid = m.keys.map(function(key) {
       return invoices.filter(function(i) { return i.status === 'Paid' && i.paidOn && i.paidOn.slice(0, 7) === key; }).reduce(function(s, i) { return s + i.amount; }, 0);
     });
@@ -147,5 +212,18 @@
     });
   }
 
-  App.Analytics = { render: render };
+  function _setStudent(v)  { _filterStudent = v; App.Router.refresh(); }
+  function _setTeacher(v)  { _filterTeacher = v; App.Router.refresh(); }
+  function _setCategory(v) { _filterCategory = v; App.Router.refresh(); }
+  function _setMonths(v)   { _filterMonths = parseInt(v) || 6; App.Router.refresh(); }
+  function _clearFilters() { _filterStudent = ''; _filterTeacher = ''; _filterCategory = ''; _filterMonths = 6; App.Router.refresh(); }
+
+  App.Analytics = {
+    render: render,
+    _setStudent: _setStudent,
+    _setTeacher: _setTeacher,
+    _setCategory: _setCategory,
+    _setMonths: _setMonths,
+    _clearFilters: _clearFilters
+  };
 })();
