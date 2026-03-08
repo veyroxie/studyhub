@@ -5,11 +5,17 @@
   let _filterTeacher = '';  // '' = all staff
   let _filterCategory = ''; // '' = all, or 'Academic', 'Non-academic', 'Workshop'
   let _filterMonths = 6;    // number of months to show
+  let _filterView = 'overview'; // 'overview' or 'financial'
 
   let _charts = {};
 
   function render(container) {
     const { students, staff, classes, invoices, attendance } = App.Store.get();
+
+    const viewToggle = '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px;margin-bottom:1rem;width:fit-content">'
+      + '<button onclick="App.Analytics._setView(\'overview\')" style="padding:0.3rem 1rem;font-size:0.75rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_filterView==='overview'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_filterView==='overview'?'#0a0a0a':'#94a3b8') + '">Overview</button>'
+      + '<button onclick="App.Analytics._setView(\'financial\')" style="padding:0.3rem 1rem;font-size:0.75rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_filterView==='financial'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_filterView==='financial'?'#0a0a0a':'#94a3b8') + '">Financial</button>'
+      + '</div>';
 
     const filterBar = '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">'
       + '<span style="font-size:0.78rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap">Filter by</span>'

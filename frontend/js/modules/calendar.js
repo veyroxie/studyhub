@@ -60,6 +60,7 @@
         .filter(function(c) {
           if (c.day !== day) return false;
           if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
+          if (isClient && c.enrolled >= c.capacity) return false; // hide full classes from parents
           if (teacherClassIds !== null && !teacherClassIds[c.id]) return false;
           if (_filterTeacher && !c.teacherIds.includes(_filterTeacher)) return false;
           if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
