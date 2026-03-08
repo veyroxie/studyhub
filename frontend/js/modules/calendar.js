@@ -23,6 +23,8 @@
 
   let _weekStart = getWeekStart(new Date());
   let _view = 'week'; // 'week' or 'month'
+  let _filterTeacher = ''; // '' = all
+  let _filterSearch  = ''; // text search on class name
 
   function render(container) {
     const { classes, staff, students } = App.Store.get();
@@ -46,6 +48,8 @@
         .filter(function(c) {
           if (c.day !== day) return false;
           if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
+          if (_filterTeacher && !c.teacherIds.includes(_filterTeacher)) return false;
+          if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
           return true;
         })
         .sort(function(a, b) { return a.time.localeCompare(b.time); });
@@ -87,12 +91,21 @@
       + _statCard('Active Staff', staff.length, 'text-purple-600')
       + '</div>';
 
+    const filterBar = '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;flex-wrap:wrap">'
+      + '<input type="search" placeholder="Search class..." value="' + App.Utils.esc(_filterSearch) + '" oninput="App.Calendar._setSearch(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;width:180px;background:#fff">'
+      + '<select onchange="App.Calendar._setTeacher(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;cursor:pointer">'
+      + '<option value="">All Tutors</option>'
+      + staff.map(function(s) { return '<option value="' + s.id + '" ' + (_filterTeacher === s.id ? 'selected' : '') + '>' + App.Utils.esc(s.name) + '</option>'; }).join('')
+      + '</select>'
+      + (_filterTeacher || _filterSearch ? '<button onclick="App.Calendar._clearFilters()" style="padding:0.45rem 0.85rem;font-size:0.8rem;border:none;border-radius:8px;background:#f1f5f9;color:#64748b;cursor:pointer">Clear</button>' : '')
+      + '</div>';
+
     if (_view === 'month') {
-      container.innerHTML = headerHtml + _renderMonthView(classes, staff, enrolledClassIds, isAdmin);
+      container.innerHTML = headerHtml + filterBar + _renderMonthView(classes, staff, enrolledClassIds, isAdmin);
       return;
     }
 
-    container.innerHTML = headerHtml
+    container.innerHTML = headerHtml + filterBar
 
       // Calendar grid with vertical dividers between columns
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">'
@@ -144,6 +157,8 @@
         var dayCls   = classes.filter(function(c) {
           if (c.day !== dayName) return false;
           if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
+          if (_filterTeacher && !c.teacherIds.includes(_filterTeacher)) return false;
+          if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
           return true;
         });
         weekCells += '<td style="border:1px solid #f0ede8;vertical-align:top;width:' + (100/7) + '%;min-height:90px;padding:0.35rem;background:' + (!inMonth ? '#fafaf8' : '#fff') + '">'
@@ -320,5 +335,9 @@
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange };
+  function _setSearch(val) { _filterSearch = val; App.Router.refresh(); }
+  function _setTeacher(val) { _filterTeacher = val; App.Router.refresh(); }
+  function _clearFilters() { _filterTeacher = ''; _filterSearch = ''; App.Router.refresh(); }
+
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters };
 })();
