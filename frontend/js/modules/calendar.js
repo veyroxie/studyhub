@@ -27,7 +27,8 @@
   let _filterSearch  = ''; // text search on class name
 
   function render(container) {
-    const { classes, staff, students } = App.Store.get();
+    const { classes, staff, students, cancelledClasses } = App.Store.get();
+    const _cancelledClasses = cancelledClasses || [];
     const isAdmin = App.currentRole === 'admin';
     const isClient = App.currentRole === 'client';
     const weekDates = DAYS.map(function(_, i) { return addDays(_weekStart, i); });
@@ -123,7 +124,7 @@
               + '<div class="p-2 space-y-2 min-h-24">'
               + (dayClasses.length === 0
                 ? '<div class="border border-dashed border-slate-200 rounded-lg p-2 text-center mt-1"><p class="text-xs text-slate-300">—</p></div>'
-                : dayClasses.map(function(c) { return _classCard(c, staff); }).join(''))
+                : dayClasses.map(function(c) { return _classCard(c, staff, _cancelledClasses, weekDates, i); }).join(''))
               + '</div>'
               + '</div>';
           }).join('')
@@ -201,7 +202,7 @@
       + '</div>';
   }
 
-  function _classCard(c, staff) {
+  function _classCard(c, staff, cancelledClasses, weekDates, dayIndex) {
     const U = App.Utils;
     const colors = U.colorClasses(c.color);
     const fillPct = Math.round((c.enrolled / c.capacity) * 100);
@@ -210,6 +211,23 @@
       const s = staff.find(function(s) { return s.id === tid; });
       return s ? s.name : tid;
     }).join(', ');
+
+    // Check if this class is cancelled on this specific date
+    let dateStr = null;
+    if (weekDates && dayIndex !== undefined && weekDates[dayIndex]) {
+      const d = weekDates[dayIndex];
+      dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    }
+    const isCancelled = dateStr && cancelledClasses && cancelledClasses.some(function(cc) { return cc.classId === c.id && cc.date === dateStr; });
+
+    if (isCancelled) {
+      return '<div class="bg-red-50 border-l-4 border-red-300 rounded-lg p-2 opacity-60 relative">'
+        + '<div style="position:absolute;top:3px;right:4px;font-size:0.6rem;font-weight:700;color:#ef4444;background:#fee2e2;padding:1px 5px;border-radius:4px">Cancelled</div>'
+        + '<div class="font-semibold text-xs text-red-300 leading-tight truncate line-through">' + c.name + '</div>'
+        + '<div class="text-xs text-red-200 mt-0.5">' + U.formatTime(c.time) + ' – ' + U.formatTime(c.endTime) + '</div>'
+        + '<div class="text-xs text-red-200 mt-0.5 truncate">' + teachers + '</div>'
+        + '</div>';
+    }
 
     return '<div class="' + colors.bg + ' border-l-4 ' + colors.border + ' rounded-lg p-2 cursor-pointer hover:shadow-sm transition-shadow">'
       + '<div class="font-semibold text-xs ' + colors.text + ' leading-tight truncate">' + c.name + '</div>'

@@ -179,7 +179,79 @@
       newAtt.push({ id: App.Utils.generateId('ATT'), personId: staffId, personType: 'staff', date: _attDate, checkIn: status !== 'Absent' ? now : null, checkOut: null, status: status });
     }
     App.Store.set({ attendance: newAtt });
+
+    // If marked Absent, check for classes on this day and offer to cancel
+    if (status === 'Absent') {
+      const state2 = App.Store.get();
+      const dateDay = new Date(_attDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+      const staffMember = state2.staff.find(function(s) { return s.id === staffId; });
+      const affectedClasses = state2.classes.filter(function(c) { return c.teacherIds.indexOf(staffId) > -1 && c.day === dateDay; });
+      if (affectedClasses.length > 0) {
+        App.Router.refresh();
+        _cancelClassModal(staffMember, affectedClasses);
+        return;
+      }
+    }
     App.Router.refresh();
+  }
+
+  function _cancelClassModal(staffMember, affectedClasses) {
+    const staffName = staffMember ? staffMember.fullName : 'Teacher';
+    const ids = affectedClasses.map(function(c) { return c.id; });
+    App.Utils.showModal(
+      '<div class="p-6">'
+      + '<h2 class="text-lg font-bold mb-1">Cancel Classes?</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">' + App.Utils.esc(staffName) + ' is absent on ' + App.Utils.formatDate(_attDate) + '. These classes will be affected:</p>'
+      + '<div class="space-y-2 mb-5">'
+      + affectedClasses.map(function(c) {
+          return '<div style="padding:0.65rem 0.85rem;background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;display:flex;justify-content:space-between;align-items:center">'
+            + '<div><span style="font-weight:600;font-size:0.85rem">' + App.Utils.esc(c.name) + '</span>'
+            + '<span style="font-size:0.78rem;color:#94a3b8;margin-left:0.5rem">' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + '</span></div>'
+            + App.Utils.badge(c.enrolled + ' student' + (c.enrolled !== 1 ? 's' : ''), 'red')
+            + '</div>';
+        }).join('')
+      + '</div>'
+      + '<p class="text-sm text-slate-500 mb-4">Enrolled parents will receive an in-app message notification.</p>'
+      + '<div class="flex gap-3">'
+      + '<button onclick="App.Utils.hideModal()" class="flex-1 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Skip</button>'
+      + '<button onclick="App.Attendance._doCancelClasses(' + JSON.stringify(ids) + ')" style="flex:1;padding:0.5rem;font-size:0.85rem;font-weight:700;background:#ef4444;color:#fff;border:none;border-radius:8px;cursor:pointer">Cancel &amp; Notify Parents</button>'
+      + '</div>'
+      + '</div>'
+    );
+  }
+
+  function _doCancelClasses(classIds) {
+    const state = App.Store.get();
+    const cancelled = (state.cancelledClasses || []).slice();
+    const messages  = (state.messages || []).slice();
+    const now = new Date().toISOString();
+
+    classIds.forEach(function(classId) {
+      cancelled.push({ id: App.Utils.generateId('cancel'), classId: classId, date: _attDate, reason: 'Teacher absent' });
+
+      const cls = state.classes.find(function(c) { return c.id === classId; });
+      if (!cls) return;
+      const enrolledStudents = state.students.filter(function(s) { return s.enrolledClasses.indexOf(classId) > -1; });
+      const parentEmails = {};
+      enrolledStudents.forEach(function(s) { if (s.contact) parentEmails[s.contact] = true; });
+
+      Object.keys(parentEmails).forEach(function(email) {
+        messages.push({
+          id: App.Utils.generateId('msg'),
+          fromRole: 'admin',
+          fromLabel: 'Admin',
+          toParent: email,
+          text: 'Class "' + cls.name + '" on ' + App.Utils.formatDate(_attDate) + ' (' + App.Utils.formatTime(cls.time) + ') has been cancelled due to teacher absence. We apologise for the inconvenience.',
+          ts: now,
+          read: false
+        });
+      });
+    });
+
+    App.Store.set({ cancelledClasses: cancelled, messages: messages });
+    App.Utils.hideModal();
+    if (App.Notifs && App.Notifs.refresh) App.Notifs.refresh();
+    App.Utils.showToast('Classes cancelled — parents notified via Messages', 'success');
   }
 
   function _checkInStudent(studentId) {
@@ -221,5 +293,5 @@
     App.Router.refresh();
   }
 
-  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent };
+  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses };
 })();

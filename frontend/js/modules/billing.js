@@ -75,7 +75,13 @@
     container.innerHTML = ''
       + '<div class="flex items-center justify-between mb-6">'
       +   '<h1 class="text-2xl font-bold text-slate-800">Billing</h1>'
-      +   (isAdmin ? '<button onclick="App.Billing._createModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Create Invoice</button>' : '')
+      +   (isAdmin
+          ? '<div class="flex gap-2">'
+          + '<button onclick="App.Billing._generateMonthlyModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">Generate Monthly</button>'
+          + '<button onclick="App.Billing._siblingInvoiceModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">Sibling Invoice</button>'
+          + '<button onclick="App.Billing._createModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Create Invoice</button>'
+          + '</div>'
+          : '')
       + '</div>'
 
       + notifBanner
@@ -378,7 +384,21 @@
       + _field('Description', '<input name="description" class="form-input" placeholder="e.g. Mar 2026 Tuition" required>')
       + '<div class="grid grid-cols-2 gap-4">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input"><option>Monthly</option><option>Adhoc</option></select></div>'
-      + _field('Amount (RM)', '<input name="amount" type="number" min="0" step="0.01" class="form-input" required>')
+      + _field('Amount (RM)', '<input id="inv-base-amount" name="amount" type="number" min="0" step="0.01" class="form-input" required oninput="App.Billing._updateNetAmount()">')
+      + '</div>'
+      // Early bird discount
+      + '<div style="background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;padding:0.85rem">'
+      +   '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem">'
+      +     '<input type="checkbox" id="early-bird-cb" onchange="App.Billing._toggleEarlyBird()" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">'
+      +     '<label for="early-bird-cb" style="font-size:0.83rem;font-weight:600;color:#374151;cursor:pointer">Early Bird Discount</label>'
+      +   '</div>'
+      +   '<div id="early-bird-fields" style="display:none;margin-top:0.5rem">'
+      +     '<div class="grid grid-cols-2 gap-3">'
+      +       _field('Discount %', '<input id="discount-pct" name="discountPct" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateNetAmount()">')
+      +       _field('Pay by (cutoff)', '<input name="earlyBirdCutoff" type="date" class="form-input">')
+      +     '</div>'
+      +     '<div id="net-amount-preview" style="margin-top:0.5rem;font-size:0.82rem;color:#6b7280"></div>'
+      +   '</div>'
       + '</div>'
       + _field('Due Date', '<input name="dueDate" type="date" class="form-input" required>')
       + '<div class="flex justify-end gap-3 pt-2">'
@@ -392,12 +412,18 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       const state = App.Store.get();
+      const baseAmount = parseFloat(fd.get('amount')) || 0;
+      const discountPct = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked
+        ? (parseFloat(fd.get('discountPct')) || 0) : 0;
+      const finalAmount = parseFloat((baseAmount * (1 - discountPct / 100)).toFixed(2));
       const newInvoice = {
         id: 'INV' + String(state.invoices.length + 1).padStart(3,'0'),
         studentId: fd.get('studentId'),
-        description: fd.get('description'),
+        description: fd.get('description') + (discountPct > 0 ? ' (' + discountPct + '% early bird)' : ''),
         type: fd.get('type'),
-        amount: parseFloat(fd.get('amount')),
+        amount: finalAmount,
+        discountPct: discountPct || undefined,
+        earlyBirdCutoff: fd.get('earlyBirdCutoff') || undefined,
         dueDate: fd.get('dueDate'),
         status: 'Unpaid',
         createdOn: App.Utils.today(),
@@ -405,9 +431,309 @@
       };
       App.Store.set({ invoices: [...state.invoices, newInvoice] });
       App.Utils.hideModal();
-      App.Utils.showToast('Invoice created', 'success');
+      App.Utils.showToast('Invoice created' + (discountPct > 0 ? ' with ' + discountPct + '% early bird discount' : ''), 'success');
       App.Router.refresh();
     });
+  }
+
+  function _toggleEarlyBird() {
+    var cb = document.getElementById('early-bird-cb');
+    var fields = document.getElementById('early-bird-fields');
+    if (fields) fields.style.display = cb && cb.checked ? 'block' : 'none';
+    _updateNetAmount();
+  }
+
+  function _updateNetAmount() {
+    var base = parseFloat((document.getElementById('inv-base-amount') || {}).value) || 0;
+    var cb = document.getElementById('early-bird-cb');
+    var pctEl = document.getElementById('discount-pct');
+    var preview = document.getElementById('net-amount-preview');
+    if (!preview) return;
+    if (cb && cb.checked && pctEl && base > 0) {
+      var pct = parseFloat(pctEl.value) || 0;
+      var net = (base * (1 - pct / 100)).toFixed(2);
+      preview.textContent = 'Net amount: RM ' + net + ' (saving RM ' + (base - parseFloat(net)).toFixed(2) + ')';
+    } else {
+      preview.textContent = '';
+    }
+  }
+
+  function _generateMonthlyModal() {
+    const state = App.Store.get();
+    const activeStudents = state.students.filter(function(s) { return s.status === 'Active' || s.status === 'New'; });
+    // Default month = current month
+    const now = new Date();
+    const defaultMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2,'0');
+    // Last day of current month for due date
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const defaultDue = lastDay.getFullYear() + '-' + String(lastDay.getMonth() + 1).padStart(2,'0') + '-' + String(lastDay.getDate()).padStart(2,'0');
+
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:420px;max-width:520px">'
+      + '<h2 class="text-xl font-bold mb-1">Generate Monthly Invoices</h2>'
+      + '<p class="text-sm text-slate-500 mb-5">Creates one invoice per active student for the selected month. Students who already have a Monthly invoice for that month are skipped.</p>'
+      + '<form id="gen-monthly-form" class="space-y-4">'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Month', '<input name="month" type="month" class="form-input" value="' + defaultMonth + '" required onchange="App.Billing._previewMonthly(this.value)">')
+      + _field('Default Amount (RM)', '<input id="gen-amount" name="amount" type="number" min="0" step="0.01" class="form-input" value="150" required oninput="App.Billing._updateGenPreview()">')
+      + '</div>'
+      // Early bird section
+      + '<div style="background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;padding:0.85rem">'
+      +   '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem">'
+      +     '<input type="checkbox" id="gen-early-bird-cb" onchange="App.Billing._updateGenPreview()" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">'
+      +     '<label for="gen-early-bird-cb" style="font-size:0.83rem;font-weight:600;color:#374151;cursor:pointer">Early Bird Discount</label>'
+      +   '</div>'
+      +   '<div id="gen-eb-fields" style="display:none">'
+      +     '<div class="grid grid-cols-2 gap-3">'
+      +       _field('Discount %', '<input id="gen-discount-pct" name="discountPct" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateGenPreview()">')
+      +       _field('Pay by (cutoff)', '<input name="earlyBirdCutoff" type="date" class="form-input">')
+      +     '</div>'
+      +   '</div>'
+      + '</div>'
+      + _field('Due Date', '<input name="dueDate" type="date" class="form-input" value="' + defaultDue + '" required>')
+      + '<div id="gen-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.75rem;font-size:0.82rem;color:#166534"></div>'
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Generate Invoices</button>'
+      + '</div>'
+      + '</form>'
+      + '</div>'
+    );
+
+    // Toggle early bird fields
+    document.getElementById('gen-early-bird-cb').addEventListener('change', function() {
+      var fields = document.getElementById('gen-eb-fields');
+      if (fields) fields.style.display = this.checked ? 'block' : 'none';
+    });
+
+    // Initial preview
+    _updateGenPreview();
+
+    document.getElementById('gen-monthly-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      _doGenerateMonthly(fd);
+    });
+  }
+
+  function _updateGenPreview() {
+    var monthInput = document.querySelector('#gen-monthly-form [name="month"]');
+    var month = monthInput ? monthInput.value : '';
+    _previewMonthly(month);
+  }
+
+  function _previewMonthly(month) {
+    var preview = document.getElementById('gen-preview');
+    if (!preview || !month) return;
+    var state = App.Store.get();
+    var [yr, mo] = month.split('-');
+    var monthLabel = new Date(parseInt(yr), parseInt(mo) - 1, 1).toLocaleDateString('en-MY', { month:'long', year:'numeric' });
+    var activeStudents = state.students.filter(function(s) { return s.status === 'Active' || s.status === 'New'; });
+    var alreadyHas = {};
+    state.invoices.forEach(function(i) {
+      if (i.type === 'Monthly' && i.createdOn && i.createdOn.startsWith(month)) alreadyHas[i.studentId] = true;
+    });
+    var toCreate = activeStudents.filter(function(s) { return !alreadyHas[s.id]; });
+    var skipped  = activeStudents.filter(function(s) { return  alreadyHas[s.id]; });
+
+    var baseAmount = parseFloat((document.getElementById('gen-amount') || {}).value) || 0;
+    var ebCb = document.getElementById('gen-early-bird-cb');
+    var pctEl = document.getElementById('gen-discount-pct');
+    var discountPct = (ebCb && ebCb.checked && pctEl) ? (parseFloat(pctEl.value) || 0) : 0;
+    var net = parseFloat((baseAmount * (1 - discountPct / 100)).toFixed(2));
+
+    preview.innerHTML = '<strong>' + toCreate.length + ' invoice' + (toCreate.length !== 1 ? 's' : '') + ' will be created</strong> for ' + monthLabel
+      + ' · RM ' + net.toFixed(2) + ' each'
+      + (discountPct > 0 ? ' <span style="color:#92400e">(' + discountPct + '% early bird)</span>' : '')
+      + (skipped.length > 0 ? '<br><span style="color:#94a3b8">' + skipped.length + ' student' + (skipped.length !== 1 ? 's' : '') + ' skipped (already invoiced)</span>' : '');
+  }
+
+  function _doGenerateMonthly(fd) {
+    var month = fd.get('month');
+    var baseAmount = parseFloat(fd.get('amount')) || 0;
+    var dueDate = fd.get('dueDate');
+    var ebCb = document.getElementById('gen-early-bird-cb');
+    var discountPct = (ebCb && ebCb.checked) ? (parseFloat(fd.get('discountPct')) || 0) : 0;
+    var earlyBirdCutoff = (ebCb && ebCb.checked) ? (fd.get('earlyBirdCutoff') || undefined) : undefined;
+    var finalAmount = parseFloat((baseAmount * (1 - discountPct / 100)).toFixed(2));
+
+    var state = App.Store.get();
+    var [yr, mo] = month.split('-');
+    var monthLabel = new Date(parseInt(yr), parseInt(mo) - 1, 1).toLocaleDateString('en-MY', { month:'long', year:'numeric' });
+
+    var activeStudents = state.students.filter(function(s) { return s.status === 'Active' || s.status === 'New'; });
+    var alreadyHas = {};
+    state.invoices.forEach(function(i) {
+      if (i.type === 'Monthly' && i.createdOn && i.createdOn.startsWith(month)) alreadyHas[i.studentId] = true;
+    });
+    var toCreate = activeStudents.filter(function(s) { return !alreadyHas[s.id]; });
+
+    if (toCreate.length === 0) {
+      App.Utils.showToast('All active students already have invoices for ' + monthLabel, 'info');
+      App.Utils.hideModal();
+      return;
+    }
+
+    var existing = state.invoices;
+    var newInvoices = toCreate.map(function(s, idx) {
+      return {
+        id: 'INV' + String(existing.length + idx + 1).padStart(3,'0'),
+        studentId: s.id,
+        description: monthLabel + ' Tuition' + (discountPct > 0 ? ' (' + discountPct + '% early bird)' : ''),
+        type: 'Monthly',
+        amount: finalAmount,
+        discountPct: discountPct || undefined,
+        earlyBirdCutoff: earlyBirdCutoff,
+        dueDate: dueDate,
+        status: 'Unpaid',
+        createdOn: month + '-01',
+        paidOn: null
+      };
+    });
+
+    App.Store.set({ invoices: existing.concat(newInvoices) });
+    App.Utils.hideModal();
+    App.Utils.showToast('Generated ' + newInvoices.length + ' invoices for ' + monthLabel, 'success');
+    App.Router.refresh();
+  }
+
+  function _siblingInvoiceModal() {
+    const { students } = App.Store.get();
+    // Group students by parent contact (only families with 2+ children)
+    const byParent = {};
+    students.forEach(function(s) {
+      if (!s.contact) return;
+      byParent[s.contact] = byParent[s.contact] || [];
+      byParent[s.contact].push(s);
+    });
+    const families = Object.keys(byParent).filter(function(email) { return byParent[email].length >= 2; });
+
+    if (families.length === 0) {
+      App.Utils.showToast('No families with multiple children found.', 'info');
+      return;
+    }
+
+    const now = new Date();
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const defaultDue = lastDay.getFullYear() + '-' + String(lastDay.getMonth() + 1).padStart(2,'0') + '-' + String(lastDay.getDate()).padStart(2,'0');
+    const defaultMonth = now.toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
+
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:420px;max-width:520px">'
+      + '<h2 class="text-xl font-bold mb-1">Sibling Invoice</h2>'
+      + '<p class="text-sm text-slate-500 mb-5">Create one combined invoice covering multiple children from the same family.</p>'
+      + '<form id="sibling-invoice-form" class="space-y-4">'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Family</label>'
+      + '<select id="sibling-family-select" name="parentEmail" class="form-input" required onchange="App.Billing._updateSiblingChildren(this.value)">'
+      + '<option value="">Select family...</option>'
+      + families.map(function(email) {
+          const children = byParent[email];
+          const label = children[0].parentName + ' (' + children.map(function(c) { return c.firstName; }).join(', ') + ')';
+          return '<option value="' + App.Utils.esc(email) + '">' + App.Utils.esc(label) + '</option>';
+        }).join('')
+      + '</select></div>'
+      + '<div id="sibling-children-list" style="display:none;background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;padding:0.75rem">'
+      +   '<p class="text-xs font-semibold text-slate-500 mb-2">Include children:</p>'
+      +   '<div id="sibling-children-checks"></div>'
+      + '</div>'
+      + _field('Description', '<input name="description" class="form-input" value="' + defaultMonth + ' Tuition" required>')
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Amount per child (RM)', '<input id="sibling-per-child" name="amountPerChild" type="number" min="0" step="0.01" class="form-input" value="150" required oninput="App.Billing._updateSiblingTotal()">')
+      + _field('Sibling Discount %', '<input id="sibling-discount" name="siblingDiscount" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateSiblingTotal()">')
+      + '</div>'
+      + '<div id="sibling-total-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem;font-size:0.82rem;color:#166534;display:none"></div>'
+      + _field('Due Date', '<input name="dueDate" type="date" class="form-input" value="' + defaultDue + '" required>')
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Create Sibling Invoice</button>'
+      + '</div>'
+      + '</form>'
+      + '</div>'
+    );
+
+    document.getElementById('sibling-invoice-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      _doSiblingInvoice(fd);
+    });
+  }
+
+  function _updateSiblingChildren(email) {
+    const { students } = App.Store.get();
+    const children = students.filter(function(s) { return s.contact === email; });
+    const list = document.getElementById('sibling-children-list');
+    const checksDiv = document.getElementById('sibling-children-checks');
+    if (!list || !checksDiv) return;
+    if (children.length === 0) { list.style.display = 'none'; return; }
+    checksDiv.innerHTML = children.map(function(s) {
+      return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;font-size:0.84rem;cursor:pointer">'
+        + '<input type="checkbox" name="childIds" value="' + s.id + '" checked style="width:15px;height:15px;accent-color:var(--gold);cursor:pointer" onchange="App.Billing._updateSiblingTotal()">'
+        + '<span class="font-medium">' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</span>'
+        + '<span style="color:#94a3b8;font-size:0.75rem">(' + s.status + ')</span>'
+        + '</label>';
+    }).join('');
+    list.style.display = 'block';
+    _updateSiblingTotal();
+  }
+
+  function _updateSiblingTotal() {
+    const preview = document.getElementById('sibling-total-preview');
+    if (!preview) return;
+    const perChild = parseFloat((document.getElementById('sibling-per-child') || {}).value) || 0;
+    const discount = parseFloat((document.getElementById('sibling-discount') || {}).value) || 0;
+    const checked  = document.querySelectorAll('#sibling-children-checks input[type="checkbox"]:checked');
+    const count    = checked.length;
+    if (count === 0) { preview.style.display = 'none'; return; }
+    const discounted = parseFloat((perChild * (1 - discount / 100)).toFixed(2));
+    const total = parseFloat((discounted * count).toFixed(2));
+    preview.style.display = 'block';
+    preview.innerHTML = count + ' child' + (count !== 1 ? 'ren' : '') + ' × RM ' + discounted.toFixed(2)
+      + (discount > 0 ? ' (' + discount + '% sibling discount applied)' : '')
+      + ' = <strong>RM ' + total.toFixed(2) + ' total</strong>';
+  }
+
+  function _doSiblingInvoice(fd) {
+    const state = App.Store.get();
+    const email = fd.get('parentEmail');
+    const description = fd.get('description');
+    const perChild = parseFloat(fd.get('amountPerChild')) || 0;
+    const discount = parseFloat(fd.get('siblingDiscount')) || 0;
+    const dueDate  = fd.get('dueDate');
+    const discounted = parseFloat((perChild * (1 - discount / 100)).toFixed(2));
+
+    // Get checked child IDs from the form
+    const childIds = Array.from(document.querySelectorAll('#sibling-children-checks input[type="checkbox"]:checked')).map(function(cb) { return cb.value; });
+
+    if (childIds.length < 1) {
+      App.Utils.showToast('Select at least one child.', 'warning');
+      return;
+    }
+
+    const children = state.students.filter(function(s) { return childIds.indexOf(s.id) > -1; });
+    const totalAmount = parseFloat((discounted * children.length).toFixed(2));
+    const childNames = children.map(function(c) { return c.firstName; }).join(' + ');
+    const desc = description + ' — ' + childNames + (discount > 0 ? ' (' + discount + '% sibling discount)' : '');
+
+    // Create a single combined invoice linked to the first child, with siblings listed in description
+    const newInvoice = {
+      id: 'INV' + String(state.invoices.length + 1).padStart(3,'0'),
+      studentId: children[0].id,  // primary child
+      siblingIds: children.slice(1).map(function(c) { return c.id; }),
+      parentEmail: email,
+      description: desc,
+      type: 'Monthly',
+      amount: totalAmount,
+      siblingDiscount: discount || undefined,
+      dueDate: dueDate,
+      status: 'Unpaid',
+      createdOn: App.Utils.today(),
+      paidOn: null
+    };
+
+    App.Store.set({ invoices: [...state.invoices, newInvoice] });
+    App.Utils.hideModal();
+    App.Utils.showToast('Sibling invoice created — RM ' + totalAmount.toFixed(2) + ' for ' + childNames, 'success');
+    App.Router.refresh();
   }
 
   function _field(label, inputHtml) {
@@ -451,6 +777,14 @@
     _toggleSelectInv: _toggleSelectInv,
     _bulkDeselectInv: _bulkDeselectInv,
     _bulkMarkPaid: _bulkMarkPaid,
-    _bulkConfirmPaid: _bulkConfirmPaid
+    _bulkConfirmPaid: _bulkConfirmPaid,
+    _generateMonthlyModal: _generateMonthlyModal,
+    _previewMonthly: _previewMonthly,
+    _updateGenPreview: _updateGenPreview,
+    _toggleEarlyBird: _toggleEarlyBird,
+    _updateNetAmount: _updateNetAmount,
+    _siblingInvoiceModal: _siblingInvoiceModal,
+    _updateSiblingChildren: _updateSiblingChildren,
+    _updateSiblingTotal: _updateSiblingTotal
   };
 })();
