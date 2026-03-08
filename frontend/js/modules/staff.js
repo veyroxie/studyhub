@@ -44,8 +44,80 @@
       + '</div>';
   }
 
+  function _perfTab(s, classes, students, attendance, feedback) {
+    var myClasses  = classes.filter(function(c) { return c.teacherIds.indexOf(s.id) > -1; });
+    var myClassIds = myClasses.map(function(c) { return c.id; });
+
+    // Fill rate
+    var avgFill = myClasses.length > 0
+      ? Math.round(myClasses.reduce(function(acc,c){ return acc + (c.enrolled/c.capacity); },0) / myClasses.length * 100)
+      : 0;
+
+    // Unique students
+    var myStudentIds = {};
+    myClasses.forEach(function(c) {
+      students.forEach(function(stu) {
+        if (stu.enrolledClasses.indexOf(c.id) > -1) myStudentIds[stu.id] = true;
+      });
+    });
+    var stuCount = Object.keys(myStudentIds).length;
+
+    // Attendance rate (student records only)
+    var myAttRecs = attendance.filter(function(a) {
+      return a.personType === 'student' && myClassIds.indexOf(a.classId) > -1;
+    });
+    var attRate = myAttRecs.length > 0
+      ? Math.round(myAttRecs.filter(function(a){ return a.status === 'Present'; }).length / myAttRecs.length * 100)
+      : null;
+
+    // Feedback
+    var myFeedback = (feedback || []).filter(function(f) { return myClassIds.indexOf(f.classId) > -1; });
+    var avgRating = myFeedback.length > 0
+      ? (myFeedback.reduce(function(acc,f){ return acc + (f.rating||0); },0) / myFeedback.length).toFixed(1)
+      : null;
+
+    // Metric cards
+    function metricCard(label, value, color) {
+      return '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;text-align:center">'
+        + '<div style="font-size:1.4rem;font-weight:800;color:' + color + '">' + value + '</div>'
+        + '<div style="font-size:0.68rem;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-top:3px">' + label + '</div>'
+        + '</div>';
+    }
+
+    return '<div class="space-y-4">'
+      + '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem">'
+      + metricCard('Classes', myClasses.length, '#6366f1')
+      + metricCard('Students', stuCount, '#0891b2')
+      + metricCard('Fill Rate', avgFill + '%', avgFill >= 80 ? '#22c55e' : avgFill >= 50 ? '#f59e0b' : '#ef4444')
+      + metricCard('Attend. Rate', attRate !== null ? attRate + '%' : '—', attRate !== null && attRate >= 80 ? '#22c55e' : '#94a3b8')
+      + '</div>'
+      + (avgRating !== null
+          ? '<div style="background:#fafaf8;border-radius:10px;padding:0.85rem 1rem;display:flex;align-items:center;justify-content:space-between">'
+          +   '<span style="font-size:0.82rem;font-weight:600;color:#374151">Parent Feedback</span>'
+          +   '<span style="font-size:0.95rem;font-weight:800;color:#d97706">' + avgRating + '/5</span>'
+          +   '<span style="font-size:0.72rem;color:#94a3b8">(' + myFeedback.length + ' reviews)</span>'
+          + '</div>'
+          : '')
+      + '<div>'
+      +   '<label style="display:block;font-size:0.8rem;font-weight:600;color:#374151;margin-bottom:0.4rem">Internal Notes</label>'
+      +   '<textarea id="perf-notes-' + s.id + '" rows="3" style="width:100%;padding:0.5rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;resize:vertical;outline:none">' + App.Utils.esc(s.performanceNotes || '') + '</textarea>'
+      +   '<button onclick="App.Staff._saveNotes(\'' + s.id + '\')" style="margin-top:0.5rem;padding:0.35rem 0.9rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Save Notes</button>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function _saveNotes(staffId) {
+    var textarea = document.getElementById('perf-notes-' + staffId);
+    if (!textarea) return;
+    var st = App.Store.get();
+    App.Store.set({ staff: st.staff.map(function(x) {
+      return x.id === staffId ? Object.assign({}, x, { performanceNotes: textarea.value }) : x;
+    })});
+    App.Utils.showToast('Notes saved', 'success');
+  }
+
   function _viewModal(staffId) {
-    const { staff, classes, payroll } = App.Store.get();
+    const { staff, classes, payroll, students, attendance } = App.Store.get();
     const isAdmin = App.currentRole === 'admin';
     const s = staff.find(function(x) { return x.id === staffId; });
     if (!s) return;
@@ -65,7 +137,7 @@
       + '</div>'
 
       + '<div class="flex border-b border-slate-100 mb-4 gap-1">'
-      + (isAdmin ? ['Info','Schedule','Payroll'] : ['Info','Schedule']).map(function(tab, i) {
+      + (isAdmin ? ['Info','Schedule','Payroll','Performance'] : ['Info','Schedule']).map(function(tab, i) {
           return '<button onclick="App.Staff._switchTab(\'' + tab.toLowerCase() + '\')" id="stab-' + tab.toLowerCase() + '" class="tab-btn px-4 py-2 text-sm font-medium ' + (i===0?'border-b-2 border-blue-600 text-blue-600':'text-slate-500 hover:text-slate-700') + '">' + tab + '</button>';
         }).join('')
       + '</div>'
@@ -119,6 +191,10 @@
           + '</tbody></table>')
         + '</div>' : '')
 
+      + (isAdmin ? '<div id="stab-panel-performance" class="hidden">'
+          + _perfTab(s, classes, students, attendance, App.Store.get().feedback || [])
+          + '</div>' : '')
+
       + '<div class="mt-4 flex justify-between">'
       + (isAdmin ? '<button onclick="App.Utils.hideModal(); setTimeout(function(){App.Staff._editModal(\'' + staffId + '\')},50)" class="px-4 py-2 text-sm bg-slate-700 text-white rounded-lg hover:bg-slate-800">Edit Details</button>' : '<div></div>')
       + '<button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Close</button>'
@@ -128,7 +204,7 @@
   }
 
   function _switchTab(tab) {
-    ['info','schedule','payroll'].forEach(function(t) {
+    ['info','schedule','payroll','performance'].forEach(function(t) {
       const panel = document.getElementById('stab-panel-' + t);
       if (panel) panel.classList.toggle('hidden', t !== tab);
       const btn = document.getElementById('stab-' + t);
@@ -375,5 +451,5 @@
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  App.Staff = { render: render, _viewModal: _viewModal, _switchTab: _switchTab, _addModal: _addModal, _editModal: _editModal, _togglePayFields: _togglePayFields, _genPayrollModal: _genPayrollModal, _previewPayroll: _previewPayroll };
+  App.Staff = { render: render, _viewModal: _viewModal, _switchTab: _switchTab, _addModal: _addModal, _editModal: _editModal, _togglePayFields: _togglePayFields, _genPayrollModal: _genPayrollModal, _previewPayroll: _previewPayroll, _saveNotes: _saveNotes };
 })();

@@ -126,5 +126,6 @@ App.DATA = {
     { id:'PAY012', staffId:'s4', month:'2026-03', baseSalary:2800, bonus:0, deductions:0, total:2800, status:'Pending', paidOn:null }
   ],
   messages: [],
-  cancelledClasses: []
+  cancelledClasses: [],
+  feedback: []
 };

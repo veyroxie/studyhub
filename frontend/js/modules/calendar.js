@@ -229,7 +229,7 @@
         + '</div>';
     }
 
-    return '<div class="' + colors.bg + ' border-l-4 ' + colors.border + ' rounded-lg p-2 cursor-pointer hover:shadow-sm transition-shadow">'
+    return '<div class="' + colors.bg + ' border-l-4 ' + colors.border + ' rounded-lg p-2 cursor-pointer hover:shadow-sm transition-shadow" onclick="App.Calendar._classModal(\'' + c.id + '\')">'
       + '<div class="font-semibold text-xs ' + colors.text + ' leading-tight truncate">' + c.name + '</div>'
       + '<div class="text-xs ' + colors.text + ' opacity-70 mt-0.5">' + U.formatTime(c.time) + ' – ' + U.formatTime(c.endTime) + '</div>'
       + '<div class="text-xs text-slate-500 mt-0.5 truncate">' + teachers + '</div>'
@@ -240,6 +240,115 @@
       +   '<span class="text-xs ' + colors.text + ' font-medium whitespace-nowrap">' + c.enrolled + '/' + c.capacity + '</span>'
       + '</div>'
       + '</div>';
+  }
+
+  function _classModal(classId) {
+    var state = App.Store.get();
+    var c = state.classes.find(function(x) { return x.id === classId; });
+    if (!c) return;
+    var isAdmin   = App.currentRole === 'admin';
+    var isClient  = App.currentRole === 'client';
+    var isTeacher = App.currentRole === 'teacher';
+    var teachers  = c.teacherIds.map(function(tid) {
+      var s = state.staff.find(function(x) { return x.id === tid; });
+      return s ? s.fullName : tid;
+    }).join(', ');
+    var enrolled  = state.students.filter(function(s) { return s.enrolledClasses.indexOf(classId) > -1; });
+    var feedbackList = (state.feedback || []).filter(function(f) { return f.classId === classId; });
+    var avgRating = feedbackList.length > 0
+      ? (feedbackList.reduce(function(a,f){ return a+(f.rating||0); },0)/feedbackList.length).toFixed(1)
+      : null;
+    var colors = App.Utils.colorClasses(c.color);
+
+    var canLeaveFeedback = isClient; // parents can rate
+    var parentStudentIds = isClient && App.clientParent
+      ? state.students.filter(function(s){ return s.contact===App.clientParent; }).map(function(s){ return s.id; })
+      : [];
+    var alreadyReviewed = isClient && feedbackList.some(function(f) {
+      return parentStudentIds.indexOf(f.studentId) > -1;
+    });
+
+    App.Utils.showModal(
+      '<div class="p-6">'
+      + '<div class="flex items-center gap-3 mb-5">'
+      +   '<div class="w-3 h-12 rounded-full ' + colors.bg + ' ' + colors.border + ' border-2"></div>'
+      +   '<div>'
+      +     '<h2 class="text-xl font-bold">' + App.Utils.esc(c.name) + '</h2>'
+      +     '<div class="text-sm text-slate-500">' + c.day + ' · ' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + ' · ' + c.classroom + '</div>'
+      +   '</div>'
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-3 mb-5 text-sm">'
+      +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Teacher(s)</div><div class="font-medium">' + App.Utils.esc(teachers) + '</div></div>'
+      +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Enrolled</div><div class="font-medium">' + c.enrolled + '/' + c.capacity + '</div></div>'
+      +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Category</div><div class="font-medium">' + (c.category || 'Academic') + '</div></div>'
+      +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Type</div><div class="font-medium">' + (c.classType || 'Group') + '</div></div>'
+      + '</div>'
+      // Feedback section
+      + '<div class="border-t border-slate-100 pt-4">'
+      +   '<div class="flex items-center justify-between mb-3">'
+      +     '<h3 class="text-sm font-bold text-slate-700">Class Feedback</h3>'
+      +     (avgRating ? '<span class="text-sm font-bold text-amber-600">' + avgRating + '/5 (' + feedbackList.length + ' reviews)</span>' : '<span class="text-xs text-slate-400">No reviews yet</span>')
+      +   '</div>'
+      +   (feedbackList.length > 0
+            ? '<div class="space-y-2 max-h-36 overflow-y-auto mb-4">'
+            + feedbackList.map(function(f) {
+                var stars = '★'.repeat(f.rating||0) + '☆'.repeat(5-(f.rating||0));
+                return '<div class="bg-slate-50 rounded-lg p-2.5">'
+                  + '<div class="flex items-center gap-2">'
+                  +   '<span class="text-amber-400 text-sm">' + stars + '</span>'
+                  +   '<span class="text-xs text-slate-400">' + App.Utils.formatDate(f.createdOn) + '</span>'
+                  + '</div>'
+                  + (f.comment ? '<div class="text-xs text-slate-600 mt-1">' + App.Utils.esc(f.comment) + '</div>' : '')
+                  + '</div>';
+              }).join('')
+            + '</div>'
+            : '<div class="text-xs text-slate-400 text-center py-4 mb-3">Be the first to leave a review!</div>')
+      +   (canLeaveFeedback && !alreadyReviewed
+            ? '<div id="feedback-form-' + classId + '">'
+            +   '<div class="text-xs font-semibold text-slate-600 mb-2">Your Rating</div>'
+            +   '<div style="display:flex;gap:0.5rem;margin-bottom:0.75rem" id="star-row-' + classId + '">'
+            +   [1,2,3,4,5].map(function(n) {
+                  return '<button onclick="App.Calendar._setStar(\'' + classId + '\',' + n + ')" data-star="' + n + '" style="font-size:1.5rem;background:none;border:none;cursor:pointer;color:#d1d5db;transition:color 0.1s">★</button>';
+                }).join('')
+            +   '</div>'
+            +   '<textarea id="feedback-comment-' + classId + '" rows="2" placeholder="Optional comment..." style="width:100%;padding:0.5rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;resize:none;outline:none;margin-bottom:0.5rem"></textarea>'
+            +   '<button onclick="App.Calendar._submitFeedback(\'' + classId + '\')" style="padding:0.4rem 1rem;font-size:0.82rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Submit Review</button>'
+            + '</div>'
+            : (alreadyReviewed ? '<div class="text-xs text-emerald-600 font-semibold">You have already reviewed this class.</div>' : ''))
+      + '</div>'
+      + '</div>'
+    );
+  }
+
+  var _starRating = {}; // classId -> chosen rating
+
+  function _setStar(classId, n) {
+    _starRating[classId] = n;
+    var row = document.getElementById('star-row-' + classId);
+    if (!row) return;
+    row.querySelectorAll('[data-star]').forEach(function(btn) {
+      btn.style.color = parseInt(btn.dataset.star) <= n ? '#f59e0b' : '#d1d5db';
+    });
+  }
+
+  function _submitFeedback(classId) {
+    var rating = _starRating[classId];
+    if (!rating) { App.Utils.showToast('Please select a star rating', 'warning'); return; }
+    var comment = (document.getElementById('feedback-comment-' + classId)||{}).value || '';
+    var state = App.Store.get();
+    var parentStudentIds = state.students.filter(function(s){ return s.contact===App.clientParent; }).map(function(s){ return s.id; });
+    var studentId = parentStudentIds[0] || '';
+    var newFeedback = {
+      id: App.Utils.generateId('fb'),
+      classId: classId,
+      studentId: studentId,
+      rating: rating,
+      comment: comment.trim(),
+      createdOn: App.Utils.today()
+    };
+    App.Store.set({ feedback: [...(state.feedback||[]), newFeedback] });
+    App.Utils.hideModal();
+    App.Utils.showToast('Thank you for your feedback!', 'success');
   }
 
   function _prevWeek() {
@@ -357,5 +466,5 @@
   function _setTeacher(val) { _filterTeacher = val; App.Router.refresh(); }
   function _clearFilters() { _filterTeacher = ''; _filterSearch = ''; App.Router.refresh(); }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters };
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _setStar: _setStar, _submitFeedback: _submitFeedback };
 })();
