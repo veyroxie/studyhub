@@ -23,11 +23,15 @@
       errEl.classList.add('hidden');
       try {
         const data = await App.Api.login(email, password);
-        App.currentRole = data.role === 'admin' ? 'admin' : 'client';
+        App.currentRole = data.role === 'admin' ? 'admin' : (data.role === 'teacher' ? 'teacher' : 'client');
         sessionStorage.setItem('sh_role', App.currentRole);
         if (data.role === 'parent') {
           App.clientParent = data.email;
           sessionStorage.setItem('sh_parent', data.email);
+        }
+        if (data.role === 'teacher') {
+          App.currentTeacher = data.staffId || '';
+          sessionStorage.setItem('sh_teacher', App.currentTeacher);
         }
         // Load all data from backend
         await App.Api.loadSnapshot();
@@ -48,35 +52,55 @@
   };
 
   // Role state
-  App.currentRole = sessionStorage.getItem('sh_role') || 'admin';
-  App.clientParent = sessionStorage.getItem('sh_parent') || '';
+  App.currentRole   = sessionStorage.getItem('sh_role')    || 'admin';
+  App.clientParent  = sessionStorage.getItem('sh_parent')  || '';
+  App.currentTeacher= sessionStorage.getItem('sh_teacher') || '';
 
   function applyRole() {
-    const isAdmin = App.currentRole === 'admin';
-    const isClient = !isAdmin;
+    const isAdmin   = App.currentRole === 'admin';
+    const isTeacher = App.currentRole === 'teacher';
+    const isClient  = App.currentRole === 'client';
 
-    // Toggle role button appearance
+    // Role button
     const roleBtn = document.getElementById('role-toggle-btn');
     if (roleBtn) {
-      roleBtn.textContent = isAdmin ? 'Admin' : 'Parent View';
+      const labels = { admin:'Admin', teacher:'Teacher', client:'Parent View' };
+      roleBtn.textContent = labels[App.currentRole] || 'Admin';
       roleBtn.className = 'flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-lg border-2 transition-all '
-        + (isAdmin ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-emerald-50 text-emerald-700 border-emerald-300');
+        + (isAdmin   ? 'bg-blue-50   text-blue-700   border-blue-300'
+         : isTeacher ? 'bg-purple-50 text-purple-700 border-purple-300'
+         :             'bg-emerald-50 text-emerald-700 border-emerald-300');
     }
 
-    // Parent selector visibility
-    const parentSel = document.getElementById('parent-selector-wrap');
-    if (parentSel) parentSel.classList.toggle('hidden', isAdmin);
+    // Selector visibility
+    const parentSel  = document.getElementById('parent-selector-wrap');
+    const teacherSel = document.getElementById('teacher-selector-wrap');
+    if (parentSel)  parentSel.classList.toggle('hidden',  !isClient);
+    if (teacherSel) teacherSel.classList.toggle('hidden', !isTeacher);
 
-    // Nav items visibility
-    const adminOnlyPages = ['staff', 'analytics'];
-    adminOnlyPages.forEach(function(page) {
+    // Nav visibility per role
+    // admin:   all pages
+    // teacher: dashboard, calendar, communication, messages, students, attendance
+    // client:  dashboard, calendar, communication, messages, billing
+    const pageHidden = {
+      billing:    isTeacher,
+      staff:      !isAdmin,
+      analytics:  !isAdmin,
+      students:   isClient,
+      attendance: isClient
+    };
+    Object.keys(pageHidden).forEach(function(page) {
       const btn = document.querySelector('.nav-btn[data-page="' + page + '"]');
-      if (btn) btn.closest('li') ? btn.closest('li').classList.toggle('hidden', isClient) : btn.classList.toggle('hidden', isClient);
+      if (!btn) return;
+      const hide = pageHidden[page];
+      const li = btn.closest('li');
+      if (li) li.classList.toggle('hidden', hide); else btn.classList.toggle('hidden', hide);
     });
 
-    // If currently on an admin-only page, redirect to calendar
+    // Redirect if on a now-hidden page
     const current = App.Router.current();
-    if (isClient && adminOnlyPages.indexOf(current) > -1) {
+    const hiddenPages = Object.keys(pageHidden).filter(function(p) { return pageHidden[p]; });
+    if (hiddenPages.indexOf(current) > -1) {
       App.Router.navigate('dashboard');
     } else if (current) {
       App.Router.refresh();
@@ -86,10 +110,19 @@
   }
 
   function toggleRole() {
-    App.currentRole = App.currentRole === 'admin' ? 'client' : 'admin';
-    sessionStorage.setItem('sh_role', App.currentRole);
+    const cycle = ['admin', 'teacher', 'client'];
+    const next  = cycle[(cycle.indexOf(App.currentRole) + 1) % cycle.length];
+    App.currentRole = next;
+    sessionStorage.setItem('sh_role', next);
+    // Default teacher to first staff member if not set
+    if (next === 'teacher' && !App.currentTeacher) {
+      const { staff } = App.Store.get();
+      App.currentTeacher = (staff[0] && staff[0].id) || 's1';
+      sessionStorage.setItem('sh_teacher', App.currentTeacher);
+    }
     applyRole();
-    App.Utils.showToast('Switched to ' + (App.currentRole === 'admin' ? 'Admin' : 'Parent') + ' view', 'info');
+    const labels = { admin:'Admin', teacher:'Teacher', client:'Parent' };
+    App.Utils.showToast('Switched to ' + (labels[next] || next) + ' view', 'info');
   }
 
   function onParentChange(val) {
@@ -167,6 +200,14 @@
     const parentSel = document.getElementById('parent-select');
     if (parentSel) parentSel.addEventListener('change', function() { onParentChange(this.value); });
 
+    const teacherSel = document.getElementById('teacher-select');
+    if (teacherSel) teacherSel.addEventListener('change', function() {
+      App.currentTeacher = this.value;
+      sessionStorage.setItem('sh_teacher', this.value);
+      App.Router.refresh();
+      App.Dev._update();
+    });
+
     document.getElementById('export-btn') && document.getElementById('export-btn').addEventListener('click', exportData);
     document.getElementById('import-btn') && document.getElementById('import-btn').addEventListener('click', importData);
     document.getElementById('reset-btn') && document.getElementById('reset-btn').addEventListener('click', resetData);
@@ -203,8 +244,9 @@
     App.Api.isLoggedIn().then(function(loggedIn) {
       if (loggedIn) {
         const user = App.Api.currentUser();
-        App.currentRole = (user && user.role === 'admin') ? 'admin' : 'client';
+        App.currentRole = (user && user.role === 'admin') ? 'admin' : (user && user.role === 'teacher') ? 'teacher' : 'client';
         if (user && user.role === 'parent') App.clientParent = user.email;
+        if (user && user.role === 'teacher') { App.currentTeacher = user.staffId || ''; sessionStorage.setItem('sh_teacher', App.currentTeacher); }
         return App.Api.loadSnapshot().then(function() {
           App.Login.hide();
           App.Dev.init();
@@ -226,6 +268,11 @@
     setRole: function(role) {
       App.currentRole = role;
       sessionStorage.setItem('sh_role', role);
+      if (role === 'teacher' && !App.currentTeacher) {
+        const { staff } = App.Store.get();
+        App.currentTeacher = (staff[0] && staff[0].id) || 's1';
+        sessionStorage.setItem('sh_teacher', App.currentTeacher);
+      }
       applyRole();
       App.Dev._update();
       App.Utils.showToast('Dev: switched to ' + role + ' view', 'info');
@@ -238,30 +285,43 @@
       App.Router.refresh();
       App.Dev._update();
     },
+    setTeacher: function(staffId) {
+      App.currentTeacher = staffId;
+      sessionStorage.setItem('sh_teacher', staffId);
+      const headerSel = document.getElementById('teacher-select');
+      if (headerSel) headerSel.value = staffId;
+      App.Router.refresh();
+      App.Dev._update();
+    },
     _update: function() {
-      const isAdmin = App.currentRole === 'admin';
+      const isAdmin   = App.currentRole === 'admin';
+      const isTeacher = App.currentRole === 'teacher';
+      const isClient  = App.currentRole === 'client';
 
       // Role buttons
-      const adminBtn = document.getElementById('dev-admin-btn');
-      const clientBtn = document.getElementById('dev-client-btn');
-      if (adminBtn) {
-        adminBtn.className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all '
-          + (isAdmin ? 'bg-blue-600 text-white border-blue-500' : 'border-slate-600 text-slate-400 hover:bg-slate-700');
-      }
-      if (clientBtn) {
-        clientBtn.className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all '
-          + (!isAdmin ? 'bg-emerald-600 text-white border-emerald-500' : 'border-slate-600 text-slate-400 hover:bg-slate-700');
-      }
+      ['admin','teacher','client'].forEach(function(r) {
+        const btn = document.getElementById('dev-' + r + '-btn');
+        const active = App.currentRole === r;
+        const colors = { admin:'bg-blue-600 border-blue-500', teacher:'bg-purple-600 border-purple-500', client:'bg-emerald-600 border-emerald-500' };
+        if (btn) btn.className = 'flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all '
+          + (active ? colors[r] + ' text-white' : 'border-slate-600 text-slate-400 hover:bg-slate-700');
+      });
 
-      // Parent picker visibility
-      const wrap = document.getElementById('dev-parent-wrap');
-      if (wrap) wrap.classList.toggle('hidden', isAdmin);
+      // Selector visibility
+      const parentWrap  = document.getElementById('dev-parent-wrap');
+      const teacherWrap = document.getElementById('dev-teacher-wrap');
+      if (parentWrap)  parentWrap.classList.toggle('hidden',  !isClient);
+      if (teacherWrap) teacherWrap.classList.toggle('hidden', !isTeacher);
 
       // Status line
       const statusEl = document.getElementById('dev-status');
       if (statusEl) {
         if (isAdmin) {
           statusEl.innerHTML = '<span class="text-blue-400 font-semibold">Admin</span> — full access';
+        } else if (isTeacher) {
+          const { staff } = App.Store.get();
+          const t = staff.find(function(s) { return s.id === App.currentTeacher; });
+          statusEl.innerHTML = '<span class="text-purple-400 font-semibold">Teacher</span>: ' + (t ? t.fullName : App.currentTeacher);
         } else {
           const { students } = App.Store.get();
           const myStudents = students.filter(function(s) { return s.contact === App.clientParent; });
@@ -272,7 +332,7 @@
       }
     },
     init: function() {
-      const { students } = App.Store.get();
+      const { students, staff } = App.Store.get();
       const uniqueParents = {};
       students.forEach(function(s) { uniqueParents[s.contact] = s.parentName; });
 
@@ -284,6 +344,25 @@
         if (App.clientParent) devSel.value = App.clientParent;
         else App.clientParent = Object.keys(uniqueParents)[0] || '';
       }
+
+      const devTeacherSel = document.getElementById('dev-teacher-select');
+      if (devTeacherSel) {
+        devTeacherSel.innerHTML = staff.map(function(s) {
+          return '<option value="' + s.id + '">' + s.fullName + '</option>';
+        }).join('');
+        if (App.currentTeacher) devTeacherSel.value = App.currentTeacher;
+        else App.currentTeacher = (staff[0] && staff[0].id) || '';
+      }
+
+      // Also populate header teacher selector
+      const headerTeacherSel = document.getElementById('teacher-select');
+      if (headerTeacherSel) {
+        headerTeacherSel.innerHTML = staff.map(function(s) {
+          return '<option value="' + s.id + '">' + s.fullName + '</option>';
+        }).join('');
+        if (App.currentTeacher) headerTeacherSel.value = App.currentTeacher;
+      }
+
       App.Dev._update();
     }
   };

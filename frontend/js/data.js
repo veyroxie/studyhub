@@ -16,14 +16,14 @@ App.DATA = {
     { id:'STU012', firstName:'Tom', lastName:'Chen', dob:'2012-11-08', gender:'Male', parentName:'Chen Wei', contact:'seeduser6@example.com', phone:'60110000002', branch:'The Study Hub', status:'New', registeredOn:'2026-02-20', enrolledClasses:['c6'], siblings:[], notes:'' }
   ],
   classes: [
-    { id:'c1', name:'Level 1 & 2', teacherIds:['s1'], classroom:'Classroom 2', day:'Saturday', time:'09:30', endTime:'10:30', capacity:6, enrolled:2, color:'green' },
-    { id:'c2', name:'English', teacherIds:['s3'], classroom:'Classroom 2', day:'Monday', time:'15:00', endTime:'16:00', capacity:6, enrolled:3, color:'blue' },
-    { id:'c3', name:'Level 3 & 4', teacherIds:['s3','s1'], classroom:'Classroom 2', day:'Monday', time:'16:00', endTime:'17:00', capacity:6, enrolled:4, color:'teal' },
-    { id:'c4', name:'TSH Members', teacherIds:['s3'], classroom:'Classroom 1', day:'Tuesday', time:'15:00', endTime:'16:00', capacity:6, enrolled:6, color:'orange' },
-    { id:'c5', name:'Level 3 & 4', teacherIds:['s2'], classroom:'Classroom 2', day:'Tuesday', time:'15:30', endTime:'16:30', capacity:6, enrolled:3, color:'teal' },
-    { id:'c6', name:'Level 5 & 6', teacherIds:['s1'], classroom:'Classroom 1', day:'Wednesday', time:'16:00', endTime:'17:00', capacity:6, enrolled:2, color:'purple' },
-    { id:'c7', name:'Math Special', teacherIds:['s2'], classroom:'Classroom 2', day:'Thursday', time:'16:00', endTime:'17:00', capacity:4, enrolled:2, color:'blue' },
-    { id:'c8', name:'Writing Workshop', teacherIds:['s3'], classroom:'Classroom 1', day:'Friday', time:'15:00', endTime:'16:30', capacity:8, enrolled:5, color:'green' }
+    { id:'c1', name:'Level 1 & 2',      teacherIds:['s1'],     classroom:'Classroom 2', day:'Saturday', time:'09:30', endTime:'10:30', capacity:6, enrolled:2, color:'green',  category:'Academic'     },
+    { id:'c2', name:'English',           teacherIds:['s3'],     classroom:'Classroom 2', day:'Monday',   time:'15:00', endTime:'16:00', capacity:6, enrolled:3, color:'blue',   category:'Academic'     },
+    { id:'c3', name:'Level 3 & 4',       teacherIds:['s3','s1'],classroom:'Classroom 2', day:'Monday',   time:'16:00', endTime:'17:00', capacity:6, enrolled:4, color:'teal',   category:'Academic'     },
+    { id:'c4', name:'TSH Members',       teacherIds:['s3'],     classroom:'Classroom 1', day:'Tuesday',  time:'15:00', endTime:'16:00', capacity:6, enrolled:6, color:'orange', category:'Non-academic' },
+    { id:'c5', name:'Level 3 & 4',       teacherIds:['s2'],     classroom:'Classroom 2', day:'Tuesday',  time:'15:30', endTime:'16:30', capacity:6, enrolled:3, color:'teal',   category:'Academic'     },
+    { id:'c6', name:'Level 5 & 6',       teacherIds:['s1'],     classroom:'Classroom 1', day:'Wednesday',time:'16:00', endTime:'17:00', capacity:6, enrolled:2, color:'purple', category:'Academic'     },
+    { id:'c7', name:'Math Special',      teacherIds:['s2'],     classroom:'Classroom 2', day:'Thursday', time:'16:00', endTime:'17:00', capacity:4, enrolled:2, color:'blue',   category:'Academic'     },
+    { id:'c8', name:'Writing Workshop',  teacherIds:['s3'],     classroom:'Classroom 1', day:'Friday',   time:'15:00', endTime:'16:30', capacity:8, enrolled:5, color:'green',  category:'Workshop'     }
   ],
   staff: [
     { id:'s1', name:'Chiying', fullName:'Teacher Chiying', role:'Teacher', email:'chiying@studyhub.com', phone:'60110000014', salary:3500, joinDate:'2024-01-15', status:'Active' },
@@ -78,11 +78,12 @@ App.DATA = {
     { id:'INV044', studentId:'STU012', description:'Mar 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null }
   ],
   announcements: [
-    { id:'ANN001', title:'March Holiday Schedule', message:'Classes will be suspended from March 15–17 for public holidays. All missed classes will be rescheduled. Please contact us to book make-up sessions.', audience:'All Parents', type:'Notice', createdOn:'2026-03-05', createdBy:'Admin Yuki' },
-    { id:'ANN002', title:'March Fee Payment Reminder', message:'Monthly tuition for March 2026 is now due. Please ensure payment is made by March 31. Late payments will incur a RM20 admin fee. Bank transfer: Maybank 1234-5678-9012 (The Study Hub).', audience:'All Parents', type:'Reminder', createdOn:'2026-03-01', createdBy:'Admin Yuki' },
-    { id:'ANN003', title:'New Saturday Math Enrichment Program', message:'We are excited to announce a new Saturday Math Enrichment class starting April 5! Limited spots — only 6 seats available. Please contact admin to register your child. RM180/month.', audience:'All Parents', type:'Notice', createdOn:'2026-02-20', createdBy:'Admin Yuki' },
-    { id:'ANN004', title:'Attendance Policy Update — Action Required', message:'Starting March 2026, parents must notify us at least 2 hours before class if their child cannot attend. This helps us manage class capacity. Please save our WhatsApp: 60110000013.', audience:'All Parents', type:'Urgent', createdOn:'2026-02-15', createdBy:'Admin Yuki' },
-    { id:'ANN005', title:'Chinese New Year Holiday Break', message:'The Study Hub will be closed from January 28 to February 2 for Chinese New Year celebrations. We wish all families a happy and prosperous Year of the Snake!', audience:'All Parents', type:'Notice', createdOn:'2026-01-20', createdBy:'Admin Yuki' }
+    { id:'ANN001', title:'March Holiday Schedule', message:'Classes will be suspended from March 15–17 for public holidays. All missed classes will be rescheduled. Please contact us to book make-up sessions.', audience:'All Parents', type:'Notice', status:'published', createdOn:'2026-03-05', createdBy:'Admin Yuki' },
+    { id:'ANN002', title:'March Fee Payment Reminder', message:'Monthly tuition for March 2026 is now due. Please ensure payment is made by March 31. Late payments will incur a RM20 admin fee. Bank transfer: Maybank 1234-5678-9012 (The Study Hub).', audience:'All Parents', type:'Reminder', status:'published', createdOn:'2026-03-01', createdBy:'Admin Yuki' },
+    { id:'ANN003', title:'New Saturday Math Enrichment Program', message:'We are excited to announce a new Saturday Math Enrichment class starting April 5! Limited spots — only 6 seats available. Please contact admin to register your child. RM180/month.', audience:'All Parents', type:'Notice', status:'published', createdOn:'2026-02-20', createdBy:'Admin Yuki' },
+    { id:'ANN004', title:'Attendance Policy Update — Action Required', message:'Starting March 2026, parents must notify us at least 2 hours before class if their child cannot attend. This helps us manage class capacity. Please save our WhatsApp: 60110000013.', audience:'All Parents', type:'Urgent', status:'published', createdOn:'2026-02-15', createdBy:'Admin Yuki' },
+    { id:'ANN005', title:'Chinese New Year Holiday Break', message:'The Study Hub will be closed from January 28 to February 2 for Chinese New Year celebrations. We wish all families a happy and prosperous Year of the Snake!', audience:'All Parents', type:'Notice', status:'published', createdOn:'2026-01-20', createdBy:'Admin Yuki' },
+    { id:'ANN006', title:'New Level 3 Enrichment Class', message:'Proposal for a new Level 3 enrichment slot on Thursdays at 4pm. We have 4 students on the waitlist. Requesting management approval to proceed.', audience:'All Parents', type:'Notice', status:'pending_approval', createdOn:'2026-03-07', createdBy:'Teacher Rose' }
   ],
   attendance: [
     { id:'ATT001', personId:'s1', personType:'staff', date:'2026-03-02', checkIn:'08:55', checkOut:'17:05', status:'Present' },

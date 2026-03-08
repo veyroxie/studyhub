@@ -5,10 +5,20 @@
 
   function render(container) {
     const { announcements } = App.Store.get();
-    const isAdmin = App.currentRole === 'admin';
+    const isAdmin   = App.currentRole === 'admin';
+    const isTeacher = App.currentRole === 'teacher';
 
-    const sorted = announcements.slice().sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); });
-    const filtered = _typeFilter === 'All' ? sorted : sorted.filter(function(a) { return a.type === _typeFilter; });
+    // Pending approval queue (admin only)
+    const pendingAnns = announcements.filter(function(a) { return a.status === 'pending_approval'; });
+
+    // Published announcements only (for display to all)
+    const published = announcements
+      .filter(function(a) { return a.status === 'published' || !a.status; })
+      .sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); });
+    const filtered = _typeFilter === 'All' ? published : published.filter(function(a) { return a.type === _typeFilter; });
+
+    const canWrite = isAdmin || isTeacher;
+    const btnLabel  = isTeacher ? 'Submit for Approval' : '+ New Announcement';
 
     container.innerHTML = ''
       + '<div class="flex items-center justify-between mb-6">'
@@ -16,8 +26,32 @@
       +     '<h1 class="text-2xl font-bold text-slate-800">Communication</h1>'
       +     '<p class="text-sm text-slate-500 mt-0.5">Announcements & broadcasts to parents</p>'
       +   '</div>'
-      +   (isAdmin ? '<button onclick="App.Communication._newModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ New Announcement</button>' : '')
+      +   (canWrite ? '<button onclick="App.Communication._newModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">' + btnLabel + '</button>' : '')
       + '</div>'
+
+      // Approval queue (admin only)
+      + (isAdmin && pendingAnns.length > 0
+          ? '<div class="mb-5 bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">'
+          +   '<div class="px-4 py-2.5 border-b border-amber-200 flex items-center justify-between">'
+          +     '<span class="text-sm font-semibold text-amber-800">Pending Approval (' + pendingAnns.length + ')</span>'
+          +   '</div>'
+          +   '<div class="divide-y divide-amber-100">'
+          +   pendingAnns.map(function(ann) {
+                return '<div class="px-4 py-3 flex items-start justify-between gap-3">'
+                  + '<div>'
+                  +   '<div class="font-semibold text-sm text-slate-800">' + App.Utils.esc(ann.title) + '</div>'
+                  +   '<div class="text-xs text-slate-500 mt-0.5">' + App.Utils.esc(ann.createdBy) + ' · ' + App.Utils.formatDate(ann.createdOn) + '</div>'
+                  +   '<div class="text-xs text-slate-600 mt-1">' + App.Utils.esc(ann.message.slice(0,80)) + (ann.message.length > 80 ? '…' : '') + '</div>'
+                  + '</div>'
+                  + '<div class="flex gap-2 shrink-0">'
+                  +   '<button onclick="App.Communication._approve(\'' + ann.id + '\')" style="padding:0.3rem 0.8rem;font-size:0.75rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:7px;cursor:pointer">Approve</button>'
+                  +   '<button onclick="App.Communication._reject(\'' + ann.id + '\')" style="padding:0.3rem 0.8rem;font-size:0.75rem;font-weight:700;background:#f1f5f9;color:#ef4444;border:none;border-radius:7px;cursor:pointer">Reject</button>'
+                  + '</div>'
+                  + '</div>';
+              }).join('')
+          +   '</div>'
+          + '</div>'
+          : '')
 
       + '<div class="flex gap-2 mb-5">'
       + ['All','Notice','Reminder','Urgent'].map(function(f) {
@@ -31,7 +65,7 @@
         ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">' + App.Utils.emptyState(
             _typeFilter !== 'All' ? 'No announcements match this filter' : 'No announcements yet',
             _typeFilter !== 'All' ? 'Try selecting a different type filter.' : 'Post your first announcement to reach parents.',
-            (isAdmin && _typeFilter === 'All') ? '<button onclick="App.Communication._newModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ New Announcement</button>' : ''
+            (canWrite && _typeFilter === 'All') ? '<button onclick="App.Communication._newModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">' + btnLabel + '</button>' : ''
           ) + '</div>'
         : '<div class="space-y-3">' + filtered.map(function(ann) { return _annCard(ann, isAdmin); }).join('') + '</div>'
       );
@@ -78,12 +112,33 @@
     App.Router.refresh();
   }
 
+  function _approve(annId) {
+    const state = App.Store.get();
+    App.Store.set({ announcements: state.announcements.map(function(a) {
+      return a.id === annId ? Object.assign({}, a, { status: 'published' }) : a;
+    })});
+    App.Utils.showToast('Announcement approved and published', 'success');
+    App.Router.refresh();
+  }
+
+  function _reject(annId) {
+    if (!confirm('Reject and delete this announcement draft?')) return;
+    const state = App.Store.get();
+    App.Store.set({ announcements: state.announcements.filter(function(a) { return a.id !== annId; }) });
+    App.Utils.showToast('Announcement rejected', 'info');
+    App.Router.refresh();
+  }
+
   function _newModal() {
-    const { students } = App.Store.get();
-    const uniqueClasses = [...new Set(students.flatMap(function(s) { return s.enrolledClasses; }))];
+    const isTeacher = App.currentRole === 'teacher';
+    const isAdmin   = App.currentRole === 'admin';
+    const byline    = isTeacher ? _getTeacherName() : 'Admin';
+    const submitLabel = isTeacher ? 'Submit for Approval' : 'Publish';
+
     App.Utils.showModal(
       '<div class="p-6">'
-      + '<h2 class="text-xl font-bold mb-4">New Announcement</h2>'
+      + '<h2 class="text-xl font-bold mb-1">New Announcement</h2>'
+      + (isTeacher ? '<p class="text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg mb-4">Your announcement will be reviewed by admin before publishing.</p>' : '<div class="mb-4"></div>')
       + '<form id="ann-form" class="space-y-4">'
       + _field('Title', '<input name="title" class="form-input" placeholder="e.g. Holiday Schedule Notice" required maxlength="150">')
       + _field('Message', '<textarea name="message" class="form-input" rows="4" placeholder="Write your message here..." required maxlength="1000"></textarea>')
@@ -99,7 +154,7 @@
       + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Publish</button>'
+      + '<button type="submit" class="px-4 py-2 text-sm ' + (isTeacher ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700') + ' text-white rounded-lg">' + submitLabel + '</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -114,19 +169,27 @@
         message: fd.get('message').trim(),
         audience: fd.get('audience'),
         type: fd.get('type'),
+        status: isTeacher ? 'pending_approval' : 'published',
         createdOn: App.Utils.today(),
-        createdBy: 'Admin'
+        createdBy: byline
       };
       App.Store.set({ announcements: [newAnn, ...state.announcements] });
       App.Utils.hideModal();
-      App.Utils.showToast('Announcement published!', 'success');
+      App.Utils.showToast(isTeacher ? 'Submitted for admin approval' : 'Announcement published!', isTeacher ? 'info' : 'success');
       App.Router.refresh();
     });
+  }
+
+  function _getTeacherName() {
+    if (!App.currentTeacher) return 'Teacher';
+    const { staff } = App.Store.get();
+    const s = staff.find(function(x) { return x.id === App.currentTeacher; });
+    return s ? s.fullName : 'Teacher';
   }
 
   function _field(label, inputHtml) {
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  App.Communication = { render: render, _setFilter: _setFilter, _delete: _delete, _newModal: _newModal };
+  App.Communication = { render: render, _setFilter: _setFilter, _delete: _delete, _newModal: _newModal, _approve: _approve, _reject: _reject };
 })();

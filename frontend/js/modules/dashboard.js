@@ -1,9 +1,31 @@
 (function() {
   window.App = window.App || {};
 
+  var _dashView = sessionStorage.getItem('sh_dash_view') || 'mine'; // 'mine' | 'ops'
+
+  function _setDashView(v) {
+    _dashView = v;
+    sessionStorage.setItem('sh_dash_view', v);
+    App.Router.refresh();
+  }
+
   function render(container) {
-    var isAdmin = App.currentRole === 'admin';
-    container.innerHTML = isAdmin ? _adminDash() : _parentDash();
+    var isAdmin   = App.currentRole === 'admin';
+    var isTeacher = App.currentRole === 'teacher';
+
+    // Dashboard view toggle (admin only)
+    var viewToggle = '';
+    if (isAdmin) {
+      viewToggle = '<div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:1rem">'
+        + '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px">'
+        + '<button onclick="App.Dashboard._setView(\'mine\')" style="padding:0.3rem 1rem;font-size:0.75rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_dashView==='mine'?'var(--gold)':'transparent') + ';color:' + (_dashView==='mine'?'#0a0a0a':'#94a3b8') + '">My View</button>'
+        + '<button onclick="App.Dashboard._setView(\'ops\')" style="padding:0.3rem 1rem;font-size:0.75rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_dashView==='ops'?'var(--gold)':'transparent') + ';color:' + (_dashView==='ops'?'#0a0a0a':'#94a3b8') + '">Operations</button>'
+        + '</div>'
+        + '</div>';
+    }
+
+    var dashContent = isTeacher ? _teacherDash() : (isAdmin && _dashView === 'ops') ? _opsDash() : isAdmin ? _adminDash() : _parentDash();
+    container.innerHTML = viewToggle + dashContent;
     setTimeout(_runCountUp, 80);
   }
 
@@ -355,6 +377,231 @@
     }).join('');
   }
 
+  // ── Operations View (cousin's idea) ──────────────────────────────────────────
+  function _opsDash() {
+    var s          = App.Store.get();
+    var students   = s.students   || [];
+    var classes    = s.classes    || [];
+    var invoices   = s.invoices   || [];
+    var staff      = s.staff      || [];
+    var attendance = s.attendance || [];
+    var announcements = (s.announcements || []).filter(function(a){ return a.status === 'published' || !a.status; });
+    var registrations = s.registrations || [];
+
+    var today    = App.Utils.today();
+    var todayDay = new Date(today + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+    var now      = new Date();
+
+    // Sector breakdown
+    var categories = ['Academic', 'Non-academic', 'Workshop'];
+    var catColors  = { Academic:'#3b82f6', 'Non-academic':'#f59e0b', Workshop:'#10b981' };
+    var catBg      = { Academic:'#eff6ff', 'Non-academic':'#fffbeb', Workshop:'#f0fdf4' };
+
+    var sectorCards = categories.map(function(cat) {
+      var catClasses  = classes.filter(function(c) { return c.category === cat; });
+      var catClassIds = catClasses.map(function(c) { return c.id; });
+      var enrolled    = 0;
+      catClasses.forEach(function(c) { enrolled += c.enrolled; });
+      var catStudents = students.filter(function(stu) {
+        return stu.enrolledClasses.some(function(cid) { return catClassIds.indexOf(cid) > -1; });
+      });
+      var catRevenue  = invoices.filter(function(i) {
+        return i.status === 'Paid' && catStudents.some(function(stu) { return stu.id === i.studentId; });
+      }).reduce(function(acc, i) { return acc + i.amount; }, 0);
+      var todayCount  = catClasses.filter(function(c) { return c.day === todayDay; }).length;
+      return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);padding:1.1rem 1.2rem;border-top:3px solid ' + catColors[cat] + '">'
+        + '<div style="font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:' + catColors[cat] + ';margin-bottom:0.7rem">' + cat + '</div>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
+        + _miniStat('Classes', catClasses.length)
+        + _miniStat('Students', catStudents.length)
+        + _miniStat('Today', todayCount)
+        + _miniStat('Revenue', 'RM ' + catRevenue.toFixed(0))
+        + '</div>'
+        + '</div>';
+    }).join('');
+
+    // Pending items
+    var pendingRegs   = registrations.filter(function(r) { return r.status === 'pending'; });
+    var pendingAnns   = (s.announcements||[]).filter(function(a) { return a.status === 'pending_approval'; });
+    var overdueInvs   = invoices.filter(function(i) { return i.status === 'Overdue'; });
+    var newStudents   = students.filter(function(st) { return st.status === 'New'; });
+
+    var pendingItems = [
+      pendingRegs.length > 0   ? { label: pendingRegs.length + ' registration' + (pendingRegs.length!==1?'s':'') + ' pending', page:'students', color:'#3b82f6'   } : null,
+      pendingAnns.length > 0   ? { label: pendingAnns.length + ' announcement' + (pendingAnns.length!==1?'s':'') + ' to approve', page:'communication', color:'#f59e0b' } : null,
+      overdueInvs.length > 0   ? { label: overdueInvs.length + ' overdue invoice' + (overdueInvs.length!==1?'s':''), page:'billing', color:'#ef4444' } : null,
+      newStudents.length > 0   ? { label: newStudents.length + ' new student' + (newStudents.length!==1?'s':'') + ' to activate', page:'students', color:'#6366f1' } : null
+    ].filter(Boolean);
+
+    // Today's classes
+    var todayClasses  = classes.filter(function(c) { return c.day === todayDay; }).sort(function(a,b){ return a.time.localeCompare(b.time); });
+
+    // Financial this month
+    var thisMonth = today.slice(0,7);
+    var monthRevenue  = invoices.filter(function(i) { return i.status==='Paid' && i.paidOn && i.paidOn.startsWith(thisMonth); }).reduce(function(a,i){ return a+i.amount; },0);
+    var monthTarget   = invoices.filter(function(i) { return i.createdOn && i.createdOn.startsWith(thisMonth); }).reduce(function(a,i){ return a+i.amount; },0);
+    var collectRate   = monthTarget > 0 ? Math.round((monthRevenue/monthTarget)*100) : 0;
+
+    // Staff checked in today
+    var staffCheckedIn = attendance.filter(function(a) { return a.personType==='staff' && a.date===today && a.checkIn; }).length;
+
+    return '<div style="max-width:1100px">'
+      // Header
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">'
+      +   '<div>'
+      +     '<h1 style="font-size:1.55rem;font-weight:800;color:#0d0d0d;letter-spacing:-0.03em;margin:0">Operations View</h1>'
+      +     '<p style="font-size:0.82rem;color:#94a3b8;margin:0.2rem 0 0">' + _dateFull() + '</p>'
+      +   '</div>'
+      + '</div>'
+
+      // Sector breakdown
+      + '<div style="margin-bottom:0.5rem"><p style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#94a3b8;margin:0 0 0.65rem">By Sector</p></div>'
+      + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem">'
+      + sectorCards
+      + '</div>'
+
+      // Pending + Today split
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">'
+
+      // Pending actions
+      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden">'
+      +   '<div style="padding:0.85rem 1.25rem;border-bottom:1px solid #f0ede8;background:#faf9f7"><p style="font-size:0.8rem;font-weight:700;color:#111;margin:0">Pending Actions</p></div>'
+      +   '<div style="padding:0.85rem 1.25rem">'
+      +   (pendingItems.length === 0
+          ? '<p style="font-size:0.82rem;color:#94a3b8;text-align:center;padding:1rem 0">All clear</p>'
+          : pendingItems.map(function(item) {
+              return '<div onclick="App.Router.navigate(\'' + item.page + '\')" style="display:flex;align-items:center;gap:0.65rem;padding:0.55rem 0;border-bottom:1px solid #f4f4f2;cursor:pointer" onmouseover="this.style.background=\'#fafaf8\'" onmouseout="this.style.background=\'transparent\'">'
+                + '<span style="width:8px;height:8px;border-radius:50%;background:' + item.color + ';flex-shrink:0"></span>'
+                + '<span style="font-size:0.82rem;font-weight:600;color:#111;flex:1">' + item.label + '</span>'
+                + '<svg style="width:0.85rem;flex-shrink:0;color:#d1d5db" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5l7 7-7 7"/></svg>'
+                + '</div>';
+            }).join(''))
+      +   '</div>'
+      + '</div>'
+
+      // Today's classes
+      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden">'
+      +   '<div style="padding:0.85rem 1.25rem;border-bottom:1px solid #f0ede8;background:#faf9f7;display:flex;justify-content:space-between;align-items:center">'
+      +     '<p style="font-size:0.8rem;font-weight:700;color:#111;margin:0">Today\'s Classes (' + todayClasses.length + ')</p>'
+      +     '<span style="font-size:0.72rem;color:#94a3b8">' + staffCheckedIn + '/' + staff.length + ' staff in</span>'
+      +   '</div>'
+      +   '<div style="padding:0.85rem 1.25rem">'
+      +   (todayClasses.length === 0
+          ? '<p style="font-size:0.82rem;color:#94a3b8;text-align:center;padding:1rem 0">No classes today</p>'
+          : todayClasses.map(function(c) {
+              var teachers = c.teacherIds.map(function(tid) { var st=staff.find(function(x){return x.id===tid;}); return st?st.name:tid; }).join(', ');
+              var attCount = attendance.filter(function(a){ return a.classId===c.id && a.date===today && a.checkIn; }).length;
+              return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid #f4f4f2">'
+                + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;min-width:48px">' + App.Utils.formatTime(c.time) + '</div>'
+                + '<div style="flex:1;min-width:0">'
+                +   '<div style="font-size:0.83rem;font-weight:600;color:#111">' + c.name + '</div>'
+                +   '<div style="font-size:0.7rem;color:#94a3b8">' + teachers + ' · ' + (c.category||'Academic') + '</div>'
+                + '</div>'
+                + '<div style="font-size:0.72rem;font-weight:700;color:#15803d">' + attCount + '/' + c.enrolled + '</div>'
+                + '</div>';
+            }).join(''))
+      +   '</div>'
+      + '</div>'
+
+      + '</div>'
+
+      // Financial summary
+      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);padding:1.1rem 1.5rem;display:flex;align-items:center;gap:2rem;flex-wrap:wrap">'
+      +   '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#94a3b8;white-space:nowrap">This Month</div>'
+      +   _miniStat('Collected', 'RM ' + monthRevenue.toFixed(0))
+      +   _miniStat('Target', 'RM ' + monthTarget.toFixed(0))
+      +   _miniStat('Collection Rate', collectRate + '%')
+      +   _miniStat('Overdue', overdueInvs.length + ' inv.')
+      +   '<button onclick="App.Router.navigate(\'billing\')" style="margin-left:auto;padding:0.4rem 1rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">View Billing</button>'
+      + '</div>'
+
+      + '</div>';
+  }
+
+  function _miniStat(label, value) {
+    return '<div><div style="font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;margin-bottom:0.2rem">' + label + '</div>'
+      + '<div style="font-size:1rem;font-weight:800;color:#111">' + value + '</div></div>';
+  }
+
+  // ── Teacher Dashboard ─────────────────────────────────────────────────────────
+  function _teacherDash() {
+    var s          = App.Store.get();
+    var students   = s.students   || [];
+    var classes    = s.classes    || [];
+    var attendance = s.attendance || [];
+    var staff      = s.staff      || [];
+
+    var tid        = App.currentTeacher;
+    var teacher    = staff.find(function(x) { return x.id === tid; }) || {};
+    var myClasses  = classes.filter(function(c) { return c.teacherIds.indexOf(tid) > -1; });
+    var myClassIds = myClasses.map(function(c) { return c.id; });
+    var myStudents = students.filter(function(stu) {
+      return stu.enrolledClasses.some(function(cid) { return myClassIds.indexOf(cid) > -1; });
+    });
+
+    var today    = App.Utils.today();
+    var todayDay = new Date(today + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+    var todayClasses = myClasses.filter(function(c) { return c.day === todayDay; }).sort(function(a,b){ return a.time.localeCompare(b.time); });
+    var myRec    = attendance.find(function(a) { return a.personId === tid && a.personType === 'staff' && a.date === today; });
+
+    return '<div>'
+      // Greeting
+      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between">'
+      +   '<div>'
+      +     '<p style="font-size:1.1rem;font-weight:800;color:#111;margin:0">Good ' + _timeOfDay() + ', ' + (teacher.name || 'Teacher') + '</p>'
+      +     '<p style="font-size:0.8rem;color:#94a3b8;margin:0.2rem 0 0">' + _dateFull() + '</p>'
+      +   '</div>'
+      +   '<div style="text-align:right">'
+      +     (myRec && myRec.checkIn
+              ? '<div style="font-size:0.78rem;font-weight:700;color:#15803d">Checked in ' + App.Utils.formatTime(myRec.checkIn) + '</div>'
+              : '<button onclick="App.Router.navigate(\'attendance\')" style="padding:0.4rem 0.9rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Check In</button>')
+      +   '</div>'
+      + '</div>'
+
+      // Stats row
+      + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.25rem">'
+      + stat('My Classes', myClasses.length, false, '#6366f1', false, '#f5f3ff')
+      + stat('My Students', myStudents.length, false, '#0891b2', false, '#ecfeff')
+      + stat('Today', todayClasses.length, false, '#d97706', false, '#fefce8')
+      + '</div>'
+
+      // Today's classes
+      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden;margin-bottom:1.25rem">'
+      +   '<div style="padding:0.85rem 1.25rem;border-bottom:1px solid #f0ede8;background:#faf9f7"><p style="font-size:0.8rem;font-weight:700;color:#111;margin:0">Today\'s Schedule</p></div>'
+      +   '<div style="padding:0.85rem 1.25rem">'
+      +   (todayClasses.length === 0
+          ? '<p style="font-size:0.82rem;color:#94a3b8;text-align:center;padding:1rem 0">No classes today — enjoy your day!</p>'
+          : todayClasses.map(function(c) {
+              var enrolled = students.filter(function(stu){ return stu.enrolledClasses.indexOf(c.id)>-1; });
+              var attCount = attendance.filter(function(a){ return a.classId===c.id && a.date===today && a.checkIn; }).length;
+              return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0;border-bottom:1px solid #f4f4f2">'
+                + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;min-width:52px">' + App.Utils.formatTime(c.time) + '</div>'
+                + '<div style="flex:1">'
+                +   '<div style="font-size:0.85rem;font-weight:600;color:#111">' + c.name + '</div>'
+                +   '<div style="font-size:0.7rem;color:#94a3b8">' + c.classroom + ' · ' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + '</div>'
+                + '</div>'
+                + '<div style="font-size:0.78rem;font-weight:700;color:#15803d;background:#f0fdf4;padding:0.25rem 0.6rem;border-radius:6px">'
+                +   attCount + '/' + enrolled.length + ' in'
+                + '</div>'
+                + '<button onclick="App.Router.navigate(\'attendance\')" style="padding:0.3rem 0.7rem;font-size:0.72rem;font-weight:700;background:#f1f5f9;color:#374151;border:none;border-radius:7px;cursor:pointer">Attend</button>'
+                + '</div>';
+            }).join(''))
+      +   '</div>'
+      + '</div>'
+
+      // Quick links
+      + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem">'
+      + [
+          { label:'My Students', page:'students', color:'#3b82f6' },
+          { label:'Attendance', page:'attendance', color:'#10b981' },
+          { label:'Announcements', page:'communication', color:'#f59e0b' }
+        ].map(function(item) {
+          return '<button onclick="App.Router.navigate(\'' + item.page + '\')" style="padding:0.85rem;background:#fff;border:1px solid rgba(0,0,0,0.07);border-radius:12px;font-size:0.82rem;font-weight:700;color:' + item.color + ';cursor:pointer;border-left:3px solid ' + item.color + '">' + item.label + '</button>';
+        }).join('')
+      + '</div>'
+      + '</div>';
+  }
+
   function _timeOfDay() {
     var h = new Date().getHours();
     return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
@@ -364,5 +611,5 @@
     return new Date().toLocaleDateString('en-MY', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
   }
 
-  App.Dashboard = { render: render };
+  App.Dashboard = { render: render, _setView: _setDashView };
 })();

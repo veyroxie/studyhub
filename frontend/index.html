@@ -48,6 +48,10 @@
             class="flex-1 py-1.5 text-xs bg-blue-900/50 hover:bg-blue-900 text-blue-300 rounded-lg border border-blue-700/50 font-medium transition-colors">
             Admin
           </button>
+          <button onclick="App.Login.quickLogin('chiying@studyhub.com','teacher123')"
+            class="flex-1 py-1.5 text-xs bg-purple-900/50 hover:bg-purple-900 text-purple-300 rounded-lg border border-purple-700/50 font-medium transition-colors">
+            Teacher
+          </button>
           <button onclick="App.Login.quickLogin('seeduser27@example.com','parent123')"
             class="flex-1 py-1.5 text-xs bg-emerald-900/50 hover:bg-emerald-900 text-emerald-300 rounded-lg border border-emerald-700/50 font-medium transition-colors">
             Parent
@@ -192,6 +196,12 @@
           <select id="parent-select" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-slate-700 bg-white"></select>
         </div>
 
+        <!-- Teacher selector (visible in teacher mode) -->
+        <div id="teacher-selector-wrap" class="hidden flex items-center gap-2">
+          <span class="text-xs text-slate-500 font-medium whitespace-nowrap">Teacher:</span>
+          <select id="teacher-select" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-400 text-slate-700 bg-white"></select>
+        </div>
+
         <!-- Notification bell -->
         <div class="relative z-40" id="notif-bell-wrap">
           <button id="notif-bell-btn" onclick="App.Notifs.toggle()" title="Notifications"
@@ -263,16 +273,27 @@
     <!-- Role switcher -->
     <div>
       <div class="text-xs text-slate-400 mb-2 font-medium">View as</div>
-      <div class="flex gap-2">
+      <div class="flex gap-1.5">
         <button id="dev-admin-btn" onclick="App.Dev.setRole('admin')"
           class="flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all bg-blue-600 text-white border-blue-500">
           Admin
+        </button>
+        <button id="dev-teacher-btn" onclick="App.Dev.setRole('teacher')"
+          class="flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all border-slate-600 text-slate-400 hover:bg-slate-700">
+          Teacher
         </button>
         <button id="dev-client-btn" onclick="App.Dev.setRole('client')"
           class="flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all border-slate-600 text-slate-400 hover:bg-slate-700">
           Parent
         </button>
       </div>
+    </div>
+    <!-- Teacher picker (shown when in teacher mode) -->
+    <div id="dev-teacher-wrap" class="hidden">
+      <div class="text-xs text-slate-400 mb-2 font-medium">Teacher account</div>
+      <select id="dev-teacher-select" onchange="App.Dev.setTeacher(this.value)"
+        class="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:ring-1 focus:ring-purple-500">
+      </select>
     </div>
     <!-- Parent picker (shown when in client mode) -->
     <div id="dev-parent-wrap" class="hidden">
