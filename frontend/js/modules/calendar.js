@@ -31,6 +31,7 @@
     const _cancelledClasses = cancelledClasses || [];
     const isAdmin = App.currentRole === 'admin';
     const isClient = App.currentRole === 'client';
+    const isTeacher = App.currentRole === 'teacher';
     const weekDates = DAYS.map(function(_, i) { return addDays(_weekStart, i); });
 
     // Parent filter: only show classes the parent's children are enrolled in
@@ -43,12 +44,23 @@
       });
     }
 
+    // Teacher filter: only show their own classes
+    let teacherClassIds = null;
+    if (isTeacher && App.currentTeacher) {
+      const myClasses = classes.filter(function(c) { return c.teacherIds.indexOf(App.currentTeacher) > -1; });
+      teacherClassIds = {};
+      myClasses.forEach(function(c) { teacherClassIds[c.id] = true; });
+    }
+
+    const viewClasses = teacherClassIds !== null ? classes.filter(function(c) { return teacherClassIds[c.id]; }) : classes;
+
     const classesByDay = {};
     DAYS.forEach(function(day) {
       classesByDay[day] = classes
         .filter(function(c) {
           if (c.day !== day) return false;
           if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
+          if (teacherClassIds !== null && !teacherClassIds[c.id]) return false;
           if (_filterTeacher && !c.teacherIds.includes(_filterTeacher)) return false;
           if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
           return true;
@@ -56,13 +68,14 @@
         .sort(function(a, b) { return a.time.localeCompare(b.time); });
     });
 
-    const totalClasses = classes.length;
-    const avgFill = classes.reduce(function(s, c) { return s + (c.enrolled / c.capacity); }, 0) / (classes.length || 1);
-    const fullClasses = classes.filter(function(c) { return c.enrolled >= c.capacity; }).length;
+    const totalClasses = viewClasses.length;
+    const avgFill = viewClasses.reduce(function(s, c) { return s + (c.enrolled / c.capacity); }, 0) / (viewClasses.length || 1);
+    const fullClasses = viewClasses.filter(function(c) { return c.enrolled >= c.capacity; }).length;
 
     const viewToggle = '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px">'
       + '<button onclick="App.Calendar._setView(\'week\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='week'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='week'?'#0a0a0a':'#94a3b8') + '">Week</button>'
       + '<button onclick="App.Calendar._setView(\'month\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='month'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='month'?'#0a0a0a':'#94a3b8') + '">Month</button>'
+      + '<button onclick="App.Calendar._setView(\'timetable\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='timetable'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='timetable'?'#0a0a0a':'#94a3b8') + '">Timetable</button>'
       + '</div>';
 
     const headerHtml = ''
@@ -85,6 +98,10 @@
         ? '<div class="mb-4 px-4 py-2 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-700">Showing classes for your child only</div>'
         : '')
 
+      + (isTeacher && teacherClassIds !== null
+        ? '<div class="mb-4 px-4 py-2 bg-purple-50 border border-purple-100 rounded-xl text-sm text-purple-700">Showing your assigned classes only</div>'
+        : '')
+
       + '<div class="grid grid-cols-4 gap-4 mb-6">'
       + _statCard('Total Classes', totalClasses, 'text-blue-600')
       + _statCard('Full Classes', fullClasses, 'text-red-500')
@@ -94,15 +111,30 @@
 
     const filterBar = '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;flex-wrap:wrap">'
       + '<input type="search" placeholder="Search class..." value="' + App.Utils.esc(_filterSearch) + '" oninput="App.Calendar._setSearch(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;width:180px;background:#fff">'
-      + '<select onchange="App.Calendar._setTeacher(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;cursor:pointer">'
-      + '<option value="">All Tutors</option>'
-      + staff.map(function(s) { return '<option value="' + s.id + '" ' + (_filterTeacher === s.id ? 'selected' : '') + '>' + App.Utils.esc(s.name) + '</option>'; }).join('')
-      + '</select>'
+      + (!isTeacher
+        ? '<select onchange="App.Calendar._setTeacher(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;cursor:pointer">'
+          + '<option value="">All Tutors</option>'
+          + staff.map(function(s) { return '<option value="' + s.id + '" ' + (_filterTeacher === s.id ? 'selected' : '') + '>' + App.Utils.esc(s.name) + '</option>'; }).join('')
+          + '</select>'
+        : '')
       + (_filterTeacher || _filterSearch ? '<button onclick="App.Calendar._clearFilters()" style="padding:0.45rem 0.85rem;font-size:0.8rem;border:none;border-radius:8px;background:#f1f5f9;color:#64748b;cursor:pointer">Clear</button>' : '')
       + '</div>';
 
     if (_view === 'month') {
-      container.innerHTML = headerHtml + filterBar + _renderMonthView(classes, staff, enrolledClassIds, isAdmin);
+      const displayClasses = teacherClassIds !== null
+        ? classes.filter(function(c) { return teacherClassIds[c.id]; })
+        : classes;
+      container.innerHTML = headerHtml + filterBar + _renderMonthView(displayClasses, staff, enrolledClassIds, isAdmin);
+      return;
+    }
+
+    if (_view === 'timetable') {
+      const displayClasses = teacherClassIds !== null
+        ? classes.filter(function(c) { return teacherClassIds[c.id]; })
+        : enrolledClassIds !== null
+        ? classes.filter(function(c) { return enrolledClassIds[c.id]; })
+        : classes;
+      container.innerHTML = headerHtml + _renderTimetableView(displayClasses, staff);
       return;
     }
 
@@ -465,6 +497,93 @@
   function _setSearch(val) { _filterSearch = val; App.Router.refresh(); }
   function _setTeacher(val) { _filterTeacher = val; App.Router.refresh(); }
   function _clearFilters() { _filterTeacher = ''; _filterSearch = ''; App.Router.refresh(); }
+
+  function _renderTimetableView(displayClasses, staff) {
+    const DAYS_TT = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+    const DAYS_SHORT_TT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    // Time slots: 8:00 to 20:00, every hour
+    const slots = [];
+    for (var h = 8; h <= 20; h++) { slots.push(h < 10 ? '0' + h + ':00' : h + ':00'); }
+
+    // Color map for classes
+    const COLOR_MAP = {
+      green:  { bg:'#dcfce7', border:'#86efac', text:'#15803d' },
+      blue:   { bg:'#dbeafe', border:'#93c5fd', text:'#1d4ed8' },
+      teal:   { bg:'#ccfbf1', border:'#5eead4', text:'#0f766e' },
+      orange: { bg:'#ffedd5', border:'#fdba74', text:'#c2410c' },
+      purple: { bg:'#f3e8ff', border:'#d8b4fe', text:'#7c3aed' },
+      red:    { bg:'#fee2e2', border:'#fca5a5', text:'#b91c1c' }
+    };
+
+    // Build lookup: { day: { slotHour: [class, ...] } }
+    var grid = {};
+    DAYS_TT.forEach(function(d) { grid[d] = {}; });
+    displayClasses.forEach(function(c) {
+      var hour = parseInt((c.time || '08:00').split(':')[0], 10);
+      if (!grid[c.day]) return;
+      if (!grid[c.day][hour]) grid[c.day][hour] = [];
+      grid[c.day][hour].push(c);
+    });
+
+    // Determine which rows to show (only slots that have at least one class or ±1 buffer)
+    var activeHours = {};
+    displayClasses.forEach(function(c) {
+      var h = parseInt((c.time||'08:00').split(':')[0], 10);
+      var eh = parseInt((c.endTime||c.time||'08:00').split(':')[0], 10);
+      for (var x = Math.max(8, h - 1); x <= Math.min(20, eh + 1); x++) activeHours[x] = true;
+    });
+    var showSlots = slots.filter(function(s) {
+      var h = parseInt(s.split(':')[0], 10);
+      return activeHours[h] || displayClasses.length === 0;
+    });
+    if (showSlots.length === 0) showSlots = slots;
+
+    var header = '<div style="display:grid;grid-template-columns:60px repeat(7,1fr);border-radius:14px 14px 0 0;overflow:hidden;background:#f8fafc;border:1px solid #e2e8f0;border-bottom:none">'
+      + '<div style="padding:0.65rem 0.5rem;font-size:0.68rem;font-weight:700;color:#94a3b8;text-align:center;border-right:1px solid #e2e8f0">TIME</div>'
+      + DAYS_TT.map(function(d, i) {
+          return '<div style="padding:0.65rem 0.5rem;font-size:0.72rem;font-weight:700;color:#374151;text-align:center;' + (i < 6 ? 'border-right:1px solid #e2e8f0;' : '') + '">' + DAYS_SHORT_TT[i] + '</div>';
+        }).join('')
+      + '</div>';
+
+    var body = '<div style="border:1px solid #e2e8f0;border-radius:0 0 14px 14px;overflow:hidden;background:#fff">';
+    showSlots.forEach(function(slot, si) {
+      var h = parseInt(slot.split(':')[0], 10);
+      var timeLabel = (h > 12 ? h - 12 : h) + ':00' + (h >= 12 ? ' PM' : ' AM');
+      body += '<div style="display:grid;grid-template-columns:60px repeat(7,1fr);border-bottom:' + (si < showSlots.length - 1 ? '1px solid #f0ede8' : 'none') + ';min-height:64px">'
+        + '<div style="padding:0.5rem 0.35rem;font-size:0.68rem;font-weight:700;color:#94a3b8;text-align:right;border-right:1px solid #e2e8f0;display:flex;align-items:flex-start;justify-content:flex-end">' + timeLabel + '</div>'
+        + DAYS_TT.map(function(d, di) {
+            var cellClasses = (grid[d] && grid[d][h]) || [];
+            var borderStyle = di < 6 ? 'border-right:1px solid #f0ede8;' : '';
+            if (cellClasses.length === 0) return '<div style="padding:0.35rem;' + borderStyle + '"></div>';
+            return '<div style="padding:0.3rem;' + borderStyle + 'display:flex;flex-direction:column;gap:0.2rem">'
+              + cellClasses.map(function(c) {
+                  var teacher = staff.find(function(x) { return c.teacherIds.indexOf(x.id) > -1; });
+                  var col = COLOR_MAP[c.color] || COLOR_MAP.blue;
+                  // Duration label
+                  var startH = parseInt((c.time||'08:00').split(':')[0],10), startM = parseInt((c.time||'08:00').split(':')[1]||'0',10);
+                  var endH   = parseInt((c.endTime||c.time||'08:00').split(':')[0],10), endM = parseInt((c.endTime||c.time||'08:00').split(':')[1]||'0',10);
+                  var dur = (endH*60+endM) - (startH*60+startM);
+                  var fmtT = function(hh,mm){ return (hh>12?hh-12:hh)+':'+(mm<10?'0'+mm:mm)+(hh>=12?'pm':'am'); };
+                  return '<div onclick="App.Calendar._classModal(\'' + c.id + '\')" style="background:' + col.bg + ';border:1px solid ' + col.border + ';border-left:3px solid ' + col.border + ';border-radius:6px;padding:0.3rem 0.45rem;cursor:pointer" title="' + c.name + '">'
+                    + '<div style="font-size:0.72rem;font-weight:700;color:' + col.text + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + c.name + '</div>'
+                    + '<div style="font-size:0.62rem;color:' + col.text + ';opacity:0.75">' + fmtT(startH,startM) + (dur>0?' · '+dur+'m':'') + '</div>'
+                    + (teacher ? '<div style="font-size:0.62rem;color:' + col.text + ';opacity:0.65">' + teacher.name + '</div>' : '')
+                    + '</div>';
+                }).join('')
+              + '</div>';
+          }).join('')
+        + '</div>';
+    });
+    body += '</div>';
+
+    if (displayClasses.length === 0) {
+      return '<div class="bg-white rounded-xl border border-dashed border-slate-200 p-12 text-center">'
+        + '<p class="text-slate-400 text-sm">No classes to display</p>'
+        + '</div>';
+    }
+
+    return '<div style="overflow-x:auto">' + header + body + '</div>';
+  }
 
   App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _setStar: _setStar, _submitFeedback: _submitFeedback };
 })();

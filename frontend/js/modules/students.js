@@ -6,14 +6,23 @@
   let _selected = {};
 
   function render(container) {
-    const { students } = App.Store.get();
+    const { students, classes } = App.Store.get();
     const isAdmin = App.currentRole === 'admin';
     const isClient = App.currentRole === 'client';
+    const isTeacher = App.currentRole === 'teacher';
 
     let displayStudents = students;
     if (isClient && App.clientParent) {
       displayStudents = students.filter(function(s) { return s.contact === App.clientParent; })
         .filter(function(s) { return s.status !== 'Inactive'; });
+    }
+    if (isTeacher && App.currentTeacher) {
+      const teacherClassIds = classes
+        .filter(function(c) { return c.teacherIds.indexOf(App.currentTeacher) > -1; })
+        .map(function(c) { return c.id; });
+      displayStudents = students.filter(function(s) {
+        return s.enrolledClasses.some(function(cid) { return teacherClassIds.indexOf(cid) > -1; });
+      });
     }
 
     const filtered = displayStudents.filter(function(s) {
@@ -54,7 +63,7 @@
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">'
       +   '<div class="p-4 border-b border-slate-100 flex items-center gap-3 flex-wrap">'
       +     '<input id="student-search" type="text" placeholder="Search by name or ID..." value="' + _search + '" oninput="App.Students._onSearch(this.value)" class="flex-1 min-w-48 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">'
-      +     (isAdmin ? '<select onchange="App.Students._onFilter(this.value)" class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none">'
+      +     (isAdmin || isTeacher ? '<select onchange="App.Students._onFilter(this.value)" class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none">'
       +     ['All','Active','Inactive','New','Waitlisted'].map(function(s) {
               return '<option value="' + s + '" ' + (s === _statusFilter ? 'selected' : '') + '>' + s + '</option>';
             }).join('')

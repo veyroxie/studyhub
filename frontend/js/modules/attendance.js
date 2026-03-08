@@ -10,13 +10,14 @@
     const { classes } = App.Store.get();
     if (!_attClassId && classes.length) _attClassId = classes[0].id;
     const isClient = App.currentRole === 'client';
+    const isTeacher = App.currentRole === 'teacher';
 
     container.innerHTML = '<div style="display:flex;flex-direction:column;gap:1rem">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">'
       +   '<h1 style="font-size:1.4rem;font-weight:800;color:#0d0d0d;letter-spacing:-0.03em;margin:0">Attendance</h1>'
       +   (isClient ? '<div style="font-size:0.78rem;color:#94a3b8;background:#f1f5f9;padding:0.4rem 0.85rem;border-radius:8px">Viewing: ' + (App.clientParent || 'Your child') + '</div>' : '')
       + '</div>'
-      + (isClient ? _renderClientView() : _renderAdminView())
+      + (isClient ? _renderClientView() : isTeacher ? _renderTeacherView() : _renderAdminView())
       + '</div>';
   }
 
@@ -291,6 +292,77 @@
       ch.close();
     } catch(e) {}
     App.Router.refresh();
+  }
+
+  function _renderTeacherView() {
+    const { classes } = App.Store.get();
+    // Get teacher's classes
+    const myClasses = classes.filter(function(c) { return c.teacherIds.indexOf(App.currentTeacher) > -1; });
+
+    // Auto-select first class if current selection isn't theirs
+    if (!myClasses.find(function(c) { return c.id === _attClassId; }) && myClasses.length > 0) {
+      _attClassId = myClasses[0].id;
+    }
+
+    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);margin-bottom:1rem;overflow:hidden">'
+      + '<div style="padding:0.75rem 1.1rem;border-bottom:1px solid #f0ede8;background:rgba(139,92,246,0.05)">'
+      +   '<span style="font-size:0.78rem;font-weight:700;color:#7c3aed">MY CLASSES — Student Attendance</span>'
+      + '</div>'
+      + _studentTabFiltered(myClasses)
+      + '</div>';
+  }
+
+  function _studentTabFiltered(myClasses) {
+    const { students, attendance } = App.Store.get();
+    if (myClasses.length === 0) {
+      return '<div style="padding:3rem;text-align:center;color:#94a3b8;font-size:0.85rem">No classes assigned to you yet</div>';
+    }
+    const selectedClass = myClasses.find(function(c) { return c.id === _attClassId; }) || myClasses[0];
+    const enrolledStudents = selectedClass
+      ? students.filter(function(s) { return s.enrolledClasses.indexOf(selectedClass.id) > -1; })
+      : [];
+    const todayRecs = attendance.filter(function(a) { return a.classId === selectedClass.id && a.date === _attDate; });
+    const presentCount = todayRecs.filter(function(a) { return a.checkIn; }).length;
+
+    return '<div style="padding:0.85rem 1.1rem;border-bottom:1px solid #f0ede8;background:#faf9f7">'
+      +   '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">'
+      +     '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.55rem 0.85rem;font-size:0.84rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:44px">'
+      +     '<select onchange="App.Attendance._setClass(this.value)" style="padding:0.55rem 0.85rem;font-size:0.84rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:44px;background:#fff">'
+      +     myClasses.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === selectedClass.id ? 'selected' : '') + '>' + c.name + ' — ' + c.day + '</option>'; }).join('')
+      +     '</select>'
+      +   '</div>'
+      +   '<div style="margin-top:0.5rem;font-size:0.75rem;color:#94a3b8">' + enrolledStudents.length + ' enrolled · <span style="color:#15803d;font-weight:600">' + presentCount + ' checked in</span></div>'
+      + '</div>'
+      + (enrolledStudents.length === 0
+        ? '<div style="padding:3rem;text-align:center;color:#94a3b8;font-size:0.85rem">No students enrolled in this class</div>'
+        : '<div>'
+        + enrolledStudents.map(function(s) {
+            const rec = attendance.find(function(a) { return a.personId === s.id && a.classId === selectedClass.id && a.date === _attDate; });
+            const checkedIn  = rec && rec.checkIn;
+            const checkedOut = rec && rec.checkOut;
+            const rowBg = checkedOut ? '#f0fdf4' : checkedIn ? '#fefce8' : '#fff';
+            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.1rem;border-bottom:1px solid #f9f8f6;background:' + rowBg + ';gap:0.75rem">'
+              + '<div style="display:flex;align-items:center;gap:0.75rem;min-width:0;flex:1">'
+              +   '<div style="width:2.8rem;height:2.8rem;border-radius:50%;background:' + (checkedOut?'#dcfce7':checkedIn?'#fef9c3':'#f1f5f9') + ';color:' + (checkedOut?'#15803d':checkedIn?'#a16207':'#64748b') + ';font-weight:800;font-size:0.9rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + s.firstName.charAt(0) + s.lastName.charAt(0) + '</div>'
+              +   '<div style="min-width:0">'
+              +     '<div style="font-weight:600;font-size:0.9rem;color:#111">' + s.firstName + ' ' + s.lastName + '</div>'
+              +     '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">'
+              +       (checkedOut ? '↓ ' + App.Utils.formatTime(rec.checkIn) + '  ·  ↑ ' + App.Utils.formatTime(rec.checkOut)
+              +       : checkedIn ? '↓ ' + App.Utils.formatTime(rec.checkIn) + '  · still in'
+              +       : 'Not checked in')
+              +     '</div>'
+              +   '</div>'
+              + '</div>'
+              + '<div style="flex-shrink:0">'
+              +   (!checkedIn
+                  ? '<button onclick="App.Attendance._checkInStudent(\'' + s.id + '\')" style="min-height:48px;min-width:110px;padding:0.5rem 1rem;background:#22c55e;color:#fff;border:none;border-radius:10px;font-size:0.85rem;font-weight:700;cursor:pointer">Check In</button>'
+                  : checkedIn && !checkedOut
+                  ? '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" style="min-height:48px;min-width:110px;padding:0.5rem 1rem;background:#64748b;color:#fff;border:none;border-radius:10px;font-size:0.85rem;font-weight:700;cursor:pointer">Check Out</button>'
+                  : '<div style="display:flex;align-items:center;gap:0.4rem;padding:0.5rem 0.75rem;background:#dcfce7;border-radius:10px"><span style="font-size:0.78rem;font-weight:700;color:#15803d">Done</span></div>')
+              + '</div>'
+              + '</div>';
+          }).join('')
+        + '</div>');
   }
 
   App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses };
