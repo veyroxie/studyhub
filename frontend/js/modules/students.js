@@ -3,6 +3,7 @@
 
   let _search = '';
   let _statusFilter = 'All';
+  let _selected = {};
 
   function render(container) {
     const { students } = App.Store.get();
@@ -11,7 +12,8 @@
 
     let displayStudents = students;
     if (isClient && App.clientParent) {
-      displayStudents = students.filter(function(s) { return s.contact === App.clientParent; });
+      displayStudents = students.filter(function(s) { return s.contact === App.clientParent; })
+        .filter(function(s) { return s.status !== 'Inactive'; });
     }
 
     const filtered = displayStudents.filter(function(s) {
@@ -25,6 +27,8 @@
 
     const { registrations } = App.Store.get();
     const pendingRegs = (registrations || []).filter(function(r) { return r.status === 'pending'; });
+
+    const colCount = isAdmin ? 7 : 6;
 
     container.innerHTML = ''
       + '<div class="flex items-center justify-between mb-6">'
@@ -50,20 +54,22 @@
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">'
       +   '<div class="p-4 border-b border-slate-100 flex items-center gap-3 flex-wrap">'
       +     '<input id="student-search" type="text" placeholder="Search by name or ID..." value="' + _search + '" oninput="App.Students._onSearch(this.value)" class="flex-1 min-w-48 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">'
-      +     '<select onchange="App.Students._onFilter(this.value)" class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none">'
+      +     (isAdmin ? '<select onchange="App.Students._onFilter(this.value)" class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none">'
       +     ['All','Active','Inactive','New','Waitlisted'].map(function(s) {
               return '<option value="' + s + '" ' + (s === _statusFilter ? 'selected' : '') + '>' + s + '</option>';
             }).join('')
-      +     '</select>'
+      +     '</select>' : '')
       +   '</div>'
+      +   '<div id="stu-bulk-bar" style="padding:0 1rem">' + _bulkBar() + '</div>'
       +   '<div class="overflow-x-auto">'
       +     '<table class="w-full">'
       +       '<thead class="bg-slate-50 border-b border-slate-100"><tr>'
+      +         (isAdmin ? '<th class="th" style="width:36px"><input type="checkbox" id="select-all-cb" onchange="App.Students._toggleSelectAll(this.checked)" style="cursor:pointer"></th>' : '')
       +         '<th class="th">Student</th><th class="th">Classes</th><th class="th">DOB</th>'
       +         '<th class="th">Parent / Contact</th><th class="th">Status</th><th class="th">Action</th>'
       +       '</tr></thead>'
       +       '<tbody class="divide-y divide-slate-50">'
-      +       (filtered.length === 0 ? '<tr><td colspan="6" class="px-6 py-12 text-center text-slate-400 text-sm">No students found</td></tr>' : '')
+      +       (filtered.length === 0 ? '<tr><td colspan="' + colCount + '" class="px-6 py-12 text-center text-slate-400 text-sm">No students found</td></tr>' : '')
       +       filtered.map(function(s) {
               const { classes } = App.Store.get();
               const enrolledNames = s.enrolledClasses.map(function(cid) {
@@ -71,6 +77,7 @@
                 return c ? c.name : cid;
               });
               return '<tr class="hover:bg-slate-50 transition-colors">'
+                + (isAdmin ? '<td class="td" style="width:36px"><input type="checkbox" class="stu-cb" data-id="' + s.id + '" onchange="App.Students._toggleSelect(\'' + s.id + '\',this.checked)" style="cursor:pointer"' + (_selected[s.id] ? ' checked' : '') + '></td>' : '')
                 + '<td class="td"><div class="flex items-center gap-3">'
                 +   '<div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">' + s.firstName.charAt(0) + s.lastName.charAt(0) + '</div>'
                 +   '<div><div class="font-medium text-slate-800">' + s.firstName + ' ' + s.lastName + '</div><div class="text-xs text-slate-400">' + s.id + '</div></div>'
@@ -89,6 +96,78 @@
       +     '</table>'
       +   '</div>'
       + '</div>';
+  }
+
+  function _bulkBar() {
+    var count = Object.keys(_selected).length;
+    if (count === 0) return '';
+    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 1rem;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.25);border-radius:10px;margin-bottom:0.75rem">'
+      + '<span style="font-size:0.82rem;font-weight:700;color:#92400e">' + count + ' selected</span>'
+      + '<button onclick="App.Students._bulkMessage()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Send Message</button>'
+      + '<button onclick="App.Students._bulkDeselect()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:transparent;color:#92400e;border:1px solid rgba(201,162,39,0.3);border-radius:7px;cursor:pointer">Clear</button>'
+      + '</div>';
+  }
+
+  function _toggleSelectAll(checked) {
+    document.querySelectorAll('.stu-cb').forEach(function(cb) {
+      cb.checked = checked;
+      if (checked) {
+        _selected[cb.dataset.id] = true;
+      } else {
+        delete _selected[cb.dataset.id];
+      }
+    });
+    _refreshBulkBar();
+  }
+
+  function _toggleSelect(id, checked) {
+    if (checked) _selected[id] = true; else delete _selected[id];
+    _refreshBulkBar();
+  }
+
+  function _refreshBulkBar() {
+    var bar = document.getElementById('stu-bulk-bar');
+    if (bar) bar.innerHTML = _bulkBar();
+  }
+
+  function _bulkDeselect() {
+    _selected = {};
+    document.querySelectorAll('.stu-cb, #select-all-cb').forEach(function(cb) { cb.checked = false; });
+    _refreshBulkBar();
+  }
+
+  function _bulkMessage() {
+    var ids = Object.keys(_selected);
+    if (ids.length === 0) return;
+    var { students } = App.Store.get();
+    var parents = {};
+    students.filter(function(s) { return ids.indexOf(s.id) > -1; }).forEach(function(s) { parents[s.contact] = s.parentName; });
+    var parentList = Object.keys(parents);
+    var html = '<div class="p-6">'
+      + '<h2 class="text-lg font-bold mb-1">Send Message</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Will send to ' + parentList.length + ' parent' + (parentList.length !== 1 ? 's' : '') + '</p>'
+      + '<textarea id="bulk-msg-text" rows="4" placeholder="Type your message…" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300 resize-none mb-4"></textarea>'
+      + '<div class="flex gap-2 justify-end">'
+      + '<button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg">Cancel</button>'
+      + '<button onclick="App.Students._bulkSendMessage()" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Send</button>'
+      + '</div></div>';
+    App.Utils.showModal(html);
+  }
+
+  function _bulkSendMessage() {
+    var text = document.getElementById('bulk-msg-text').value.trim();
+    if (!text) return;
+    var ids = Object.keys(_selected);
+    var { students, messages } = App.Store.get();
+    var parents = {};
+    students.filter(function(s) { return ids.indexOf(s.id) > -1; }).forEach(function(s) { parents[s.contact] = true; });
+    var newMsgs = Object.keys(parents).map(function(email) {
+      return { id: App.Utils.generateId(), fromRole: 'admin', fromLabel: 'Study Hub', toParent: email, text: text, ts: new Date().toISOString(), read: false };
+    });
+    App.Store.set({ messages: (messages || []).concat(newMsgs) });
+    App.Utils.hideModal();
+    App.Utils.showToast('Message sent to ' + newMsgs.length + ' parent' + (newMsgs.length !== 1 ? 's' : ''), 'success');
+    _bulkDeselect();
   }
 
   function _onSearch(val) { _search = val; App.Router.refresh(); }
@@ -413,5 +492,21 @@
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  App.Students = { render: render, _onSearch: _onSearch, _onFilter: _onFilter, _viewModal: _viewModal, _editModal: _editModal, _switchTab: _switchTab, _addModal: _addModal, _pendingModal: _pendingModal, _approveReg: _approveReg, _rejectReg: _rejectReg };
+  App.Students = {
+    render: render,
+    _onSearch: _onSearch,
+    _onFilter: _onFilter,
+    _viewModal: _viewModal,
+    _editModal: _editModal,
+    _switchTab: _switchTab,
+    _addModal: _addModal,
+    _pendingModal: _pendingModal,
+    _approveReg: _approveReg,
+    _rejectReg: _rejectReg,
+    _toggleSelectAll: _toggleSelectAll,
+    _toggleSelect: _toggleSelect,
+    _bulkDeselect: _bulkDeselect,
+    _bulkMessage: _bulkMessage,
+    _bulkSendMessage: _bulkSendMessage
+  };
 })();

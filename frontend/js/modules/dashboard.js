@@ -117,7 +117,7 @@
 
         // Needs attention
         + card('Needs Attention')
-        + _attnItems(pendingRegs, overdueInvs, dueSoonInvs, newStudents)
+        + _attnItems(pendingRegs, overdueInvs, dueSoonInvs, newStudents, students, attendance, staff, classes, today, todayDay, now)
         + '</div></div>' // close inner padding div + attn card
 
       + '</div>' // close two-col
@@ -171,7 +171,7 @@
     var announcements = s.announcements || [];
     var attendance    = s.attendance    || [];
 
-    var myStudents = students.filter(function(st) { return st.contact === App.clientParent; });
+    var myStudents = students.filter(function(st) { return st.contact === App.clientParent && st.status !== 'Inactive'; });
     var myIds      = myStudents.map(function(st) { return st.id; });
     var myInvoices = invoices.filter(function(i)  { return myIds.indexOf(i.studentId) > -1; });
 
@@ -299,13 +299,46 @@
       + '" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">' + label + '</button>';
   }
 
-  function _attnItems(pendingRegs, overdueInvs, dueSoonInvs, newStudents) {
+  function _attnItems(pendingRegs, overdueInvs, dueSoonInvs, newStudents, students, attendance, staff, classes, today, todayDay, now) {
     var DOTS = { error:'#ef4444', warning:'#f59e0b', info:'#3b82f6' };
-    var items = [];
-    if (pendingRegs > 0)       items.push({ sev:'info',    title: pendingRegs + ' pending reg' + (pendingRegs!==1?'s':''),    page:'students'   });
-    if (overdueInvs.length > 0) items.push({ sev:'error',  title: overdueInvs.length + ' overdue invoice' + (overdueInvs.length!==1?'s':''), page:'billing' });
-    if (dueSoonInvs.length > 0) items.push({ sev:'warning',title: dueSoonInvs.length + ' payment' + (dueSoonInvs.length!==1?'s':'') + ' due this week', page:'billing' });
-    if (newStudents > 0)        items.push({ sev:'info',   title: newStudents + ' new student' + (newStudents!==1?'s':'') + ' to activate', page:'students' });
+    var attn = [];
+    if (pendingRegs > 0)       attn.push({ sev:'info',    title: pendingRegs + ' pending reg' + (pendingRegs!==1?'s':''),    page:'students'   });
+    if (overdueInvs.length > 0) attn.push({ sev:'error',  title: overdueInvs.length + ' overdue invoice' + (overdueInvs.length!==1?'s':''), page:'billing' });
+    if (dueSoonInvs.length > 0) attn.push({ sev:'warning',title: dueSoonInvs.length + ' payment' + (dueSoonInvs.length!==1?'s':'') + ' due this week', page:'billing' });
+    if (newStudents > 0)        attn.push({ sev:'info',   title: newStudents + ' new student' + (newStudents!==1?'s':'') + ' to activate', page:'students' });
+
+    // Churn risk: students with no Present record in last 14 days
+    if (students && attendance) {
+      var cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 14);
+      var cutoffStr = cutoff.toISOString().slice(0,10);
+      var atRisk = students.filter(function(stu) {
+        if (stu.status !== 'Active') return false;
+        var recentPresent = attendance.filter(function(a) {
+          return a.personId === stu.id && a.status === 'Present' && a.date >= cutoffStr;
+        });
+        return recentPresent.length === 0;
+      });
+      if (atRisk.length > 0) attn.push({ sev:'warning', title: atRisk.length + ' student' + (atRisk.length!==1?'s':'') + ' at churn risk', sub: 'No attendance in 14+ days', page:'attendance' });
+    }
+
+    // Teacher not checked in for upcoming class
+    if (classes && attendance && staff && now && todayDay) {
+      var in60 = new Date(now); in60.setMinutes(in60.getMinutes() + 60);
+      var nowTimeStr = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+      var in60Str = in60.getHours().toString().padStart(2,'0') + ':' + in60.getMinutes().toString().padStart(2,'0');
+      var upcomingTeacherIds = [];
+      classes.filter(function(c) { return c.day === todayDay && c.time >= nowTimeStr && c.time <= in60Str; })
+        .forEach(function(c) { c.teacherIds.forEach(function(tid) { if (upcomingTeacherIds.indexOf(tid) === -1) upcomingTeacherIds.push(tid); }); });
+      var notCheckedIn = upcomingTeacherIds.filter(function(tid) {
+        return !attendance.find(function(a) { return a.personId === tid && a.date === today && a.checkIn; });
+      });
+      if (notCheckedIn.length > 0) {
+        var names = notCheckedIn.map(function(tid) { var st = staff.find(function(x){return x.id===tid;}); return st ? st.name : tid; }).join(', ');
+        attn.push({ sev:'error', title: notCheckedIn.length + ' tutor' + (notCheckedIn.length!==1?'s':'') + ' not checked in', sub: names + ' · class within 60 min', page:'attendance' });
+      }
+    }
+
+    var items = attn;
 
     if (items.length === 0) {
       return '<div style="padding:1.5rem 0;text-align:center"><div style="font-size:1.3rem;margin-bottom:4px">✓</div><p style="font-size:0.82rem;color:#94a3b8;margin:0">All clear</p></div>';
@@ -313,7 +346,10 @@
     return items.map(function(item) {
       return '<div onclick="App.Router.navigate(\'' + item.page + '\')" style="display:flex;align-items:center;gap:0.65rem;padding:0.6rem 0.5rem;margin:0 -0.5rem;border-radius:8px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid #f4f4f2" onmouseover="this.style.background=\'#fafaf8\'" onmouseout="this.style.background=\'transparent\'">'
         + '<span style="width:7px;height:7px;border-radius:50%;background:' + (DOTS[item.sev]||DOTS.info) + ';flex-shrink:0"></span>'
-        + '<span style="flex:1;font-size:0.81rem;font-weight:600;color:#111">' + item.title + '</span>'
+        + '<div style="flex:1;min-width:0">'
+        +   '<div style="font-size:0.81rem;font-weight:600;color:#111">' + item.title + '</div>'
+        +   (item.sub ? '<div style="font-size:0.71rem;color:#94a3b8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + item.sub + '</div>' : '')
+        + '</div>'
         + '<svg style="width:0.85rem;height:0.85rem;color:#d1d5db;flex-shrink:0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5l7 7-7 7"/></svg>'
         + '</div>';
     }).join('');

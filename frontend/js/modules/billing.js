@@ -4,6 +4,7 @@
   let _filter = 'Unpaid';
   let _studentFilter = ''; // empty = all students
   let _menuListenerAdded = false;
+  let _selectedInv = {};
 
   function render(container) {
     const { invoices, students } = App.Store.get();
@@ -69,6 +70,8 @@
         + '</div>';
     }
 
+    const colCount = isAdmin ? 8 : 6;
+
     container.innerHTML = ''
       + '<div class="flex items-center justify-between mb-6">'
       +   '<h1 class="text-2xl font-bold text-slate-800">Billing</h1>'
@@ -104,20 +107,23 @@
       +     '</select>'
       +   '</div>'
       +   '</div>'
+      +   (isAdmin ? '<div id="inv-bulk-bar" style="padding:0 1rem">' + _bulkBar() + '</div>' : '')
       +   '<div class="overflow-x-auto">'
       +     '<table class="w-full">'
       +       '<thead class="bg-slate-50 border-b border-slate-100"><tr>'
+      +         (isAdmin ? '<th class="th" style="width:36px"><input type="checkbox" id="select-all-inv-cb" onchange="App.Billing._toggleSelectAllInv(this.checked)" style="cursor:pointer"></th>' : '')
       +         '<th class="th">Student</th><th class="th">Description</th><th class="th">Type</th>'
       +         '<th class="th">Due Date</th><th class="th text-right">Amount</th><th class="th">Status</th>'
       +         (isAdmin ? '<th class="th w-10"></th>' : '')
       +       '</tr></thead>'
       +       '<tbody class="divide-y divide-slate-50">'
-      +       (filtered.length === 0 ? '<tr><td colspan="7" class="px-6 py-12 text-center text-slate-400 text-sm">No invoices found</td></tr>' : '')
+      +       (filtered.length === 0 ? '<tr><td colspan="' + colCount + '" class="px-6 py-12 text-center text-slate-400 text-sm">No invoices found</td></tr>' : '')
       +       filtered.map(function(inv) {
               const stu = students.find(function(s) { return s.id === inv.studentId; });
               const stuName = stu ? stu.firstName + ' ' + stu.lastName : inv.studentId;
               const isNearDue = inv.status === 'Unpaid' && new Date(inv.dueDate) <= in7 && new Date(inv.dueDate) >= today;
               return '<tr class="hover:bg-slate-50 transition-colors">'
+                + (isAdmin ? '<td class="td" style="width:36px"><input type="checkbox" class="inv-cb" data-id="' + inv.id + '" onchange="App.Billing._toggleSelectInv(\'' + inv.id + '\',this.checked)" style="cursor:pointer"' + (_selectedInv[inv.id] ? ' checked' : '') + '></td>' : '')
                 + '<td class="td"><div class="font-medium text-slate-800">' + stuName + '</div><div class="text-xs text-slate-400">' + inv.id + '</div></td>'
                 + '<td class="td text-sm text-slate-600">' + inv.description + '</td>'
                 + '<td class="td">' + App.Utils.badge(inv.type, inv.type === 'Monthly' ? 'blue' : 'purple') + '</td>'
@@ -152,6 +158,75 @@
       });
       _menuListenerAdded = true;
     }
+  }
+
+  function _bulkBar() {
+    var count = Object.keys(_selectedInv).length;
+    if (count === 0) return '';
+    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 1rem;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.25);border-radius:10px;margin-bottom:0.75rem">'
+      + '<span style="font-size:0.82rem;font-weight:700;color:#92400e">' + count + ' invoice' + (count !== 1 ? 's' : '') + ' selected</span>'
+      + '<button onclick="App.Billing._bulkMarkPaid()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Mark All Paid</button>'
+      + '<button onclick="App.Billing._bulkDeselectInv()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:transparent;color:#92400e;border:1px solid rgba(201,162,39,0.3);border-radius:7px;cursor:pointer">Clear</button>'
+      + '</div>';
+  }
+
+  function _toggleSelectAllInv(checked) {
+    document.querySelectorAll('.inv-cb').forEach(function(cb) {
+      cb.checked = checked;
+      if (checked) {
+        _selectedInv[cb.dataset.id] = true;
+      } else {
+        delete _selectedInv[cb.dataset.id];
+      }
+    });
+    _refreshBulkBar();
+  }
+
+  function _toggleSelectInv(id, checked) {
+    if (checked) _selectedInv[id] = true; else delete _selectedInv[id];
+    _refreshBulkBar();
+  }
+
+  function _refreshBulkBar() {
+    var bar = document.getElementById('inv-bulk-bar');
+    if (bar) bar.innerHTML = _bulkBar();
+  }
+
+  function _bulkDeselectInv() {
+    _selectedInv = {};
+    document.querySelectorAll('.inv-cb, #select-all-inv-cb').forEach(function(cb) { cb.checked = false; });
+    _refreshBulkBar();
+  }
+
+  function _bulkMarkPaid() {
+    var ids = Object.keys(_selectedInv);
+    if (ids.length === 0) return;
+    var html = '<div class="p-6">'
+      + '<h2 class="text-lg font-bold mb-1">Mark ' + ids.length + ' Invoice' + (ids.length !== 1 ? 's' : '') + ' as Paid</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Select payment method received</p>'
+      + '<div class="grid grid-cols-3 gap-3 mb-5">'
+      + ['Cash', 'Bank Transfer', 'QR Pay'].map(function(m) {
+          return '<button onclick="App.Billing._bulkConfirmPaid(\'' + m + '\')" class="p-3 border-2 border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:border-yellow-400 hover:bg-yellow-50 transition-all text-center">' + m + '</button>';
+        }).join('')
+      + '</div>'
+      + '<button onclick="App.Utils.hideModal()" class="w-full py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '</div>';
+    App.Utils.showModal(html);
+  }
+
+  function _bulkConfirmPaid(method) {
+    var ids = Object.keys(_selectedInv);
+    var { invoices } = App.Store.get();
+    var today = App.Utils.today();
+    var updated = invoices.map(function(i) {
+      return ids.indexOf(i.id) > -1 ? Object.assign({}, i, { status: 'Paid', paidOn: today, paymentMethod: method }) : i;
+    });
+    App.Store.set({ invoices: updated });
+    App.Utils.hideModal();
+    App.Utils.showToast('Marked ' + ids.length + ' invoice' + (ids.length !== 1 ? 's' : '') + ' as paid · ' + method, 'success');
+    App.Notifs.refresh();
+    _selectedInv = {};
+    App.Router.refresh();
   }
 
   function _statCard(label, value, textClass, bgClass) {
@@ -366,6 +441,11 @@
     _deleteInvoice: _deleteInvoice,
     _editModal: _editModal,
     _createModal: _createModal,
-    checkLoginNotifications: checkLoginNotifications
+    checkLoginNotifications: checkLoginNotifications,
+    _toggleSelectAllInv: _toggleSelectAllInv,
+    _toggleSelectInv: _toggleSelectInv,
+    _bulkDeselectInv: _bulkDeselectInv,
+    _bulkMarkPaid: _bulkMarkPaid,
+    _bulkConfirmPaid: _bulkConfirmPaid
   };
 })();
