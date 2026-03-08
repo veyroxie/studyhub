@@ -7,7 +7,7 @@
     c: { label: 'Minimal', desc: 'Top nav, full width' }
   };
 
-  var _current = localStorage.getItem('sh_theme') || 'a';
+  var _current = localStorage.getItem('sh_theme') || 'b';
   var _sidebarOpen = false;
 
   function _apply(theme) {

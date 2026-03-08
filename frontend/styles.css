@@ -2,6 +2,15 @@
    STUDY HUB — GLOBAL STYLES
    ============================== */
 
+:root {
+  --gold:       #C9A227;
+  --gold-light: #E8C84A;
+  --gold-dim:   rgba(201,162,39,0.12);
+  --gold-glow:  0 0 0 1px #C9A227, 0 8px 32px rgba(201,162,39,0.15);
+  --black:      #0a0a0a;
+  --off-white:  #FAFAF8;
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
@@ -152,6 +161,54 @@ body.theme-c header { display: none !important; }
   .lg\:grid-cols-2 { grid-template-columns: 1fr !important; }
   .lg\:grid-cols-4 { grid-template-columns: repeat(2,1fr) !important; }
   #dev-toolbar { display: none !important; }
+}
+
+/* ==============================
+   PAGE TRANSITIONS
+   ============================== */
+.page.active {
+  animation: pageIn 0.22s cubic-bezier(0.4,0,0.2,1);
+}
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ==============================
+   BENTO GRID — Dashboard
+   ============================== */
+.bento-tile {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e9edf2;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s, transform 0.2s;
+  overflow: hidden;
+}
+.bento-tile.clickable { cursor: pointer; }
+.bento-tile.clickable:hover {
+  box-shadow: 0 0 0 1.5px var(--gold), 0 8px 28px rgba(201,162,39,0.14);
+  transform: translateY(-2px);
+}
+.bento-tile.clickable:hover .bento-glow { opacity: 1 !important; }
+.bento-number {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
+/* Theme B tile overrides */
+body.theme-b .bento-tile {
+  background: #fff;
+  border-color: rgba(201,162,39,0.12);
+}
+body.theme-b main {
+  background: var(--off-white);
+}
+body.theme-b header {
+  background: #ffffff;
+  border-bottom-color: rgba(201,162,39,0.15);
 }
 
 /* ==============================
