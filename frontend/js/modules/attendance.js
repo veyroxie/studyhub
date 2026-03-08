@@ -11,20 +11,24 @@
     if (!_attClassId && classes.length) _attClassId = classes[0].id;
     const isClient = App.currentRole === 'client';
 
-    container.innerHTML = ''
-      + '<div class="flex items-center justify-between mb-6">'
-      +   '<h1 class="text-2xl font-bold text-slate-800">Attendance</h1>'
-      +   (isClient ? '<div class="text-sm text-slate-400 bg-slate-100 px-3 py-1.5 rounded-lg">Viewing: ' + (App.clientParent || 'Your child') + '</div>' : '')
+    container.innerHTML = '<div style="display:flex;flex-direction:column;gap:1rem">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">'
+      +   '<h1 style="font-size:1.4rem;font-weight:800;color:#0d0d0d;letter-spacing:-0.03em;margin:0">Attendance</h1>'
+      +   (isClient ? '<div style="font-size:0.78rem;color:#94a3b8;background:#f1f5f9;padding:0.4rem 0.85rem;border-radius:8px">Viewing: ' + (App.clientParent || 'Your child') + '</div>' : '')
       + '</div>'
-      + (isClient ? _renderClientView() : _renderAdminView());
+      + (isClient ? _renderClientView() : _renderAdminView())
+      + '</div>';
   }
 
   function _renderAdminView() {
-    return '<div class="flex border-b border-slate-100 mb-5 gap-1">'
+    return '<div style="display:flex;gap:0.35rem;background:#f1f5f9;border-radius:10px;padding:3px;width:fit-content;margin-bottom:0.25rem">'
       + ['staff','students'].map(function(t) {
           const active = t === _attTab;
-          const label = t === 'staff' ? 'Staff Attendance' : 'Student Check-In/Out';
-          return '<button onclick="App.Attendance._setTab(\'' + t + '\')" class="px-5 py-2.5 text-sm font-medium transition-colors ' + (active ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500 hover:text-slate-700') + '">' + label + '</button>';
+          const label  = t === 'staff' ? 'Staff' : 'Students';
+          return '<button onclick="App.Attendance._setTab(\'' + t + '\')" style="'
+            + 'padding:0.45rem 1.1rem;font-size:0.82rem;font-weight:700;border:none;border-radius:8px;cursor:pointer;min-height:40px;transition:all 0.15s;'
+            + (active ? 'background:var(--gold);color:#0a0a0a;' : 'background:transparent;color:#94a3b8;')
+            + '">' + label + '</button>';
         }).join('')
       + '</div>'
       + (_attTab === 'staff' ? _staffTab() : _studentTab());
@@ -60,27 +64,35 @@
 
   function _staffTab() {
     const { staff, attendance } = App.Store.get();
-    return '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">'
-      + '<div class="p-4 border-b border-slate-100 flex items-center gap-4">'
-      +   '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">'
-      +   '<span class="text-sm text-slate-500">Staff attendance for selected date</span>'
+    const SCOL = {
+      Present: { bg:'#f0fdf4', border:'#86efac', text:'#15803d', active:'#22c55e', activeText:'#fff' },
+      Late:    { bg:'#fffbeb', border:'#fcd34d', text:'#d97706', active:'#f59e0b', activeText:'#fff' },
+      Absent:  { bg:'#fef2f2', border:'#fca5a5', text:'#dc2626', active:'#ef4444', activeText:'#fff' }
+    };
+    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
+      + '<div style="padding:0.85rem 1.1rem;border-bottom:1px solid #f0ede8;background:#faf9f7;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">'
+      +   '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.55rem 0.85rem;font-size:0.84rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:44px">'
+      +   '<span style="font-size:0.8rem;color:#94a3b8">Staff attendance for selected date</span>'
       + '</div>'
-      + '<div class="divide-y divide-slate-50">'
+      + '<div>'
       + staff.map(function(s) {
           const rec = attendance.find(function(a) { return a.personId === s.id && a.personType === 'staff' && a.date === _attDate; });
           const status = rec ? rec.status : null;
-          const statusColors = { Present:'bg-emerald-50 border-emerald-200 text-emerald-700', Late:'bg-amber-50 border-amber-200 text-amber-700', Absent:'bg-red-50 border-red-200 text-red-700' };
-          return '<div class="flex items-center justify-between px-5 py-4">'
-            + '<div class="flex items-center gap-3">'
-            +   '<div class="w-10 h-10 rounded-full bg-blue-50 text-blue-600 font-bold flex items-center justify-center">' + s.name.charAt(0) + '</div>'
-            +   '<div><div class="font-medium text-slate-800">' + s.fullName + '</div>'
-            +   '<div class="text-xs text-slate-400">' + (rec && rec.checkIn ? 'In: ' + App.Utils.formatTime(rec.checkIn) + (rec.checkOut ? '  ·  Out: ' + App.Utils.formatTime(rec.checkOut) : '') : 'Not recorded') + '</div>'
+          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:0.9rem 1.1rem;border-bottom:1px solid #f9f8f6;gap:0.75rem;flex-wrap:wrap">'
+            + '<div style="display:flex;align-items:center;gap:0.75rem;min-width:0">'
+            +   '<div style="width:2.8rem;height:2.8rem;border-radius:50%;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(201,162,39,0.2)">' + s.name.charAt(0) + '</div>'
+            +   '<div style="min-width:0">'
+            +     '<div style="font-weight:600;font-size:0.9rem;color:#111">' + s.fullName + '</div>'
+            +     '<div style="font-size:0.72rem;color:#94a3b8;margin-top:1px">' + (rec && rec.checkIn ? '↓ ' + App.Utils.formatTime(rec.checkIn) + (rec.checkOut ? '  ·  ↑ ' + App.Utils.formatTime(rec.checkOut) : '  · still in') : 'Not recorded') + '</div>'
             +   '</div>'
             + '</div>'
-            + '<div class="flex items-center gap-2">'
+            + '<div style="display:flex;gap:0.4rem;flex-shrink:0">'
             + ['Present','Late','Absent'].map(function(st) {
                 const active = status === st;
-                return '<button onclick="App.Attendance._markStaff(\'' + s.id + '\',\'' + st + '\')" class="text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ' + (active ? (statusColors[st] || '') : 'border-slate-200 text-slate-500 hover:bg-slate-50') + '">' + st + '</button>';
+                const c = SCOL[st];
+                return '<button onclick="App.Attendance._markStaff(\'' + s.id + '\',\'' + st + '\')" style="'
+                  + 'min-height:44px;min-width:72px;padding:0.45rem 0.7rem;border-radius:9px;font-size:0.78rem;font-weight:700;cursor:pointer;transition:all 0.15s;border:1.5px solid '
+                  + (active ? c.active : c.border) + ';background:' + (active ? c.active : c.bg) + ';color:' + (active ? c.activeText : c.text) + '">' + st + '</button>';
               }).join('')
             + '</div>'
             + '</div>';
@@ -95,32 +107,56 @@
     const enrolledStudents = selectedClass
       ? students.filter(function(s) { return s.enrolledClasses.indexOf(_attClassId) > -1; })
       : [];
+    const colors = selectedClass ? App.Utils.colorClasses(selectedClass.color) : App.Utils.colorClasses('blue');
 
-    return '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">'
-      + '<div class="p-4 border-b border-slate-100 flex items-center gap-3 flex-wrap">'
-      +   '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" class="px-3 py-2 text-sm border border-slate-200 rounded-lg">'
-      +   '<select onchange="App.Attendance._setClass(this.value)" class="px-3 py-2 text-sm border border-slate-200 rounded-lg">'
-      +   classes.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === _attClassId ? 'selected' : '') + '>' + c.name + ' (' + c.day + ')</option>'; }).join('')
-      +   '</select>'
+    // Summary counts
+    const todayRecs = attendance.filter(function(a) { return a.classId === _attClassId && a.date === _attDate; });
+    const presentCount = todayRecs.filter(function(a) { return a.checkIn; }).length;
+
+    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
+      // Controls
+      + '<div style="padding:0.85rem 1.1rem;border-bottom:1px solid #f0ede8;background:#faf9f7">'
+      +   '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">'
+      +     '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.55rem 0.85rem;font-size:0.84rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:44px;flex:1;min-width:140px">'
+      +     '<select onchange="App.Attendance._setClass(this.value)" style="padding:0.55rem 0.85rem;font-size:0.84rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:44px;flex:2;min-width:180px;background:#fff">'
+      +     classes.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === _attClassId ? 'selected' : '') + '>' + c.name + ' — ' + c.day + '</option>'; }).join('')
+      +     '</select>'
+      +   '</div>'
+      +   (selectedClass
+          ? '<div style="margin-top:0.6rem;display:flex;align-items:center;gap:0.5rem">'
+          +   '<span style="font-size:0.75rem;color:#94a3b8">' + enrolledStudents.length + ' enrolled</span>'
+          +   '<span style="font-size:0.75rem;color:#94a3b8">·</span>'
+          +   '<span style="font-size:0.75rem;font-weight:600;color:#15803d">' + presentCount + ' checked in today</span>'
+          + '</div>'
+          : '')
       + '</div>'
+      // Student rows
       + (enrolledStudents.length === 0
-        ? '<div class="p-8 text-center text-slate-400 text-sm">No students enrolled in this class</div>'
-        : '<div class="divide-y divide-slate-50">'
+        ? '<div style="padding:3rem;text-align:center;color:#94a3b8;font-size:0.85rem">No students enrolled in this class</div>'
+        : '<div>'
         + enrolledStudents.map(function(s) {
             const rec = attendance.find(function(a) { return a.personId === s.id && a.classId === _attClassId && a.date === _attDate; });
-            const checkedIn = rec && rec.checkIn;
+            const checkedIn  = rec && rec.checkIn;
             const checkedOut = rec && rec.checkOut;
-            return '<div class="flex items-center justify-between px-5 py-4">'
-              + '<div class="flex items-center gap-3">'
-              +   '<div class="w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 font-bold text-sm flex items-center justify-center">' + s.firstName.charAt(0) + s.lastName.charAt(0) + '</div>'
-              +   '<div><div class="font-medium text-slate-800">' + s.firstName + ' ' + s.lastName + '</div>'
-              +   '<div class="text-xs text-slate-400">' + (checkedIn ? 'In ' + App.Utils.formatTime(rec.checkIn) + (checkedOut ? ' · Out ' + App.Utils.formatTime(rec.checkOut) : '') : 'Not checked in') + '</div>'
+            const rowBg = checkedOut ? '#f0fdf4' : checkedIn ? '#fefce8' : '#fff';
+            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.1rem;border-bottom:1px solid #f9f8f6;background:' + rowBg + ';gap:0.75rem">'
+              + '<div style="display:flex;align-items:center;gap:0.75rem;min-width:0;flex:1">'
+              +   '<div style="width:2.8rem;height:2.8rem;border-radius:50%;background:' + (checkedOut?'#dcfce7':checkedIn?'#fef9c3':'#f1f5f9') + ';color:' + (checkedOut?'#15803d':checkedIn?'#a16207':'#64748b') + ';font-weight:800;font-size:0.9rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + s.firstName.charAt(0) + s.lastName.charAt(0) + '</div>'
+              +   '<div style="min-width:0">'
+              +     '<div style="font-weight:600;font-size:0.9rem;color:#111">' + s.firstName + ' ' + s.lastName + '</div>'
+              +     '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">'
+              +       (checkedOut ? '↓ ' + App.Utils.formatTime(rec.checkIn) + '  ·  ↑ ' + App.Utils.formatTime(rec.checkOut)
+              +       : checkedIn ? '↓ ' + App.Utils.formatTime(rec.checkIn) + '  · still in'
+              +       : 'Not checked in')
+              +     '</div>'
               +   '</div>'
               + '</div>'
-              + '<div class="flex items-center gap-2">'
-              +   (!checkedIn ? '<button onclick="App.Attendance._checkInStudent(\'' + s.id + '\')" class="text-xs px-4 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium">Check In</button>' : '')
-              +   (checkedIn && !checkedOut ? '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" class="text-xs px-4 py-1.5 bg-slate-500 text-white rounded-lg hover:bg-slate-600 font-medium">Check Out</button>' : '')
-              +   (checkedOut ? '<span class="text-xs text-slate-400 font-medium">Done ✓</span>' : '')
+              + '<div style="flex-shrink:0">'
+              +   (!checkedIn
+                  ? '<button onclick="App.Attendance._checkInStudent(\'' + s.id + '\')" style="min-height:48px;min-width:110px;padding:0.5rem 1rem;background:#22c55e;color:#fff;border:none;border-radius:10px;font-size:0.85rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">✓ Check In</button>'
+                  : checkedIn && !checkedOut
+                  ? '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" style="min-height:48px;min-width:110px;padding:0.5rem 1rem;background:#64748b;color:#fff;border:none;border-radius:10px;font-size:0.85rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">↑ Check Out</button>'
+                  : '<div style="display:flex;align-items:center;gap:0.4rem;padding:0.5rem 0.75rem;background:#dcfce7;border-radius:10px"><span style="font-size:0.9rem">✓</span><span style="font-size:0.78rem;font-weight:700;color:#15803d">Done</span></div>')
               + '</div>'
               + '</div>';
           }).join('')

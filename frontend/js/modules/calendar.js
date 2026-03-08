@@ -241,6 +241,20 @@
       + '<h2 class="text-xl font-bold mb-4">Add New Class</h2>'
       + '<form id="add-class-form" class="space-y-4">'
       + _field('Class Name', '<input name="name" class="form-input" placeholder="e.g. Level 1 & 2" required>')
+      // Class type toggle
+      + '<div>'
+      +   '<label class="block text-sm font-medium text-slate-700 mb-2">Class Type</label>'
+      +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">'
+      +   ['Private','Group'].map(function(t) {
+            const cap = t === 'Private' ? 1 : 5;
+            const desc = t === 'Private' ? 'Max 1 student' : 'Max 5 students';
+            return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.65rem 0.85rem;border:2px solid #e2e8f0;border-radius:10px;cursor:pointer;transition:all 0.15s" class="class-type-opt">'
+              + '<input type="radio" name="classType" value="' + t + '" data-cap="' + cap + '" onchange="App.Calendar._onTypeChange(this)" ' + (t === 'Group' ? 'checked' : '') + ' style="accent-color:var(--gold)">'
+              + '<div><div style="font-size:0.83rem;font-weight:600">' + t + '</div><div style="font-size:0.7rem;color:#94a3b8">' + desc + '</div></div>'
+              + '</label>';
+          }).join('')
+      +   '</div>'
+      + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Day', '<select name="day" class="form-input">' + ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(function(d){ return '<option>' + d + '</option>'; }).join('') + '</select>')
       + _field('Classroom', '<input name="classroom" class="form-input" placeholder="Classroom 1">')
@@ -249,10 +263,10 @@
       + _field('Start Time', '<input name="time" type="time" class="form-input" required>')
       + _field('End Time', '<input name="endTime" type="time" class="form-input" required>')
       + '</div>'
-      + _field('Capacity', '<input name="capacity" type="number" min="1" max="30" class="form-input" value="6">')
+      + _field('Capacity', '<input id="cap-input" name="capacity" type="number" min="1" max="5" class="form-input" value="5" readonly style="background:#f8fafc;color:#64748b">')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Class</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Class</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -261,28 +275,50 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       const state = App.Store.get();
+      const classType = fd.get('classType') || 'Group';
+      const capacity  = classType === 'Private' ? 1 : 5;
+      // Clash check: same day + overlapping time in same classroom
+      const day    = fd.get('day');
+      const time   = fd.get('time');
+      const endTime = fd.get('endTime');
+      const classroom = fd.get('classroom') || 'Classroom 1';
+      const clash = state.classes.find(function(c) {
+        if (c.day !== day || c.classroom !== classroom) return false;
+        return time < c.endTime && endTime > c.time;
+      });
+      if (clash) {
+        App.Utils.showToast('Clash: ' + classroom + ' is already booked ' + App.Utils.formatTime(clash.time) + '–' + App.Utils.formatTime(clash.endTime) + ' on ' + day, 'error');
+        return;
+      }
       const newClass = {
         id: App.Utils.generateId('c'),
         name: fd.get('name'),
+        classType: classType,
         teacherIds: [],
-        classroom: fd.get('classroom') || 'Classroom 1',
-        day: fd.get('day'),
-        time: fd.get('time'),
-        endTime: fd.get('endTime'),
-        capacity: parseInt(fd.get('capacity'),10) || 6,
+        classroom: classroom,
+        day: day,
+        time: time,
+        endTime: endTime,
+        capacity: capacity,
         enrolled: 0,
-        color: 'blue'
+        color: classType === 'Private' ? 'purple' : 'blue'
       };
       App.Store.set({ classes: [...state.classes, newClass] });
       App.Utils.hideModal();
-      App.Utils.showToast('Class added successfully!', 'success');
+      App.Utils.showToast('Class added!', 'success');
       App.Router.refresh();
     });
+  }
+
+  // Called when Private/Group radio changes — update the capacity field
+  function _onTypeChange(radio) {
+    const capInput = document.getElementById('cap-input');
+    if (capInput) capInput.value = radio.dataset.cap;
   }
 
   function _field(label, inputHtml) {
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth };
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange };
 })();
