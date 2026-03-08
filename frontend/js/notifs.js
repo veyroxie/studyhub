@@ -181,14 +181,16 @@
   // ── Badge ────────────────────────────────────────────────────────────────────
   function updateBadge() {
     var count = build().filter(function(n) { return !_readIds[n.id]; }).length;
-    var badge = document.getElementById('notif-badge');
-    if (!badge) return;
-    if (count > 0) {
-      badge.textContent = count > 99 ? '99+' : String(count);
-      badge.classList.remove('hidden');
-    } else {
-      badge.classList.add('hidden');
-    }
+    ['notif-badge','top-notif-badge'].forEach(function(id) {
+      var badge = document.getElementById(id);
+      if (!badge) return;
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : String(count);
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    });
   }
 
   // ── Panel rendering ──────────────────────────────────────────────────────────

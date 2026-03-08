@@ -32,6 +32,7 @@
         // Load all data from backend
         await App.Api.loadSnapshot();
         App.Login.hide();
+        App.Theme.init();
         applyRole();
         App.Dev.init();
         App.Router.navigate('dashboard');

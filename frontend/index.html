@@ -61,12 +61,52 @@
 </div>
 
 <div id="app" class="hidden">
+
+<!-- ========================
+     THEME C — TOP NAVBAR (hidden in other themes)
+========================= -->
+<nav id="top-navbar" class="hidden bg-slate-900 text-white px-4 h-14 items-center gap-2 shrink-0 border-b border-slate-800 z-40 relative">
+  <!-- Logo -->
+  <div class="flex items-center gap-2 mr-4 shrink-0">
+    <div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-sm shrink-0">🦉</div>
+    <span class="font-bold text-sm hidden sm:block">Study Hub</span>
+  </div>
+  <!-- Nav items -->
+  <div class="flex items-center gap-0.5 flex-1 overflow-x-auto scrollbar-hide" id="top-nav-items">
+    <button data-page="dashboard"     class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Dashboard</button>
+    <button data-page="calendar"      class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Schedule</button>
+    <button data-page="communication" class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Announcements</button>
+    <button data-page="students"      class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Students</button>
+    <button data-page="billing"       class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Billing</button>
+    <button data-page="staff"         class="top-nav-btn top-nav-admin px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Staff</button>
+    <button data-page="attendance"    class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Attendance</button>
+    <button data-page="analytics"     class="top-nav-btn top-nav-admin px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Analytics</button>
+  </div>
+  <!-- Right side controls -->
+  <div class="flex items-center gap-2 shrink-0 ml-2">
+    <div class="relative z-40" id="top-notif-bell-wrap">
+      <button onclick="App.Notifs.toggle()" class="relative w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        <span id="top-notif-badge" class="hidden absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">0</span>
+      </button>
+    </div>
+    <button id="top-role-btn" onclick="App.toggleRole()" class="px-2 py-1 text-xs font-semibold rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 transition-colors">Admin</button>
+    <button onclick="App.Api.logout().then(function(){App.Login.show()})" class="px-2 py-1 text-xs text-slate-400 hover:text-red-400 transition-colors">Sign out</button>
+    <button onclick="App.Theme.picker()" title="Change theme" class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 transition-colors">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    </button>
+  </div>
+</nav>
+
 <div class="flex h-screen overflow-hidden">
+
+  <!-- Mobile sidebar backdrop -->
+  <div id="sidebar-backdrop" onclick="App.Theme.toggleSidebar()"></div>
 
   <!-- ========================
        SIDEBAR
   ========================= -->
-  <aside class="w-60 bg-slate-900 text-white flex flex-col shrink-0">
+  <aside id="sidebar" class="w-60 bg-slate-900 text-white flex flex-col shrink-0">
     <!-- Logo -->
     <div class="px-5 py-4 border-b border-slate-700/60">
       <div class="flex items-center gap-3">
@@ -131,8 +171,14 @@
   <div class="flex-1 flex flex-col min-h-0 min-w-0">
 
     <!-- Header -->
-    <header class="bg-white border-b border-slate-100 px-6 py-3 flex items-center justify-between shrink-0 gap-4">
-      <div id="page-title" class="text-base font-semibold text-slate-700"></div>
+    <header class="bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between shrink-0 gap-4">
+      <div class="flex items-center gap-3">
+        <!-- Mobile hamburger -->
+        <button id="hamburger-btn" onclick="App.Theme.toggleSidebar()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div id="page-title" class="text-base font-semibold text-slate-700"></div>
+      </div>
 
       <div class="flex items-center gap-3">
         <!-- Parent selector (visible in client mode) -->
@@ -166,8 +212,13 @@
 
         <div class="w-px h-5 bg-slate-200"></div>
 
+        <!-- Theme picker -->
+        <button onclick="App.Theme.picker()" title="Change theme" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
+        </button>
+
         <!-- Date -->
-        <div class="text-xs text-slate-400 whitespace-nowrap">Mar 7, 2026</div>
+        <div class="text-xs text-slate-400 whitespace-nowrap hidden sm:block">Mar 8, 2026</div>
       </div>
     </header>
 
@@ -242,6 +293,7 @@
 <script src="js/api.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/router.js"></script>
+<script src="js/theme.js"></script>
 <script src="js/notifs.js"></script>
 <script src="js/modules/dashboard.js"></script>
 <script src="js/modules/calendar.js"></script>

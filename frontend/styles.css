@@ -89,6 +89,72 @@ body {
 .tab-btn { cursor: pointer; transition: color 0.15s; }
 
 /* ==============================
+   THEME B — Black & Gold
+   ============================== */
+body.theme-b aside {
+  background: #0f0f0f;
+}
+body.theme-b aside .border-b,
+body.theme-b aside .border-t {
+  border-color: rgba(201,162,39,0.15) !important;
+}
+body.theme-b .nav-btn {
+  color: #6b7280;
+}
+body.theme-b .nav-btn:hover {
+  background: rgba(201,162,39,0.1);
+  color: #C9A227;
+}
+body.theme-b .nav-btn.active {
+  background: #C9A227;
+  color: #0f0f0f !important;
+}
+body.theme-b .nav-btn.active svg {
+  stroke: #0f0f0f;
+}
+body.theme-b #app {
+  background: #f9f8f5;
+}
+body.theme-b aside .text-slate-400 { color: #4b5563 !important; }
+body.theme-b aside .bg-blue-500 { background: #C9A227 !important; }
+body.theme-b aside button.bg-slate-700 { background: #1a1a1a !important; }
+body.theme-b aside button.bg-slate-700:hover { background: #2a2a2a !important; }
+
+/* ==============================
+   THEME C — Minimal Top Nav
+   ============================== */
+body.theme-c aside { display: none !important; }
+body.theme-c #top-navbar { display: flex !important; }
+body.theme-c > #app > .flex > .flex-1 { width: 100% !important; }
+body.theme-c header { display: none !important; }
+
+/* ==============================
+   MOBILE — Collapsible sidebar
+   ============================== */
+#hamburger-btn { display: none; }
+#sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 55; }
+
+@media (max-width: 768px) {
+  aside {
+    position: fixed;
+    top: 0; left: 0;
+    height: 100%;
+    z-index: 60;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+  }
+  aside.open { transform: translateX(0); }
+  body.sidebar-open #sidebar-backdrop { display: block; }
+  #hamburger-btn { display: flex !important; }
+  main { padding: 1rem !important; }
+  .grid.grid-cols-4 { grid-template-columns: repeat(2,1fr) !important; }
+  .grid.grid-cols-2 { grid-template-columns: 1fr !important; }
+  .lg\:grid-cols-2 { grid-template-columns: 1fr !important; }
+  .lg\:grid-cols-4 { grid-template-columns: repeat(2,1fr) !important; }
+  #dev-toolbar { display: none !important; }
+}
+
+/* ==============================
    PRINT STYLES (Billing)
    ============================== */
 @media print {

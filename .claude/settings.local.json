@@ -3,7 +3,8 @@
     "allow": [
       "Bash(go build:*)",
       "Bash(go get:*)",
-      "Bash(docker:*)"
+      "Bash(docker:*)",
+      "Bash(git:*)"
     ]
   }
 }

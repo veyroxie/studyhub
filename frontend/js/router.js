@@ -35,6 +35,7 @@
 
       if (_modules[pageId]) _modules[pageId].render(page);
       _current = pageId;
+      if (App.Theme) App.Theme.syncTopNav();
     },
     current() { return _current; },
     refresh() {
