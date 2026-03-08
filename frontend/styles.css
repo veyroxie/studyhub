@@ -205,7 +205,10 @@ body.theme-b .bento-tile {
   border-color: rgba(201,162,39,0.12);
 }
 body.theme-b main {
-  background: var(--off-white);
+  background: #ede9e3;
+}
+main {
+  background: #f5f4f1;
 }
 body.theme-b header {
   background: #ffffff;

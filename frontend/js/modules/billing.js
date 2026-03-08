@@ -171,13 +171,56 @@
     if (menu) menu.classList.remove('hidden');
   }
 
+  function _markPaidModal(invId) {
+    var html = '<div class="p-6">'
+      + '<h2 class="text-lg font-bold mb-1">Confirm Payment</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Select payment method received</p>'
+      + '<div class="grid grid-cols-3 gap-3 mb-5">'
+      + ['Cash', 'Bank Transfer', 'QR Pay'].map(function(m) {
+          return '<button onclick="App.Billing._confirmPaid(\'' + invId + '\',\'' + m + '\')" '
+            + 'class="p-3 border-2 border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:border-blue-400 hover:bg-blue-50 transition-all text-center">' + m + '</button>';
+        }).join('')
+      + '</div>'
+      + '<button onclick="App.Utils.hideModal()" class="w-full py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '</div>';
+    App.Utils.showModal(html);
+  }
+
+  function _confirmPaid(invId, method) {
+    var { invoices } = App.Store.get();
+    var inv = invoices.find(function(i) { return i.id === invId; });
+    if (!inv) return;
+    App.Api && App.Api.updateInvoice
+      ? App.Api.updateInvoice(invId, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method })
+          .then(function() {
+            App.Utils.hideModal();
+            App.Utils.showToast('Marked paid · ' + method, 'success');
+            App.Notifs.refresh();
+            App.Router.refresh();
+          }).catch(function() {
+            var updated = invoices.map(function(i) {
+              return i.id === invId ? Object.assign({}, i, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method }) : i;
+            });
+            App.Store.set({ invoices: updated });
+            App.Utils.hideModal();
+            App.Utils.showToast('Marked paid · ' + method, 'success');
+            App.Notifs.refresh();
+            App.Router.refresh();
+          })
+      : (function() {
+          var updated = invoices.map(function(i) {
+            return i.id === invId ? Object.assign({}, i, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method }) : i;
+          });
+          App.Store.set({ invoices: updated });
+          App.Utils.hideModal();
+          App.Utils.showToast('Marked paid · ' + method, 'success');
+          App.Notifs.refresh();
+          App.Router.refresh();
+        })();
+  }
+
   function _markPaid(invoiceId) {
-    const state = App.Store.get();
-    App.Store.set({ invoices: state.invoices.map(function(inv) {
-      return inv.id === invoiceId ? Object.assign({}, inv, { status: 'Paid', paidOn: App.Utils.today() }) : inv;
-    })});
-    App.Utils.showToast('Invoice marked as paid', 'success');
-    App.Router.refresh();
+    _markPaidModal(invoiceId);
   }
 
   function _markUnpaid(invoiceId) {
@@ -317,6 +360,8 @@
     _setStudentFilter: _setStudentFilter,
     _toggleMenu: _toggleMenu,
     _markPaid: _markPaid,
+    _markPaidModal: _markPaidModal,
+    _confirmPaid: _confirmPaid,
     _markUnpaid: _markUnpaid,
     _deleteInvoice: _deleteInvoice,
     _editModal: _editModal,

@@ -81,10 +81,10 @@
 
       // Stats
       + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem">'
-      + stat('Active Students', activeStudents,  false, '#0d0d0d',   false)
-      + stat('Revenue / Month', monthRevenue,    true,  'var(--gold)', true)
-      + stat('Overdue Invoices',overdueInvs.length, false, overdueInvs.length > 0 ? '#dc2626' : '#94a3b8', false)
-      + stat('Pending Regs',   pendingRegs,     false, pendingRegs > 0 ? '#d97706' : '#94a3b8', false)
+      + stat('Active Students', activeStudents,  false, '#1d4ed8',   false, '#eff6ff')
+      + stat('Revenue / Month', monthRevenue,    true,  '#92400e', true, '#fef9ec')
+      + stat('Overdue Invoices',overdueInvs.length, false, overdueInvs.length > 0 ? '#991b1b' : '#94a3b8', false, overdueInvs.length > 0 ? '#fef2f2' : '#f9f9f9')
+      + stat('Pending Regs',   pendingRegs,     false, pendingRegs > 0 ? '#92400e' : '#94a3b8', false, pendingRegs > 0 ? '#fffbeb' : '#f9f9f9')
       + '</div>'
 
       // Main two-col
@@ -113,12 +113,12 @@
                   + '</div>'
                   + '</div>';
               }).join(''))
-        + '</div>' // close today card
+        + '</div></div>' // close inner padding div + today card
 
         // Needs attention
         + card('Needs Attention')
         + _attnItems(pendingRegs, overdueInvs, dueSoonInvs, newStudents)
-        + '</div>' // close attn card
+        + '</div></div>' // close inner padding div + attn card
 
       + '</div>' // close two-col
 
@@ -140,7 +140,7 @@
               + '</div>';
           }).join('')
         + '<button onclick="App.Router.navigate(\'students\')" style="display:block;width:100%;margin-top:0.6rem;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;text-align:center;padding:0.4rem">View all students →</button>'
-        + '</div>'
+        + '</div></div>' // close inner padding div + recent students card
 
         // Overdue invoices quick panel
         + card('Overdue Invoices')
@@ -157,7 +157,7 @@
                   + '</div>';
               }).join(''))
         + '<button onclick="App.Router.navigate(\'billing\')" style="display:block;width:100%;margin-top:0.6rem;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;text-align:center;padding:0.4rem">Manage billing →</button>'
-        + '</div>'
+        + '</div></div>' // close inner padding div + overdue card
 
       + '</div>'; // close bottom row
   }
@@ -217,9 +217,9 @@
 
       // Stats
       + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem">'
-      + stat('My Children',      myStudents.length, false, '#0d0d0d',    false)
-      + stat('Classes Enrolled', myClasses.length,  false, 'var(--gold)', true)
-      + stat('Balance Due',      totalOwed,         true,  totalOwed > 0 ? '#dc2626' : '#94a3b8', false)
+      + stat('My Children',      myStudents.length, false, '#1d4ed8',    false, '#eff6ff')
+      + stat('Classes Enrolled', myClasses.length,  false, '#92400e', true, '#fef9ec')
+      + stat('Balance Due',      totalOwed,         true,  totalOwed > 0 ? '#991b1b' : '#15803d', false, totalOwed > 0 ? '#fef2f2' : '#f0fdf4')
       + '</div>'
 
       // Two col: today's classes + announcements
@@ -244,7 +244,7 @@
                   + '</div>';
               }).join(''))
         + '<button onclick="App.Router.navigate(\'calendar\')" style="display:block;width:100%;margin-top:0.6rem;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;text-align:center;padding:0.4rem">Full schedule →</button>'
-        + '</div>'
+        + '</div></div>' // close inner padding div + today classes card
 
         // Announcements
         + card('Announcements')
@@ -263,29 +263,33 @@
                   + '</div>';
               }).join(''))
         + '<button onclick="App.Router.navigate(\'communication\')" style="display:block;width:100%;margin-top:0.6rem;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;text-align:center;padding:0.4rem">View all →</button>'
-        + '</div>'
+        + '</div></div>' // close inner padding div + announcements card
 
       + '</div>';
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
-  // card() opens a card div with a heading; caller appends content + closing </div>
+  // card() opens a card; with title: opens outer div + inner padding div (caller needs two </div>s); without title: one div
   function card(title) {
-    return '<div style="background:#fff;border-radius:14px;border:1px solid #ebebeb;padding:1.25rem 1.35rem;box-shadow:0 1px 3px rgba(0,0,0,0.04)">'
-      + (title ? '<p style="font-size:0.82rem;font-weight:700;color:#111;margin:0 0 1rem;letter-spacing:-0.01em">' + title + '</p>' : '');
+    var header = title
+      ? '<div style="padding:0.85rem 1.25rem;border-bottom:1px solid #f0ede8;background:#faf9f7"><p style="font-size:0.8rem;font-weight:700;color:#111;margin:0">' + title + '</p></div><div style="padding:1rem 1.25rem">'
+      : '<div style="padding:1.25rem">';
+    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden">' + header;
   }
 
-  function stat(label, value, isCurr, color, goldBorder) {
+  function stat(label, value, isCurr, color, goldBorder, bg) {
     var display = isCurr
       ? 'RM\u00a0' + value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
       : String(value);
     var dataAttr = isCurr
       ? 'data-count="' + value + '" data-currency="1"'
       : 'data-count="' + value + '"';
-    return '<div style="background:#fff;border-radius:14px;border:1px solid #ebebeb;padding:1.1rem 1.2rem;box-shadow:0 1px 3px rgba(0,0,0,0.04);' + (goldBorder ? 'border-top:2.5px solid var(--gold);' : '') + '">'
-      + '<p style="font-size:0.68rem;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:#94a3b8;margin:0 0 0.5rem">' + label + '</p>'
-      + '<p ' + dataAttr + ' style="font-size:1.75rem;font-weight:800;letter-spacing:-0.05em;line-height:1;color:' + color + ';margin:0">' + display + '</p>'
+    var bgColor = bg || '#fff';
+    var borderTop = goldBorder ? 'border-top:2.5px solid var(--gold);' : '';
+    return '<div style="background:' + bgColor + ';border-radius:14px;border:1px solid rgba(0,0,0,0.06);padding:1.1rem 1.2rem;box-shadow:0 1px 2px rgba(0,0,0,0.04);' + borderTop + '">'
+      + '<p style="font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:' + color + ';opacity:0.6;margin:0 0 0.45rem">' + label + '</p>'
+      + '<p ' + dataAttr + ' style="font-size:1.8rem;font-weight:800;letter-spacing:-0.05em;line-height:1;color:' + color + ';margin:0">' + display + '</p>'
       + '</div>';
   }
 

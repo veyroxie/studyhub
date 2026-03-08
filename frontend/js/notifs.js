@@ -29,6 +29,20 @@
     var isAdmin = App.currentRole === 'admin';
 
     if (isAdmin) {
+      // Payments received today
+      var paidToday = invoices.filter(function(i) { return i.status === 'Paid' && i.paidOn === today; });
+      paidToday.forEach(function(inv) {
+        var stu = students.find(function(s) { return s.id === inv.studentId; });
+        notifs.push({
+          id: 'paid-today-' + inv.id,
+          type: 'billing',
+          severity: 'info',
+          title: 'Payment received',
+          body: (stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + ' · ' + App.Utils.formatCurrency(inv.amount),
+          action: 'billing'
+        });
+      });
+
       // Pending registrations
       var regs = state.registrations || [];
       var pending = regs.filter(function(r) { return r.status === 'pending'; });
@@ -75,48 +89,26 @@
         });
       });
 
-      // Staff late today
-      attendance.filter(function(a) { return a.personType === 'staff' && a.date === today && a.status === 'Late'; })
-        .forEach(function(rec) {
-          var s = staff.find(function(x) { return x.id === rec.personId; });
-          notifs.push({
-            id: 'att-staff-late-' + rec.id,
-            type: 'attendance',
-            severity: 'warning',
-            title: 'Staff late today',
-            body: s ? s.fullName : rec.personId,
-            action: 'attendance'
-          });
-        });
+      // Staff issues today — grouped
+      var lateStaff   = attendance.filter(function(a) { return a.personType === 'staff' && a.date === today && a.status === 'Late'; });
+      var absentStaff = attendance.filter(function(a) { return a.personType === 'staff' && a.date === today && a.status === 'Absent'; });
+      if (absentStaff.length > 0) {
+        var names = absentStaff.map(function(rec) { var s = staff.find(function(x) { return x.id === rec.personId; }); return s ? s.fullName.split(' ')[0] : rec.personId; }).join(', ');
+        notifs.push({ id: 'staff-absent-today', type: 'attendance', severity: 'error', title: absentStaff.length + ' staff absent today', body: names, action: 'attendance' });
+      }
+      if (lateStaff.length > 0) {
+        var lateNames = lateStaff.map(function(rec) { var s = staff.find(function(x) { return x.id === rec.personId; }); return s ? s.fullName.split(' ')[0] : rec.personId; }).join(', ');
+        notifs.push({ id: 'staff-late-today', type: 'attendance', severity: 'warning', title: lateStaff.length + ' staff late today', body: lateNames, action: 'attendance' });
+      }
 
-      // Staff absent today
-      attendance.filter(function(a) { return a.personType === 'staff' && a.date === today && a.status === 'Absent'; })
-        .forEach(function(rec) {
-          var s = staff.find(function(x) { return x.id === rec.personId; });
-          notifs.push({
-            id: 'att-staff-absent-' + rec.id,
-            type: 'attendance',
-            severity: 'error',
-            title: 'Staff absent today',
-            body: s ? s.fullName : rec.personId,
-            action: 'attendance'
-          });
-        });
-
-      // Students late or absent today
-      attendance.filter(function(a) {
-        return a.personType === 'student' && a.date === today && (a.status === 'Late' || a.status === 'Absent');
-      }).forEach(function(rec) {
-        var stu = students.find(function(s) { return s.id === rec.personId; });
-        notifs.push({
-          id: 'att-stu-' + rec.id,
-          type: 'attendance',
-          severity: rec.status === 'Absent' ? 'error' : 'warning',
-          title: 'Student ' + rec.status.toLowerCase() + ' today',
-          body: stu ? stu.firstName + ' ' + stu.lastName : rec.personId,
-          action: 'attendance'
-        });
-      });
+      // Students late/absent today — grouped
+      var stuIssues = attendance.filter(function(a) { return a.personType === 'student' && a.date === today && (a.status === 'Late' || a.status === 'Absent'); });
+      if (stuIssues.length > 0) {
+        var absent = stuIssues.filter(function(a) { return a.status === 'Absent'; });
+        var late   = stuIssues.filter(function(a) { return a.status === 'Late'; });
+        if (absent.length > 0) notifs.push({ id: 'stu-absent-today', type: 'attendance', severity: 'error',   title: absent.length + ' student' + (absent.length!==1?'s':'') + ' absent today', body: absent.map(function(a){ var s=students.find(function(x){return x.id===a.personId;}); return s?s.firstName:a.personId; }).join(', '), action: 'attendance' });
+        if (late.length > 0)   notifs.push({ id: 'stu-late-today',   type: 'attendance', severity: 'warning', title: late.length   + ' student' + (late.length!==1?'s':'')   + ' late today',   body: late.map(function(a){   var s=students.find(function(x){return x.id===a.personId;}); return s?s.firstName:a.personId; }).join(', '), action: 'attendance' });
+      }
 
     } else {
       // Parent / client view
