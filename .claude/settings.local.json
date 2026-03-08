@@ -4,7 +4,8 @@
       "Bash(go build:*)",
       "Bash(go get:*)",
       "Bash(docker:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(grep:*)"
     ]
   }
 }
