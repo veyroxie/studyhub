@@ -90,10 +90,31 @@
       + '</div>'
 
       + (isAdmin ? '<div id="stab-panel-payroll" class="hidden">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">'
+        +   '<span style="font-size:0.78rem;color:#94a3b8">'
+        +     (s.employmentType === 'parttime' ? 'Part-time · RM ' + (s.hourlyRate || 0) + '/hr' : 'Full-time · RM ' + App.Utils.formatCurrency(s.salary) + '/mo')
+        +   '</span>'
+        +   '<button onclick="App.Staff._genPayrollModal(\'' + staffId + '\')" style="padding:0.3rem 0.8rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">+ Generate Payroll</button>'
+        + '</div>'
         + (staffPayroll.length === 0 ? '<p class="text-sm text-slate-400 text-center py-6">No payroll records</p>'
-          : '<table class="w-full text-sm"><thead><tr class="border-b"><th class="text-left py-2 text-slate-500 font-medium">Month</th><th class="text-right py-2 text-slate-500 font-medium">Base</th><th class="text-right py-2 text-slate-500 font-medium">Bonus</th><th class="text-right py-2 text-slate-500 font-medium">Total</th><th class="text-right py-2 text-slate-500 font-medium">Status</th></tr></thead><tbody>'
+          : '<table class="w-full text-sm"><thead><tr class="border-b">'
+          + '<th class="text-left py-2 text-slate-500 font-medium">Month</th>'
+          + (s.employmentType === 'parttime' ? '<th class="text-right py-2 text-slate-500 font-medium">Hours</th><th class="text-right py-2 text-slate-500 font-medium">Rate/hr</th>' : '<th class="text-right py-2 text-slate-500 font-medium">Base</th>')
+          + '<th class="text-right py-2 text-slate-500 font-medium">Bonus</th>'
+          + '<th class="text-right py-2 text-slate-500 font-medium">Total</th>'
+          + '<th class="text-right py-2 text-slate-500 font-medium">Status</th>'
+          + '</tr></thead><tbody>'
           + staffPayroll.map(function(p) {
-              return '<tr class="border-b border-slate-50"><td class="py-2 font-medium">' + App.Utils.formatMonth(p.month) + '</td><td class="py-2 text-right text-slate-600">' + App.Utils.formatCurrency(p.baseSalary) + '</td><td class="py-2 text-right text-slate-600">' + (p.bonus ? App.Utils.formatCurrency(p.bonus) : '—') + '</td><td class="py-2 text-right font-semibold">' + App.Utils.formatCurrency(p.total) + '</td><td class="py-2 text-right">' + App.Utils.statusBadge(p.status) + '</td></tr>';
+              return '<tr class="border-b border-slate-50">'
+                + '<td class="py-2 font-medium">' + App.Utils.formatMonth(p.month) + '</td>'
+                + (s.employmentType === 'parttime'
+                    ? '<td class="py-2 text-right text-slate-600">' + (p.hoursWorked || 0) + 'h</td>'
+                    + '<td class="py-2 text-right text-slate-600">' + App.Utils.formatCurrency(p.hourlyRate || s.hourlyRate || 0) + '</td>'
+                    : '<td class="py-2 text-right text-slate-600">' + App.Utils.formatCurrency(p.baseSalary) + '</td>')
+                + '<td class="py-2 text-right text-slate-600">' + (p.bonus ? App.Utils.formatCurrency(p.bonus) : '—') + '</td>'
+                + '<td class="py-2 text-right font-semibold">' + App.Utils.formatCurrency(p.total) + '</td>'
+                + '<td class="py-2 text-right">' + App.Utils.statusBadge(p.status) + '</td>'
+                + '</tr>';
             }).join('')
           + '</tbody></table>')
         + '</div>' : '')
@@ -128,7 +149,14 @@
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Role</label><select name="role" class="form-input"><option>Teacher</option><option>Senior Teacher</option><option>Admin</option></select></div>'
-      + _field('Monthly Salary (RM)', '<input name="salary" type="number" min="0" class="form-input">')
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Employment</label>'
+      + '<select name="employmentType" id="add-emp-type" class="form-input" onchange="App.Staff._togglePayFields(\'add\')">'
+      + '<option value="fulltime">Full-time (fixed)</option><option value="parttime">Part-time (hourly)</option>'
+      + '</select></div>'
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + '<div id="add-salary-field">' + _field('Monthly Salary (RM)', '<input name="salary" type="number" min="0" class="form-input">') + '</div>'
+      + '<div id="add-hourly-field" style="display:none">' + _field('Hourly Rate (RM)', '<input name="hourlyRate" type="number" min="0" step="0.01" class="form-input">') + '</div>'
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Email', '<input name="email" type="email" class="form-input">')
@@ -146,6 +174,7 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       const state = App.Store.get();
+      const empType = fd.get('employmentType') || 'fulltime';
       const newStaff = {
         id: 's' + (state.staff.length + 1),
         name: fd.get('name'),
@@ -153,7 +182,9 @@
         role: fd.get('role'),
         email: fd.get('email'),
         phone: fd.get('phone'),
-        salary: parseFloat(fd.get('salary')) || 0,
+        employmentType: empType,
+        salary: empType === 'fulltime' ? (parseFloat(fd.get('salary')) || 0) : 0,
+        hourlyRate: empType === 'parttime' ? (parseFloat(fd.get('hourlyRate')) || 0) : undefined,
         joinDate: fd.get('joinDate'),
         status: 'Active'
       };
@@ -196,8 +227,16 @@
       + _field('Phone', '<input name="phone" class="form-input" value="' + App.Utils.esc(s.phone || '') + '">')
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Monthly Salary (RM)', '<input name="salary" type="number" min="0" class="form-input" value="' + (s.salary || 0) + '">')
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Employment</label>'
+      + '<select name="employmentType" id="edit-emp-type" class="form-input" onchange="App.Staff._togglePayFields(\'edit\')">'
+      + '<option value="fulltime"' + (s.employmentType !== 'parttime' ? ' selected' : '') + '>Full-time (fixed)</option>'
+      + '<option value="parttime"' + (s.employmentType === 'parttime' ? ' selected' : '') + '>Part-time (hourly)</option>'
+      + '</select></div>'
       + _field('Join Date', '<input name="joinDate" type="date" class="form-input" value="' + (s.joinDate || '') + '">')
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + '<div id="edit-salary-field"' + (s.employmentType === 'parttime' ? ' style="display:none"' : '') + '>' + _field('Monthly Salary (RM)', '<input name="salary" type="number" min="0" class="form-input" value="' + (s.salary || 0) + '">') + '</div>'
+      + '<div id="edit-hourly-field"' + (s.employmentType !== 'parttime' ? ' style="display:none"' : '') + '>' + _field('Hourly Rate (RM)', '<input name="hourlyRate" type="number" min="0" step="0.01" class="form-input" value="' + (s.hourlyRate || 0) + '">') + '</div>'
       + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -210,6 +249,7 @@
     document.getElementById('edit-staff-form').addEventListener('submit', function(e) {
       e.preventDefault();
       const fd = new FormData(e.target);
+      const empType = fd.get('employmentType') || 'fulltime';
       const updated = Object.assign({}, s, {
         fullName: fd.get('fullName'),
         name: fd.get('name'),
@@ -217,7 +257,9 @@
         status: fd.get('status'),
         email: fd.get('email'),
         phone: fd.get('phone'),
-        salary: parseFloat(fd.get('salary')) || 0,
+        employmentType: empType,
+        salary: empType === 'fulltime' ? (parseFloat(fd.get('salary')) || 0) : 0,
+        hourlyRate: empType === 'parttime' ? (parseFloat(fd.get('hourlyRate')) || 0) : undefined,
         joinDate: fd.get('joinDate')
       });
       const st = App.Store.get();
@@ -228,6 +270,104 @@
     });
   }
 
+  function _togglePayFields(prefix) {
+    const sel = document.getElementById(prefix + '-emp-type');
+    if (!sel) return;
+    const isParttime = sel.value === 'parttime';
+    const salaryField = document.getElementById(prefix + '-salary-field');
+    const hourlyField = document.getElementById(prefix + '-hourly-field');
+    if (salaryField) salaryField.style.display = isParttime ? 'none' : 'block';
+    if (hourlyField) hourlyField.style.display = isParttime ? 'block' : 'none';
+  }
+
+  function _genPayrollModal(staffId) {
+    const state = App.Store.get();
+    const s = state.staff.find(function(x) { return x.id === staffId; });
+    if (!s) return;
+    const isParttime = s.employmentType === 'parttime';
+    const now = new Date();
+    const defaultMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2,'0');
+
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:380px">'
+      + '<h2 class="text-lg font-bold mb-1">Generate Payroll</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">' + App.Utils.esc(s.fullName) + ' · ' + (isParttime ? 'Part-time' : 'Full-time') + '</p>'
+      + '<form id="gen-payroll-form" class="space-y-4">'
+      + _field('Month', '<input name="month" type="month" class="form-input" value="' + defaultMonth + '" required>')
+      + (isParttime
+          ? '<div class="grid grid-cols-2 gap-4">'
+          + _field('Hours Worked', '<input name="hoursWorked" type="number" min="0" step="0.5" class="form-input" required oninput="App.Staff._previewPayroll()">')
+          + _field('Hourly Rate (RM)', '<input name="hourlyRate" type="number" min="0" step="0.01" class="form-input" value="' + (s.hourlyRate || 0) + '" required oninput="App.Staff._previewPayroll()">')
+          + '</div>'
+          : _field('Base Salary (RM)', '<input name="salary" type="number" min="0" step="0.01" class="form-input" value="' + (s.salary || 0) + '" required>'))
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Bonus (RM)', '<input name="bonus" type="number" min="0" step="0.01" class="form-input" value="0">')
+      + _field('Deductions (RM)', '<input name="deductions" type="number" min="0" step="0.01" class="form-input" value="0">')
+      + '</div>'
+      + (isParttime ? '<div id="pay-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem;font-size:0.82rem;color:#166534;display:none"></div>' : '')
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Generate</button>'
+      + '</div>'
+      + '</form>'
+      + '</div>'
+    );
+
+    document.getElementById('gen-payroll-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const st = App.Store.get();
+      const hoursWorked = isParttime ? (parseFloat(fd.get('hoursWorked')) || 0) : null;
+      const hourlyRate  = isParttime ? (parseFloat(fd.get('hourlyRate')) || 0) : null;
+      const baseSalary  = isParttime ? parseFloat((hoursWorked * hourlyRate).toFixed(2)) : (parseFloat(fd.get('salary')) || 0);
+      const bonus = parseFloat(fd.get('bonus')) || 0;
+      const deductions = parseFloat(fd.get('deductions')) || 0;
+      const total = parseFloat((baseSalary + bonus - deductions).toFixed(2));
+      const month = fd.get('month');
+      // Check for duplicate
+      const dup = st.payroll.find(function(p) { return p.staffId === staffId && p.month === month; });
+      if (dup) { App.Utils.showToast('Payroll for this month already exists.', 'warning'); return; }
+      const newPay = {
+        id: 'PAY' + String(st.payroll.length + 1).padStart(3,'0'),
+        staffId: staffId,
+        month: month,
+        baseSalary: baseSalary,
+        hoursWorked: hoursWorked,
+        hourlyRate: hourlyRate,
+        bonus: bonus,
+        deductions: deductions,
+        total: total,
+        status: 'Pending',
+        paidOn: null
+      };
+      App.Store.set({ payroll: [...st.payroll, newPay] });
+      App.Utils.hideModal();
+      App.Utils.showToast('Payroll generated · ' + App.Utils.formatCurrency(total), 'success');
+      setTimeout(function() { App.Staff._viewModal(staffId); App.Staff._switchTab('payroll'); }, 60);
+    });
+  }
+
+  function _previewPayroll() {
+    const hoursEl = document.querySelector('#gen-payroll-form [name="hoursWorked"]');
+    const rateEl  = document.querySelector('#gen-payroll-form [name="hourlyRate"]');
+    const preview = document.getElementById('pay-preview');
+    if (!preview) return;
+    const hours = parseFloat((hoursEl || {}).value) || 0;
+    const rate  = parseFloat((rateEl || {}).value) || 0;
+    if (hours > 0 && rate > 0) {
+      preview.style.display = 'block';
+      preview.textContent = hours + 'h × RM ' + rate.toFixed(2) + '/hr = RM ' + (hours * rate).toFixed(2) + ' base salary';
+    } else {
+      preview.style.display = 'none';
+    }
+  }
+
+  // Show employment type badge on staff card
+  function _empBadge(s) {
+    if (!s.employmentType || s.employmentType === 'fulltime') return '';
+    return App.Utils.badge('Part-time', 'orange');
+  }
+
   function _infoRow(label, value) {
     return '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-0.5">' + label + '</div><div class="font-medium text-slate-700">' + (value || '—') + '</div></div>';
   }
@@ -235,5 +375,5 @@
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  App.Staff = { render: render, _viewModal: _viewModal, _switchTab: _switchTab, _addModal: _addModal, _editModal: _editModal };
+  App.Staff = { render: render, _viewModal: _viewModal, _switchTab: _switchTab, _addModal: _addModal, _editModal: _editModal, _togglePayFields: _togglePayFields, _genPayrollModal: _genPayrollModal, _previewPayroll: _previewPayroll };
 })();
