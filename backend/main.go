@@ -96,7 +96,7 @@ func main() {
 			r.Post("/", handleAttendance(db, hub))
 		})
 
-		// Admin-only: user management + registration review
+		// Admin-only: user management + registration review + audit logs
 		r.Group(func(r chi.Router) {
 			r.Use(requireAdmin)
 			r.Get("/api/users", handleUsers(db))
@@ -104,6 +104,7 @@ func main() {
 			r.Delete("/api/users/{id}", handleUserDelete(db))
 			r.Post("/api/registrations/{id}/approve", handleRegistrationApprove(db))
 			r.Delete("/api/registrations/{id}", handleRegistrationReject(db))
+			r.Get("/api/audit-logs", handleAuditLogs(db))
 		})
 	})
 

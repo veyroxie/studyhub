@@ -437,7 +437,10 @@
       + _field('Start Time', '<input name="time" type="time" class="form-input" required>')
       + _field('End Time', '<input name="endTime" type="time" class="form-input" required>')
       + '</div>'
+      + '<div class="grid grid-cols-2 gap-4">'
       + _field('Capacity', '<input id="cap-input" name="capacity" type="number" min="1" max="5" class="form-input" value="5" readonly style="background:#f8fafc;color:#64748b">')
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Category</label><select name="category" class="form-input"><option>Academic</option><option>Non-academic</option><option>Workshop</option></select></div>'
+      + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Class</button>'
@@ -456,12 +459,12 @@
       const time   = fd.get('time');
       const endTime = fd.get('endTime');
       const classroom = fd.get('classroom') || 'Classroom 1';
-      const clash = state.classes.find(function(c) {
-        if (c.day !== day || c.classroom !== classroom) return false;
-        return time < c.endTime && endTime > c.time;
+      const overlaps = function(c) { return time < c.endTime && endTime > c.time; };
+      const roomClash = state.classes.find(function(c) {
+        return c.day === day && c.classroom === classroom && overlaps(c);
       });
-      if (clash) {
-        App.Utils.showToast('Clash: ' + classroom + ' is already booked ' + App.Utils.formatTime(clash.time) + '–' + App.Utils.formatTime(clash.endTime) + ' on ' + day, 'error');
+      if (roomClash) {
+        App.Utils.showToast('Room clash: ' + classroom + ' already booked ' + App.Utils.formatTime(roomClash.time) + '–' + App.Utils.formatTime(roomClash.endTime) + ' on ' + day, 'error');
         return;
       }
       const newClass = {
@@ -475,7 +478,8 @@
         endTime: endTime,
         capacity: capacity,
         enrolled: 0,
-        color: classType === 'Private' ? 'purple' : 'blue'
+        color: classType === 'Private' ? 'purple' : 'blue',
+        category: fd.get('category') || 'Academic'
       };
       App.Store.set({ classes: [...state.classes, newClass] });
       App.Utils.hideModal();

@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -57,9 +58,9 @@ func listStudents(db *sql.DB, c *Claims) []Student {
 	var err error
 	tid := tenantID(c)
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes FROM students WHERE contact=? AND (tenant_id=? OR ?=0) ORDER BY registered_on`, c.Email, tid, tid)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, c.Email, tid, tid)
 	} else {
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes FROM students WHERE (tenant_id=? OR ?=0) ORDER BY registered_on`, tid, tid)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, tid, tid)
 	}
 	if err != nil {
 		return []Student{}
@@ -109,7 +110,11 @@ func handleStudent(db *sql.DB) http.HandlerFunc {
 				s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, id)
 			respond(w, s)
 		case http.MethodDelete:
-			db.Exec(`DELETE FROM students WHERE id=?`, id)
+			db.Exec(`UPDATE students SET deleted_at=datetime('now') WHERE id=?`, id)
+			if cl := claimsFrom(r); cl != nil {
+				db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
+					cl.Email, "student_deleted", "student", id, "soft deleted")
+			}
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}
@@ -216,9 +221,9 @@ func listInvoices(db *sql.DB, c *Claims) []Invoice {
 	var rows *sql.Rows
 	var err error
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? ORDER BY i.created_on DESC`, c.Email)
+		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND i.deleted_at IS NULL ORDER BY i.created_on DESC`, c.Email)
 	} else {
-		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on FROM invoices ORDER BY created_on DESC`)
+		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on FROM invoices WHERE deleted_at IS NULL ORDER BY created_on DESC`)
 	}
 	if err != nil { return []Invoice{} }
 	defer rows.Close()
@@ -256,8 +261,42 @@ func handleInvoicePay(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		t := today()
+		// Fetch invoice details for audit log before marking paid
+		var studentID string
+		var amount float64
+		db.QueryRow(`SELECT student_id, amount FROM invoices WHERE id=?`, id).Scan(&studentID, &amount)
 		db.Exec(`UPDATE invoices SET status='Paid', paid_on=? WHERE id=?`, t, id)
+		// Audit log
+		if cl := claimsFrom(r); cl != nil {
+			detail := `{"studentId":"` + studentID + `","amount":` + fmt.Sprintf("%.2f", amount) + `,"paidOn":"` + t + `"}`
+			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
+				cl.Email, "invoice_paid", "invoice", id, detail)
+		}
 		respond(w, map[string]string{"status": "Paid", "paidOn": t})
+	}
+}
+
+func handleAuditLogs(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rows, err := db.Query(`SELECT id,actor_email,action,entity_type,entity_id,detail,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 200`)
+		if err != nil { respond(w, []any{}); return }
+		defer rows.Close()
+		type LogEntry struct {
+			ID         int    `json:"id"`
+			ActorEmail string `json:"actorEmail"`
+			Action     string `json:"action"`
+			EntityType string `json:"entityType"`
+			EntityID   string `json:"entityId"`
+			Detail     string `json:"detail"`
+			CreatedAt  string `json:"createdAt"`
+		}
+		out := []LogEntry{}
+		for rows.Next() {
+			var e LogEntry
+			rows.Scan(&e.ID, &e.ActorEmail, &e.Action, &e.EntityType, &e.EntityID, &e.Detail, &e.CreatedAt)
+			out = append(out, e)
+		}
+		respond(w, out)
 	}
 }
 

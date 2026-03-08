@@ -66,7 +66,8 @@ func createSchema(db *sql.DB) error {
 		registered_on    TEXT,
 		enrolled_classes TEXT DEFAULT '[]', -- JSON array of class IDs
 		siblings         TEXT DEFAULT '[]', -- JSON array of student IDs
-		notes            TEXT DEFAULT ''
+		notes            TEXT DEFAULT '',
+		deleted_at       TEXT -- soft delete: NULL = active
 	);
 
 	CREATE TABLE IF NOT EXISTS classes (
@@ -106,7 +107,19 @@ func createSchema(db *sql.DB) error {
 		due_date    TEXT,
 		status      TEXT DEFAULT 'Unpaid',
 		created_on  TEXT,
-		paid_on     TEXT
+		paid_on     TEXT,
+		deleted_at  TEXT -- soft delete: NULL = active
+	);
+
+	CREATE TABLE IF NOT EXISTS audit_logs (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id   INTEGER NOT NULL DEFAULT 1,
+		actor_email TEXT NOT NULL,
+		action      TEXT NOT NULL, -- 'invoice_paid' | 'student_deleted' | 'invoice_deleted' | etc.
+		entity_type TEXT NOT NULL, -- 'invoice' | 'student'
+		entity_id   TEXT NOT NULL,
+		detail      TEXT,          -- JSON or free-text description
+		created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
 	CREATE TABLE IF NOT EXISTS announcements (
@@ -181,6 +194,11 @@ func runMigrations(db *sql.DB) {
 		`ALTER TABLE payroll ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1`,
 		// Seed default tenant if missing
 		`INSERT OR IGNORE INTO tenants(id,name,subscription_status,plan) VALUES(1,'The Study Hub','active','basic')`,
+		// Soft deletes
+		`ALTER TABLE students ADD COLUMN deleted_at TEXT`,
+		`ALTER TABLE invoices ADD COLUMN deleted_at TEXT`,
+		// Audit log
+		`CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL DEFAULT 1, actor_email TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, detail TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (column already exists = OK)

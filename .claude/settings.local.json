@@ -5,7 +5,8 @@
       "Bash(go get:*)",
       "Bash(docker:*)",
       "Bash(git:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(chmod +x:*)"
     ]
   }
 }
