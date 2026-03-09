@@ -65,6 +65,7 @@ type Class struct {
 	Capacity   int      `json:"capacity"`
 	Enrolled   int      `json:"enrolled"`
 	Color      string   `json:"color"`
+	Category   string   `json:"category"`
 }
 
 type Staff struct {
@@ -125,20 +126,28 @@ type Payroll struct {
 }
 
 type Registration struct {
-	ID               string `json:"id"`
-	ParentName       string `json:"parentName"`
-	Email            string `json:"email"`
-	Phone            string `json:"phone"`
-	EmergencyName    string `json:"emergencyName"`
-	EmergencyPhone   string `json:"emergencyPhone"`
-	StudentFirstName string `json:"studentFirstName"`
-	StudentLastName  string `json:"studentLastName"`
-	StudentDOB       string `json:"studentDob"`
-	StudentGender    string `json:"studentGender"`
-	ClassInterest    string `json:"classInterest"`
-	Notes            string `json:"notes"`
-	SubmittedOn      string `json:"submittedOn"`
-	Status           string `json:"status"` // pending | approved | rejected
+	ID                string  `json:"id"`
+	ParentName        string  `json:"parentName"`
+	Email             string  `json:"email"`
+	Phone             string  `json:"phone"`
+	EmergencyName     string  `json:"emergencyName"`
+	EmergencyPhone    string  `json:"emergencyPhone"`
+	StudentFirstName  string  `json:"studentFirstName"`
+	StudentLastName   string  `json:"studentLastName"`
+	StudentDOB        string  `json:"studentDob"`
+	StudentGender     string  `json:"studentGender"`
+	Gender            string  `json:"gender"`
+	SchoolName        string  `json:"schoolName"`
+	YearGrade         string  `json:"yearGrade"`
+	ClassTypeInterest string  `json:"classTypeInterest"`
+	SubjectInterest   string  `json:"subjectInterest"`
+	SchoolFees        float64 `json:"schoolFees"`
+	RegistrationDate  string  `json:"registrationDate"`
+	WorkshopInterest  string  `json:"workshopInterest"`
+	ClassInterest     string  `json:"classInterest"`
+	Notes             string  `json:"notes"`
+	SubmittedOn       string  `json:"submittedOn"`
+	Status            string  `json:"status"` // pending | approved | rejected
 }
 
 // Snapshot is what GET /api/snapshot returns — identical shape to App.DATA

@@ -9,13 +9,19 @@
   --gold-glow:  0 0 0 1px #C9A227, 0 8px 32px rgba(201,162,39,0.15);
   --black:      #0a0a0a;
   --off-white:  #FAFAF8;
+  --serif: 'Cormorant Garamond', Georgia, serif;
+  --sans:  'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --sidebar-bg: #0f0f0f;
+  --surface: #F6F4F0;
+  --border-light: #E2DDD5;
+  --text-muted: #9A9590;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+  font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -27,14 +33,25 @@ body {
 .nav-btn {
   color: #94a3b8;
   transition: background 0.15s, color 0.15s;
+  position: relative;
 }
 .nav-btn:hover {
   background: rgba(255,255,255,0.08);
   color: #e2e8f0;
 }
 .nav-btn.active {
-  background: #2563eb;
-  color: #ffffff;
+  background: rgba(201,168,76,0.12);
+  color: #C9A227 !important;
+}
+.nav-btn.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  height: 60%;
+  width: 3px;
+  background: #C9A227;
+  border-radius: 0 3px 3px 0;
 }
 
 /* Table helpers */
@@ -115,11 +132,21 @@ body.theme-b .nav-btn:hover {
   color: #C9A227;
 }
 body.theme-b .nav-btn.active {
+  background: rgba(201,168,76,0.12);
+  color: #C9A227 !important;
+}
+body.theme-b .nav-btn.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  height: 60%;
+  width: 3px;
   background: #C9A227;
-  color: #0f0f0f !important;
+  border-radius: 0 3px 3px 0;
 }
 body.theme-b .nav-btn.active svg {
-  stroke: #0f0f0f;
+  stroke: #C9A227;
 }
 body.theme-b #app {
   background: #f9f8f5;
@@ -190,6 +217,7 @@ body.theme-c header { display: none !important; }
 .bento-tile.clickable:hover {
   box-shadow: 0 0 0 1.5px var(--gold), 0 8px 28px rgba(201,162,39,0.14);
   transform: translateY(-2px);
+  border-top-color: var(--gold);
 }
 .bento-tile.clickable:hover .bento-glow { opacity: 1 !important; }
 .bento-number {
@@ -249,4 +277,23 @@ body.theme-b header {
   .shadow-sm, .shadow { box-shadow: none !important; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid #e2e8f0; padding: 8px 12px; }
+}
+
+/* Nav group labels */
+.nav-group-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #4b5563;
+  padding: 1rem 1rem 0.35rem;
+  margin-top: 0.25rem;
+}
+body.theme-b .nav-group-label {
+  color: rgba(201,162,39,0.45);
+}
+
+/* Serif heading utility */
+.font-serif {
+  font-family: var(--serif);
 }

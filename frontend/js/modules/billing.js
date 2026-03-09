@@ -79,6 +79,7 @@
           ? '<div class="flex gap-2">'
           + '<button onclick="App.Billing._generateMonthlyModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">Generate Monthly</button>'
           + '<button onclick="App.Billing._siblingInvoiceModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">Sibling Invoice</button>'
+          + '<button onclick="App.Billing._exportCSV()" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Export CSV</button>'
           + '<button onclick="App.Billing._createModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Create Invoice</button>'
           + '</div>'
           : '')
@@ -760,6 +761,27 @@
     }
   }
 
+  function _downloadCSV(csv, filename) {
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function _exportCSV() {
+    const { invoices, students } = App.Store.get();
+    const headers = ['Invoice ID','Student','Description','Type','Amount','Due Date','Status','Created On','Paid On'];
+    const rows = invoices.map(function(inv) {
+      const stu = students.find(function(s) { return s.id === inv.studentId; });
+      const stuName = stu ? stu.firstName + ' ' + stu.lastName : inv.studentId;
+      return [inv.id, stuName, inv.description, inv.type, inv.amount, inv.dueDate, inv.status, inv.createdOn || '', inv.paidOn || '']
+        .map(function(v) { return '"' + String(v||'').replace(/"/g,'""') + '"'; }).join(',');
+    });
+    _downloadCSV([headers.join(',')].concat(rows).join('\n'), 'invoices.csv');
+    App.Utils.showToast('Exported ' + invoices.length + ' invoices', 'success');
+  }
+
   App.Billing = {
     render: render,
     _setFilter: _setFilter,
@@ -785,6 +807,7 @@
     _updateNetAmount: _updateNetAmount,
     _siblingInvoiceModal: _siblingInvoiceModal,
     _updateSiblingChildren: _updateSiblingChildren,
-    _updateSiblingTotal: _updateSiblingTotal
+    _updateSiblingTotal: _updateSiblingTotal,
+    _exportCSV: _exportCSV
   };
 })();

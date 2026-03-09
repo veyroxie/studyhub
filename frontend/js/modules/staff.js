@@ -5,10 +5,17 @@
     const { staff, classes, payroll } = App.Store.get();
     const isAdmin = App.currentRole === 'admin';
 
+    const pendingTeachers = isAdmin ? JSON.parse(localStorage.getItem('sh_teacher_regs') || '[]').filter(function(r) { return r.status === 'pending'; }) : [];
+
     container.innerHTML = ''
       + '<div class="flex items-center justify-between mb-6">'
       +   '<h1 class="text-2xl font-bold text-slate-800">Staff</h1>'
+      +   '<div class="flex gap-2">'
+      +   (isAdmin && pendingTeachers.length > 0
+          ? '<button onclick="App.Staff._pendingTeacherModal()" class="px-4 py-2 text-sm bg-amber-500 text-white rounded-lg hover:bg-amber-600 flex items-center gap-2"><span class="w-5 h-5 bg-white text-amber-600 text-xs font-bold rounded-full flex items-center justify-center">' + pendingTeachers.length + '</span>Applications</button>'
+          : '')
       +   (isAdmin ? '<button onclick="App.Staff._addModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Add Staff</button>' : '')
+      +   '</div>'
       + '</div>'
       + (staff.length === 0
         ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">' + App.Utils.emptyState(
@@ -16,30 +23,41 @@
             'Add your first staff member to get started.',
             isAdmin ? '<button onclick="App.Staff._addModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Staff</button>' : ''
           ) + '</div>'
-        : '<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">'
-          + staff.map(function(s) { return _staffCard(s, classes, isAdmin); }).join('')
+        : '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
+          + staff.map(function(s, idx) { return _staffCard(s, idx, classes, isAdmin); }).join('')
           + '</div>');
   }
 
-  function _staffCard(s, classes, isAdmin) {
+  function _staffCard(s, idx, classes, isAdmin) {
     const teachingClasses = classes.filter(function(c) { return c.teacherIds.indexOf(s.id) > -1; });
-    const avatarColors = ['bg-blue-100 text-blue-700', 'bg-purple-100 text-purple-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700'];
-    const colorIdx = ['s1','s2','s3','s4'].indexOf(s.id);
-    const avatarColor = avatarColors[colorIdx >= 0 ? colorIdx : 0];
+    const avatarBgs   = ['#dbeafe','#ede9fe','#d1fae5','#fef3c7'];
+    const avatarCols  = ['#1d4ed8','#7c3aed','#047857','#b45309'];
+    const colorIdx    = idx % 4;
+    const avatarBg    = avatarBgs[colorIdx];
+    const avatarCol   = avatarCols[colorIdx];
+    const initial     = (s.name || s.fullName || '?').charAt(0);
 
-    return '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all" onclick="App.Staff._viewModal(\'' + s.id + '\')">'
-      + '<div class="flex items-start gap-3 mb-4">'
-      +   '<div class="w-12 h-12 rounded-xl ' + avatarColor + ' font-bold text-lg flex items-center justify-center shrink-0">' + s.name.charAt(0) + '</div>'
-      +   '<div>'
-      +     '<div class="font-semibold text-slate-800">' + s.fullName + '</div>'
-      +     '<div class="text-xs text-slate-500 mt-0.5">' + s.role + '</div>'
-      +     '<div class="mt-1">' + App.Utils.statusBadge(s.status) + '</div>'
-      +   '</div>'
+    var metricStyle = 'font-size:0.78rem;color:#94a3b8';
+    var metricVal   = 'font-weight:600;color:#111;font-size:0.78rem';
+    function metric(label, value) {
+      return '<div style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:52px">'
+        + '<span style="' + metricVal + '">' + value + '</span>'
+        + '<span style="' + metricStyle + '">' + label + '</span>'
+        + '</div>';
+    }
+
+    return '<div style="display:flex;align-items:center;gap:1rem;padding:0.9rem 1.1rem;border-bottom:1px solid #f8f6f4;cursor:pointer" onclick="App.Staff._viewModal(\'' + s.id + '\')" onmouseover="this.style.background=\'#fafaf8\'" onmouseout="this.style.background=\'transparent\'">'
+      + '<div style="width:40px;height:40px;border-radius:50%;background:' + avatarBg + ';color:' + avatarCol + ';font-weight:700;font-size:1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + initial + '</div>'
+      + '<div style="flex:1 1 0;min-width:0">'
+      +   '<div style="font-weight:700;color:#111;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(s.fullName) + '</div>'
+      +   '<div style="font-size:0.75rem;color:#94a3b8;margin-top:1px">' + App.Utils.esc(s.role) + '</div>'
       + '</div>'
-      + '<div class="border-t border-slate-50 pt-3 space-y-1">'
-      + '<div class="text-xs text-slate-500 flex justify-between"><span>Classes</span><span class="font-medium text-slate-700">' + teachingClasses.length + '</span></div>'
-      + (isAdmin ? '<div class="text-xs text-slate-500 flex justify-between"><span>Salary</span><span class="font-medium text-slate-700">' + App.Utils.formatCurrency(s.salary) + '/mo</span></div>' : '')
-      + '<div class="text-xs text-slate-500 flex justify-between"><span>Since</span><span class="font-medium text-slate-700">' + App.Utils.formatDate(s.joinDate) + '</span></div>'
+      + '<div style="display:flex;align-items:center;gap:1.25rem;flex-shrink:0">'
+      +   metric('Classes', teachingClasses.length)
+      +   (isAdmin ? metric('Salary', App.Utils.formatCurrency(s.salary) + '/mo') : '')
+      +   metric('Since', App.Utils.formatDate(s.joinDate))
+      +   App.Utils.statusBadge(s.status)
+      +   '<button onclick="event.stopPropagation();App.Staff._viewModal(\'' + s.id + '\')" style="padding:0.35rem 0.9rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#374151;border:1px solid #e2e8f0;border-radius:7px;cursor:pointer">View</button>'
       + '</div>'
       + '</div>';
   }
@@ -84,6 +102,40 @@
         + '</div>';
     }
 
+    // Performance reviews
+    var reviews = (App.Store.get().performanceReviews || []).filter(function(r) { return r.staffId === s.id; })
+      .sort(function(a, b) { return b.date.localeCompare(a.date); });
+
+    function stars(n) {
+      var out = '';
+      for (var i = 1; i <= 5; i++) out += '<span style="color:' + (i <= n ? '#d97706' : '#d1d5db') + '">&#9733;</span>';
+      return out;
+    }
+
+    var reviewsHtml = '<div style="margin-top:1rem">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6rem">'
+      +   '<span style="font-size:0.82rem;font-weight:700;color:#374151">Performance Reviews</span>'
+      +   '<button onclick="App.Staff._addReviewModal(\'' + s.id + '\')" style="padding:0.28rem 0.75rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">+ Add Review</button>'
+      + '</div>'
+      + (reviews.length === 0
+          ? '<div style="text-align:center;padding:1.25rem 0;font-size:0.82rem;color:#94a3b8">No reviews yet</div>'
+          : reviews.map(function(rv) {
+              return '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.6rem">'
+                + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.35rem">'
+                +   '<span style="font-size:0.78rem;font-weight:700;color:#374151">' + App.Utils.esc(rv.period) + '</span>'
+                +   '<div style="display:flex;align-items:center;gap:0.5rem">'
+                +     '<span style="font-size:1rem;letter-spacing:-1px">' + stars(rv.rating) + '</span>'
+                +     '<span style="font-size:0.7rem;color:#94a3b8">' + App.Utils.formatDate(rv.date) + '</span>'
+                +   '</div>'
+                + '</div>'
+                + (rv.strengths ? '<div style="font-size:0.76rem;color:#374151;margin-bottom:0.25rem"><span style="color:#94a3b8;font-weight:600">Strengths: </span>' + App.Utils.esc(rv.strengths) + '</div>' : '')
+                + (rv.areasToImprove ? '<div style="font-size:0.76rem;color:#374151;margin-bottom:0.25rem"><span style="color:#94a3b8;font-weight:600">Areas to Improve: </span>' + App.Utils.esc(rv.areasToImprove) + '</div>' : '')
+                + '<div style="font-size:0.7rem;color:#94a3b8;margin-top:0.2rem">Reviewed by ' + App.Utils.esc(rv.reviewedBy) + '</div>'
+                + '</div>';
+            }).join('')
+        )
+      + '</div>';
+
     return '<div class="space-y-4">'
       + '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem">'
       + metricCard('Classes', myClasses.length, '#6366f1')
@@ -103,7 +155,52 @@
       +   '<textarea id="perf-notes-' + s.id + '" rows="3" style="width:100%;padding:0.5rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;resize:vertical;outline:none">' + App.Utils.esc(s.performanceNotes || '') + '</textarea>'
       +   '<button onclick="App.Staff._saveNotes(\'' + s.id + '\')" style="margin-top:0.5rem;padding:0.35rem 0.9rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Save Notes</button>'
       + '</div>'
+      + reviewsHtml
       + '</div>';
+  }
+
+  function _addReviewModal(staffId) {
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:380px">'
+      + '<h2 class="text-lg font-bold mb-4">Add Performance Review</h2>'
+      + '<form id="add-review-form" class="space-y-4">'
+      + _field('Period (e.g. H1 2026)', '<input name="period" class="form-input" placeholder="H1 2026" required>')
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Rating</label>'
+      + '<select name="rating" class="form-input">'
+      + ['1 — Needs Improvement','2 — Below Expectations','3 — Meets Expectations','4 — Exceeds Expectations','5 — Outstanding'].map(function(opt, i) {
+          return '<option value="' + (i+1) + '"' + (i === 2 ? ' selected' : '') + '>' + opt + '</option>';
+        }).join('')
+      + '</select></div>'
+      + _field('Strengths', '<textarea name="strengths" rows="2" class="form-input" placeholder="What did this staff member do well?"></textarea>')
+      + _field('Areas to Improve', '<textarea name="areasToImprove" rows="2" class="form-input" placeholder="What can be improved?"></textarea>')
+      + _field('Reviewed By', '<input name="reviewedBy" class="form-input" value="Admin">')
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save Review</button>'
+      + '</div>'
+      + '</form>'
+      + '</div>'
+    );
+    document.getElementById('add-review-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      var st = App.Store.get();
+      var newReview = {
+        id: App.Utils.generateId(),
+        staffId: staffId,
+        date: App.Utils.today(),
+        period: fd.get('period'),
+        rating: parseInt(fd.get('rating'), 10),
+        strengths: fd.get('strengths'),
+        areasToImprove: fd.get('areasToImprove'),
+        reviewedBy: fd.get('reviewedBy') || 'Admin'
+      };
+      var existing = st.performanceReviews || [];
+      App.Store.set({ performanceReviews: existing.concat([newReview]) });
+      App.Utils.hideModal();
+      App.Utils.showToast('Review saved', 'success');
+      setTimeout(function() { App.Staff._viewModal(staffId); App.Staff._switchTab('performance'); }, 60);
+    });
   }
 
   function _saveNotes(staffId) {
@@ -148,6 +245,9 @@
       +   _infoRow('Phone', s.phone)
       +   _infoRow('Role', s.role)
       +   _infoRow('Joined', App.Utils.formatDate(s.joinDate))
+      +   (s.specialization ? _infoRow('Specialization', s.specialization) : '')
+      +   (isAdmin && s.nric ? _infoRow('IC / NRIC', s.nric) : '')
+      +   (isAdmin && s.emergencyName ? _infoRow('Emergency Contact', s.emergencyName + (s.emergencyPhone ? ' · ' + s.emergencyPhone : '')) : '')
       +   (isAdmin ? _infoRow('Monthly Salary', App.Utils.formatCurrency(s.salary)) : '')
       +   '</div>'
       + '</div>'
@@ -239,6 +339,12 @@
       + _field('Phone', '<input name="phone" class="form-input" placeholder="601234567890">')
       + '</div>'
       + _field('Join Date', '<input name="joinDate" type="date" class="form-input" value="' + App.Utils.today() + '">')
+      + _field('Specialization', '<input name="specialization" class="form-input" placeholder="e.g. Japanese Level 1–4, English">')
+      + _field('IC / NRIC', '<input name="nric" class="form-input" placeholder="e.g. 900101-10-1234">')
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Emergency Contact Name', '<input name="emergencyName" class="form-input" placeholder="Full name">')
+      + _field('Emergency Contact Phone', '<input name="emergencyPhone" class="form-input" placeholder="601234567890">')
+      + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Staff</button>'
@@ -262,6 +368,10 @@
         salary: empType === 'fulltime' ? (parseFloat(fd.get('salary')) || 0) : 0,
         hourlyRate: empType === 'parttime' ? (parseFloat(fd.get('hourlyRate')) || 0) : undefined,
         joinDate: fd.get('joinDate'),
+        specialization: fd.get('specialization') || '',
+        nric: fd.get('nric') || '',
+        emergencyName: fd.get('emergencyName') || '',
+        emergencyPhone: fd.get('emergencyPhone') || '',
         status: 'Active'
       };
       App.Store.set({ staff: [...state.staff, newStaff] });
@@ -314,6 +424,12 @@
       + '<div id="edit-salary-field"' + (s.employmentType === 'parttime' ? ' style="display:none"' : '') + '>' + _field('Monthly Salary (RM)', '<input name="salary" type="number" min="0" class="form-input" value="' + (s.salary || 0) + '">') + '</div>'
       + '<div id="edit-hourly-field"' + (s.employmentType !== 'parttime' ? ' style="display:none"' : '') + '>' + _field('Hourly Rate (RM)', '<input name="hourlyRate" type="number" min="0" step="0.01" class="form-input" value="' + (s.hourlyRate || 0) + '">') + '</div>'
       + '</div>'
+      + _field('Specialization', '<input name="specialization" class="form-input" placeholder="e.g. Japanese Level 1–4, English" value="' + App.Utils.esc(s.specialization || '') + '">')
+      + _field('IC / NRIC', '<input name="nric" class="form-input" value="' + App.Utils.esc(s.nric || '') + '">')
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Emergency Contact Name', '<input name="emergencyName" class="form-input" value="' + App.Utils.esc(s.emergencyName || '') + '">')
+      + _field('Emergency Contact Phone', '<input name="emergencyPhone" class="form-input" value="' + App.Utils.esc(s.emergencyPhone || '') + '">')
+      + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>'
@@ -336,7 +452,11 @@
         employmentType: empType,
         salary: empType === 'fulltime' ? (parseFloat(fd.get('salary')) || 0) : 0,
         hourlyRate: empType === 'parttime' ? (parseFloat(fd.get('hourlyRate')) || 0) : undefined,
-        joinDate: fd.get('joinDate')
+        joinDate: fd.get('joinDate'),
+        specialization: fd.get('specialization') || '',
+        nric: fd.get('nric') || '',
+        emergencyName: fd.get('emergencyName') || '',
+        emergencyPhone: fd.get('emergencyPhone') || ''
       });
       const st = App.Store.get();
       App.Store.set({ staff: st.staff.map(function(x) { return x.id === staffId ? updated : x; }) });
@@ -451,5 +571,81 @@
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  App.Staff = { render: render, _viewModal: _viewModal, _switchTab: _switchTab, _addModal: _addModal, _editModal: _editModal, _togglePayFields: _togglePayFields, _genPayrollModal: _genPayrollModal, _previewPayroll: _previewPayroll, _saveNotes: _saveNotes };
+  function _pendingTeacherModal() {
+    var regs = JSON.parse(localStorage.getItem('sh_teacher_regs') || '[]');
+    var pending = regs.filter(function(r) { return r.status === 'pending'; });
+    var html = '<div style="max-height:70vh;overflow-y:auto">'
+      + '<h2 class="text-xl font-bold text-slate-800 mb-4">Teacher Applications (' + pending.length + ')</h2>'
+      + (pending.length === 0
+        ? '<div class="py-8 text-center text-slate-400">No pending applications</div>'
+        : pending.map(function(reg) {
+            return '<div class="border border-slate-100 rounded-xl p-4 mb-3">'
+              + '<div class="flex items-start justify-between gap-3 mb-2">'
+              +   '<div>'
+              +     '<div class="font-semibold text-slate-800">' + App.Utils.esc(reg.fullName) + '</div>'
+              +     '<div class="text-xs text-slate-500">' + App.Utils.esc(reg.email) + ' · ' + App.Utils.esc(reg.phone) + '</div>'
+              +   '</div>'
+              +   '<span class="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">' + App.Utils.esc(reg.employmentType || 'full-time') + '</span>'
+              + '</div>'
+              + '<div class="grid grid-cols-2 gap-2 text-xs text-slate-600 mb-3">'
+              +   '<div><span class="text-slate-400">Specialty: </span>' + App.Utils.esc(reg.specialty) + '</div>'
+              +   '<div><span class="text-slate-400">Experience: </span>' + App.Utils.esc(reg.experience || '—') + ' yrs</div>'
+              +   '<div><span class="text-slate-400">Qualifications: </span>' + App.Utils.esc(reg.qualifications || '—') + '</div>'
+              +   '<div><span class="text-slate-400">Expected: </span>' + (reg.expectedSalary ? 'RM ' + reg.expectedSalary + '/mo' : '—') + '</div>'
+              + '</div>'
+              + (reg.bio ? '<div class="text-xs text-slate-500 mb-3 italic">"' + App.Utils.esc(reg.bio.slice(0,150)) + (reg.bio.length > 150 ? '…' : '') + '"</div>' : '')
+              + '<div class="flex gap-2">'
+              +   '<button onclick="App.Staff._approveTeacher(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium">Approve &amp; Add to Staff</button>'
+              +   '<button onclick="App.Staff._rejectTeacher(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100 font-medium border border-red-200">Reject</button>'
+              + '</div>'
+              + '</div>';
+          }).join('')
+      )
+      + '</div>';
+    App.Utils.showModal(html);
+  }
+
+  function _approveTeacher(regId) {
+    var regs = JSON.parse(localStorage.getItem('sh_teacher_regs') || '[]');
+    var reg = regs.find(function(r) { return r.id === regId; });
+    if (!reg) return;
+
+    // Add to staff store
+    var { staff } = App.Store.get();
+    var newStaff = {
+      id: 'st' + Date.now(),
+      name: (reg.displayName || reg.fullName).split(' ')[0],
+      fullName: reg.fullName,
+      role: 'Teacher — ' + reg.specialty,
+      email: reg.email,
+      phone: reg.phone,
+      salary: parseInt(reg.expectedSalary) || 3000,
+      joinDate: new Date().toISOString().slice(0,10),
+      status: 'Active',
+      employmentType: reg.employmentType === 'part-time' ? 'parttime' : 'fulltime',
+      notes: reg.bio || ''
+    };
+    App.Store.set({ staff: staff.concat([newStaff]) });
+
+    // Mark approved in localStorage
+    reg.status = 'approved';
+    localStorage.setItem('sh_teacher_regs', JSON.stringify(regs));
+
+    App.Utils.hideModal();
+    App.Utils.showToast(reg.fullName + ' added to staff', 'success');
+    App.Router.navigate('staff');
+  }
+
+  function _rejectTeacher(regId) {
+    if (!confirm('Reject this application?')) return;
+    var regs = JSON.parse(localStorage.getItem('sh_teacher_regs') || '[]');
+    var reg = regs.find(function(r) { return r.id === regId; });
+    if (reg) { reg.status = 'rejected'; }
+    localStorage.setItem('sh_teacher_regs', JSON.stringify(regs));
+    App.Utils.hideModal();
+    App.Utils.showToast('Application rejected', 'info');
+    App.Router.navigate('staff');
+  }
+
+  App.Staff = { render: render, _viewModal: _viewModal, _switchTab: _switchTab, _addModal: _addModal, _editModal: _editModal, _togglePayFields: _togglePayFields, _genPayrollModal: _genPayrollModal, _previewPayroll: _previewPayroll, _saveNotes: _saveNotes, _addReviewModal: _addReviewModal, _pendingTeacherModal: _pendingTeacherModal, _approveTeacher: _approveTeacher, _rejectTeacher: _rejectTeacher };
 })();

@@ -46,6 +46,7 @@
       +   (isAdmin && pendingRegs.length > 0
             ? '<button onclick="App.Students._pendingModal()" class="px-4 py-2 text-sm bg-amber-500 text-white rounded-lg hover:bg-amber-600 flex items-center gap-2"><span class="w-5 h-5 bg-white text-amber-600 text-xs font-bold rounded-full flex items-center justify-center">' + pendingRegs.length + '</span>Pending</button>'
             : '')
+      +   (isAdmin ? '<button onclick="App.Students._exportCSV()" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Export CSV</button>' : '')
       +   (isAdmin ? '<button onclick="App.Students._addModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Add Student</button>' : '')
       +   '</div>'
       + '</div>'
@@ -507,6 +508,29 @@
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
+  function _downloadCSV(csv, filename) {
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function _exportCSV() {
+    const { students, classes } = App.Store.get();
+    const headers = ['ID','First Name','Last Name','DOB','Gender','Parent','Contact','Phone','Status','Registered On','Classes'];
+    const rows = students.map(function(s) {
+      const classNames = s.enrolledClasses.map(function(cid) {
+        var c = classes.find(function(x) { return x.id === cid; });
+        return c ? c.name : cid;
+      }).join('; ');
+      return [s.id, s.firstName, s.lastName, s.dob, s.gender, s.parentName, s.contact, s.phone, s.status, s.registeredOn, classNames]
+        .map(function(v) { return '"' + String(v||'').replace(/"/g,'""') + '"'; }).join(',');
+    });
+    _downloadCSV([headers.join(',')].concat(rows).join('\n'), 'students.csv');
+    App.Utils.showToast('Exported ' + students.length + ' students', 'success');
+  }
+
   App.Students = {
     render: render,
     _onSearch: _onSearch,
@@ -523,6 +547,7 @@
     _bulkDeselect: _bulkDeselect,
     _bulkMessage: _bulkMessage,
     _bulkSendMessage: _bulkSendMessage,
-    _clearFilters: _clearFilters
+    _clearFilters: _clearFilters,
+    _exportCSV: _exportCSV
   };
 })();

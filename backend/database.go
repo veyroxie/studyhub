@@ -81,7 +81,8 @@ func createSchema(db *sql.DB) error {
 		end_time    TEXT,
 		capacity    INTEGER DEFAULT 6,
 		enrolled    INTEGER DEFAULT 0,
-		color       TEXT DEFAULT 'blue'
+		color       TEXT DEFAULT 'blue',
+	category    TEXT DEFAULT 'Academic'
 	);
 
 	CREATE TABLE IF NOT EXISTS staff (
@@ -159,21 +160,29 @@ func createSchema(db *sql.DB) error {
 	);
 
 	CREATE TABLE IF NOT EXISTS registrations (
-		id                 TEXT PRIMARY KEY,
-		tenant_id          INTEGER NOT NULL DEFAULT 1,
-		parent_name        TEXT NOT NULL,
-		email              TEXT NOT NULL,
-		phone              TEXT,
-		emergency_name     TEXT,
-		emergency_phone    TEXT,
-		student_first_name TEXT NOT NULL,
-		student_last_name  TEXT NOT NULL,
-		student_dob        TEXT,
-		student_gender     TEXT,
-		class_interest     TEXT,
-		notes              TEXT,
-		submitted_on       TEXT,
-		status             TEXT DEFAULT 'pending'
+		id                   TEXT PRIMARY KEY,
+		tenant_id            INTEGER NOT NULL DEFAULT 1,
+		parent_name          TEXT NOT NULL,
+		email                TEXT NOT NULL,
+		phone                TEXT,
+		emergency_name       TEXT,
+		emergency_phone      TEXT,
+		student_first_name   TEXT NOT NULL,
+		student_last_name    TEXT NOT NULL,
+		student_dob          TEXT,
+		student_gender       TEXT,
+		gender               TEXT,
+		school_name          TEXT,
+		year_grade           TEXT,
+		class_type_interest  TEXT,
+		subject_interest     TEXT,
+		school_fees          REAL DEFAULT 0,
+		registration_date    TEXT,
+		workshop_interest    TEXT,
+		class_interest       TEXT,
+		notes                TEXT,
+		submitted_on         TEXT,
+		status               TEXT DEFAULT 'pending'
 	);
 	`)
 	return err
@@ -199,6 +208,17 @@ func runMigrations(db *sql.DB) {
 		`ALTER TABLE invoices ADD COLUMN deleted_at TEXT`,
 		// Audit log
 		`CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL DEFAULT 1, actor_email TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, detail TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+		// Category field for classes
+		`ALTER TABLE classes ADD COLUMN category TEXT DEFAULT 'Academic'`,
+		// New registration fields
+		`ALTER TABLE registrations ADD COLUMN gender TEXT`,
+		`ALTER TABLE registrations ADD COLUMN school_name TEXT`,
+		`ALTER TABLE registrations ADD COLUMN year_grade TEXT`,
+		`ALTER TABLE registrations ADD COLUMN class_type_interest TEXT`,
+		`ALTER TABLE registrations ADD COLUMN subject_interest TEXT`,
+		`ALTER TABLE registrations ADD COLUMN school_fees REAL DEFAULT 0`,
+		`ALTER TABLE registrations ADD COLUMN registration_date TEXT`,
+		`ALTER TABLE registrations ADD COLUMN workshop_interest TEXT`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (column already exists = OK)

@@ -29,7 +29,7 @@
       +   (canWrite ? '<button onclick="App.Communication._newModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">' + btnLabel + '</button>' : '')
       + '</div>'
 
-      // Approval queue (admin only)
+      // Admin: full approval queue
       + (isAdmin && pendingAnns.length > 0
           ? '<div class="mb-5 bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">'
           +   '<div class="px-4 py-2.5 border-b border-amber-200 flex items-center justify-between">'
@@ -51,6 +51,33 @@
               }).join('')
           +   '</div>'
           + '</div>'
+          : '')
+
+      // Teacher: their own pending submissions
+      + (isTeacher
+          ? (function() {
+              const teacherName = _getTeacherName();
+              const myPending = announcements.filter(function(a) { return a.status === 'pending_approval' && a.createdBy === teacherName; });
+              if (myPending.length === 0) return '';
+              return '<div class="mb-5 bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">'
+                + '<div class="px-4 py-2.5 border-b border-amber-200">'
+                +   '<span class="text-sm font-semibold text-amber-800">My Pending Submissions (' + myPending.length + ')</span>'
+                +   '<span class="text-xs text-amber-600 ml-2">Awaiting admin approval</span>'
+                + '</div>'
+                + '<div class="divide-y divide-amber-100">'
+                + myPending.map(function(ann) {
+                    return '<div class="px-4 py-3 flex items-start justify-between gap-3">'
+                      + '<div class="flex-1 min-w-0">'
+                      +   '<div class="font-semibold text-sm text-slate-800">' + App.Utils.esc(ann.title) + '</div>'
+                      +   '<div class="text-xs text-slate-500 mt-0.5">' + App.Utils.badge(ann.type, 'yellow') + ' · ' + App.Utils.formatDate(ann.createdOn) + '</div>'
+                      +   '<div class="text-xs text-slate-600 mt-1">' + App.Utils.esc(ann.message.slice(0,80)) + (ann.message.length > 80 ? '…' : '') + '</div>'
+                      + '</div>'
+                      + '<span class="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded-lg font-medium shrink-0">Pending</span>'
+                      + '</div>';
+                  }).join('')
+                + '</div>'
+                + '</div>';
+            })()
           : '')
 
       + '<div class="flex gap-2 mb-5">'

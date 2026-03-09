@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Study Hub — Education Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
@@ -80,7 +83,7 @@
     <button data-page="dashboard"     class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Dashboard</button>
     <button data-page="calendar"      class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Schedule</button>
     <button data-page="communication" class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Announcements</button>
-    <button data-page="messages" class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Messages</button>
+    <!-- <button data-page="messages" class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Messages</button> -->
     <button data-page="students"      class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Students</button>
     <button data-page="billing"       class="top-nav-btn px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Billing</button>
     <button data-page="staff"         class="top-nav-btn top-nav-admin px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 whitespace-nowrap transition-colors">Staff</button>
@@ -89,6 +92,12 @@
   </div>
   <!-- Right side controls -->
   <div class="flex items-center gap-2 shrink-0 ml-2">
+    <!-- top messages btn archived
+    <button onclick="App.Router.navigate('messages')" title="Messages" class="relative w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      <span id="top-msg-badge" class="hidden absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] bg-blue-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">0</span>
+    </button>
+    -->
     <div class="relative z-40" id="top-notif-bell-wrap">
       <button onclick="App.Notifs.toggle()" class="relative w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
@@ -124,40 +133,56 @@
     </div>
 
     <!-- Nav -->
-    <nav class="flex-1 p-3 space-y-0.5 overflow-y-auto">
-      <button data-page="dashboard"     class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+    <nav class="flex-1 p-3 overflow-y-auto">
+      <!-- Dashboard -->
+      <button data-page="dashboard" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium mb-1">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <span>Dashboard</span>
       </button>
-      <button data-page="calendar"      class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+
+      <!-- ACADEMIC group -->
+      <div class="nav-group-label mt-3 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">ACADEMIC</div>
+      <button data-page="calendar" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path stroke-linecap="round" d="M16 2v4M8 2v4M3 10h18"/></svg>
         <span>Schedule</span>
+      </button>
+      <button data-page="students" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path stroke-linecap="round" d="M23 21v-2a4 4 0 00-3-3.87m-4-12a4 4 0 010 7.75"/></svg>
+        <span>Students</span>
+      </button>
+      <button data-page="attendance" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path stroke-linecap="round" d="M9 12l2 2 4-4"/></svg>
+        <span>Attendance</span>
+      </button>
+      <button data-page="feedback" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        <span>Feedback</span>
+      </button>
+
+      <!-- OPERATIONS group -->
+      <div class="nav-group-label mt-4 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">OPERATIONS</div>
+      <button data-page="billing" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><path stroke-linecap="round" d="M1 10h22"/></svg>
+        <span>Billing</span>
+      </button>
+      <button data-page="staff" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Staff</span>
       </button>
       <button data-page="communication" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
         <span>Announcements</span>
       </button>
-      <button data-page="messages"      class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+      <!-- Messages nav — archived for now
+      <button data-page="messages" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
         <span>Messages</span>
       </button>
-      <button data-page="students"      class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
-        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path stroke-linecap="round" d="M23 21v-2a4 4 0 00-3-3.87m-4-12a4 4 0 010 7.75"/></svg>
-        <span>Students</span>
-      </button>
-      <button data-page="billing"       class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
-        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><path stroke-linecap="round" d="M1 10h22"/></svg>
-        <span>Billing</span>
-      </button>
-      <button data-page="staff"         class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
-        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        <span>Staff</span>
-      </button>
-      <button data-page="attendance"    class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
-        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path stroke-linecap="round" d="M9 12l2 2 4-4"/></svg>
-        <span>Attendance</span>
-      </button>
-      <button data-page="analytics"     class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+      -->
+
+      <!-- INSIGHTS group -->
+      <div class="nav-group-label mt-4 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">INSIGHTS</div>
+      <button data-page="analytics" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
         <span>Analytics</span>
       </button>
@@ -202,6 +227,16 @@
           <select id="teacher-select" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-400 text-slate-700 bg-white"></select>
         </div>
 
+        <!-- Messages icon — archived for now
+        <button onclick="App.Router.navigate('messages')" title="Messages"
+          class="relative w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+          </svg>
+          <span id="msg-badge" class="hidden absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-blue-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 pointer-events-none">0</span>
+        </button>
+        -->
+
         <!-- Notification bell -->
         <div class="relative z-40" id="notif-bell-wrap">
           <button id="notif-bell-btn" onclick="App.Notifs.toggle()" title="Notifications"
@@ -242,11 +277,12 @@
       <div id="dashboard-page"      class="page"></div>
       <div id="calendar-page"      class="page"></div>
       <div id="communication-page" class="page"></div>
-      <div id="messages-page"      class="page"></div>
+      <!-- <div id="messages-page" class="page"></div> -->
       <div id="students-page"      class="page"></div>
       <div id="billing-page"       class="page"></div>
       <div id="staff-page"         class="page"></div>
       <div id="attendance-page"    class="page"></div>
+      <div id="feedback-page"      class="page"></div>
       <div id="analytics-page"     class="page"></div>
     </main>
   </div>
@@ -325,11 +361,12 @@
 <script src="js/modules/dashboard.js"></script>
 <script src="js/modules/calendar.js"></script>
 <script src="js/modules/communication.js"></script>
-<script src="js/modules/messages.js"></script>
+<!-- <script src="js/modules/messages.js"></script> -->
 <script src="js/modules/students.js"></script>
 <script src="js/modules/billing.js"></script>
 <script src="js/modules/staff.js"></script>
 <script src="js/modules/attendance.js"></script>
+<script src="js/modules/feedback.js"></script>
 <script src="js/modules/analytics.js"></script>
 <script src="js/main.js"></script>
 

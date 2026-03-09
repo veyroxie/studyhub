@@ -10,7 +10,10 @@
       "Read(//tmp/**)",
       "Bash(unzip -o \"/mnt/c/Users/User/Downloads/WhatsApp Chat with Study Hub System Develop Team 💻📃📉.zip\" -d whatsapp_chat)",
       "Bash(apt-get install:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(wc:*)",
+      "Bash(ls:*)",
+      "Bash(ssh:*)"
     ]
   }
 }

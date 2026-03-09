@@ -80,14 +80,15 @@
 
     // Nav visibility per role
     // admin:   all pages
-    // teacher: dashboard, calendar, communication, messages, students, attendance
-    // client:  dashboard, calendar, communication, messages, billing
+    // teacher: dashboard, calendar, students, attendance, feedback, communication
+    // client:  dashboard, calendar, communication, billing
     const pageHidden = {
       billing:    isTeacher,
       staff:      !isAdmin,
       analytics:  !isAdmin,
       students:   isClient,
-      attendance: isClient
+      attendance: isClient,
+      feedback:   isClient
     };
     Object.keys(pageHidden).forEach(function(page) {
       const btn = document.querySelector('.nav-btn[data-page="' + page + '"]');
@@ -170,11 +171,12 @@
     App.Router.register('dashboard',     App.Dashboard);
     App.Router.register('calendar',      App.Calendar);
     App.Router.register('communication', App.Communication);
-    App.Router.register('messages',      App.Messages);
+    // App.Router.register('messages',   App.Messages);  // archived
     App.Router.register('students',      App.Students);
     App.Router.register('billing',       App.Billing);
     App.Router.register('staff',         App.Staff);
     App.Router.register('attendance',    App.Attendance);
+    App.Router.register('feedback',      App.Feedback);
     App.Router.register('analytics',     App.Analytics);
 
     // Init router (sets up nav button click handlers)

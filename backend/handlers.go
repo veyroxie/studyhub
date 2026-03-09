@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,6 +21,21 @@ func respond(w http.ResponseWriter, v any) {
 }
 
 func today() string { return time.Now().Format("2006-01-02") }
+
+// validationError returns a comma-joined list of missing/invalid field names, or "".
+func validationError(checks ...string) string {
+	var errs []string
+	for i := 0; i+1 < len(checks); i += 2 {
+		if strings.TrimSpace(checks[i+1]) == "" {
+			errs = append(errs, checks[i])
+		}
+	}
+	if len(errs) == 0 { return "" }
+	return "missing required fields: " + strings.Join(errs, ", ")
+}
+
+// validAmount returns true if amount is a positive number.
+func validAmount(a float64) bool { return a > 0 }
 
 func generateID(prefix string) string {
 	return prefix + "_" + strings.ReplaceAll(time.Now().Format("20060102150405.000"), ".", "")
@@ -88,6 +105,10 @@ func handleStudents(db *sql.DB) http.HandlerFunc {
 			if c.Role != "admin" { http.Error(w, "admin only", 403); return }
 			var s Student
 			if err := json.NewDecoder(r.Body).Decode(&s); err != nil { http.Error(w, "bad body", 400); return }
+			if msg := validationError("firstName", s.FirstName, "lastName", s.LastName, "contact", s.Contact); msg != "" {
+				http.Error(w, msg, 400); return
+			}
+			if s.Status == "" { s.Status = "New" }
 			if s.ID == "" { s.ID = generateID("STU") }
 			if s.RegisteredOn == "" { s.RegisteredOn = today() }
 			_, err := db.Exec(`INSERT INTO students(id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -123,14 +144,14 @@ func handleStudent(db *sql.DB) http.HandlerFunc {
 // ── Classes ───────────────────────────────────────────────────────────────────
 
 func listClasses(db *sql.DB) []Class {
-	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color FROM classes`)
+	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category FROM classes`)
 	if err != nil { return []Class{} }
 	defer rows.Close()
 	out := []Class{}
 	for rows.Next() {
 		var c Class
 		var tids string
-		rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color)
+		rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color, &c.Category)
 		c.TeacherIDs = parseArr(tids)
 		out = append(out, c)
 	}
@@ -148,7 +169,12 @@ func handleClasses(db *sql.DB) http.HandlerFunc {
 				http.Error(w, "admin only", 403); return
 			}
 			var c Class
-			json.NewDecoder(r.Body).Decode(&c)
+			if err := json.NewDecoder(r.Body).Decode(&c); err != nil { http.Error(w, "bad body", 400); return }
+			if msg := validationError("name", c.Name, "day", c.Day, "time", c.Time, "endTime", c.EndTime); msg != "" {
+				http.Error(w, msg, 400); return
+			}
+			if c.Capacity < 1 { c.Capacity = 5 }
+			if c.Time >= c.EndTime { http.Error(w, "end time must be after start time", 400); return }
 			if c.ID == "" { c.ID = generateID("cls") }
 
 			// ── Clash detection ────────────────────────────────────────────────
@@ -172,8 +198,9 @@ func handleClasses(db *sql.DB) http.HandlerFunc {
 				}
 			}
 
-			db.Exec(`INSERT INTO classes(id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-				c.ID, c.Name, jsonArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color)
+			if c.Category == "" { c.Category = "Academic" }
+			db.Exec(`INSERT INTO classes(id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+				c.ID, c.Name, jsonArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color, c.Category)
 			respond(w, c)
 		}
 	}
@@ -206,7 +233,11 @@ func handleStaff(db *sql.DB) http.HandlerFunc {
 		case http.MethodPost:
 			if c.Role != "admin" { http.Error(w, "admin only", 403); return }
 			var s Staff
-			json.NewDecoder(r.Body).Decode(&s)
+			if err := json.NewDecoder(r.Body).Decode(&s); err != nil { http.Error(w, "bad body", 400); return }
+			if msg := validationError("name", s.Name, "fullName", s.FullName, "role", s.Role, "email", s.Email); msg != "" {
+				http.Error(w, msg, 400); return
+			}
+			if s.Status == "" { s.Status = "Active" }
 			if s.ID == "" { s.ID = generateID("stf") }
 			db.Exec(`INSERT INTO staff(id,name,full_name,role,email,phone,salary,join_date,status) VALUES(?,?,?,?,?,?,?,?,?)`,
 				s.ID, s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status)
@@ -247,7 +278,11 @@ func handleInvoices(db *sql.DB) http.HandlerFunc {
 		case http.MethodPost:
 			if c.Role != "admin" { http.Error(w, "admin only", 403); return }
 			var inv Invoice
-			json.NewDecoder(r.Body).Decode(&inv)
+			if err := json.NewDecoder(r.Body).Decode(&inv); err != nil { http.Error(w, "bad body", 400); return }
+			if msg := validationError("studentId", inv.StudentID, "description", inv.Description, "dueDate", inv.DueDate); msg != "" {
+				http.Error(w, msg, 400); return
+			}
+			if !validAmount(inv.Amount) { http.Error(w, "amount must be greater than 0", 400); return }
 			if inv.ID == "" { inv.ID = generateID("INV") }
 			if inv.CreatedOn == "" { inv.CreatedOn = today() }
 			db.Exec(`INSERT INTO invoices(id,student_id,description,type,amount,due_date,status,created_on,paid_on) VALUES(?,?,?,?,?,?,?,?,?)`,
@@ -324,7 +359,10 @@ func handleAnnouncements(db *sql.DB) http.HandlerFunc {
 		case http.MethodPost:
 			if c.Role != "admin" { http.Error(w, "admin only", 403); return }
 			var a Announcement
-			json.NewDecoder(r.Body).Decode(&a)
+			if err := json.NewDecoder(r.Body).Decode(&a); err != nil { http.Error(w, "bad body", 400); return }
+			if msg := validationError("title", a.Title, "message", a.Message); msg != "" {
+				http.Error(w, msg, 400); return
+			}
 			if a.ID == "" { a.ID = generateID("ANN") }
 			if a.CreatedOn == "" { a.CreatedOn = today() }
 			if a.CreatedBy == "" { a.CreatedBy = c.Name }
@@ -505,7 +543,7 @@ func handleUserDelete(db *sql.DB) http.HandlerFunc {
 // ── Registrations ─────────────────────────────────────────────────────────────
 
 func listRegistrations(db *sql.DB) []Registration {
-	rows, err := db.Query(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes,submitted_on,status FROM registrations WHERE status='pending' ORDER BY submitted_on DESC`)
+	rows, err := db.Query(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status FROM registrations WHERE status='pending' ORDER BY submitted_on DESC`)
 	if err != nil { return []Registration{} }
 	defer rows.Close()
 	out := []Registration{}
@@ -513,6 +551,8 @@ func listRegistrations(db *sql.DB) []Registration {
 		var reg Registration
 		rows.Scan(&reg.ID, &reg.ParentName, &reg.Email, &reg.Phone, &reg.EmergencyName, &reg.EmergencyPhone,
 			&reg.StudentFirstName, &reg.StudentLastName, &reg.StudentDOB, &reg.StudentGender,
+			&reg.Gender, &reg.SchoolName, &reg.YearGrade, &reg.ClassTypeInterest, &reg.SubjectInterest,
+			&reg.SchoolFees, &reg.RegistrationDate, &reg.WorkshopInterest,
 			&reg.ClassInterest, &reg.Notes, &reg.SubmittedOn, &reg.Status)
 		out = append(out, reg)
 	}
@@ -529,12 +569,17 @@ func handleRegister(db *sql.DB) http.HandlerFunc {
 		if reg.ParentName == "" || reg.Email == "" || reg.StudentFirstName == "" {
 			http.Error(w, "parent name, email and student first name are required", 400); return
 		}
+		if !validateEmail(reg.Email) {
+			http.Error(w, "invalid email address", 400); return
+		}
 		reg.ID = generateID("REG")
 		reg.SubmittedOn = today()
 		reg.Status = "pending"
-		_, err := db.Exec(`INSERT INTO registrations(id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes,submitted_on,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		_, err := db.Exec(`INSERT INTO registrations(id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			reg.ID, reg.ParentName, reg.Email, reg.Phone, reg.EmergencyName, reg.EmergencyPhone,
 			reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
+			reg.Gender, reg.SchoolName, reg.YearGrade, reg.ClassTypeInterest, reg.SubjectInterest,
+			reg.SchoolFees, reg.RegistrationDate, reg.WorkshopInterest,
 			reg.ClassInterest, reg.Notes, reg.SubmittedOn, reg.Status)
 		if err != nil { http.Error(w, "could not save registration", 500); return }
 		w.WriteHeader(http.StatusCreated)
@@ -555,18 +600,29 @@ func handleRegistrationApprove(db *sql.DB) http.HandlerFunc {
 
 		// Create student record
 		stuID := generateID("STU")
-		db.Exec(`INSERT OR IGNORE INTO students(id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		if _, err := db.Exec(`INSERT OR IGNORE INTO students(id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			stuID, reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
-			reg.ParentName, reg.Email, reg.Phone, "The Study Hub", "New", today(), "[]", "[]", reg.Notes)
+			reg.ParentName, reg.Email, reg.Phone, "The Study Hub", "New", today(), "[]", "[]", reg.Notes); err != nil {
+			http.Error(w, "could not create student record", 500); return
+		}
 
-		// Create parent user account with temp password
-		tempPassword := "Parent" + id[len(id)-4:]
-		hash, _ := hashPassword(tempPassword)
-		db.Exec(`INSERT OR IGNORE INTO users(email,password_hash,role,name) VALUES(?,?,?,?)`,
-			strings.ToLower(strings.TrimSpace(reg.Email)), hash, "parent", reg.ParentName)
+		// Create parent user account with cryptographically random temp password
+		rawBytes := make([]byte, 8)
+		if _, err := rand.Read(rawBytes); err != nil {
+			http.Error(w, "could not generate password", 500); return
+		}
+		tempPassword := "Sh-" + hex.EncodeToString(rawBytes) // e.g. Sh-a3f8c2d1e4b59067
+		hash, err := hashPassword(tempPassword)
+		if err != nil { http.Error(w, "could not hash password", 500); return }
+		if _, err := db.Exec(`INSERT OR IGNORE INTO users(email,password_hash,role,name) VALUES(?,?,?,?)`,
+			strings.ToLower(strings.TrimSpace(reg.Email)), hash, "parent", reg.ParentName); err != nil {
+			http.Error(w, "could not create parent account", 500); return
+		}
 
 		// Mark registration approved
-		db.Exec(`UPDATE registrations SET status='approved' WHERE id=?`, id)
+		if _, err := db.Exec(`UPDATE registrations SET status='approved' WHERE id=?`, id); err != nil {
+			http.Error(w, "could not update registration status", 500); return
+		}
 
 		respond(w, map[string]string{
 			"studentId":    stuID,

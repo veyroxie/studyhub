@@ -77,6 +77,7 @@
       + '<button onclick="App.Calendar._setView(\'week\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='week'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='week'?'#0a0a0a':'#94a3b8') + '">Week</button>'
       + '<button onclick="App.Calendar._setView(\'month\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='month'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='month'?'#0a0a0a':'#94a3b8') + '">Month</button>'
       + '<button onclick="App.Calendar._setView(\'timetable\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='timetable'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='timetable'?'#0a0a0a':'#94a3b8') + '">Timetable</button>'
+      + (isAdmin ? '<button onclick="App.Calendar._setView(\'programs\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='programs'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='programs'?'#0a0a0a':'#94a3b8') + '">Programs</button>' : '')
       + '</div>';
 
     const headerHtml = ''
@@ -121,11 +122,29 @@
       + (_filterTeacher || _filterSearch ? '<button onclick="App.Calendar._clearFilters()" style="padding:0.45rem 0.85rem;font-size:0.8rem;border:none;border-radius:8px;background:#f1f5f9;color:#64748b;cursor:pointer">Clear</button>' : '')
       + '</div>';
 
+    const hasActiveFilter = !!(_filterTeacher || _filterSearch);
+
     if (_view === 'month') {
       const displayClasses = teacherClassIds !== null
         ? classes.filter(function(c) { return teacherClassIds[c.id]; })
         : classes;
-      container.innerHTML = headerHtml + filterBar + _renderMonthView(displayClasses, staff, enrolledClassIds, isAdmin);
+      // Count classes that would actually be visible after all filters
+      const monthFilteredCount = displayClasses.filter(function(c) {
+        if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
+        if (_filterTeacher && !c.teacherIds.includes(_filterTeacher)) return false;
+        if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
+        return true;
+      }).length;
+      const monthFilterEmptyBanner = (hasActiveFilter && monthFilteredCount === 0)
+        ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm mb-4">'
+          + App.Utils.emptyState(
+              'No classes match your filters',
+              'Try clearing the tutor or search filter to see all classes.',
+              '<button onclick="App.Calendar._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer">Clear Filters</button>'
+            )
+          + '</div>'
+        : '';
+      container.innerHTML = headerHtml + filterBar + monthFilterEmptyBanner + _renderMonthView(displayClasses, staff, enrolledClassIds, isAdmin);
       return;
     }
 
@@ -139,7 +158,24 @@
       return;
     }
 
-    container.innerHTML = headerHtml + filterBar
+    if (_view === 'programs') {
+      container.innerHTML = headerHtml + _renderProgramsView(classes, students, staff);
+      return;
+    }
+
+    // Check if all days are empty due to an active filter (not just a naturally quiet week)
+    const totalFilteredClasses = DAYS.reduce(function(sum, day) { return sum + classesByDay[day].length; }, 0);
+    const weekFilterEmptyBanner = (hasActiveFilter && totalFilteredClasses === 0)
+      ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm mb-4">'
+        + App.Utils.emptyState(
+            'No classes match your filters',
+            'Try clearing the tutor or search filter to see all classes.',
+            '<button onclick="App.Calendar._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer">Clear Filters</button>'
+          )
+        + '</div>'
+      : '';
+
+    container.innerHTML = headerHtml + filterBar + weekFilterEmptyBanner
 
       // Calendar grid with vertical dividers between columns
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">'
@@ -483,8 +519,22 @@
         category: fd.get('category') || 'Academic'
       };
       App.Store.set({ classes: [...state.classes, newClass] });
+
+      // Send in-app announcement to notify parents of the new class
+      const newAnnouncement = {
+        id: App.Utils.generateId('ann'),
+        title: 'New Class Added: ' + newClass.name,
+        message: 'A new ' + newClass.classType.toLowerCase() + ' class "' + newClass.name + '" has been scheduled on ' + newClass.day + 's from ' + App.Utils.formatTime(newClass.time) + ' to ' + App.Utils.formatTime(newClass.endTime) + ' in ' + newClass.classroom + '. Enrolment is now open.',
+        audience: 'All Parents',
+        type: 'Notice',
+        createdOn: new Date().toISOString().slice(0, 10),
+        createdBy: 'Admin'
+      };
+      const updatedAnns = [...(App.Store.get().announcements || []), newAnnouncement];
+      App.Store.set({ announcements: updatedAnns });
+
       App.Utils.hideModal();
-      App.Utils.showToast('Class added!', 'success');
+      App.Utils.showToast('Class added! Parents have been notified via announcement.', 'success');
       App.Router.refresh();
     });
   }
@@ -590,5 +640,208 @@
     return '<div style="overflow-x:auto">' + header + body + '</div>';
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _setStar: _setStar, _submitFeedback: _submitFeedback };
+  // ── Programs View (Subjects + Workshops) ──────────────────────────────────────
+  function _renderProgramsView(classes, students, staff) {
+    const state = App.Store.get();
+    const subjects = state.subjects || [];
+    const workshops = state.workshops || [];
+    const isAdmin = App.currentRole === 'admin';
+
+    const colorDot = { green:'#10b981', teal:'#0d9488', blue:'#3b82f6', purple:'#8b5cf6', orange:'#f59e0b' };
+
+    // Subjects section
+    const subjectCards = subjects.map(function(sub) {
+      const subClasses = classes.filter(function(c) { return c.subjectId === sub.id || c.name === sub.name; });
+      const enrolled = subClasses.reduce(function(a, c) { return a + c.enrolled; }, 0);
+      const dot = colorDot[sub.color] || '#94a3b8';
+      return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);padding:1.1rem 1.2rem;display:flex;flex-direction:column;gap:0.6rem">'
+        + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.5rem">'
+        +   '<div style="display:flex;align-items:center;gap:0.5rem">'
+        +     '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + dot + ';flex-shrink:0"></span>'
+        +     '<span style="font-size:0.88rem;font-weight:700;color:#111">' + App.Utils.esc(sub.name) + '</span>'
+        +   '</div>'
+        +   (isAdmin ? '<button onclick="App.Calendar._deleteSubject(\'' + sub.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0;line-height:1" title="Delete">&#10005;</button>' : '')
+        + '</div>'
+        + '<div style="display:flex;gap:0.4rem;flex-wrap:wrap">'
+        +   App.Utils.badge(sub.category, sub.category === 'Academic' ? 'blue' : 'purple')
+        +   '<span style="font-size:0.68rem;font-weight:600;color:#64748b;background:#f8fafc;padding:2px 8px;border-radius:5px;border:1px solid #e2e8f0">' + App.Utils.esc(sub.level) + '</span>'
+        + '</div>'
+        + '<p style="font-size:0.75rem;color:#64748b;margin:0;line-height:1.4">' + App.Utils.esc(sub.description) + '</p>'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.2rem;padding-top:0.6rem;border-top:1px solid #f4f4f2">'
+        +   '<span style="font-size:0.72rem;color:#94a3b8">' + subClasses.length + ' class' + (subClasses.length !== 1 ? 'es' : '') + ' · ' + enrolled + ' enrolled</span>'
+        +   '<span style="font-size:0.82rem;font-weight:700;color:var(--gold)">RM ' + sub.monthlyFee + '/mo</span>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+
+    // Upcoming workshops
+    const today = App.Utils.today();
+    const sortedWS = workshops.slice().sort(function(a,b){ return a.date.localeCompare(b.date); });
+    const workshopRows = sortedWS.map(function(ws) {
+      const teacherNames = (ws.teacherIds || []).map(function(tid) {
+        const t = staff.find(function(x){ return x.id === tid; }); return t ? t.name : tid;
+      }).join(', ');
+      const isPast = ws.date < today;
+      const statusColor = ws.status === 'completed' ? '#94a3b8' : ws.status === 'cancelled' ? '#ef4444' : '#22c55e';
+      const pct = ws.capacity > 0 ? Math.round(ws.enrolled / ws.capacity * 100) : 0;
+      return '<div style="display:flex;align-items:center;gap:1rem;padding:0.85rem 1.25rem;border-bottom:1px solid #f4f4f2' + (isPast ? ';opacity:0.6' : '') + '">'
+        + '<div style="min-width:56px;text-align:center">'
+        +   '<div style="font-size:1rem;font-weight:800;color:#111">' + ws.date.slice(8) + '</div>'
+        +   '<div style="font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8">' + new Date(ws.date + 'T00:00:00').toLocaleDateString('en-MY',{month:'short'}) + '</div>'
+        + '</div>'
+        + '<div style="width:1px;background:#f0ede8;align-self:stretch;flex-shrink:0"></div>'
+        + '<div style="flex:1;min-width:0">'
+        +   '<div style="font-size:0.85rem;font-weight:700;color:#111">' + App.Utils.esc(ws.name) + '</div>'
+        +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatTime(ws.time) + '–' + App.Utils.formatTime(ws.endTime) + ' · ' + App.Utils.esc(ws.classroom) + (teacherNames ? ' · ' + teacherNames : '') + '</div>'
+        + '</div>'
+        + '<div style="text-align:right;flex-shrink:0">'
+        +   '<div style="font-size:0.72rem;font-weight:700;color:' + (pct >= 100 ? '#dc2626' : '#374151') + '">' + ws.enrolled + '/' + ws.capacity + '</div>'
+        +   '<div style="width:48px;height:3px;background:#f1f5f9;border-radius:99px;overflow:hidden;margin-top:3px"><div style="width:' + Math.min(pct,100) + '%;height:100%;background:var(--gold);border-radius:99px"></div></div>'
+        + '</div>'
+        + '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:' + (ws.status==='completed'?'#f1f5f9':ws.status==='cancelled'?'#fef2f2':'#f0fdf4') + ';color:' + statusColor + ';flex-shrink:0">' + ws.status + '</span>'
+        + '<span style="font-size:0.78rem;font-weight:700;color:var(--gold);flex-shrink:0">RM ' + ws.fee + '</span>'
+        + (isAdmin ? '<button onclick="App.Calendar._deleteWorkshop(\'' + ws.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Delete">&#10005;</button>' : '')
+        + '</div>';
+    }).join('');
+
+    return '<div>'
+      // Subjects
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
+      +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Subjects / Courses</h2>'
+      +   (isAdmin ? '<button onclick="App.Calendar._addSubjectModal()" style="padding:0.35rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Subject</button>' : '')
+      + '</div>'
+      + (subjects.length === 0
+          ? '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:2rem;text-align:center;color:#94a3b8;font-size:0.84rem;margin-bottom:1.5rem">No subjects yet. Add your first subject to get started.</div>'
+          : '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:0.85rem;margin-bottom:2rem">' + subjectCards + '</div>')
+
+      // Workshops
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
+      +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Workshops</h2>'
+      +   (isAdmin ? '<button onclick="App.Calendar._addWorkshopModal()" style="padding:0.35rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Workshop</button>' : '')
+      + '</div>'
+      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden">'
+      + (workshops.length === 0
+          ? '<div style="padding:2rem;text-align:center;color:#94a3b8;font-size:0.84rem">No workshops yet.</div>'
+          : workshopRows)
+      + '</div>'
+      + '</div>';
+  }
+
+  function _addSubjectModal() {
+    const colorOpts = ['green','teal','blue','purple','orange'].map(function(c) {
+      return '<option value="' + c + '">' + c.charAt(0).toUpperCase() + c.slice(1) + '</option>';
+    }).join('');
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:380px">'
+      + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 1.25rem">Add Subject / Course</h2>'
+      + '<form id="add-subject-form" class="space-y-3">'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Subject Name</label><input name="name" class="form-input" placeholder="e.g. Japanese Level 1 & 2" required></div>'
+      + '<div class="grid grid-cols-2 gap-3">'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Category</label><select name="category" class="form-input"><option>Academic</option><option>Non-academic</option></select></div>'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Level</label><input name="level" class="form-input" placeholder="e.g. Beginner" value="All Levels"></div>'
+      + '</div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Description</label><textarea name="description" class="form-input" rows="2" placeholder="Short description of this course"></textarea></div>'
+      + '<div class="grid grid-cols-2 gap-3">'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Monthly Fee (RM)</label><input name="monthlyFee" type="number" min="0" class="form-input" value="150" required></div>'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Color</label><select name="color" class="form-input">' + colorOpts + '</select></div>'
+      + '</div>'
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Subject</button>'
+      + '</div>'
+      + '</form></div>'
+    );
+    document.getElementById('add-subject-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const state = App.Store.get();
+      const subjects = (state.subjects || []).slice();
+      subjects.push({
+        id: App.Utils.generateId('sub'),
+        name: fd.get('name').trim(),
+        category: fd.get('category'),
+        level: fd.get('level').trim() || 'All Levels',
+        description: fd.get('description').trim(),
+        monthlyFee: parseFloat(fd.get('monthlyFee')) || 0,
+        color: fd.get('color')
+      });
+      App.Store.set({ subjects: subjects });
+      App.Utils.hideModal();
+      App.Utils.showToast('Subject added', 'success');
+      App.Router.refresh();
+    });
+  }
+
+  function _deleteSubject(subId) {
+    if (!confirm('Delete this subject? Classes linked to it will not be removed.')) return;
+    const state = App.Store.get();
+    App.Store.set({ subjects: (state.subjects || []).filter(function(s) { return s.id !== subId; }) });
+    App.Utils.showToast('Subject deleted', 'info');
+    App.Router.refresh();
+  }
+
+  function _addWorkshopModal() {
+    const { staff } = App.Store.get();
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:420px">'
+      + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 1.25rem">Add Workshop</h2>'
+      + '<form id="add-workshop-form" class="space-y-3">'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Workshop Name</label><input name="name" class="form-input" placeholder="e.g. Hiragana Bootcamp" required></div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Description</label><textarea name="description" class="form-input" rows="2" placeholder="What will students learn?"></textarea></div>'
+      + '<div class="grid grid-cols-2 gap-3">'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Date</label><input name="date" type="date" class="form-input" required></div>'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Classroom</label><input name="classroom" class="form-input" placeholder="Classroom 1"></div>'
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-3">'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Start Time</label><input name="time" type="time" class="form-input" required></div>'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">End Time</label><input name="endTime" type="time" class="form-input" required></div>'
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-3">'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Capacity</label><input name="capacity" type="number" min="1" class="form-input" value="15" required></div>'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Fee (RM)</label><input name="fee" type="number" min="0" class="form-input" value="0" required></div>'
+      + '</div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Teacher</label><select name="teacherId" class="form-input">'
+      + staff.map(function(s) { return '<option value="' + s.id + '">' + App.Utils.esc(s.fullName) + '</option>'; }).join('')
+      + '</select></div>'
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Workshop</button>'
+      + '</div>'
+      + '</form></div>'
+    );
+    document.getElementById('add-workshop-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const state = App.Store.get();
+      const workshops = (state.workshops || []).slice();
+      workshops.push({
+        id: App.Utils.generateId('ws'),
+        name: fd.get('name').trim(),
+        description: fd.get('description').trim(),
+        date: fd.get('date'),
+        time: fd.get('time'),
+        endTime: fd.get('endTime'),
+        classroom: fd.get('classroom').trim() || 'Classroom 1',
+        capacity: parseInt(fd.get('capacity')) || 15,
+        enrolled: 0,
+        fee: parseFloat(fd.get('fee')) || 0,
+        teacherIds: [fd.get('teacherId')],
+        status: 'upcoming'
+      });
+      App.Store.set({ workshops: workshops });
+      App.Utils.hideModal();
+      App.Utils.showToast('Workshop added', 'success');
+      App.Router.refresh();
+    });
+  }
+
+  function _deleteWorkshop(wsId) {
+    if (!confirm('Delete this workshop?')) return;
+    const state = App.Store.get();
+    App.Store.set({ workshops: (state.workshops || []).filter(function(w) { return w.id !== wsId; }) });
+    App.Utils.showToast('Workshop deleted', 'info');
+    App.Router.refresh();
+  }
+
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _setStar: _setStar, _submitFeedback: _submitFeedback, _addSubjectModal: _addSubjectModal, _deleteSubject: _deleteSubject, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop };
 })();

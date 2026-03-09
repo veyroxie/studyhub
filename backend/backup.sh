@@ -6,7 +6,7 @@ set -euo pipefail
 
 DB_PATH="${DB_PATH:-/app/studyhub.db}"
 BACKUP_DIR="${BACKUP_DIR:-/app/backups}"
-KEEP_DAYS="${KEEP_DAYS:-30}"
+KEEP_DAYS="${KEEP_DAYS:-365}"
 
 mkdir -p "$BACKUP_DIR"
 

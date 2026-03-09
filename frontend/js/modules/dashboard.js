@@ -93,10 +93,11 @@
       +     '<h1 style="font-size:1.7rem;font-weight:800;letter-spacing:-0.04em;color:#0d0d0d;line-height:1.2;margin-top:2px">Good ' + _timeOfDay() + '</h1>'
       +     '<p style="font-size:0.8rem;color:#94a3b8;margin-top:4px">' + _dateFull() + '</p>'
       +   '</div>'
-      +   '<div style="display:flex;gap:0.5rem;flex-wrap:wrap">'
-      +     qbtn('+ Student',   "App.Router.navigate('students')",   true)
-      +     qbtn('+ Invoice',   "App.Router.navigate('billing')",    false)
-      +     qbtn('+ Announce',  "App.Router.navigate('communication')", false)
+      +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">'
+      +     _qaBtn('Add Student',   'students',      '+ S')
+      +     _qaBtn('Add Invoice',   'billing',       '+ I')
+      +     _qaBtn('Announcement',  'communication', '+ A')
+      +     _qaBtn('Attendance',    'attendance',    '✓')
       +   '</div>'
       + '</div>'
       + '</div>' // close greeting card
@@ -120,13 +121,18 @@
                 var colors   = App.Utils.colorClasses(c.color);
                 var teachers = staff.filter(function(t) { return c.teacherIds.indexOf(t.id) > -1; }).map(function(t) { return t.name; }).join(', ');
                 var pct      = c.capacity > 0 ? Math.round(c.enrolled / c.capacity * 100) : 0;
+                var pillColor = c.type === 'Private' ? { bg:'#f5f3ff', text:'#6d28d9' } : c.type === 'Workshop' ? { bg:'#f0fdfa', text:'#0f766e' } : (c.enrolled >= c.capacity) ? { bg:'#fef2f2', text:'#991b1b' } : { bg:'#f0fdf4', text:'#15803d' };
+                var pillLabel = c.type === 'Private' ? 'Private' : c.type === 'Workshop' ? 'Workshop' : (c.enrolled >= c.capacity) ? 'Full' : 'Open';
                 return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0;border-bottom:1px solid #f4f4f2">'
                   + '<div style="width:3px;border-radius:99px;align-self:stretch;min-height:36px;flex-shrink:0" class="' + colors.dot + '"></div>'
+                  + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;min-width:48px;flex-shrink:0">' + App.Utils.formatTime(c.time) + '</div>'
+                  + '<div style="width:1px;background:#f0ede8;align-self:stretch;flex-shrink:0"></div>'
                   + '<div style="flex:1;min-width:0">'
                   +   '<div style="font-weight:600;font-size:0.85rem;color:#111">' + c.name + '</div>'
                   +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + (teachers ? '&nbsp;·&nbsp;' + teachers : '') + '&nbsp;·&nbsp;' + c.classroom + '</div>'
                   + '</div>'
-                  + '<div style="display:flex;align-items:center;gap:0.75rem;flex-shrink:0">'
+                  + '<div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">'
+                  +   '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:2px 7px;border-radius:5px;background:' + pillColor.bg + ';color:' + pillColor.text + '">' + pillLabel + '</span>'
                   +   '<div style="text-align:right">'
                   +     '<div style="font-size:0.8rem;font-weight:700;color:' + (pct >= 100 ? '#dc2626' : '#374151') + '">' + c.enrolled + '/' + c.capacity + '</div>'
                   +     '<div style="width:44px;height:3px;background:#f1f5f9;border-radius:99px;margin-top:3px;overflow:hidden"><div style="width:' + Math.min(pct,100) + '%;height:100%;background:' + (pct>=100?'#ef4444':'var(--gold)') + ';border-radius:99px"></div></div>'
@@ -139,10 +145,12 @@
 
         // Needs attention
         + card('Needs Attention')
-        + _attnItems(pendingRegs, overdueInvs, dueSoonInvs, newStudents, students, attendance, staff, classes, today, todayDay, now)
+        + _attnItems(pendingRegs, overdueInvs, dueSoonInvs, newStudents, students, attendance, staff, classes, today, todayDay, now, invoices)
         + '</div></div>' // close inner padding div + attn card
 
       + '</div>' // close two-col
+
+      + _weeklyAttendanceCard(attendance, today, students)
 
       // Bottom two-col: recent students + overdue invoices
       + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:0.75rem;align-items:start">'
@@ -311,7 +319,7 @@
     var borderTop = goldBorder ? 'border-top:2.5px solid var(--gold);' : '';
     return '<div style="background:' + bgColor + ';border-radius:14px;border:1px solid rgba(0,0,0,0.06);padding:1.1rem 1.2rem;box-shadow:0 1px 2px rgba(0,0,0,0.04);' + borderTop + '">'
       + '<p style="font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:' + color + ';opacity:0.6;margin:0 0 0.45rem">' + label + '</p>'
-      + '<p ' + dataAttr + ' style="font-size:1.8rem;font-weight:800;letter-spacing:-0.05em;line-height:1;color:' + color + ';margin:0">' + display + '</p>'
+      + '<p ' + dataAttr + ' style="font-family:\'Cormorant Garamond\',Georgia,serif;font-size:2rem;font-weight:600;line-height:1;color:' + color + ';margin:0">' + display + '</p>'
       + '</div>';
   }
 
@@ -321,7 +329,7 @@
       + '" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">' + label + '</button>';
   }
 
-  function _attnItems(pendingRegs, overdueInvs, dueSoonInvs, newStudents, students, attendance, staff, classes, today, todayDay, now) {
+  function _attnItems(pendingRegs, overdueInvs, dueSoonInvs, newStudents, students, attendance, staff, classes, today, todayDay, now, invoices) {
     var DOTS = { error:'#ef4444', warning:'#f59e0b', info:'#3b82f6' };
     var attn = [];
     if (pendingRegs > 0)       attn.push({ sev:'info',    title: pendingRegs + ' pending reg' + (pendingRegs!==1?'s':''),    page:'students'   });
@@ -329,36 +337,46 @@
     if (dueSoonInvs.length > 0) attn.push({ sev:'warning',title: dueSoonInvs.length + ' payment' + (dueSoonInvs.length!==1?'s':'') + ' due this week', page:'billing' });
     if (newStudents > 0)        attn.push({ sev:'info',   title: newStudents + ' new student' + (newStudents!==1?'s':'') + ' to activate', page:'students' });
 
-    // Churn risk: students with no Present record in last 14 days
+    // Churn risk: Active students with no Present record in last 14 days
     if (students && attendance) {
       var cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 14);
       var cutoffStr = cutoff.toISOString().slice(0,10);
       var atRisk = students.filter(function(stu) {
         if (stu.status !== 'Active') return false;
         var recentPresent = attendance.filter(function(a) {
-          return a.personId === stu.id && a.status === 'Present' && a.date >= cutoffStr;
+          return a.personId === stu.id && a.personType === 'student' && a.status === 'Present' && a.date >= cutoffStr;
         });
         return recentPresent.length === 0;
       });
-      if (atRisk.length > 0) attn.push({ sev:'warning', title: atRisk.length + ' student' + (atRisk.length!==1?'s':'') + ' at churn risk', sub: 'No attendance in 14+ days', page:'attendance' });
+      if (atRisk.length > 0) attn.push({ sev:'warning', title: atRisk.length + ' student' + (atRisk.length!==1?'s':'') + ' at churn risk', sub: 'No attendance in 14+ days', page:'students' });
     }
 
-    // Teacher not checked in for upcoming class
+    // Tutor not checked in for a class starting within 30 min or already started today
     if (classes && attendance && staff && now && todayDay) {
-      var in60 = new Date(now); in60.setMinutes(in60.getMinutes() + 60);
+      var in30 = new Date(now); in30.setMinutes(in30.getMinutes() + 30);
       var nowTimeStr = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
-      var in60Str = in60.getHours().toString().padStart(2,'0') + ':' + in60.getMinutes().toString().padStart(2,'0');
-      var upcomingTeacherIds = [];
-      classes.filter(function(c) { return c.day === todayDay && c.time >= nowTimeStr && c.time <= in60Str; })
-        .forEach(function(c) { c.teacherIds.forEach(function(tid) { if (upcomingTeacherIds.indexOf(tid) === -1) upcomingTeacherIds.push(tid); }); });
-      var notCheckedIn = upcomingTeacherIds.filter(function(tid) {
-        return !attendance.find(function(a) { return a.personId === tid && a.date === today && a.checkIn; });
+      var in30Str = in30.getHours().toString().padStart(2,'0') + ':' + in30.getMinutes().toString().padStart(2,'0');
+      var alertTeacherIds = [];
+      // Include classes that have already started (time <= nowTimeStr) or start within 30 min (time <= in30Str)
+      classes.filter(function(c) { return c.day === todayDay && c.time <= in30Str; })
+        .forEach(function(c) { c.teacherIds.forEach(function(tid) { if (alertTeacherIds.indexOf(tid) === -1) alertTeacherIds.push(tid); }); });
+      var notCheckedIn = alertTeacherIds.filter(function(tid) {
+        return !attendance.find(function(a) { return a.personId === tid && a.personType === 'staff' && a.date === today && a.checkIn; });
       });
       if (notCheckedIn.length > 0) {
         var names = notCheckedIn.map(function(tid) { var st = staff.find(function(x){return x.id===tid;}); return st ? st.name : tid; }).join(', ');
-        attn.push({ sev:'error', title: notCheckedIn.length + ' tutor' + (notCheckedIn.length!==1?'s':'') + ' not checked in', sub: names + ' · class within 60 min', page:'attendance' });
+        attn.push({ sev:'error', title: notCheckedIn.length + ' tutor' + (notCheckedIn.length!==1?'s':'') + ' not checked in', sub: names + ' · class started or within 30 min', page:'staff' });
       }
     }
+
+    // Invoices overdue by more than 7 days
+    var sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    var longOverdue = (invoices || []).filter(function(inv) {
+      if (inv.status !== 'Overdue') return false;
+      var due = new Date(inv.dueDate);
+      return due < sevenDaysAgo;
+    });
+    if (longOverdue.length > 0) attn.push({ sev:'error', title: longOverdue.length + ' invoice' + (longOverdue.length!==1?'s':'') + ' overdue 7+ days', sub: 'Requires immediate follow-up', page:'billing' });
 
     var items = attn;
 
@@ -599,6 +617,49 @@
           return '<button onclick="App.Router.navigate(\'' + item.page + '\')" style="padding:0.85rem;background:#fff;border:1px solid rgba(0,0,0,0.07);border-radius:12px;font-size:0.82rem;font-weight:700;color:' + item.color + ';cursor:pointer;border-left:3px solid ' + item.color + '">' + item.label + '</button>';
         }).join('')
       + '</div>'
+      + '</div>';
+  }
+
+  function _qaBtn(label, page, icon) {
+    return '<button onclick="App.Router.navigate(\'' + page + '\')" '
+      + 'style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;font-size:0.78rem;font-weight:600;border-radius:8px;cursor:pointer;background:#fff;border:1px solid #e8e4df;color:#374151;text-align:left;transition:all 0.15s;white-space:nowrap" '
+      + 'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
+      + 'onmouseout="this.style.borderColor=\'#e8e4df\';this.style.color=\'#374151\'">'
+      + '<span style="font-size:0.85rem;font-weight:700;color:inherit">' + icon + '</span>'
+      + label
+      + '</button>';
+  }
+
+  function _weeklyAttendanceCard(attendance, today, students) {
+    var days = ['Mon','Tue','Wed','Thu','Fri'];
+    var todayDate = new Date(today + 'T00:00:00');
+    var monday = new Date(todayDate);
+    var dow = todayDate.getDay(); // 0=Sun
+    var offset = dow === 0 ? -6 : 1 - dow;
+    monday.setDate(todayDate.getDate() + offset);
+
+    var rows = days.map(function(dayLabel, i) {
+      var d = new Date(monday); d.setDate(monday.getDate() + i);
+      var dateStr = d.toISOString().slice(0, 10);
+      var dayAtt = attendance.filter(function(a) { return a.personType === 'student' && a.date === dateStr; });
+      var presentCount = dayAtt.filter(function(a) { return a.status === 'Present'; }).length;
+      var total = students.filter(function(s) { return s.status === 'Active'; }).length;
+      var pct = total > 0 ? Math.round(presentCount / total * 100) : 0;
+      var isToday = dateStr === today;
+      return '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem">'
+        + '<div style="font-size:0.7rem;font-weight:700;color:' + (isToday ? 'var(--gold)' : '#94a3b8') + ';min-width:28px">' + dayLabel + '</div>'
+        + '<div style="flex:1;height:5px;background:#f1f5f9;border-radius:99px;overflow:hidden">'
+        +   '<div style="width:' + pct + '%;height:100%;background:' + (isToday ? 'var(--gold)' : '#94a3b8') + ';border-radius:99px;transition:width 0.4s"></div>'
+        + '</div>'
+        + '<div style="font-size:0.7rem;font-weight:600;color:#94a3b8;min-width:32px;text-align:right">' + pct + '%</div>'
+        + '</div>';
+    }).join('');
+
+    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden;margin-bottom:0.75rem">'
+      + '<div style="padding:0.85rem 1.25rem;border-bottom:1px solid #f0ede8;background:#faf9f7">'
+      +   '<p style="font-size:0.8rem;font-weight:700;color:#111;margin:0">This Week\'s Attendance</p>'
+      + '</div>'
+      + '<div style="padding:1rem 1.25rem">' + rows + '</div>'
       + '</div>';
   }
 

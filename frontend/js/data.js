@@ -127,5 +127,18 @@ App.DATA = {
   ],
   messages: [],
   cancelledClasses: [],
-  feedback: []
+  feedback: [],
+  subjects: [
+    { id:'sub1', name:'Japanese Level 1 & 2', category:'Academic', level:'Beginner', description:'Foundational Japanese reading, writing and conversation for young learners.', monthlyFee:150, color:'green'  },
+    { id:'sub2', name:'Japanese Level 3 & 4', category:'Academic', level:'Intermediate', description:'Intermediate Japanese with expanded vocabulary and grammar.', monthlyFee:150, color:'teal'   },
+    { id:'sub3', name:'Japanese Level 5 & 6', category:'Academic', level:'Advanced', description:'Advanced Japanese for fluency and JLPT preparation.', monthlyFee:150, color:'purple' },
+    { id:'sub4', name:'English',              category:'Academic', level:'All Levels', description:'English language skills covering reading, writing and comprehension.', monthlyFee:150, color:'blue'   },
+    { id:'sub5', name:'TSH Members Club',     category:'Non-academic', level:'All Ages', description:'Creative arts, games and social activities for members.', monthlyFee:80,  color:'orange' }
+  ],
+  workshops: [
+    { id:'ws1', name:'Hiragana & Katakana Bootcamp', description:'Intensive one-day workshop to master both Japanese syllabaries.', date:'2026-03-22', time:'09:00', endTime:'13:00', classroom:'Classroom 1', capacity:12, enrolled:8, fee:80, teacherIds:['s1'], status:'upcoming' },
+    { id:'ws2', name:'JLPT N5 Mock Exam',             description:'Full mock examination under timed conditions with review session.', date:'2026-04-05', time:'10:00', endTime:'14:00', classroom:'Classroom 2', capacity:15, enrolled:5, fee:50, teacherIds:['s3'], status:'upcoming'  },
+    { id:'ws3', name:'Kanji Writing Workshop',         description:'Hands-on practice of the first 80 kanji with brush-pen exercises.',  date:'2026-02-08', time:'14:00', endTime:'16:00', classroom:'Classroom 1', capacity:10, enrolled:10, fee:60, teacherIds:['s2'], status:'completed' }
+  ],
+  performanceReviews: []
 };
