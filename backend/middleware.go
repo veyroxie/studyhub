@@ -83,7 +83,8 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; "+
 				"script-src 'self' https://cdn.tailwindcss.com https://cdn.jsdelivr.net 'unsafe-inline'; "+
-				"style-src 'self' https://cdn.tailwindcss.com 'unsafe-inline'; "+
+				"style-src 'self' https://cdn.tailwindcss.com https://fonts.googleapis.com 'unsafe-inline'; "+
+				"font-src 'self' https://fonts.gstatic.com; "+
 				"connect-src 'self' ws: wss:; "+
 				"img-src 'self' data:; "+
 				"frame-ancestors 'none'")

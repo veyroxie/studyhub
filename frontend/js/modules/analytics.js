@@ -257,7 +257,7 @@
       var pct = recs.length > 0 ? Math.round(present / recs.length * 100) : null;
       var badge = pct === null
         ? '<span style="color:#94a3b8;font-size:0.78rem">No data</span>'
-        : '<span style="padding:0.2rem 0.55rem;border-radius:20px;font-size:0.75rem;font-weight:700;background:' + (pct>=80?'#dcfce7':'pct>=60?#fef3c7':'#fee2e2') + ';color:' + (pct>=80?'#166534':pct>=60?'#92400e':'#991b1b') + '">' + pct + '%</span>';
+        : '<span style="padding:0.2rem 0.55rem;border-radius:20px;font-size:0.75rem;font-weight:700;background:' + (pct>=80?'#dcfce7':pct>=60?'#fef3c7':'#fee2e2') + ';color:' + (pct>=80?'#166534':pct>=60?'#92400e':'#991b1b') + '">' + pct + '%</span>';
       var lastAbsent = recs.filter(function(a) { return a.status === 'Absent'; }).sort(function(a,b){ return b.date.localeCompare(a.date); })[0];
       return { name: s.firstName + ' ' + s.lastName, status: s.status, sessions: recs.length, pct: pct === null ? 101 : pct, badge: badge, lastAbsent: lastAbsent ? App.Utils.formatDate(lastAbsent.date) : '—' };
     }).sort(function(a,b) { return a.pct - b.pct; });

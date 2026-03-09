@@ -4,6 +4,8 @@
   let _attTab = 'staff';
   let _attDate = '';
   let _attClassId = '';
+  let _showAllStaff = false;
+  let _showAllClasses = false;
 
   // ─── shared mobile-friendly style constants ───────────────────────────────
   var ROW_STYLE    = 'display:flex;align-items:flex-start;justify-content:space-between;padding:1rem;border-bottom:1px solid #f9f8f6;gap:0.75rem;flex-wrap:wrap;min-height:72px';
@@ -134,14 +136,26 @@
   };
 
   function _staffTab() {
-    const { staff, attendance } = App.Store.get();
+    const { staff, classes, attendance } = App.Store.get();
+    const dayOfWeek = new Date(_attDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+    // Staff with at least one class on this day
+    const staffWithClass = staff.filter(function(s) {
+      return classes.some(function(c) { return c.teacherIds.indexOf(s.id) > -1 && c.day === dayOfWeek; });
+    });
+    const displayStaff = _showAllStaff ? staff : (staffWithClass.length > 0 ? staffWithClass : staff);
+    const hiddenCount = staff.length - staffWithClass.length;
+
     return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
       + '<div style="padding:0.9rem 1rem;border-bottom:1px solid #f0ede8;background:#faf9f7;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">'
       +   '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px">'
-      +   '<span style="font-size:0.82rem;color:#94a3b8">Staff attendance for selected date</span>'
+      +   '<span style="font-size:0.82rem;color:#94a3b8">' + dayOfWeek + ' · ' + displayStaff.length + ' staff with classes</span>'
+      +   (hiddenCount > 0 || _showAllStaff
+          ? '<button onclick="App.Attendance._toggleAllStaff()" style="margin-left:auto;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;white-space:nowrap">'
+            + (_showAllStaff ? 'Show scheduled only' : 'Show all (' + staff.length + ')') + '</button>'
+          : '')
       + '</div>'
       + '<div>'
-      + staff.map(function(s) {
+      + displayStaff.map(function(s) {
           const rec    = attendance.find(function(a) { return a.personId === s.id && a.personType === 'staff' && a.date === _attDate; });
           const status = rec ? rec.status : null;
           const timeStr = rec && rec.checkIn
@@ -176,6 +190,15 @@
 
   function _studentTab() {
     const { classes, students, attendance } = App.Store.get();
+    const dayOfWeek = new Date(_attDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+    const scheduledClasses = classes.filter(function(c) { return c.day === dayOfWeek; });
+    const displayClasses = _showAllClasses ? classes : (scheduledClasses.length > 0 ? scheduledClasses : classes);
+
+    // Auto-correct selection if current class not in display list
+    if (displayClasses.length > 0 && !displayClasses.find(function(c) { return c.id === _attClassId; })) {
+      _attClassId = displayClasses[0].id;
+    }
+
     const selectedClass    = classes.find(function(c) { return c.id === _attClassId; });
     const enrolledStudents = selectedClass
       ? students.filter(function(s) { return s.enrolledClasses.indexOf(_attClassId) > -1; })
@@ -189,8 +212,12 @@
       +   '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">'
       +     '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px;flex:1;min-width:140px">'
       +     '<select onchange="App.Attendance._setClass(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px;flex:2;min-width:180px;background:#fff">'
-      +     classes.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === _attClassId ? 'selected' : '') + '>' + c.name + ' — ' + c.day + '</option>'; }).join('')
+      +     displayClasses.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === _attClassId ? 'selected' : '') + '>' + c.name + ' — ' + App.Utils.formatTime(c.time) + '</option>'; }).join('')
       +     '</select>'
+      +     (classes.length !== scheduledClasses.length || _showAllClasses
+            ? '<button onclick="App.Attendance._toggleAllClasses()" style="font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;white-space:nowrap;min-height:48px">'
+              + (_showAllClasses ? 'Scheduled only' : 'All classes') + '</button>'
+            : '')
       +   '</div>'
       +   (selectedClass
           ? '<div style="margin-top:0.5rem;font-size:0.78rem;color:#94a3b8">'
@@ -210,8 +237,20 @@
   }
 
   function _setTab(tab) { _attTab = tab; App.Router.refresh(); }
-  function _setDate(date) { _attDate = date; App.Router.refresh(); }
+  function _setDate(date) {
+    _attDate = date;
+    // Auto-select first class scheduled on the new day
+    if (!_showAllClasses) {
+      const { classes } = App.Store.get();
+      const dayOfWeek = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+      const first = classes.find(function(c) { return c.day === dayOfWeek; });
+      if (first) _attClassId = first.id;
+    }
+    App.Router.refresh();
+  }
   function _setClass(classId) { _attClassId = classId; App.Router.refresh(); }
+  function _toggleAllStaff() { _showAllStaff = !_showAllStaff; App.Router.refresh(); }
+  function _toggleAllClasses() { _showAllClasses = !_showAllClasses; App.Router.refresh(); }
 
   function _markStaff(staffId, status) {
     const state = App.Store.get();
@@ -402,5 +441,5 @@
         + '</div>');
   }
 
-  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses };
+  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses };
 })();
