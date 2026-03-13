@@ -134,7 +134,8 @@ func handleCreateFeedback(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
-			http.Error(w, "staff only", 403); return
+			http.Error(w, "staff only", 403)
+			return
 		}
 		var f Feedback
 		if err := json.NewDecoder(r.Body).Decode(&f); err != nil {
@@ -171,7 +172,8 @@ func handleUpdateFeedback(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
-			http.Error(w, "staff only", 403); return
+			http.Error(w, "staff only", 403)
+			return
 		}
 		id := chi.URLParam(r, "id")
 		var f Feedback
@@ -206,7 +208,8 @@ func handleDeleteFeedback(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
-			http.Error(w, "staff only", 403); return
+			http.Error(w, "staff only", 403)
+			return
 		}
 		id := chi.URLParam(r, "id")
 		db.Exec(`UPDATE feedback SET deleted_at=NOW() WHERE id=?`, id)
@@ -516,7 +519,8 @@ func handleCreateSelfStudy(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
-			http.Error(w, "staff only", 403); return
+			http.Error(w, "staff only", 403)
+			return
 		}
 		var s SelfStudySession
 		if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
@@ -549,7 +553,8 @@ func handleDeleteSelfStudy(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
-			http.Error(w, "staff only", 403); return
+			http.Error(w, "staff only", 403)
+			return
 		}
 		id := chi.URLParam(r, "id")
 		db.Exec(`DELETE FROM self_study_sessions WHERE id=?`, id)
@@ -611,7 +616,8 @@ func handleCreatePerformanceReview(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
-			http.Error(w, "staff only", 403); return
+			http.Error(w, "staff only", 403)
+			return
 		}
 		var p PerformanceReview
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
@@ -650,7 +656,8 @@ func handleDeletePerformanceReview(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || c.Role != "admin" {
-			http.Error(w, "admin only", 403); return
+			http.Error(w, "admin only", 403)
+			return
 		}
 		id := chi.URLParam(r, "id")
 		db.Exec(`DELETE FROM performance_reviews WHERE id=?`, id)
@@ -689,7 +696,8 @@ func handleCreateCancelledClass(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || (c.Role != "admin" && c.Role != "superadmin") {
-			http.Error(w, "admin only", 403); return
+			http.Error(w, "admin only", 403)
+			return
 		}
 		var cc CancelledClass
 		if err := json.NewDecoder(r.Body).Decode(&cc); err != nil {
@@ -804,7 +812,9 @@ func handleStaffByID(db *DB) http.HandlerFunc {
 				return
 			}
 			s.ID = id
-			if s.EmploymentType == "" { s.EmploymentType = "Full-time" }
+			if s.EmploymentType == "" {
+				s.EmploymentType = "Full-time"
+			}
 			db.Exec(`UPDATE staff SET name=?,full_name=?,role=?,email=?,phone=?,salary=?,join_date=?,status=?,specialization=?,nric=?,emergency_name=?,emergency_phone=?,employment_type=?,hourly_rate=? WHERE id=?`,
 				s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate, id)
 			if c != nil {
@@ -904,13 +914,15 @@ func handleUploadProof(db *DB) http.HandlerFunc {
 		c := claimsFrom(r)
 		var studentID string
 		if err := db.QueryRow(`SELECT student_id FROM invoices WHERE id=? AND deleted_at IS NULL`, invoiceID).Scan(&studentID); err != nil {
-			http.Error(w, "invoice not found", 404); return
+			http.Error(w, "invoice not found", 404)
+			return
 		}
 		if c != nil && c.Role == "parent" {
 			var ownerEmail string
 			db.QueryRow(`SELECT contact FROM students WHERE id=?`, studentID).Scan(&ownerEmail)
 			if ownerEmail != c.Email {
-				http.Error(w, "not your invoice", 403); return
+				http.Error(w, "not your invoice", 403)
+				return
 			}
 		}
 

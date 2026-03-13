@@ -143,7 +143,7 @@
                 if (App.Router.current() === 'attendance' || App.Router.current() === 'dashboard') {
                   App.Router.refresh();
                 }
-              });
+              }).catch(function(err) { console.error('WS snapshot reload failed:', err); });
             }
           } catch(ex) { console.error('WS message error:', ex); }
         };

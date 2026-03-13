@@ -38,7 +38,9 @@ func newHub() *WSHub { return &WSHub{clients: make(map[*websocket.Conn]bool)} }
 
 func (h *WSHub) broadcast(v any) {
 	msg, err := json.Marshal(v)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for conn := range h.clients {
@@ -93,7 +95,9 @@ func (h *WSHub) handleWS() http.HandlerFunc {
 		// Keep alive — read until disconnect
 		for {
 			_, _, err := conn.ReadMessage()
-			if err != nil { break }
+			if err != nil {
+				break
+			}
 		}
 	}
 }

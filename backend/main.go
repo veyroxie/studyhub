@@ -23,8 +23,12 @@ func main() {
 	flag.Parse()
 
 	// Override with environment variables if set (useful for deployment)
-	if v := os.Getenv("DATABASE_URL"); v != "" { *dbDSN = v }
-	if v := os.Getenv("PORT"); v != "" { *port = v }
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		*dbDSN = v
+	}
+	if v := os.Getenv("PORT"); v != "" {
+		*port = v
+	}
 	if v := os.Getenv("JWT_SECRET"); v != "" {
 		jwtSecret = []byte(v)
 	} else {

@@ -10,7 +10,7 @@ import (
 // Simple in-memory token bucket: max 5 login attempts per IP per minute.
 
 type ipBucket struct {
-	count    int
+	count       int
 	windowStart time.Time
 }
 

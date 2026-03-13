@@ -115,8 +115,8 @@ func handleLogin(db *DB) http.HandlerFunc {
 			Value:    token,
 			Path:     "/",
 			Expires:  time.Now().Add(tokenExpiry),
-			HttpOnly: true,           // JavaScript cannot access this cookie
-			Secure:   secure,         // HTTPS only in production
+			HttpOnly: true,                    // JavaScript cannot access this cookie
+			Secure:   secure,                  // HTTPS only in production
 			SameSite: http.SameSiteStrictMode, // blocks cross-site request forgery
 		})
 

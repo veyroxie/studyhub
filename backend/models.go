@@ -127,15 +127,15 @@ type Attendance struct {
 }
 
 type Payroll struct {
-	ID         string   `json:"id"`
-	StaffID    string   `json:"staffId"`
-	Month      string   `json:"month"`
-	BaseSalary float64  `json:"baseSalary"`
-	Bonus      float64  `json:"bonus"`
-	Deductions float64  `json:"deductions"`
-	Total      float64  `json:"total"`
-	Status     string   `json:"status"`
-	PaidOn     *string  `json:"paidOn"`
+	ID         string  `json:"id"`
+	StaffID    string  `json:"staffId"`
+	Month      string  `json:"month"`
+	BaseSalary float64 `json:"baseSalary"`
+	Bonus      float64 `json:"bonus"`
+	Deductions float64 `json:"deductions"`
+	Total      float64 `json:"total"`
+	Status     string  `json:"status"`
+	PaidOn     *string `json:"paidOn"`
 }
 
 type Registration struct {
