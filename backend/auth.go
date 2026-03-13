@@ -26,7 +26,8 @@ func validatePassword(password string) (bool, string) {
 	return true, ""
 }
 
-var jwtSecret = []byte("studyhub-change-this-in-production")
+// jwtSecret is set from JWT_SECRET env var in main.go — this default is only used in dev
+var jwtSecret []byte
 
 const tokenExpiry = 7 * 24 * time.Hour // 7 days — long enough to not annoy users
 
@@ -57,7 +58,7 @@ type loginResponse struct {
 	Email string `json:"email"`
 }
 
-func handleLogin(db *sql.DB) http.HandlerFunc {
+func handleLogin(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req loginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

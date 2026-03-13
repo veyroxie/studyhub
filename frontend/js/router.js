@@ -9,6 +9,7 @@
     billing:       'Bills & Payments',
     staff:         'Staff',
     attendance:    'Attendance',
+    feedback:      'Classroom Feedback',
     analytics:     'Analytics'
   };
 
@@ -21,14 +22,14 @@
     },
     navigate(pageId) {
       document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
-      document.querySelectorAll('.nav-btn').forEach(function(b) { b.classList.remove('active'); });
+      document.querySelectorAll('.nav-btn').forEach(function(b) { b.classList.remove('active'); b.removeAttribute('aria-current'); });
 
       const page = document.getElementById(pageId + '-page');
       if (!page) return;
       page.classList.add('active');
 
       const btn = document.querySelector('.nav-btn[data-page="' + pageId + '"]');
-      if (btn) btn.classList.add('active');
+      if (btn) { btn.classList.add('active'); btn.setAttribute('aria-current', 'page'); }
 
       const titleEl = document.getElementById('page-title');
       if (titleEl) titleEl.textContent = TITLES[pageId] || pageId;

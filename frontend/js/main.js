@@ -1,6 +1,32 @@
 (function() {
   window.App = window.App || {};
 
+  // ── Loading overlay ──────────────────────────────────────────────────────
+  function _showLoading(msg) {
+    var el = document.getElementById('loading-overlay');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'loading-overlay';
+      el.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(15,15,15,0.6);backdrop-filter:blur(2px)';
+      el.innerHTML = '<div style="text-align:center;padding:2rem 2.5rem;background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.15)">'
+        + '<div id="loading-spinner" style="width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:var(--gold,#C9A227);border-radius:50%;animation:spin 0.7s linear infinite;margin:0 auto 1rem"></div>'
+        + '<div id="loading-text" style="font-size:0.9rem;font-weight:600;color:#334155">' + (msg || 'Loading...') + '</div>'
+        + '</div>';
+      var style = document.createElement('style');
+      style.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+      document.head.appendChild(style);
+      document.body.appendChild(el);
+    } else {
+      var txt = document.getElementById('loading-text');
+      if (txt) txt.textContent = msg || 'Loading...';
+      el.style.display = 'flex';
+    }
+  }
+  function _hideLoading() {
+    var el = document.getElementById('loading-overlay');
+    if (el) el.style.display = 'none';
+  }
+
   // ── Login ─────────────────────────────────────────────────────────────────
   App.Login = {
     show(msg) {
@@ -22,6 +48,7 @@
       if (btn) { btn.textContent = 'Signing in...'; btn.disabled = true; }
       errEl.classList.add('hidden');
       try {
+        _showLoading('Signing in...');
         const data = await App.Api.login(email, password);
         App.currentRole = data.role === 'admin' ? 'admin' : (data.role === 'teacher' ? 'teacher' : 'client');
         sessionStorage.setItem('sh_role', App.currentRole);
@@ -34,7 +61,9 @@
           sessionStorage.setItem('sh_teacher', App.currentTeacher);
         }
         // Load all data from backend
+        _showLoading('Loading your data...');
         await App.Api.loadSnapshot();
+        _hideLoading();
         App.Login.hide();
         App.Theme.init();
         applyRole();
@@ -42,7 +71,9 @@
         App.Router.navigate('dashboard');
         App.Notifs.updateBadge();
         if (App.Billing && App.Billing.checkLoginNotifications) App.Billing.checkLoginNotifications();
+        App.IdleTimeout.start();
       } catch(err) {
+        _hideLoading();
         errEl.textContent = err.message || 'Login failed';
         errEl.classList.remove('hidden');
       } finally {
@@ -72,6 +103,10 @@
          :             'bg-emerald-50 text-emerald-700 border-emerald-300');
     }
 
+    // Admin tools visibility (Export/Import/Reset)
+    const adminTools = document.getElementById('admin-tools');
+    if (adminTools) adminTools.classList.toggle('hidden', !isAdmin);
+
     // Selector visibility
     const parentSel  = document.getElementById('parent-selector-wrap');
     const teacherSel = document.getElementById('teacher-selector-wrap');
@@ -87,8 +122,8 @@
       staff:      !isAdmin,
       analytics:  !isAdmin,
       students:   isClient,
-      attendance: isClient,
-      feedback:   isClient
+      attendance: false,
+      feedback:   false
     };
     Object.keys(pageHidden).forEach(function(page) {
       const btn = document.querySelector('.nav-btn[data-page="' + page + '"]');
@@ -96,6 +131,20 @@
       const hide = pageHidden[page];
       const li = btn.closest('li');
       if (li) li.classList.toggle('hidden', hide); else btn.classList.toggle('hidden', hide);
+    });
+
+    // Hide empty nav group labels for non-admin roles
+    document.querySelectorAll('.nav-group-label[id]').forEach(function(label) {
+      var next = label.nextElementSibling;
+      var hasVisible = false;
+      while (next && !next.classList.contains('nav-group-label')) {
+        if (next.classList.contains('nav-btn') || next.querySelector && next.querySelector('.nav-btn')) {
+          var navEl = next.classList.contains('nav-btn') ? next : next;
+          if (!navEl.classList.contains('hidden')) { hasVisible = true; break; }
+        }
+        next = next.nextElementSibling;
+      }
+      label.classList.toggle('hidden', !hasVisible);
     });
 
     // Redirect if on a now-hidden page
@@ -167,6 +216,12 @@
   }
 
   document.addEventListener('DOMContentLoaded', function() {
+    // Set header date
+    var headerDateEl = document.getElementById('header-date');
+    if (headerDateEl) {
+      headerDateEl.textContent = new Date().toLocaleDateString('en-MY', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
     // Register all modules
     App.Router.register('dashboard',     App.Dashboard);
     App.Router.register('calendar',      App.Calendar);
@@ -214,6 +269,7 @@
     document.getElementById('import-btn') && document.getElementById('import-btn').addEventListener('click', importData);
     document.getElementById('reset-btn') && document.getElementById('reset-btn').addEventListener('click', resetData);
     document.getElementById('logout-btn') && document.getElementById('logout-btn').addEventListener('click', function() {
+      App.IdleTimeout.stop();
       App.Api.logout().then(function() { App.Login.show(); });
     });
 
@@ -242,6 +298,45 @@
       });
     }
 
+    // Wire forgot password link
+    var forgotLink = document.getElementById('forgot-password-link');
+    if (forgotLink) {
+      forgotLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        App.Utils.showModal(
+          '<div class="p-6" style="min-width:340px">'
+          + '<h2 style="font-size:1.15rem;font-weight:700;color:#fff;margin-bottom:0.25rem">Forgot Password</h2>'
+          + '<p style="font-size:0.82rem;color:#94a3b8;margin-bottom:1.25rem">Enter your account email to receive a temporary password.</p>'
+          + '<form id="forgot-pw-form" class="space-y-4">'
+          + '<div><label style="display:block;font-size:0.82rem;font-weight:600;color:#cbd5e1;margin-bottom:0.35rem">Email</label>'
+          + '<input name="email" type="email" required placeholder="your@email.com" class="form-input" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:10px"></div>'
+          + '<div style="display:flex;justify-content:flex-end;gap:0.75rem;padding-top:0.5rem">'
+          + '<button type="button" onclick="App.Utils.hideModal()" style="padding:0.45rem 1rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:transparent;color:#64748b;cursor:pointer">Cancel</button>'
+          + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.82rem;font-weight:700;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer">Reset Password</button>'
+          + '</div>'
+          + '</form>'
+          + '</div>'
+        );
+        document.getElementById('forgot-pw-form').addEventListener('submit', function(ev) {
+          ev.preventDefault();
+          var fd = new FormData(ev.target);
+          var email = fd.get('email');
+          App.Api.post('/api/forgot-password', { email: email }).then(function(result) {
+            App.Utils.hideModal(true);
+            var tempPw = (result && result.tempPassword) || (result && result.temp_password) || '';
+            if (tempPw) {
+              App.Utils.showToast('Temporary password: ' + tempPw + ' — use it to log in now.', 'info', 15000);
+            } else {
+              App.Utils.showToast('A temporary password has been generated. Contact admin.', 'info', 15000);
+            }
+          }).catch(function(err) {
+            App.Utils.hideModal(true);
+            App.Utils.showToast(err.message || 'Could not reset password. Please contact admin.', 'error');
+          });
+        });
+      });
+    }
+
     // Check if already logged in (reads HttpOnly cookie server-side)
     App.Api.isLoggedIn().then(function(loggedIn) {
       if (loggedIn) {
@@ -249,19 +344,28 @@
         App.currentRole = (user && user.role === 'admin') ? 'admin' : (user && user.role === 'teacher') ? 'teacher' : 'client';
         if (user && user.role === 'parent') App.clientParent = user.email;
         if (user && user.role === 'teacher') { App.currentTeacher = user.staffId || ''; sessionStorage.setItem('sh_teacher', App.currentTeacher); }
+        _showLoading('Loading your data...');
         return App.Api.loadSnapshot().then(function() {
+          _hideLoading();
           App.Login.hide();
           App.Dev.init();
           applyRole();
           App.Router.navigate('dashboard');
           App.Notifs.updateBadge();
           App.Api.connectWS();
+          App.IdleTimeout.start();
         });
       } else {
         App.Login.show();
       }
     });
   });
+
+  // Dev mode detection
+  App.isDevMode = function() {
+    var h = window.location.hostname;
+    return h === 'localhost' || h === '127.0.0.1' || new URLSearchParams(window.location.search).has('dev');
+  };
 
   // ========================
   // DEV TOOLBAR
@@ -334,6 +438,21 @@
       }
     },
     init: function() {
+      if (!App.isDevMode()) {
+        var tb = document.getElementById('dev-toolbar');
+        if (tb) tb.style.display = 'none';
+        var rb = document.getElementById('role-toggle-btn');
+        if (rb) rb.style.display = 'none';
+        var trb = document.getElementById('top-role-btn');
+        if (trb) trb.style.display = 'none';
+        // Hide dev quick-login buttons on login screen
+        var ql = document.querySelector('#login-screen .border-t.border-slate-700');
+        if (ql) ql.style.display = 'none';
+        return;
+      }
+      // Dev mode — show toolbar
+      var tb = document.getElementById('dev-toolbar');
+      if (tb) tb.style.display = '';
       const { students, staff } = App.Store.get();
       const uniqueParents = {};
       students.forEach(function(s) { uniqueParents[s.contact] = s.parentName; });
@@ -368,6 +487,64 @@
       App.Dev._update();
     }
   };
+
+  // ── Session Idle Timeout ──────────────────────────────────────────────────
+  (function() {
+    var IDLE_LIMIT   = 30 * 60 * 1000; // 30 minutes
+    var WARN_BEFORE  = 60 * 1000;      // warn 60s before logout
+    var CHECK_INTERVAL = 15 * 1000;    // check every 15s
+    var _lastActivity = Date.now();
+    var _warned = false;
+    var _intervalId = null;
+
+    // Debounced activity tracker — one handler, passive, updates timestamp
+    var _activityTimer = null;
+    function _onActivity() {
+      if (_activityTimer) return;
+      _activityTimer = setTimeout(function() { _activityTimer = null; }, 2000);
+      _lastActivity = Date.now();
+      if (_warned) {
+        _warned = false;
+        App.Utils.showToast('Session renewed', 'success');
+      }
+    }
+
+    function _startIdleWatch() {
+      if (_intervalId) return;
+      ['mousemove','keydown','click','scroll','touchstart'].forEach(function(evt) {
+        document.addEventListener(evt, _onActivity, { passive: true, capture: true });
+      });
+      _lastActivity = Date.now();
+      _warned = false;
+      _intervalId = setInterval(function() {
+        var idle = Date.now() - _lastActivity;
+        // Already on login screen — stop watching
+        var loginEl = document.getElementById('login-screen');
+        if (loginEl && !loginEl.classList.contains('hidden')) return;
+
+        if (!_warned && idle >= IDLE_LIMIT - WARN_BEFORE) {
+          _warned = true;
+          App.Utils.showToast('Session expiring in 60 seconds — click anywhere to stay logged in', 'warning', WARN_BEFORE);
+        }
+        if (idle >= IDLE_LIMIT) {
+          _stopIdleWatch();
+          App.Api.logout().then(function() {
+            App.Login.show('Session expired due to inactivity.');
+          });
+        }
+      }, CHECK_INTERVAL);
+    }
+
+    function _stopIdleWatch() {
+      if (_intervalId) { clearInterval(_intervalId); _intervalId = null; }
+      ['mousemove','keydown','click','scroll','touchstart'].forEach(function(evt) {
+        document.removeEventListener(evt, _onActivity, { capture: true });
+      });
+      _warned = false;
+    }
+
+    App.IdleTimeout = { start: _startIdleWatch, stop: _stopIdleWatch };
+  })();
 
   // Expose globally for HTML onclick handlers
   App.toggleRole = toggleRole;

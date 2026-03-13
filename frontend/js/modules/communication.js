@@ -12,8 +12,31 @@
     const pendingAnns = announcements.filter(function(a) { return a.status === 'pending_approval'; });
 
     // Published announcements only (for display to all)
+    const today = App.Utils.today();
+    const isClient = App.currentRole === 'client';
+
+    // Build parent's child class IDs for targetClassIds filtering
+    var parentClassIds = null;
+    if (isClient && App.clientParent) {
+      var { students } = App.Store.get();
+      parentClassIds = {};
+      students.filter(function(s) { return s.contact === App.clientParent; }).forEach(function(s) {
+        (s.enrolledClasses || []).forEach(function(cid) { parentClassIds[cid] = true; });
+      });
+    }
+
     const published = announcements
-      .filter(function(a) { return a.status === 'published' || !a.status; })
+      .filter(function(a) {
+        if (a.status !== 'published' && a.status) return false;
+        // Hide auto-archived from non-admins
+        if (!isAdmin && a.archiveOn && a.archiveOn < today) return false;
+        // Filter targeted announcements for parents
+        if (isClient && a.targetClassIds && a.targetClassIds.length > 0 && parentClassIds) {
+          var hasMatch = a.targetClassIds.some(function(cid) { return parentClassIds[cid]; });
+          if (!hasMatch) return false;
+        }
+        return true;
+      })
       .sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); });
     const filtered = _typeFilter === 'All' ? published : published.filter(function(a) { return a.type === _typeFilter; });
 
@@ -94,11 +117,12 @@
             _typeFilter !== 'All' ? 'Try selecting a different type filter.' : 'Post your first announcement to reach parents.',
             (canWrite && _typeFilter === 'All') ? '<button onclick="App.Communication._newModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">' + btnLabel + '</button>' : ''
           ) + '</div>'
-        : '<div class="space-y-3">' + filtered.map(function(ann) { return _annCard(ann, isAdmin); }).join('') + '</div>'
+        : '<div class="space-y-3">' + filtered.map(function(ann) { return _annCard(ann, isAdmin, today); }).join('') + '</div>'
       );
   }
 
-  function _annCard(ann, isAdmin) {
+  function _annCard(ann, isAdmin, today) {
+    today = today || App.Utils.today();
     const typeColors = {
       Notice:   { border:'border-blue-300', bg:'bg-blue-50', badge:'blue', icon:'📋' },
       Reminder: { border:'border-amber-300', bg:'bg-amber-50', badge:'yellow', icon:'🔔' },
@@ -111,15 +135,21 @@
       +   '<div class="text-2xl mt-0.5">' + tc.icon + '</div>'
       +   '<div class="flex-1 min-w-0">'
       +     '<div class="flex items-start justify-between gap-3 flex-wrap">'
-      +       '<h3 class="font-semibold text-slate-800">' + ann.title + '</h3>'
+      +       '<h3 class="font-semibold text-slate-800">' + App.Utils.esc(ann.title) + '</h3>'
       +       '<div class="flex items-center gap-2 shrink-0">'
       +         App.Utils.statusBadge(ann.type)
       +         App.Utils.badge(ann.audience, 'gray')
       +       '</div>'
       +     '</div>'
-      +     '<p class="text-sm text-slate-600 mt-2 leading-relaxed">' + ann.message + '</p>'
+      +     (ann.message.length > 200
+          ? '<p class="text-sm text-slate-600 mt-2 leading-relaxed"><span id="ann-short-' + ann.id + '">' + App.Utils.esc(ann.message.slice(0, 200)) + '... <a href="#" onclick="event.preventDefault();document.getElementById(\'ann-short-' + ann.id + '\').style.display=\'none\';document.getElementById(\'ann-full-' + ann.id + '\').style.display=\'inline\';" style="color:var(--gold);font-weight:600;font-size:0.78rem">Show more</a></span><span id="ann-full-' + ann.id + '" style="display:none">' + App.Utils.esc(ann.message) + ' <a href="#" onclick="event.preventDefault();document.getElementById(\'ann-full-' + ann.id + '\').style.display=\'none\';document.getElementById(\'ann-short-' + ann.id + '\').style.display=\'inline\';" style="color:var(--gold);font-weight:600;font-size:0.78rem">Show less</a></span></p>'
+          : '<p class="text-sm text-slate-600 mt-2 leading-relaxed">' + App.Utils.esc(ann.message) + '</p>')
       +     '<div class="flex items-center justify-between mt-3">'
-      +       '<span class="text-xs text-slate-400">' + App.Utils.formatDate(ann.createdOn) + ' · ' + ann.createdBy + '</span>'
+      +       '<span class="text-xs text-slate-400">'
+      +         App.Utils.formatDate(ann.createdOn) + ' · ' + ann.createdBy
+      +         (ann.archiveOn ? ' · <span title="Auto-archives on ' + ann.archiveOn + '" style="color:' + (ann.archiveOn < today ? '#ef4444' : '#94a3b8') + '">expires ' + App.Utils.formatDate(ann.archiveOn) + '</span>' : '')
+      +       '</span>'
+      +       (isAdmin ? '<button onclick="App.Communication._editModal(\'' + ann.id + '\')" class="text-xs text-blue-400 hover:text-blue-600 mr-2">Edit</button>' : '')
       +       (isAdmin ? '<button onclick="App.Communication._delete(\'' + ann.id + '\')" class="text-xs text-red-400 hover:text-red-600">Delete</button>' : '')
       +     '</div>'
       +   '</div>'
@@ -133,6 +163,7 @@
   }
 
   function _delete(annId) {
+    if (!confirm('Delete this announcement?')) return;
     const state = App.Store.get();
     App.Store.set({ announcements: state.announcements.filter(function(a) { return a.id !== annId; }) });
     App.Utils.showToast('Announcement deleted', 'info');
@@ -171,14 +202,17 @@
       + _field('Message', '<textarea name="message" class="form-input" rows="4" placeholder="Write your message here..." required maxlength="1000"></textarea>')
       + '<div class="grid grid-cols-2 gap-4">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Audience</label>'
-      + '<select name="audience" class="form-input">'
+      + '<select name="audience" class="form-input" id="ann-audience-sel"' + (isTeacher ? ' onchange="App.Communication._onAudienceChange(this.value)"' : '') + '>'
       + '<option>All Parents</option><option>All Staff</option>'
+      + (isTeacher ? '<option>My Class Parents</option>' : '')
       + '</select></div>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label>'
       + '<select name="type" class="form-input">'
       + '<option>Notice</option><option>Reminder</option><option>Urgent</option>'
       + '</select></div>'
       + '</div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Auto-archive on <span class="text-xs text-slate-400 font-normal">(optional — hides from parents after this date)</span></label>'
+      + '<input name="archiveOn" type="date" class="form-input" min="' + App.Utils.today() + '"></div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm ' + (isTeacher ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700') + ' text-white rounded-lg">' + submitLabel + '</button>'
@@ -190,18 +224,28 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       const state = App.Store.get();
+      var audience = fd.get('audience');
+      var targetClassIds = null;
+      if (audience === 'My Class Parents' && App.currentTeacher) {
+        var { classes } = App.Store.get();
+        targetClassIds = classes
+          .filter(function(c) { return c.teacherIds && c.teacherIds.indexOf(App.currentTeacher) > -1; })
+          .map(function(c) { return c.id; });
+      }
       const newAnn = {
         id: App.Utils.generateId('ANN'),
         title: fd.get('title').trim(),
         message: fd.get('message').trim(),
-        audience: fd.get('audience'),
+        audience: audience,
         type: fd.get('type'),
         status: isTeacher ? 'pending_approval' : 'published',
         createdOn: App.Utils.today(),
-        createdBy: byline
+        createdBy: byline,
+        archiveOn: fd.get('archiveOn') || null,
+        targetClassIds: targetClassIds
       };
       App.Store.set({ announcements: [newAnn, ...state.announcements] });
-      App.Utils.hideModal();
+      App.Utils.hideModal(true);
       App.Utils.showToast(isTeacher ? 'Submitted for admin approval' : 'Announcement published!', isTeacher ? 'info' : 'success');
       App.Router.refresh();
     });
@@ -218,5 +262,54 @@
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  App.Communication = { render: render, _setFilter: _setFilter, _delete: _delete, _newModal: _newModal, _approve: _approve, _reject: _reject };
+  function _editModal(annId) {
+    const state = App.Store.get();
+    const ann = state.announcements.find(function(a) { return a.id === annId; });
+    if (!ann) return;
+
+    App.Utils.showModal(
+      '<div class="p-6">'
+      + '<h2 class="text-xl font-bold mb-4">Edit Announcement</h2>'
+      + '<form id="edit-ann-form" class="space-y-4">'
+      + _field('Title', '<input name="title" class="form-input" value="' + App.Utils.esc(ann.title) + '" required maxlength="150">')
+      + _field('Message', '<textarea name="message" class="form-input" rows="4" required maxlength="1000">' + App.Utils.esc(ann.message) + '</textarea>')
+      + '<div class="grid grid-cols-2 gap-4">'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label>'
+      + '<select name="type" class="form-input">'
+      + ['Notice','Reminder','Urgent'].map(function(t) { return '<option' + (ann.type === t ? ' selected' : '') + '>' + t + '</option>'; }).join('')
+      + '</select></div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Auto-archive on</label>'
+      + '<input name="archiveOn" type="date" class="form-input" value="' + (ann.archiveOn || '') + '"></div>'
+      + '</div>'
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>'
+      + '</div>'
+      + '</form>'
+      + '</div>'
+    );
+    document.getElementById('edit-ann-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      var st = App.Store.get();
+      App.Store.set({ announcements: st.announcements.map(function(a) {
+        if (a.id !== annId) return a;
+        return Object.assign({}, a, {
+          title: fd.get('title').trim(),
+          message: fd.get('message').trim(),
+          type: fd.get('type'),
+          archiveOn: fd.get('archiveOn') || null
+        });
+      })});
+      App.Utils.hideModal(true);
+      App.Utils.showToast('Announcement updated', 'success');
+      App.Router.refresh();
+    });
+  }
+
+  function _onAudienceChange(val) {
+    // No-op for now; targetClassIds are set at submit time
+  }
+
+  App.Communication = { render: render, _setFilter: _setFilter, _delete: _delete, _newModal: _newModal, _approve: _approve, _reject: _reject, _editModal: _editModal, _onAudienceChange: _onAudienceChange };
 })();

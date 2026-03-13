@@ -4,6 +4,23 @@
   let _search = '';
   let _statusFilter = 'All';
   let _selected = {};
+  let _studentPage = 0;
+  var _PAGE_SIZE = 15;
+
+  function _paginationControls(page, total, moduleFn) {
+    var totalPages = Math.ceil(total / _PAGE_SIZE);
+    if (total <= _PAGE_SIZE) return '';
+    var start = page * _PAGE_SIZE + 1;
+    var end = Math.min((page + 1) * _PAGE_SIZE, total);
+    var prevDis = page === 0;
+    var nextDis = page >= totalPages - 1;
+    return '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;padding:0.75rem 1rem;">'
+      + '<span style="font-size:0.8rem;color:#64748b;">Showing ' + start + '–' + end + ' of ' + total + '</span>'
+      + '<div style="display:flex;gap:0.5rem;">'
+      + '<button onclick="' + moduleFn + '(' + (page - 1) + ')"' + (prevDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;cursor:' + (prevDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (prevDis ? 'opacity:0.4;' : '') + '">Prev</button>'
+      + '<button onclick="' + moduleFn + '(' + (page + 1) + ')"' + (nextDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;cursor:' + (nextDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (nextDis ? 'opacity:0.4;' : '') + '">Next</button>'
+      + '</div></div>';
+  }
 
   function render(container) {
     const { students, classes } = App.Store.get();
@@ -36,6 +53,8 @@
 
     const { registrations } = App.Store.get();
     const pendingRegs = (registrations || []).filter(function(r) { return r.status === 'pending'; });
+
+    var paged = filtered.slice(_studentPage * _PAGE_SIZE, (_studentPage + 1) * _PAGE_SIZE);
 
     const colCount = isAdmin ? 7 : 6;
 
@@ -72,11 +91,12 @@
       +   '</div>'
       +   '<div id="stu-bulk-bar" style="padding:0 1rem">' + _bulkBar() + '</div>'
       +   '<div class="overflow-x-auto">'
-      +     '<table class="w-full">'
+      +     '<table class="w-full" role="table">'
+      +       '<caption class="sr-only">Student list</caption>'
       +       '<thead class="bg-slate-50 border-b border-slate-100"><tr>'
-      +         (isAdmin ? '<th class="th" style="width:36px"><input type="checkbox" id="select-all-cb" onchange="App.Students._toggleSelectAll(this.checked)" style="cursor:pointer"></th>' : '')
-      +         '<th class="th">Student</th><th class="th">Classes</th><th class="th">DOB</th>'
-      +         '<th class="th">Parent / Contact</th><th class="th">Status</th><th class="th">Action</th>'
+      +         (isAdmin ? '<th scope="col" class="th" style="width:36px"><input type="checkbox" id="select-all-cb" onchange="App.Students._toggleSelectAll(this.checked)" style="cursor:pointer"></th>' : '')
+      +         '<th scope="col" class="th">Student</th><th scope="col" class="th">Classes</th><th scope="col" class="th">DOB</th>'
+      +         '<th scope="col" class="th">Parent / Contact</th><th scope="col" class="th">Status</th><th scope="col" class="th">Action</th>'
       +       '</tr></thead>'
       +       '<tbody class="divide-y divide-slate-50">'
       +       (filtered.length === 0
@@ -85,7 +105,7 @@
               (_search || _statusFilter !== 'All') ? 'Try adjusting your search or status filter.' : 'Add your first student to get started.',
               (isAdmin && !(_search || _statusFilter !== 'All')) ? '<button onclick="App.Students._addModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Student</button>' : (_search || _statusFilter !== 'All') ? '<button onclick="App.Students._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer">Clear Filters</button>' : ''
             ) + '</td></tr>'
-          : filtered.map(function(s) {
+          : paged.map(function(s) {
               const { classes } = App.Store.get();
               const enrolledNames = s.enrolledClasses.map(function(cid) {
                 const c = classes.find(function(x) { return x.id === cid; });
@@ -110,6 +130,7 @@
       +       '</tbody>'
       +     '</table>'
       +   '</div>'
+      +   _paginationControls(_studentPage, filtered.length, 'App.Students._setPage')
       + '</div>';
   }
 
@@ -180,17 +201,18 @@
       return { id: App.Utils.generateId(), fromRole: 'admin', fromLabel: 'Study Hub', toParent: email, text: text, ts: new Date().toISOString(), read: false };
     });
     App.Store.set({ messages: (messages || []).concat(newMsgs) });
-    App.Utils.hideModal();
+    App.Utils.hideModal(true);
     App.Utils.showToast('Message sent to ' + newMsgs.length + ' parent' + (newMsgs.length !== 1 ? 's' : ''), 'success');
     _bulkDeselect();
   }
 
-  function _onSearch(val) { _search = val; App.Router.refresh(); }
-  function _onFilter(val) { _statusFilter = val; App.Router.refresh(); }
-  function _clearFilters() { _search = ''; _statusFilter = 'All'; App.Router.refresh(); }
+  function _onSearch(val) { _search = val; _studentPage = 0; App.Router.refresh(); }
+  function _onFilter(val) { _statusFilter = val; _studentPage = 0; App.Router.refresh(); }
+  function _clearFilters() { _search = ''; _statusFilter = 'All'; _studentPage = 0; App.Router.refresh(); }
+  function _setStudentPage(n) { _studentPage = Math.max(0, n); App.Router.refresh(); }
 
   function _viewModal(studentId) {
-    const { students, classes, invoices } = App.Store.get();
+    const { students, classes, invoices, selfStudySessions } = App.Store.get();
     const isAdmin = App.currentRole === 'admin';
     const s = students.find(function(x) { return x.id === studentId; });
     if (!s) return;
@@ -213,7 +235,7 @@
       + '</div>'
 
       + '<div class="flex border-b border-slate-100 mb-4 gap-1" id="student-tabs">'
-      + ['Details','Classes','Invoices'].map(function(tab, i) {
+      + (App.currentRole === 'teacher' ? ['Details','Classes'] : ['Details','Classes','Invoices']).map(function(tab, i) {
           return '<button onclick="App.Students._switchTab(\'' + tab.toLowerCase() + '\')" id="tab-' + tab.toLowerCase() + '" class="tab-btn px-4 py-2 text-sm font-medium ' + (i===0?'border-b-2 border-blue-600 text-blue-600':'text-slate-500 hover:text-slate-700') + '">' + tab + '</button>';
         }).join('')
       + '</div>'
@@ -227,10 +249,55 @@
       +   _infoRow('Phone', s.phone)
       +   _infoRow('Branch', s.branch)
       +   _infoRow('Registered On', App.Utils.formatDate(s.registeredOn))
-      +   (s.siblings && s.siblings.length ? _infoRow('Siblings', s.siblings.join(', ')) : '')
+      +   (s.siblings && s.siblings.length ? _infoRow('Siblings', (function() {
+            var allStudents = App.Store.get().students;
+            return s.siblings.map(function(sibId) {
+              var sib = allStudents.find(function(x) { return x.id === sibId; });
+              return sib ? sib.firstName + ' ' + sib.lastName : sibId;
+            }).join(', ');
+          })()) : '')
       +   (s.emergency2Name ? _infoRow('Emergency Contact', s.emergency2Name + (s.emergency2Phone ? ' · ' + s.emergency2Phone : '')) : '')
-      +   (s.notes ? _infoRow('Notes', s.notes) : '')
+      +   (s.notes ? _infoRow('Notes', '<div style="white-space:pre-wrap">' + App.Utils.esc(s.notes) + '</div>') : '')
       +   '</div>'
+      +   '<div style="margin-top:1rem;padding:1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px">'
+      +     '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.65rem">'
+      +       '<svg style="width:18px;height:18px;color:#b45309" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342"/></svg>'
+      +       '<span style="font-size:0.78rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.05em">Health Information</span>'
+      +     '</div>'
+      +     (s.medicalInfo || s.allergies
+        ? '<div class="grid grid-cols-1 gap-2 text-sm">'
+          + (s.medicalInfo ? '<div><span style="font-weight:600;color:#92400e">Medical Conditions:</span> <span style="color:#78350f">' + App.Utils.esc(s.medicalInfo) + '</span></div>' : '')
+          + (s.allergies ? '<div><span style="font-weight:600;color:#92400e">Allergies:</span> <span style="color:#78350f">' + App.Utils.esc(s.allergies) + '</span></div>' : '')
+          + '</div>'
+        : '<div style="font-size:0.83rem;color:#a1a1aa">No health information recorded</div>')
+      +   '</div>'
+      +   (App.currentRole === 'teacher'
+        ? '<div style="margin-top:1rem;padding:1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px">'
+          + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">Quick Note</div>'
+          + '<textarea id="teacher-quick-note" rows="2" placeholder="e.g. Had trouble focusing today..." style="width:100%;padding:0.5rem 0.75rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:8px;resize:none;outline:none;font-family:inherit"></textarea>'
+          + '<button onclick="App.Students._saveQuickNote(\'' + studentId + '\')" style="margin-top:0.5rem;padding:0.4rem 1rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Save Note</button>'
+          + '</div>'
+        : '')
+      +   (function() {
+            if (!(s.enrolledClasses || []).length) return '';
+            const sessions = (selfStudySessions || []).filter(function(ss) { return ss.studentId === studentId; });
+            const now2 = new Date();
+            const thisMonth2 = now2.getFullYear() + '-' + String(now2.getMonth() + 1).padStart(2,'0');
+            const monthMin = sessions.filter(function(ss) { return ss.date.startsWith(thisMonth2); })
+              .reduce(function(acc, ss) { return acc + (ss.duration || 0); }, 0);
+            const monthHr = monthMin / 60;
+            const freeRem = Math.max(0, 4 - monthHr);
+            const billable = Math.max(0, monthHr - 4);
+            return '<div style="margin-top:1rem;padding:0.85rem 1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px">'
+              + '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">Self Study Membership</div>'
+              + '<div style="display:flex;gap:1.5rem;flex-wrap:wrap">'
+              +   '<div><div style="font-size:0.7rem;color:#94a3b8">Monthly free</div><div style="font-weight:700;color:#0d0d0d">4 hrs (RM40 off)</div></div>'
+              +   '<div><div style="font-size:0.7rem;color:#94a3b8">Used this month</div><div style="font-weight:700;color:#0d0d0d">' + (monthHr < 1 ? monthMin + 'min' : monthHr.toFixed(1) + 'hr') + '</div></div>'
+              +   '<div><div style="font-size:0.7rem;color:#94a3b8">Remaining</div><div style="font-weight:700;color:' + (freeRem > 0 ? '#15803d' : '#dc2626') + '">' + freeRem.toFixed(1) + 'hr</div></div>'
+              +   (billable > 0 ? '<div><div style="font-size:0.7rem;color:#dc2626">Extra (billable)</div><div style="font-weight:700;color:#dc2626">RM' + (billable * 10).toFixed(0) + '</div></div>' : '')
+              + '</div>'
+              + '</div>';
+          })()
       + '</div>'
 
       + '<div id="tab-panel-classes" class="hidden">'
@@ -250,7 +317,7 @@
         }).join('')
       + '</div>'
 
-      + '<div id="tab-panel-invoices" class="hidden">'
+      + '<div id="tab-panel-invoices" class="hidden"' + (App.currentRole === 'teacher' ? ' style="display:none"' : '') + '>'
       + '<div class="flex justify-between items-center mb-3"><span class="text-sm text-slate-500">Total paid:</span><span class="font-bold text-emerald-600">' + App.Utils.formatCurrency(totalPaid) + '</span></div>'
       + (studentInvoices.length === 0 ? '<p class="text-sm text-slate-400 text-center py-6">No invoices</p>'
         : '<table class="w-full text-sm"><thead><tr class="border-b"><th class="text-left py-2 text-slate-500 font-medium">Description</th><th class="text-right py-2 text-slate-500 font-medium">Amount</th><th class="text-right py-2 text-slate-500 font-medium">Status</th></tr></thead><tbody>'
@@ -269,7 +336,7 @@
   }
 
   function _editModal(studentId) {
-    App.Utils.hideModal();
+    App.Utils.hideModal(true);
     const state = App.Store.get();
     const s = state.students.find(function(x) { return x.id === studentId; });
     if (!s) return;
@@ -300,6 +367,8 @@
       + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" value="' + (s.emergency2Name||'') + '" placeholder="e.g. Uncle David">')
       + _field('Emergency Contact Phone', '<input name="emergency2Phone" class="form-input" value="' + (s.emergency2Phone||'') + '" placeholder="60123456789">')
       + '</div>'
+      + _field('Medical Conditions', '<textarea name="medicalInfo" class="form-input" rows="2" placeholder="e.g., Asthma, Diabetes">' + App.Utils.esc(s.medicalInfo||'') + '</textarea>')
+      + _field('Allergies', '<textarea name="allergies" class="form-input" rows="2" placeholder="e.g., Peanuts, Penicillin">' + App.Utils.esc(s.allergies||'') + '</textarea>')
       + _field('Notes', '<textarea name="notes" class="form-input" rows="2">' + (s.notes||'') + '</textarea>')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -336,11 +405,13 @@
         enrolledClasses: newClasses,
         notes: fd.get('notes'),
         emergency2Name: fd.get('emergency2Name') || '',
-        emergency2Phone: fd.get('emergency2Phone') || ''
+        emergency2Phone: fd.get('emergency2Phone') || '',
+        medicalInfo: fd.get('medicalInfo') || '',
+        allergies: fd.get('allergies') || ''
       });
 
       App.Store.set({ students: st.students.map(function(x) { return x.id === studentId ? updated : x; }), classes: newClasses2 });
-      App.Utils.hideModal();
+      App.Utils.hideModal(true);
       App.Utils.showToast(updated.firstName + ' ' + updated.lastName + ' updated', 'success');
       App.Router.refresh();
     });
@@ -370,6 +441,8 @@
       + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" placeholder="e.g. Uncle David">')
       + _field('Emergency Contact Phone', '<input name="emergency2Phone" class="form-input" placeholder="60123456789">')
       + '</div>'
+      + _field('Medical Conditions', '<textarea name="medicalInfo" class="form-input" rows="2" placeholder="e.g., Asthma, Diabetes"></textarea>')
+      + _field('Allergies', '<textarea name="allergies" class="form-input" rows="2" placeholder="e.g., Peanuts, Penicillin"></textarea>')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Student</button>'
@@ -382,7 +455,7 @@
       const fd = new FormData(e.target);
       const state = App.Store.get();
       const selectedClasses = fd.getAll('classIds');
-      const newId = 'STU' + String(state.students.length + 1).padStart(3,'0');
+      const newId = App.Utils.generateId('STU');
       const newStudent = {
         id: newId,
         firstName: fd.get('firstName'),
@@ -399,13 +472,15 @@
         siblings: [],
         notes: '',
         emergency2Name: fd.get('emergency2Name') || '',
-        emergency2Phone: fd.get('emergency2Phone') || ''
+        emergency2Phone: fd.get('emergency2Phone') || '',
+        medicalInfo: fd.get('medicalInfo') || '',
+        allergies: fd.get('allergies') || ''
       };
       const newClasses = state.classes.map(function(c) {
         return selectedClasses.indexOf(c.id) > -1 ? Object.assign({}, c, { enrolled: c.enrolled + 1 }) : c;
       });
       App.Store.set({ students: [...state.students, newStudent], classes: newClasses });
-      App.Utils.hideModal();
+      App.Utils.hideModal(true);
       App.Utils.showToast(newStudent.firstName + ' ' + newStudent.lastName + ' added!', 'success');
       App.Router.refresh();
     });
@@ -429,8 +504,10 @@
 
   function _switchTab(tab) {
     ['details','classes','invoices'].forEach(function(t) {
-      document.getElementById('tab-panel-' + t).classList.toggle('hidden', t !== tab);
+      var panel = document.getElementById('tab-panel-' + t);
+      if (panel) panel.classList.toggle('hidden', t !== tab);
       const btn = document.getElementById('tab-' + t);
+      if (!btn) return;
       if (t === tab) { btn.classList.add('border-b-2','border-blue-600','text-blue-600'); btn.classList.remove('text-slate-500'); }
       else { btn.classList.remove('border-b-2','border-blue-600','text-blue-600'); btn.classList.add('text-slate-500'); }
     });
@@ -480,8 +557,8 @@
     try {
       const result = await App.Api.post('/api/registrations/' + regId + '/approve', {});
       if (result) {
-        App.Utils.hideModal();
-        App.Utils.showToast('Approved! Temp password: ' + result.tempPassword, 'success');
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Approved! Temp password: ' + result.tempPassword, 'success', 15000);
         await App.Api.loadSnapshot();
         App.Notifs.refresh();
         App.Router.refresh();
@@ -496,9 +573,28 @@
     await App.Api.del('/api/registrations/' + regId);
     await App.Api.loadSnapshot();
     App.Notifs.refresh();
-    App.Utils.hideModal();
+    App.Utils.hideModal(true);
     App.Utils.showToast('Registration rejected', 'info');
     App.Router.refresh();
+  }
+
+  function _saveQuickNote(studentId) {
+    var textarea = document.getElementById('teacher-quick-note');
+    if (!textarea) return;
+    var text = textarea.value.trim();
+    if (!text) { App.Utils.showToast('Please enter a note', 'error'); return; }
+    var state = App.Store.get();
+    var now = new Date();
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var prefix = '[' + months[now.getMonth()] + ' ' + now.getDate() + '] ';
+    var newNote = prefix + text;
+    App.Store.set({ students: state.students.map(function(s) {
+      if (s.id !== studentId) return s;
+      var existing = s.notes ? s.notes.trim() : '';
+      return Object.assign({}, s, { notes: existing ? existing + '\n' + newNote : newNote });
+    })});
+    textarea.value = '';
+    App.Utils.showToast('Note saved', 'success');
   }
 
   function _infoRow(label, value) {
@@ -518,13 +614,13 @@
 
   function _exportCSV() {
     const { students, classes } = App.Store.get();
-    const headers = ['ID','First Name','Last Name','DOB','Gender','Parent','Contact','Phone','Status','Registered On','Classes'];
+    const headers = ['ID','First Name','Last Name','DOB','Gender','Parent','Contact','Phone','Status','Registered On','Classes','Medical Info','Allergies'];
     const rows = students.map(function(s) {
       const classNames = s.enrolledClasses.map(function(cid) {
         var c = classes.find(function(x) { return x.id === cid; });
         return c ? c.name : cid;
       }).join('; ');
-      return [s.id, s.firstName, s.lastName, s.dob, s.gender, s.parentName, s.contact, s.phone, s.status, s.registeredOn, classNames]
+      return [s.id, s.firstName, s.lastName, s.dob, s.gender, s.parentName, s.contact, s.phone, s.status, s.registeredOn, classNames, s.medicalInfo||'', s.allergies||'']
         .map(function(v) { return '"' + String(v||'').replace(/"/g,'""') + '"'; }).join(',');
     });
     _downloadCSV([headers.join(',')].concat(rows).join('\n'), 'students.csv');
@@ -548,6 +644,8 @@
     _bulkMessage: _bulkMessage,
     _bulkSendMessage: _bulkSendMessage,
     _clearFilters: _clearFilters,
-    _exportCSV: _exportCSV
+    _exportCSV: _exportCSV,
+    _setPage: _setStudentPage,
+    _saveQuickNote: _saveQuickNote
   };
 })();

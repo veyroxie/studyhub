@@ -34,10 +34,22 @@
     return patch;
   }
 
+  const ARRAY_DEFAULTS = {
+    feedback: [], subjects: [], workshops: [], selfStudySessions: [],
+    performanceReviews: [], cancelledClasses: [], messages: [], holidays: []
+  };
+
   function loadState() {
     try {
       const saved = localStorage.getItem(KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Ensure new array fields exist even if saved state predates them
+        for (const k in ARRAY_DEFAULTS) {
+          if (!Array.isArray(parsed[k])) parsed[k] = ARRAY_DEFAULTS[k];
+        }
+        return parsed;
+      }
     } catch(e) {}
     return deepClone(App.DATA);
   }

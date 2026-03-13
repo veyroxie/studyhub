@@ -3,7 +3,7 @@
 # Services:
 #   api       — Go REST API + frontend static files  (port 8080)
 #   analytics — Python FastAPI microservice          (port 8001, internal only)
-#   db        — PostgreSQL (for production migration; SQLite used in dev)
+#   postgres  — PostgreSQL 16                        (port 5432, internal)
 
 services:
 
@@ -16,13 +16,13 @@ services:
       - "8080:8080"
     environment:
       PORT: 8080
-      DB_PATH: /data/studyhub.db
+      DATABASE_URL: postgres://studyhub:${POSTGRES_PASSWORD:-changeme}@postgres:5432/studyhub?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:8080}
       ANALYTICS_SERVICE_URL: http://analytics:8001
-    volumes:
-      - studyhub_data:/data
     depends_on:
+      postgres:
+        condition: service_healthy
       analytics:
         condition: service_healthy
     restart: unless-stopped
@@ -42,22 +42,24 @@ services:
       start_period: 15s
     restart: unless-stopped
 
-  # ── PostgreSQL (production upgrade path) ───────────────────────────────────
-  # Uncomment when you're ready to migrate from SQLite to Postgres.
-  # Update Go code to use lib/pq or pgx driver.
-  #
-  # postgres:
-  #   image: postgres:16-alpine
-  #   environment:
-  #     POSTGRES_DB: studyhub
-  #     POSTGRES_USER: studyhub
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   ports:
-  #     - "5432:5432"
-  #   restart: unless-stopped
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: studyhub
+      POSTGRES_USER: studyhub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    expose:
+      - "5432"   # internal only — not exposed to host
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studyhub -d studyhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
 
 volumes:
-  studyhub_data:
-  # postgres_data:
+  postgres_data:

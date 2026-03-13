@@ -52,6 +52,10 @@ type Student struct {
 	EnrolledClasses []string `json:"enrolledClasses"`
 	Siblings        []string `json:"siblings"`
 	Notes           string   `json:"notes"`
+	Emergency2Name  string   `json:"emergency2Name,omitempty"`
+	Emergency2Phone string   `json:"emergency2Phone,omitempty"`
+	MedicalInfo     string   `json:"medicalInfo,omitempty"`
+	Allergies       string   `json:"allergies,omitempty"`
 }
 
 type Class struct {
@@ -69,27 +73,34 @@ type Class struct {
 }
 
 type Staff struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	FullName string  `json:"fullName"`
-	Role     string  `json:"role"`
-	Email    string  `json:"email"`
-	Phone    string  `json:"phone"`
-	Salary   float64 `json:"salary"`
-	JoinDate string  `json:"joinDate"`
-	Status   string  `json:"status"`
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	FullName       string  `json:"fullName"`
+	Role           string  `json:"role"`
+	Email          string  `json:"email"`
+	Phone          string  `json:"phone"`
+	Salary         float64 `json:"salary"`
+	JoinDate       string  `json:"joinDate"`
+	Status         string  `json:"status"`
+	Specialization string  `json:"specialization,omitempty"`
+	NRIC           string  `json:"nric,omitempty"`
+	EmergencyName  string  `json:"emergencyName,omitempty"`
+	EmergencyPhone string  `json:"emergencyPhone,omitempty"`
+	EmploymentType string  `json:"employmentType,omitempty"`
+	HourlyRate     float64 `json:"hourlyRate,omitempty"`
 }
 
 type Invoice struct {
-	ID          string  `json:"id"`
-	StudentID   string  `json:"studentId"`
-	Description string  `json:"description"`
-	Type        string  `json:"type"`
-	Amount      float64 `json:"amount"`
-	DueDate     string  `json:"dueDate"`
-	Status      string  `json:"status"`
-	CreatedOn   string  `json:"createdOn"`
-	PaidOn      *string `json:"paidOn"`
+	ID           string  `json:"id"`
+	StudentID    string  `json:"studentId"`
+	Description  string  `json:"description"`
+	Type         string  `json:"type"`
+	Amount       float64 `json:"amount"`
+	DueDate      string  `json:"dueDate"`
+	Status       string  `json:"status"`
+	CreatedOn    string  `json:"createdOn"`
+	PaidOn       *string `json:"paidOn"`
+	PaymentProof string  `json:"paymentProof,omitempty"`
 }
 
 type Announcement struct {
@@ -98,6 +109,8 @@ type Announcement struct {
 	Message   string `json:"message"`
 	Audience  string `json:"audience"`
 	Type      string `json:"type"`
+	Status    string `json:"status,omitempty"`
+	ArchiveOn string `json:"archiveOn,omitempty"`
 	CreatedOn string `json:"createdOn"`
 	CreatedBy string `json:"createdBy"`
 }
@@ -150,14 +163,101 @@ type Registration struct {
 	Status            string  `json:"status"` // pending | approved | rejected
 }
 
+type StudentNote struct {
+	StudentID string `json:"studentId"`
+	Note      string `json:"note"`
+}
+
+type Feedback struct {
+	ID           string        `json:"id"`
+	ClassID      string        `json:"classId"`
+	Date         string        `json:"date"`
+	TeacherID    string        `json:"teacherId"`
+	Topic        string        `json:"topic"`
+	Mood         string        `json:"mood"`
+	Notes        string        `json:"notes"`
+	StudentNotes []StudentNote `json:"studentNotes"`
+}
+
+type Subject struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Category    string  `json:"category"`
+	Level       string  `json:"level"`
+	Description string  `json:"description"`
+	MonthlyFee  float64 `json:"monthlyFee"`
+	Color       string  `json:"color"`
+}
+
+type Workshop struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Date        string   `json:"date"`
+	Time        string   `json:"time"`
+	EndTime     string   `json:"endTime"`
+	Classroom   string   `json:"classroom"`
+	Capacity    int      `json:"capacity"`
+	Enrolled    int      `json:"enrolled"`
+	Fee         float64  `json:"fee"`
+	TeacherIDs  []string `json:"teacherIds"`
+	Status      string   `json:"status"`
+}
+
+type SelfStudySession struct {
+	ID          string `json:"id"`
+	StudentID   string `json:"studentId"`
+	Date        string `json:"date"`
+	StartTime   string `json:"startTime"`
+	EndTime     string `json:"endTime"`
+	DurationMin int    `json:"durationMin"`
+	Notes       string `json:"notes"`
+}
+
+type PerformanceReview struct {
+	ID            string  `json:"id"`
+	StaffID       string  `json:"staffId"`
+	ReviewerEmail string  `json:"reviewerEmail"`
+	Date          string  `json:"date"`
+	Rating        float64 `json:"rating"`
+	ParentRating  float64 `json:"parentRating"`
+	Notes         string  `json:"notes"`
+}
+
+type CancelledClass struct {
+	ID          string `json:"id"`
+	ClassID     string `json:"classId"`
+	Date        string `json:"date"`
+	Reason      string `json:"reason"`
+	CancelledBy string `json:"cancelledBy"`
+	CreatedOn   string `json:"createdOn"`
+}
+
+type Holiday struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Date      string `json:"date"`
+	EndDate   string `json:"endDate,omitempty"`
+	Type      string `json:"type"`
+	Notes     string `json:"notes,omitempty"`
+	CreatedBy string `json:"createdBy,omitempty"`
+}
+
 // Snapshot is what GET /api/snapshot returns — identical shape to App.DATA
 type Snapshot struct {
-	Students      []Student      `json:"students"`
-	Classes       []Class        `json:"classes"`
-	Staff         []Staff        `json:"staff"`
-	Invoices      []Invoice      `json:"invoices"`
-	Announcements []Announcement `json:"announcements"`
-	Attendance    []Attendance   `json:"attendance"`
-	Payroll       []Payroll      `json:"payroll"`
-	Registrations []Registration `json:"registrations,omitempty"`
+	Students           []Student           `json:"students"`
+	Classes            []Class             `json:"classes"`
+	Staff              []Staff             `json:"staff"`
+	Invoices           []Invoice           `json:"invoices"`
+	Announcements      []Announcement      `json:"announcements"`
+	Attendance         []Attendance        `json:"attendance"`
+	Payroll            []Payroll           `json:"payroll"`
+	Registrations      []Registration      `json:"registrations,omitempty"`
+	Feedback           []Feedback          `json:"feedback"`
+	Subjects           []Subject           `json:"subjects"`
+	Workshops          []Workshop          `json:"workshops"`
+	SelfStudySessions  []SelfStudySession  `json:"selfStudySessions"`
+	PerformanceReviews []PerformanceReview `json:"performanceReviews"`
+	CancelledClasses   []CancelledClass    `json:"cancelledClasses"`
+	Holidays           []Holiday           `json:"holidays"`
 }

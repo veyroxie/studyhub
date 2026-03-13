@@ -1,43 +1,158 @@
 (function() {
   window.App = window.App || {};
-  let _toastTimer = null;
+  let _modalDirty = false;
+  let _modalDirtyListeners = [];
+  let _previousFocus = null;
+  let _trapFocusHandler = null;
+
+  /* ── Toast Container (created once) ── */
+  function _getToastContainer() {
+    let c = document.getElementById('toast-container');
+    if (!c) {
+      c = document.createElement('div');
+      c.id = 'toast-container';
+      c.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;display:flex;flex-direction:column-reverse;gap:0.5rem;pointer-events:none;max-width:380px;width:100%';
+      document.body.appendChild(c);
+    }
+    return c;
+  }
+
+  /* ── Toast CSS (injected once) ── */
+  (function _injectToastCSS() {
+    if (document.getElementById('sh-toast-css')) return;
+    var s = document.createElement('style');
+    s.id = 'sh-toast-css';
+    s.textContent =
+      '@keyframes shToastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}' +
+      '@keyframes shToastOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(40px)}}' +
+      '.sh-toast{pointer-events:auto;animation:shToastIn .3s ease forwards}' +
+      '.sh-toast.sh-toast-exit{animation:shToastOut .25s ease forwards}';
+    document.head.appendChild(s);
+  })();
+
+  /* ── Modal dirty-tracking helpers ── */
+  function _attachDirtyListeners() {
+    _modalDirty = false;
+    _detachDirtyListeners();
+    var mc = document.getElementById('modal-content');
+    if (!mc) return;
+    var handler = function() { _modalDirty = true; };
+    ['input', 'change'].forEach(function(evt) {
+      mc.addEventListener(evt, handler);
+      _modalDirtyListeners.push({ el: mc, evt: evt, fn: handler });
+    });
+  }
+
+  function _detachDirtyListeners() {
+    _modalDirtyListeners.forEach(function(l) {
+      l.el.removeEventListener(l.evt, l.fn);
+    });
+    _modalDirtyListeners = [];
+  }
 
   App.Utils = {
     showModal(html) {
+      _previousFocus = document.activeElement;
       document.getElementById('modal-content').innerHTML = html;
       const overlay = document.getElementById('modal-overlay');
+      const content = document.getElementById('modal-content');
       overlay.classList.remove('hidden');
       overlay.classList.add('flex');
       document.body.style.overflow = 'hidden';
+
+      // ARIA attributes
+      overlay.setAttribute('aria-hidden', 'true');
+      content.setAttribute('role', 'dialog');
+      content.setAttribute('aria-modal', 'true');
+      var titleEl = content.querySelector('h2');
+      if (titleEl) {
+        titleEl.id = 'modal-title';
+        content.setAttribute('aria-labelledby', 'modal-title');
+      }
+
+      // Focus first focusable element
+      setTimeout(function() {
+        var focusable = content.querySelectorAll('a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])');
+        if (focusable.length) focusable[0].focus();
+      }, 0);
+
+      // Focus trap + Escape
+      _trapFocusHandler = function(e) {
+        if (e.key === 'Escape') { App.Utils.hideModal(); return; }
+        if (e.key !== 'Tab') return;
+        var focusable = content.querySelectorAll('a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])');
+        if (focusable.length === 0) return;
+        var first = focusable[0];
+        var last = focusable[focusable.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+        } else {
+          if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      };
+      document.addEventListener('keydown', _trapFocusHandler);
+
+      // Start tracking form changes after a tick (so initial value-setting doesn't trigger dirty)
+      setTimeout(_attachDirtyListeners, 0);
     },
-    hideModal() {
+    hideModal(force) {
+      if (!force && _modalDirty) {
+        if (!confirm('You have unsaved changes. Discard?')) return;
+      }
+      _modalDirty = false;
+      _detachDirtyListeners();
+      // Remove focus trap listener
+      if (_trapFocusHandler) {
+        document.removeEventListener('keydown', _trapFocusHandler);
+        _trapFocusHandler = null;
+      }
       const overlay = document.getElementById('modal-overlay');
       overlay.classList.add('hidden');
       overlay.classList.remove('flex');
       document.body.style.overflow = '';
       document.getElementById('modal-content').innerHTML = '';
+      // Restore focus to previously focused element
+      if (_previousFocus && _previousFocus.focus) {
+        _previousFocus.focus();
+        _previousFocus = null;
+      }
     },
-    showToast(message, type) {
+    showToast(message, type, duration) {
       type = type || 'success';
-      const colors = { success:'bg-emerald-500', info:'bg-blue-500', warning:'bg-amber-500', error:'bg-red-500' };
-      const icons = { success:'✓', info:'ℹ', warning:'⚠', error:'✕' };
-      const toast = document.getElementById('toast');
-      toast.innerHTML = '<div class="flex items-center gap-3 px-4 py-3 rounded-xl text-white shadow-2xl ' + (colors[type]||colors.info) + '">'
-        + '<span class="text-base font-bold">' + (icons[type]||'ℹ') + '</span>'
-        + '<span class="text-sm font-medium">' + message + '</span>'
-        + '</div>';
-      toast.classList.remove('hidden');
-      if (_toastTimer) clearTimeout(_toastTimer);
-      _toastTimer = setTimeout(function() { toast.classList.add('hidden'); }, 4000);
+      duration = duration || 4000;
+      var colors = { success:'bg-emerald-500', info:'bg-blue-500', warning:'bg-amber-500', error:'bg-red-500' };
+      var icons = { success:'&#10003;', info:'&#8505;', warning:'&#9888;', error:'&#10005;' };
+      var container = _getToastContainer();
+
+      // Cap at 5 visible toasts — remove oldest (first child = oldest due to column-reverse)
+      while (container.children.length >= 5) {
+        container.removeChild(container.firstElementChild);
+      }
+
+      var el = document.createElement('div');
+      el.className = 'sh-toast flex items-center gap-3 px-4 py-3 rounded-xl text-white shadow-2xl ' + (colors[type] || colors.info);
+      el.innerHTML =
+        '<span class="text-base font-bold">' + (icons[type] || '&#8505;') + '</span>' +
+        '<span class="text-sm font-medium flex-1">' + message + '</span>' +
+        '<button style="pointer-events:auto;background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:14px;padding:2px 4px;line-height:1" aria-label="Close">&times;</button>';
+
+      // Close button handler
+      el.querySelector('button').addEventListener('click', function() { _removeToast(el); });
+
+      container.appendChild(el);
+
+      // Auto-dismiss
+      var timer = setTimeout(function() { _removeToast(el); }, duration);
+      el._toastTimer = timer;
     },
     formatDate(dateStr) {
-      if (!dateStr) return '—';
+      if (!dateStr) return '\u2014';
       try {
         return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-MY', { day:'numeric', month:'short', year:'numeric' });
       } catch(e) { return dateStr; }
     },
     formatMonth(monthStr) {
-      if (!monthStr) return '—';
+      if (!monthStr) return '\u2014';
       const [y, m] = monthStr.split('-');
       const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       return (names[parseInt(m,10)-1] || m) + ' ' + y;
@@ -46,7 +161,7 @@
       return 'RM ' + parseFloat(amount || 0).toFixed(2);
     },
     formatTime(timeStr) {
-      if (!timeStr) return '—';
+      if (!timeStr) return '\u2014';
       const parts = timeStr.split(':');
       let h = parseInt(parts[0], 10);
       const m = parts[1] || '00';
@@ -76,7 +191,7 @@
     statusBadge(status) {
       const map = {
         'Active':'green','Inactive':'red','New':'blue','Waitlisted':'yellow',
-        'Paid':'green','Unpaid':'yellow','Overdue':'red',
+        'Paid':'green','Unpaid':'yellow','Overdue':'red','Pending Verification':'purple',
         'Present':'green','Absent':'red','Late':'yellow',
         'Notice':'blue','Reminder':'yellow','Urgent':'red',
         'Pending':'yellow'
@@ -94,7 +209,7 @@
       return map[color] || map.blue;
     },
     esc(str) {
-      return String(str || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return String(str || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     },
     today() {
       return new Date().toISOString().slice(0, 10);
@@ -115,8 +230,19 @@
     }
   };
 
+  function _removeToast(el) {
+    if (!el || !el.parentNode) return;
+    clearTimeout(el._toastTimer);
+    el.classList.add('sh-toast-exit');
+    setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 260);
+  }
+
   // Close modal on overlay click
   document.addEventListener('DOMContentLoaded', function() {
+    // Hide the old toast element if it exists
+    var oldToast = document.getElementById('toast');
+    if (oldToast) oldToast.style.display = 'none';
+
     document.getElementById('modal-overlay').addEventListener('click', function(e) {
       if (e.target === this) App.Utils.hideModal();
     });

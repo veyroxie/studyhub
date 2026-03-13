@@ -90,8 +90,9 @@
 
     // Feedback
     var myFeedback = (feedback || []).filter(function(f) { return myClassIds.indexOf(f.classId) > -1; });
+    var moodScore = { 'Great': 5, 'Good': 3, 'Needs Work': 1 };
     var avgRating = myFeedback.length > 0
-      ? (myFeedback.reduce(function(acc,f){ return acc + (f.rating||0); },0) / myFeedback.length).toFixed(1)
+      ? (myFeedback.reduce(function(acc,f){ return acc + (moodScore[f.mood] || 0); },0) / myFeedback.length).toFixed(1)
       : null;
 
     // Metric cards
@@ -184,7 +185,6 @@
     document.getElementById('add-review-form').addEventListener('submit', function(e) {
       e.preventDefault();
       var fd = new FormData(e.target);
-      var st = App.Store.get();
       var newReview = {
         id: App.Utils.generateId(),
         staffId: staffId,
@@ -195,22 +195,38 @@
         areasToImprove: fd.get('areasToImprove'),
         reviewedBy: fd.get('reviewedBy') || 'Admin'
       };
-      var existing = st.performanceReviews || [];
-      App.Store.set({ performanceReviews: existing.concat([newReview]) });
-      App.Utils.hideModal();
-      App.Utils.showToast('Review saved', 'success');
-      setTimeout(function() { App.Staff._viewModal(staffId); App.Staff._switchTab('performance'); }, 60);
+      App.Utils.hideModal(true);
+      App.Api.post('/api/performance-reviews', newReview).then(function(result) {
+        var existing = App.Store.get().performanceReviews || [];
+        App.Store.set({ performanceReviews: existing.concat([result || newReview]) });
+        App.Utils.showToast('Review saved', 'success');
+        setTimeout(function() { App.Staff._viewModal(staffId); App.Staff._switchTab('performance'); }, 60);
+      }).catch(function(err) {
+        var existing = App.Store.get().performanceReviews || [];
+        App.Store.set({ performanceReviews: existing.concat([newReview]) });
+        App.Utils.showToast('Saved locally (offline)', 'warning');
+        setTimeout(function() { App.Staff._viewModal(staffId); App.Staff._switchTab('performance'); }, 60);
+      });
     });
   }
 
   function _saveNotes(staffId) {
     var textarea = document.getElementById('perf-notes-' + staffId);
     if (!textarea) return;
-    var st = App.Store.get();
-    App.Store.set({ staff: st.staff.map(function(x) {
-      return x.id === staffId ? Object.assign({}, x, { performanceNotes: textarea.value }) : x;
-    })});
-    App.Utils.showToast('Notes saved', 'success');
+    var notes = textarea.value;
+    App.Api.put('/api/staff/' + staffId, { performanceNotes: notes }).then(function() {
+      var st = App.Store.get();
+      App.Store.set({ staff: st.staff.map(function(x) {
+        return x.id === staffId ? Object.assign({}, x, { performanceNotes: notes }) : x;
+      })});
+      App.Utils.showToast('Notes saved', 'success');
+    }).catch(function() {
+      var st = App.Store.get();
+      App.Store.set({ staff: st.staff.map(function(x) {
+        return x.id === staffId ? Object.assign({}, x, { performanceNotes: notes }) : x;
+      })});
+      App.Utils.showToast('Saved locally (offline)', 'warning');
+    });
   }
 
   function _viewModal(staffId) {
@@ -296,7 +312,7 @@
           + '</div>' : '')
 
       + '<div class="mt-4 flex justify-between">'
-      + (isAdmin ? '<button onclick="App.Utils.hideModal(); setTimeout(function(){App.Staff._editModal(\'' + staffId + '\')},50)" class="px-4 py-2 text-sm bg-slate-700 text-white rounded-lg hover:bg-slate-800">Edit Details</button>' : '<div></div>')
+      + (isAdmin ? '<button onclick="App.Utils.hideModal(true); setTimeout(function(){App.Staff._editModal(\'' + staffId + '\')},50)" class="px-4 py-2 text-sm bg-slate-700 text-white rounded-lg hover:bg-slate-800">Edit Details</button>' : '<div></div>')
       + '<button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Close</button>'
       + '</div>'
       + '</div>'
@@ -358,7 +374,7 @@
       const state = App.Store.get();
       const empType = fd.get('employmentType') || 'fulltime';
       const newStaff = {
-        id: 's' + (state.staff.length + 1),
+        id: App.Utils.generateId('STF'),
         name: fd.get('name'),
         fullName: fd.get('fullName'),
         role: fd.get('role'),
@@ -375,7 +391,7 @@
         status: 'Active'
       };
       App.Store.set({ staff: [...state.staff, newStaff] });
-      App.Utils.hideModal();
+      App.Utils.hideModal(true);
       App.Utils.showToast(newStaff.fullName + ' added!', 'success');
       App.Router.refresh();
     });
@@ -458,11 +474,18 @@
         emergencyName: fd.get('emergencyName') || '',
         emergencyPhone: fd.get('emergencyPhone') || ''
       });
-      const st = App.Store.get();
-      App.Store.set({ staff: st.staff.map(function(x) { return x.id === staffId ? updated : x; }) });
-      App.Utils.hideModal();
-      App.Utils.showToast(updated.fullName + ' updated!', 'success');
-      App.Router.refresh();
+      App.Utils.hideModal(true);
+      App.Api.put('/api/staff/' + staffId, updated).then(function(result) {
+        var st = App.Store.get();
+        App.Store.set({ staff: st.staff.map(function(x) { return x.id === staffId ? updated : x; }) });
+        App.Utils.showToast(updated.fullName + ' updated!', 'success');
+        App.Router.refresh();
+      }).catch(function(err) {
+        var st = App.Store.get();
+        App.Store.set({ staff: st.staff.map(function(x) { return x.id === staffId ? updated : x; }) });
+        App.Utils.showToast('Saved locally (offline)', 'warning');
+        App.Router.refresh();
+      });
     });
   }
 
@@ -537,7 +560,7 @@
         paidOn: null
       };
       App.Store.set({ payroll: [...st.payroll, newPay] });
-      App.Utils.hideModal();
+      App.Utils.hideModal(true);
       App.Utils.showToast('Payroll generated · ' + App.Utils.formatCurrency(total), 'success');
       setTimeout(function() { App.Staff._viewModal(staffId); App.Staff._switchTab('payroll'); }, 60);
     });
@@ -631,7 +654,7 @@
     reg.status = 'approved';
     localStorage.setItem('sh_teacher_regs', JSON.stringify(regs));
 
-    App.Utils.hideModal();
+    App.Utils.hideModal(true);
     App.Utils.showToast(reg.fullName + ' added to staff', 'success');
     App.Router.navigate('staff');
   }
@@ -642,7 +665,7 @@
     var reg = regs.find(function(r) { return r.id === regId; });
     if (reg) { reg.status = 'rejected'; }
     localStorage.setItem('sh_teacher_regs', JSON.stringify(regs));
-    App.Utils.hideModal();
+    App.Utils.hideModal(true);
     App.Utils.showToast('Application rejected', 'info');
     App.Router.navigate('staff');
   }

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"crypto/rand"
 	"flag"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -16,14 +18,25 @@ func main() {
 	// Load .env file if present (silently ignored in production where env vars are set directly)
 	_ = godotenv.Load()
 
-	dbPath := flag.String("db", "studyhub.db", "path to SQLite database file")
+	dbDSN := flag.String("db", "postgres://studyhub:studyhub@localhost:5432/studyhub?sslmode=disable", "PostgreSQL connection string")
 	port := flag.String("port", "8080", "HTTP port")
 	flag.Parse()
 
 	// Override with environment variables if set (useful for deployment)
-	if v := os.Getenv("DB_PATH"); v != "" { *dbPath = v }
+	if v := os.Getenv("DATABASE_URL"); v != "" { *dbDSN = v }
 	if v := os.Getenv("PORT"); v != "" { *port = v }
-	if v := os.Getenv("JWT_SECRET"); v != "" { jwtSecret = []byte(v) }
+	if v := os.Getenv("JWT_SECRET"); v != "" {
+		jwtSecret = []byte(v)
+	} else {
+		// Generate a random secret for development — in production, JWT_SECRET must be set
+		b := make([]byte, 32)
+		rand.Read(b)
+		jwtSecret = b
+		log.Printf("WARNING: JWT_SECRET not set — using random secret (sessions won't survive restarts)")
+	}
+	if len(jwtSecret) < 16 {
+		log.Fatal("JWT_SECRET must be at least 16 characters")
+	}
 
 	// CORS allowed origins — use env var in production (e.g. https://yourdomain.com)
 	allowedOrigins := []string{"http://localhost:8080", "http://127.0.0.1:8080"}
@@ -31,7 +44,7 @@ func main() {
 		allowedOrigins = []string{v}
 	}
 
-	db := initDB(*dbPath)
+	db := initDB(*dbDSN)
 	defer db.Close()
 	seedIfEmpty(db)
 
@@ -52,7 +65,9 @@ func main() {
 	// ── Public routes (no auth needed) ───────────────────────────────────────
 	r.With(rateLimitLogin).Post("/api/auth/login", handleLogin(db))
 	r.Post("/api/auth/logout", handleLogout)
-	r.Post("/api/register", handleRegister(db))
+	r.With(rateLimitLogin).Post("/api/register", handleRegister(db))
+	r.With(rateLimitLogin).Post("/api/register-teacher", handleRegisterTeacher(db))
+	r.With(rateLimitLogin).Post("/api/forgot-password", handleForgotPassword(db))
 	r.Get("/ws", hub.handleWS())
 
 	// ── Authenticated routes ──────────────────────────────────────────────────
@@ -72,11 +87,15 @@ func main() {
 		r.Route("/api/classes", func(r chi.Router) {
 			r.Get("/", handleClasses(db))
 			r.Post("/", handleClasses(db))
+			r.Put("/{id}", handleClassByID(db))
+			r.Delete("/{id}", handleClassByID(db))
 		})
 
 		r.Route("/api/staff", func(r chi.Router) {
 			r.Get("/", handleStaff(db))
 			r.Post("/", handleStaff(db))
+			r.Put("/{id}", handleStaffByID(db))
+			r.Delete("/{id}", handleStaffByID(db))
 		})
 
 		r.Route("/api/invoices", func(r chi.Router) {
@@ -95,6 +114,55 @@ func main() {
 			r.Get("/", handleAttendance(db, hub))
 			r.Post("/", handleAttendance(db, hub))
 		})
+
+		r.Route("/api/feedback", func(r chi.Router) {
+			r.Get("/", handleListFeedback(db))
+			r.Post("/", handleCreateFeedback(db))
+			r.Put("/{id}", handleUpdateFeedback(db))
+			r.Delete("/{id}", handleDeleteFeedback(db))
+		})
+
+		r.Route("/api/subjects", func(r chi.Router) {
+			r.Get("/", handleListSubjects(db))
+			r.Post("/", handleCreateSubject(db))
+			r.Put("/{id}", handleUpdateSubject(db))
+			r.Delete("/{id}", handleDeleteSubject(db))
+		})
+
+		r.Route("/api/workshops", func(r chi.Router) {
+			r.Get("/", handleListWorkshops(db))
+			r.Post("/", handleCreateWorkshop(db))
+			r.Put("/{id}", handleUpdateWorkshop(db))
+			r.Delete("/{id}", handleDeleteWorkshop(db))
+		})
+
+		r.Route("/api/self-study", func(r chi.Router) {
+			r.Get("/", handleListSelfStudy(db))
+			r.Post("/", handleCreateSelfStudy(db))
+			r.Delete("/{id}", handleDeleteSelfStudy(db))
+		})
+
+		r.Route("/api/performance-reviews", func(r chi.Router) {
+			r.Get("/", handleListPerformanceReviews(db))
+			r.Post("/", handleCreatePerformanceReview(db))
+			r.Delete("/{id}", handleDeletePerformanceReview(db))
+		})
+
+		r.Route("/api/cancelled-classes", func(r chi.Router) {
+			r.Get("/", handleListCancelledClasses(db))
+			r.Post("/", handleCreateCancelledClass(db))
+		})
+
+		r.Route("/api/holidays", func(r chi.Router) {
+			r.Get("/", handleListHolidays(db))
+			r.Post("/", handleCreateHoliday(db))
+			r.Put("/{id}", handleUpdateHoliday(db))
+			r.Delete("/{id}", handleDeleteHoliday(db))
+		})
+
+		// Payment proof upload/serve
+		r.Post("/api/upload-proof", handleUploadProof(db))
+		r.Get("/api/uploads/{filename}", handleServeUpload())
 
 		// Admin-only: user management + registration review + audit logs
 		r.Group(func(r chi.Router) {
@@ -119,9 +187,15 @@ func main() {
 	r.Handle("/*", fs)
 
 	log.Printf("StudyHub running on http://localhost:%s", *port)
-	log.Printf("Database: %s", *dbPath)
-	log.Printf("Login: admin@studyhub.com / admin123")
-	if err := http.ListenAndServe(":"+*port, r); err != nil {
+	log.Printf("Database: PostgreSQL")
+	server := &http.Server{
+		Addr:         ":" + *port,
+		Handler:      r,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }

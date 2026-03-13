@@ -5,6 +5,23 @@
   let _studentFilter = ''; // empty = all students
   let _menuListenerAdded = false;
   let _selectedInv = {};
+  let _billingPage = 0;
+  var _PAGE_SIZE = 15;
+
+  function _paginationControls(page, total, moduleFn) {
+    var totalPages = Math.ceil(total / _PAGE_SIZE);
+    if (total <= _PAGE_SIZE) return '';
+    var start = page * _PAGE_SIZE + 1;
+    var end = Math.min((page + 1) * _PAGE_SIZE, total);
+    var prevDis = page === 0;
+    var nextDis = page >= totalPages - 1;
+    return '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;padding:0.75rem 1rem;">'
+      + '<span style="font-size:0.8rem;color:#64748b;">Showing ' + start + '–' + end + ' of ' + total + '</span>'
+      + '<div style="display:flex;gap:0.5rem;">'
+      + '<button onclick="' + moduleFn + '(' + (page - 1) + ')"' + (prevDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;cursor:' + (prevDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (prevDis ? 'opacity:0.4;' : '') + '">Prev</button>'
+      + '<button onclick="' + moduleFn + '(' + (page + 1) + ')"' + (nextDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;cursor:' + (nextDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (nextDis ? 'opacity:0.4;' : '') + '">Next</button>'
+      + '</div></div>';
+  }
 
   function render(container) {
     const { invoices, students } = App.Store.get();
@@ -24,11 +41,14 @@
 
     const filtered = _filter === 'All'     ? displayInvoices
       : _filter === 'Archive' ? displayInvoices.filter(function(i) { return i.status === 'Paid'; })
+      : _filter === 'Pending' ? displayInvoices.filter(function(i) { return i.status === 'Pending Verification'; })
       : displayInvoices.filter(function(i) { return i.status === _filter; });
+
+    const pendingVerifCount = displayInvoices.filter(function(i) { return i.status === 'Pending Verification'; }).length;
 
     const totalRevenue = displayInvoices.reduce(function(s, i) { return s + i.amount; }, 0);
     const collected    = displayInvoices.filter(function(i) { return i.status === 'Paid'; }).reduce(function(s, i) { return s + i.amount; }, 0);
-    const pending      = displayInvoices.filter(function(i) { return i.status === 'Unpaid'; }).reduce(function(s, i) { return s + i.amount; }, 0);
+    const pending      = displayInvoices.filter(function(i) { return i.status === 'Unpaid' || i.status === 'Pending Verification'; }).reduce(function(s, i) { return s + i.amount; }, 0);
     const overdue      = displayInvoices.filter(function(i) { return i.status === 'Overdue'; }).reduce(function(s, i) { return s + i.amount; }, 0);
 
     // Due-soon: unpaid invoices due within 7 days
@@ -40,6 +60,10 @@
       return d >= today && d <= in7;
     });
     const overdueInvs = invoices.filter(function(i) { return i.status === 'Overdue'; });
+
+    // ── Early bird check ──────────────────────────────────────────────────────
+    const todayDay = new Date().getDate();
+    const isEarlyBirdPeriod = todayDay <= 7;
 
     // ── Notification banners ──────────────────────────────────────────────────
     let notifBanner = '';
@@ -53,6 +77,11 @@
           + '<div class="text-sm text-red-700"><span class="font-semibold">Payment overdue</span> — '
           + myOverdue.length + ' invoice' + (myOverdue.length > 1 ? 's are' : ' is') + ' overdue. Please settle to avoid late fees.</div>'
           + '<button onclick="App.Billing._setFilter(\'Overdue\')" class="ml-auto text-xs font-semibold text-red-600 hover:text-red-800 whitespace-nowrap">View</button>'
+          + '</div>';
+      } else if (isEarlyBirdPeriod) {
+        notifBanner = '<div class="mb-4 px-4 py-3 rounded-xl flex items-center gap-3" style="background:#fffbeb;border:1px solid #C9A227">'
+          + '<div style="width:8px;height:8px;border-radius:50%;background:var(--gold);flex-shrink:0"></div>'
+          + '<div class="text-sm" style="color:#92400e"><span class="font-semibold">Early bird discount active</span> — pay your invoice before the 7th and get <strong>10% off</strong> automatically.</div>'
           + '</div>';
       } else if (myDueSoon.length > 0) {
         notifBanner = '<div class="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">'
@@ -70,15 +99,15 @@
         + '</div>';
     }
 
-    const colCount = isAdmin ? 8 : 6;
+    var paged = filtered.slice(_billingPage * _PAGE_SIZE, (_billingPage + 1) * _PAGE_SIZE);
+
+    const colCount = isAdmin ? 8 : isClient ? 7 : 6;
 
     container.innerHTML = ''
       + '<div class="flex items-center justify-between mb-6">'
       +   '<h1 class="text-2xl font-bold text-slate-800">Billing</h1>'
       +   (isAdmin
           ? '<div class="flex gap-2">'
-          + '<button onclick="App.Billing._generateMonthlyModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">Generate Monthly</button>'
-          + '<button onclick="App.Billing._siblingInvoiceModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">Sibling Invoice</button>'
           + '<button onclick="App.Billing._exportCSV()" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Export CSV</button>'
           + '<button onclick="App.Billing._createModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Create Invoice</button>'
           + '</div>'
@@ -88,27 +117,30 @@
       + notifBanner
 
       + '<div class="grid grid-cols-4 gap-4 mb-6">'
-      + _statCard('Total Revenue', App.Utils.formatCurrency(totalRevenue), 'text-slate-700', 'bg-slate-50')
-      + _statCard('Collected', App.Utils.formatCurrency(collected), 'text-emerald-600', 'bg-emerald-50')
+      + _statCard(isClient ? 'Total Billed' : 'Total Revenue', App.Utils.formatCurrency(totalRevenue), 'text-slate-700', 'bg-slate-50')
+      + _statCard(isClient ? 'Paid' : 'Collected', App.Utils.formatCurrency(collected), 'text-emerald-600', 'bg-emerald-50')
       + _statCard('Pending', App.Utils.formatCurrency(pending), 'text-amber-600', 'bg-amber-50')
       + _statCard('Overdue', App.Utils.formatCurrency(overdue), 'text-red-600', 'bg-red-50')
       + '</div>'
 
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">'
       +   '<div class="p-4 border-b border-slate-100 flex items-center gap-2 flex-wrap">'
-      // Filter tabs
-      +   ['Unpaid','Overdue','All','Archive'].map(function(f) {
+      // Filter tabs — hide 'Pending' for parents since they see 'Pending Verification' status inline
+      +   (isClient ? ['Unpaid','Overdue','All','Archive'] : ['Unpaid','Overdue','Pending','All','Archive']).map(function(f) {
             const active = f === _filter;
             const isArchive = f === 'Archive';
+            const isPending = f === 'Pending';
+            const label = isArchive ? 'Paid' : isPending ? 'Awaiting Confirmation' + (pendingVerifCount > 0 ? ' (' + pendingVerifCount + ')' : '') : f;
+            const activeClass = isArchive ? 'bg-slate-600 text-white' : isPending ? 'bg-purple-600 text-white' : 'bg-blue-600 text-white';
             return '<button onclick="App.Billing._setFilter(\'' + f + '\')" class="px-3 py-1.5 text-sm rounded-lg font-medium transition-colors '
-              + (active ? (isArchive ? 'bg-slate-600 text-white' : 'bg-blue-600 text-white') : 'text-slate-600 hover:bg-slate-100')
-              + '">' + (isArchive ? 'Archive (Paid)' : f) + '</button>';
+              + (active ? activeClass : 'text-slate-600 hover:bg-slate-100')
+              + '">' + label + '</button>';
           }).join('')
       // Student filter dropdown
       +   '<div class="ml-auto">'
       +     '<select onchange="App.Billing._setStudentFilter(this.value)" class="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-600">'
       +     '<option value="">All Students</option>'
-      +     students.map(function(s) {
+      +     (isClient ? students.filter(function(s) { return s.contact === App.clientParent; }) : students).map(function(s) {
               return '<option value="' + s.id + '"' + (s.id === _studentFilter ? ' selected' : '') + '>' + s.firstName + ' ' + s.lastName + '</option>';
             }).join('')
       +     '</select>'
@@ -116,12 +148,13 @@
       +   '</div>'
       +   (isAdmin ? '<div id="inv-bulk-bar" style="padding:0 1rem">' + _bulkBar() + '</div>' : '')
       +   '<div class="overflow-x-auto">'
-      +     '<table class="w-full">'
+      +     '<table class="w-full" role="table">'
+      +       '<caption class="sr-only">Invoice list</caption>'
       +       '<thead class="bg-slate-50 border-b border-slate-100"><tr>'
-      +         (isAdmin ? '<th class="th" style="width:36px"><input type="checkbox" id="select-all-inv-cb" onchange="App.Billing._toggleSelectAllInv(this.checked)" style="cursor:pointer"></th>' : '')
-      +         '<th class="th">Student</th><th class="th">Description</th><th class="th">Type</th>'
-      +         '<th class="th">Due Date</th><th class="th text-right">Amount</th><th class="th">Status</th>'
-      +         (isAdmin ? '<th class="th w-10"></th>' : '')
+      +         (isAdmin ? '<th scope="col" class="th" style="width:36px"><input type="checkbox" id="select-all-inv-cb" onchange="App.Billing._toggleSelectAllInv(this.checked)" style="cursor:pointer"></th>' : '')
+      +         '<th scope="col" class="th">Student</th><th scope="col" class="th">Description</th><th scope="col" class="th">Type</th>'
+      +         '<th scope="col" class="th">Due Date</th><th scope="col" class="th text-right">Amount</th><th scope="col" class="th">Status</th>'
+      +         (isAdmin || isClient ? '<th scope="col" class="th w-10"></th>' : '')
       +       '</tr></thead>'
       +       '<tbody class="divide-y divide-slate-50">'
       +       (filtered.length === 0
@@ -130,7 +163,7 @@
               (_filter !== 'All' || _studentFilter) ? 'Try selecting a different filter or student.' : 'Create your first invoice to start tracking payments.',
               (isAdmin && _filter === 'All' && !_studentFilter) ? '<button onclick="App.Billing._createModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Create Invoice</button>' : ''
             ) + '</td></tr>'
-          : filtered.map(function(inv) {
+          : paged.map(function(inv) {
               const stu = students.find(function(s) { return s.id === inv.studentId; });
               const stuName = stu ? stu.firstName + ' ' + stu.lastName : inv.studentId;
               const isNearDue = inv.status === 'Unpaid' && new Date(inv.dueDate) <= in7 && new Date(inv.dueDate) >= today;
@@ -142,26 +175,42 @@
                 + '<td class="td text-sm ' + (isNearDue ? 'text-amber-600 font-medium' : 'text-slate-600') + '">'
                 +   App.Utils.formatDate(inv.dueDate) + (isNearDue ? ' <span class="text-xs">(soon)</span>' : '')
                 + '</td>'
-                + '<td class="td text-sm font-semibold text-slate-800 text-right">' + App.Utils.formatCurrency(inv.amount) + '</td>'
-                + '<td class="td">' + App.Utils.statusBadge(inv.status) + '</td>'
+                + '<td class="td text-sm font-semibold text-slate-800 text-right">' + App.Utils.formatCurrency(inv.amount) + (inv.discountPct > 0 ? '<br><span style="font-size:0.7rem;color:#92400e;font-weight:500">' + inv.discountPct + '% early bird</span>' : '') + '</td>'
+                + '<td class="td">'
+                +   '<div style="display:flex;align-items:center;gap:4px">'
+                +   App.Utils.statusBadge(inv.status)
+                +   (inv.paymentProof ? '<a href="/' + App.Utils.esc(inv.paymentProof) + '" target="_blank" title="View receipt" style="display:inline-flex;align-items:center;color:#94a3b8;hover:color:#374151"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></a>' : '')
+                +   '</div>'
+                +   (inv.status === 'Pending Verification' && inv.paymentMethod ? '<div style="font-size:0.68rem;color:#94a3b8;margin-top:3px">' + inv.paymentMethod + (inv.paidOn ? ' · ' + App.Utils.formatDate(inv.paidOn) : '') + '</div>' : '')
+                + '</td>'
                 + (isAdmin ? '<td class="td">'
                   + '<div class="relative flex justify-center">'
                   +   '<button onclick="App.Billing._toggleMenu(event,\'' + inv.id + '\')" class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none font-bold">&#8942;</button>'
-                  +   '<div id="inv-menu-' + inv.id + '" class="inv-menu hidden absolute right-0 top-8 z-20 bg-white border border-slate-200 shadow-xl rounded-xl py-1 min-w-36">'
-                  +     (inv.status !== 'Paid'
-                          ? '<button onclick="App.Billing._markPaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Mark as Paid</button>'
-                          : '<button onclick="App.Billing._markUnpaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Mark Unpaid</button>')
+                  +   '<div id="inv-menu-' + inv.id + '" class="inv-menu hidden absolute right-0 top-8 z-20 bg-white border border-slate-200 shadow-xl rounded-xl py-1 min-w-40">'
+                  +     (inv.status === 'Pending Verification'
+                          ? '<button onclick="App.Billing._verifyPaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-green-50 text-green-700 font-semibold">Verify Payment</button>'
+                            + '<button onclick="App.Billing._markPaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Override &amp; Mark Paid</button>'
+                            + '<button onclick="App.Billing._markUnpaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Reject (Mark Unpaid)</button>'
+                          : inv.status === 'Paid'
+                          ? '<button onclick="App.Billing._markUnpaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Mark Unpaid</button>'
+                          : '<button onclick="App.Billing._markPaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Mark as Paid</button>')
                   +     '<button onclick="App.Billing._editModal(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Edit</button>'
                   +     '<div class="my-1 border-t border-slate-100"></div>'
                   +     '<button onclick="App.Billing._deleteInvoice(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-red-50 text-red-600">Delete</button>'
                   +   '</div>'
                   + '</div>'
-                  + '</td>' : '')
+                  + '</td>'
+                  : isClient && (inv.status === 'Unpaid' || inv.status === 'Overdue')
+                  ? '<td class="td"><button onclick="App.Billing._parentSubmitPaid(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer;white-space:nowrap">I\'ve Paid</button></td>'
+                  : isClient && inv.status === 'Pending Verification'
+                  ? '<td class="td"><span style="font-size:0.72rem;color:#7c3aed;font-weight:600">Awaiting confirmation</span></td>'
+                  : '<td></td>')
                 + '</tr>';
             }).join(''))
       +       '</tbody>'
       +     '</table>'
       +   '</div>'
+      +   _paginationControls(_billingPage, filtered.length, 'App.Billing._setPage')
       + '</div>';
 
     if (!_menuListenerAdded) {
@@ -234,7 +283,7 @@
       return ids.indexOf(i.id) > -1 ? Object.assign({}, i, { status: 'Paid', paidOn: today, paymentMethod: method }) : i;
     });
     App.Store.set({ invoices: updated });
-    App.Utils.hideModal();
+    App.Utils.hideModal(true);
     App.Utils.showToast('Marked ' + ids.length + ' invoice' + (ids.length !== 1 ? 's' : '') + ' as paid · ' + method, 'success');
     App.Notifs.refresh();
     _selectedInv = {};
@@ -248,8 +297,9 @@
       + '</div>';
   }
 
-  function _setFilter(f) { _filter = f; App.Router.refresh(); }
-  function _setStudentFilter(v) { _studentFilter = v; App.Router.refresh(); }
+  function _setFilter(f) { _filter = f; _billingPage = 0; App.Router.refresh(); }
+  function _setStudentFilter(v) { _studentFilter = v; _billingPage = 0; App.Router.refresh(); }
+  function _setBillingPage(n) { _billingPage = Math.max(0, n); App.Router.refresh(); }
 
   function _toggleMenu(event, id) {
     event.stopPropagation();
@@ -262,15 +312,125 @@
     var html = '<div class="p-6">'
       + '<h2 class="text-lg font-bold mb-1">Confirm Payment</h2>'
       + '<p class="text-sm text-slate-500 mb-4">Select payment method received</p>'
-      + '<div class="grid grid-cols-3 gap-3 mb-5">'
-      + ['Cash', 'Bank Transfer', 'QR Pay'].map(function(m) {
-          return '<button onclick="App.Billing._confirmPaid(\'' + invId + '\',\'' + m + '\')" '
-            + 'class="p-3 border-2 border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:border-blue-400 hover:bg-blue-50 transition-all text-center">' + m + '</button>';
-        }).join('')
+      + '<div id="admin-payment-methods-grid" class="grid grid-cols-3 gap-3 mb-5">'
+      // Cash — direct confirm
+      + '<button onclick="App.Billing._confirmPaid(\'' + invId + '\',\'Cash\')" '
+      +   'class="p-3 border-2 border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:border-blue-400 hover:bg-blue-50 transition-all text-center">Cash</button>'
+      // Bank Transfer — show admin proof upload
+      + '<button onclick="App.Billing._showAdminProofUpload(\'' + invId + '\',\'Bank Transfer\')" '
+      +   'class="p-3 border-2 border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:border-blue-400 hover:bg-blue-50 transition-all text-center">Bank Transfer</button>'
+      // QR Pay — show admin proof upload
+      + '<button onclick="App.Billing._showAdminProofUpload(\'' + invId + '\',\'QR Pay\')" '
+      +   'class="p-3 border-2 border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:border-blue-400 hover:bg-blue-50 transition-all text-center">QR Pay</button>'
       + '</div>'
-      + '<button onclick="App.Utils.hideModal()" class="w-full py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      // Admin proof upload area
+      + '<div id="admin-proof-upload-area" style="display:none">'
+      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#94a3b8;font-weight:400">(optional)</span></p>'
+      +   '<div style="border:2px dashed #e2e8f0;border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'admin-proof-file\').click()">'
+      +     '<input type="file" id="admin-proof-file" accept="image/*,.pdf" style="display:none" onchange="App.Billing._previewAdminProof(this)">'
+      +     '<div id="admin-proof-preview" style="margin-bottom:0.5rem"></div>'
+      +     '<p id="admin-proof-placeholder" style="font-size:0.8rem;color:#94a3b8;margin:0">Click to upload receipt image or PDF</p>'
+      +   '</div>'
+      +   '<div style="display:flex;gap:0.5rem;margin-top:1rem">'
+      +     '<button id="admin-proof-submit-btn" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer">Confirm Payment</button>'
+      +     '<button onclick="App.Billing._showAdminPaymentMethods()" style="padding:0.55rem 1rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#64748b">Back</button>'
+      +   '</div>'
+      + '</div>'
+      + '<button id="admin-cancel-btn" onclick="App.Utils.hideModal()" class="w-full py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '</div>';
     App.Utils.showModal(html);
+  }
+
+  var _adminProofInvId = '';
+  var _adminProofMethod = '';
+
+  function _showAdminProofUpload(invId, method) {
+    _adminProofInvId = invId;
+    _adminProofMethod = method;
+    var uploadArea = document.getElementById('admin-proof-upload-area');
+    var methodGrid = document.getElementById('admin-payment-methods-grid');
+    var cancelBtn = document.getElementById('admin-cancel-btn');
+    if (uploadArea) uploadArea.style.display = 'block';
+    if (methodGrid) methodGrid.style.display = 'none';
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    var submitBtn = document.getElementById('admin-proof-submit-btn');
+    if (submitBtn) {
+      submitBtn.onclick = function() { App.Billing._adminSubmitWithProof(_adminProofInvId, _adminProofMethod); };
+    }
+  }
+
+  function _showAdminPaymentMethods() {
+    var uploadArea = document.getElementById('admin-proof-upload-area');
+    var methodGrid = document.getElementById('admin-payment-methods-grid');
+    var cancelBtn = document.getElementById('admin-cancel-btn');
+    if (uploadArea) uploadArea.style.display = 'none';
+    if (methodGrid) methodGrid.style.display = 'grid';
+    if (cancelBtn) cancelBtn.style.display = 'block';
+    var fileInput = document.getElementById('admin-proof-file');
+    if (fileInput) fileInput.value = '';
+    var preview = document.getElementById('admin-proof-preview');
+    if (preview) preview.innerHTML = '';
+    var placeholder = document.getElementById('admin-proof-placeholder');
+    if (placeholder) placeholder.style.display = 'block';
+  }
+
+  function _previewAdminProof(input) {
+    var preview = document.getElementById('admin-proof-preview');
+    var placeholder = document.getElementById('admin-proof-placeholder');
+    if (!preview || !input.files || !input.files[0]) return;
+    var file = input.files[0];
+    if (file.type.startsWith('image/')) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:200px;max-height:150px;border-radius:8px;margin:0 auto;display:block;border:1px solid #e2e8f0">';
+        if (placeholder) placeholder.style.display = 'none';
+      };
+      reader.readAsDataURL(file);
+    } else {
+      preview.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.5rem;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">'
+        + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+        + '<span style="font-size:0.82rem;font-weight:600;color:#374151">' + App.Utils.esc(file.name) + '</span>'
+        + '</div>';
+      if (placeholder) placeholder.style.display = 'none';
+    }
+  }
+
+  function _adminSubmitWithProof(invId, method) {
+    var fileInput = document.getElementById('admin-proof-file');
+    var hasFile = fileInput && fileInput.files && fileInput.files[0];
+
+    if (hasFile) {
+      var submitBtn = document.getElementById('admin-proof-submit-btn');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Uploading...'; }
+
+      var formData = new FormData();
+      formData.append('proof', fileInput.files[0]);
+      formData.append('invoiceId', invId);
+
+      fetch('/api/upload-proof', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      })
+      .then(function(res) {
+        if (!res.ok) throw new Error('Upload failed');
+        return res.json();
+      })
+      .then(function(data) {
+        var state = App.Store.get();
+        App.Store.set({ invoices: state.invoices.map(function(i) {
+          return i.id === invId ? Object.assign({}, i, { paymentProof: data.path }) : i;
+        })});
+        _confirmPaid(invId, method);
+      })
+      .catch(function() {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Confirm Payment'; }
+        App.Utils.showToast('Receipt upload failed — marking paid without receipt', 'warning');
+        _confirmPaid(invId, method);
+      });
+    } else {
+      _confirmPaid(invId, method);
+    }
   }
 
   function _confirmPaid(invId, method) {
@@ -280,7 +440,7 @@
     App.Api && App.Api.updateInvoice
       ? App.Api.updateInvoice(invId, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method })
           .then(function() {
-            App.Utils.hideModal();
+            App.Utils.hideModal(true);
             App.Utils.showToast('Marked paid · ' + method, 'success');
             App.Notifs.refresh();
             App.Router.refresh();
@@ -289,7 +449,7 @@
               return i.id === invId ? Object.assign({}, i, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method }) : i;
             });
             App.Store.set({ invoices: updated });
-            App.Utils.hideModal();
+            App.Utils.hideModal(true);
             App.Utils.showToast('Marked paid · ' + method, 'success');
             App.Notifs.refresh();
             App.Router.refresh();
@@ -299,7 +459,7 @@
             return i.id === invId ? Object.assign({}, i, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method }) : i;
           });
           App.Store.set({ invoices: updated });
-          App.Utils.hideModal();
+          App.Utils.hideModal(true);
           App.Utils.showToast('Marked paid · ' + method, 'success');
           App.Notifs.refresh();
           App.Router.refresh();
@@ -313,9 +473,242 @@
   function _markUnpaid(invoiceId) {
     const state = App.Store.get();
     App.Store.set({ invoices: state.invoices.map(function(inv) {
-      return inv.id === invoiceId ? Object.assign({}, inv, { status: 'Unpaid', paidOn: null }) : inv;
+      return inv.id === invoiceId ? Object.assign({}, inv, { status: 'Unpaid', paidOn: null, paymentMethod: null, submittedByParent: false }) : inv;
     })});
+    App.Utils.hideModal(true);
     App.Utils.showToast('Invoice marked as unpaid', 'info');
+    App.Router.refresh();
+  }
+
+  function _parentSubmitPaid(invId) {
+    const inv = App.Store.get().invoices.find(function(i) { return i.id === invId; });
+    if (!inv) return;
+    App.Utils.showModal(
+      '<div class="p-6">'
+      + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 0.25rem">Submit Payment</h2>'
+      + '<p style="font-size:0.82rem;color:#94a3b8;margin:0 0 1.25rem">Let admin know you\'ve paid — they\'ll confirm receipt.</p>'
+      + '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;margin-bottom:1.25rem">'
+      +   '<div style="font-size:0.78rem;color:#94a3b8">Invoice</div>'
+      +   '<div style="font-size:0.9rem;font-weight:700;color:#111">' + App.Utils.esc(inv.description) + '</div>'
+      +   '<div style="font-size:1rem;font-weight:800;color:var(--gold);margin-top:2px">' + App.Utils.formatCurrency(inv.amount) + '</div>'
+      + '</div>'
+      + '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.6rem">How did you pay?</p>'
+      + '<div id="payment-methods-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:1.25rem">'
+      // Cash — direct submit (no proof needed)
+      + '<button onclick="App.Billing._parentConfirmSubmit(\'' + invId + '\',\'Cash\')" '
+      +   'style="padding:0.65rem 0.5rem;border:2px solid #e2e8f0;border-radius:10px;font-size:0.8rem;font-weight:600;color:#374151;background:#fff;cursor:pointer;text-align:center;transition:all 0.15s" '
+      +   'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
+      +   'onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#374151\'">Cash</button>'
+      // Bank Transfer — show proof upload
+      + '<button onclick="App.Billing._showProofUpload(\'' + invId + '\',\'Bank Transfer\')" '
+      +   'style="padding:0.65rem 0.5rem;border:2px solid #e2e8f0;border-radius:10px;font-size:0.8rem;font-weight:600;color:#374151;background:#fff;cursor:pointer;text-align:center;transition:all 0.15s" '
+      +   'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
+      +   'onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#374151\'">Bank Transfer</button>'
+      // QR Pay — show proof upload
+      + '<button onclick="App.Billing._showProofUpload(\'' + invId + '\',\'QR Pay\')" '
+      +   'style="padding:0.65rem 0.5rem;border:2px solid #e2e8f0;border-radius:10px;font-size:0.8rem;font-weight:600;color:#374151;background:#fff;cursor:pointer;text-align:center;transition:all 0.15s" '
+      +   'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
+      +   'onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#374151\'">QR Pay</button>'
+      + '</div>'
+      // Proof upload area (hidden initially)
+      + '<div id="proof-upload-area" style="display:none">'
+      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#94a3b8;font-weight:400">(optional)</span></p>'
+      +   '<div id="proof-drop-zone" style="border:2px dashed #e2e8f0;border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'proof-file\').click()">'
+      +     '<input type="file" id="proof-file" accept="image/*,.pdf" style="display:none" onchange="App.Billing._previewProof(this)">'
+      +     '<div id="proof-preview" style="margin-bottom:0.5rem"></div>'
+      +     '<p id="proof-placeholder" style="font-size:0.8rem;color:#94a3b8;margin:0">Click to upload receipt image or PDF</p>'
+      +   '</div>'
+      +   '<div style="display:flex;gap:0.5rem;margin-top:1rem">'
+      +     '<button id="proof-submit-btn" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Submit Payment</button>'
+      +     '<button onclick="App.Billing._showPaymentMethods()" style="padding:0.55rem 1rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#64748b">Back</button>'
+      +   '</div>'
+      + '</div>'
+      + '<button id="cancel-payment-btn" onclick="App.Utils.hideModal()" style="width:100%;padding:0.5rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#64748b">Cancel</button>'
+      + '</div>'
+    );
+  }
+
+  var _proofInvId = '';
+  var _proofMethod = '';
+
+  function _showProofUpload(invId, method) {
+    _proofInvId = invId;
+    _proofMethod = method;
+    var uploadArea = document.getElementById('proof-upload-area');
+    var methodGrid = document.getElementById('payment-methods-grid');
+    var cancelBtn = document.getElementById('cancel-payment-btn');
+    if (uploadArea) uploadArea.style.display = 'block';
+    if (methodGrid) methodGrid.style.display = 'none';
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    // Wire up submit button
+    var submitBtn = document.getElementById('proof-submit-btn');
+    if (submitBtn) {
+      submitBtn.onclick = function() { App.Billing._parentSubmitWithProof(_proofInvId, _proofMethod); };
+    }
+  }
+
+  function _showPaymentMethods() {
+    var uploadArea = document.getElementById('proof-upload-area');
+    var methodGrid = document.getElementById('payment-methods-grid');
+    var cancelBtn = document.getElementById('cancel-payment-btn');
+    if (uploadArea) uploadArea.style.display = 'none';
+    if (methodGrid) methodGrid.style.display = 'grid';
+    if (cancelBtn) cancelBtn.style.display = 'block';
+    // Reset file input
+    var fileInput = document.getElementById('proof-file');
+    if (fileInput) fileInput.value = '';
+    var preview = document.getElementById('proof-preview');
+    if (preview) preview.innerHTML = '';
+    var placeholder = document.getElementById('proof-placeholder');
+    if (placeholder) placeholder.style.display = 'block';
+  }
+
+  function _previewProof(input) {
+    var preview = document.getElementById('proof-preview');
+    var placeholder = document.getElementById('proof-placeholder');
+    if (!preview || !input.files || !input.files[0]) return;
+    var file = input.files[0];
+    if (file.type.startsWith('image/')) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:200px;max-height:150px;border-radius:8px;margin:0 auto;display:block;border:1px solid #e2e8f0">';
+        if (placeholder) placeholder.style.display = 'none';
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // PDF
+      preview.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.5rem;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">'
+        + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+        + '<span style="font-size:0.82rem;font-weight:600;color:#374151">' + App.Utils.esc(file.name) + '</span>'
+        + '</div>';
+      if (placeholder) placeholder.style.display = 'none';
+    }
+  }
+
+  function _parentSubmitWithProof(invId, method) {
+    var fileInput = document.getElementById('proof-file');
+    var hasFile = fileInput && fileInput.files && fileInput.files[0];
+
+    if (hasFile) {
+      var submitBtn = document.getElementById('proof-submit-btn');
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Uploading...'; }
+
+      var formData = new FormData();
+      formData.append('proof', fileInput.files[0]);
+      formData.append('invoiceId', invId);
+
+      fetch('/api/upload-proof', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      })
+      .then(function(res) {
+        if (!res.ok) throw new Error('Upload failed');
+        return res.json();
+      })
+      .then(function(data) {
+        // Store proof path on local invoice data
+        var state = App.Store.get();
+        App.Store.set({ invoices: state.invoices.map(function(i) {
+          return i.id === invId ? Object.assign({}, i, { paymentProof: data.path }) : i;
+        })});
+        _parentConfirmSubmit(invId, method);
+      })
+      .catch(function(err) {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Payment'; }
+        App.Utils.showToast('Receipt upload failed — submitting without receipt', 'warning');
+        _parentConfirmSubmit(invId, method);
+      });
+    } else {
+      // No file — submit anyway
+      _parentConfirmSubmit(invId, method);
+    }
+  }
+
+  function _parentConfirmSubmit(invId, method) {
+    const state = App.Store.get();
+    const earlyBird = new Date().getDate() <= 7;
+    App.Store.set({ invoices: state.invoices.map(function(inv) {
+      if (inv.id !== invId) return inv;
+      const patch = { status: 'Pending Verification', paidOn: App.Utils.today(), paymentMethod: method, submittedByParent: true };
+      if (earlyBird && !inv.earlyBirdApplied) {
+        const discounted = parseFloat((inv.amount * 0.9).toFixed(2));
+        patch.amount = discounted;
+        patch.earlyBirdApplied = true;
+        patch.earlyBirdDiscount = parseFloat((inv.amount * 0.1).toFixed(2));
+      }
+      return Object.assign({}, inv, patch);
+    })});
+    App.Utils.hideModal(true);
+    App.Utils.showToast(earlyBird ? 'Payment submitted with 10% early bird discount!' : 'Payment submitted — admin will verify shortly', 'success');
+    App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
+    App.Router.refresh();
+  }
+
+  function _verifyPaid(invId) {
+    const state = App.Store.get();
+    const inv = state.invoices.find(function(i) { return i.id === invId; });
+    if (!inv) return;
+    const stu = state.students.find(function(s) { return s.id === inv.studentId; });
+    const stuName = stu ? stu.firstName + ' ' + stu.lastName : inv.studentId;
+
+    var proofSection = '';
+    if (inv.paymentProof) {
+      var isImage = /\.(jpg|jpeg|png)$/i.test(inv.paymentProof);
+      if (isImage) {
+        proofSection = '<div style="margin-bottom:1rem">'
+          + '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Payment Receipt</p>'
+          + '<a href="/' + App.Utils.esc(inv.paymentProof) + '" target="_blank">'
+          + '<img src="/' + App.Utils.esc(inv.paymentProof) + '" style="max-width:100%;max-height:300px;border-radius:10px;border:1px solid #e2e8f0;cursor:pointer">'
+          + '</a>'
+          + '</div>';
+      } else {
+        proofSection = '<div style="margin-bottom:1rem">'
+          + '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Payment Receipt</p>'
+          + '<a href="/' + App.Utils.esc(inv.paymentProof) + '" target="_blank" style="display:inline-flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;text-decoration:none;color:#374151;font-size:0.82rem;font-weight:600">'
+          + '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+          + 'View PDF Receipt'
+          + '</a></div>';
+      }
+    } else {
+      proofSection = '<div style="margin-bottom:1rem;padding:0.75rem;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:0.8rem;color:#92400e">'
+        + 'No receipt uploaded by parent.'
+        + '</div>';
+    }
+
+    App.Utils.showModal(
+      '<div class="p-6">'
+      + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 0.25rem">Verify Payment</h2>'
+      + '<p style="font-size:0.82rem;color:#94a3b8;margin:0 0 1rem">' + App.Utils.esc(stuName) + ' · ' + App.Utils.esc(inv.id) + '</p>'
+      + '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;margin-bottom:1rem">'
+      +   '<div style="display:flex;justify-content:space-between;align-items:center">'
+      +     '<div>'
+      +       '<div style="font-size:0.78rem;color:#94a3b8">' + (inv.paymentMethod || 'Unknown method') + '</div>'
+      +       '<div style="font-size:0.9rem;font-weight:700;color:#111">' + App.Utils.esc(inv.description) + '</div>'
+      +     '</div>'
+      +     '<div style="font-size:1rem;font-weight:800;color:var(--gold)">' + App.Utils.formatCurrency(inv.amount) + '</div>'
+      +   '</div>'
+      + '</div>'
+      + proofSection
+      + '<div style="display:flex;gap:0.5rem">'
+      +   '<button onclick="App.Billing._confirmVerify(\'' + invId + '\')" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer">Confirm Payment</button>'
+      +   '<button onclick="App.Billing._markUnpaid(\'' + invId + '\')" style="padding:0.55rem 1rem;font-size:0.83rem;border:1px solid #fca5a5;border-radius:8px;background:#fff;cursor:pointer;color:#dc2626;font-weight:600">Reject</button>'
+      + '</div>'
+      + '<button onclick="App.Utils.hideModal()" style="width:100%;padding:0.5rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#64748b;margin-top:0.5rem">Cancel</button>'
+      + '</div>'
+    );
+  }
+
+  function _confirmVerify(invId) {
+    const state = App.Store.get();
+    App.Store.set({ invoices: state.invoices.map(function(i) {
+      return i.id === invId
+        ? Object.assign({}, i, { status: 'Paid', verifiedOn: App.Utils.today(), verifiedBy: 'Admin' })
+        : i;
+    })});
+    App.Utils.hideModal(true);
+    App.Utils.showToast('Payment verified — invoice marked as Paid', 'success');
+    App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
     App.Router.refresh();
   }
 
@@ -363,62 +756,146 @@
           dueDate: fd.get('dueDate')
         });
       })});
-      App.Utils.hideModal();
+      App.Utils.hideModal(true);
       App.Utils.showToast('Invoice updated', 'success');
       App.Router.refresh();
     });
   }
 
   function _createModal() {
-    const { students } = App.Store.get();
+    var state = App.Store.get();
+    var students = state.students || [];
+    var now = new Date();
+    var defaultMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2,'0');
+    var lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    var defaultDue = lastDay.getFullYear() + '-' + String(lastDay.getMonth() + 1).padStart(2,'0') + '-' + String(lastDay.getDate()).padStart(2,'0');
+
+    // Families with 2+ children for sibling option
+    var byParent = {};
+    students.forEach(function(s) { if (s.contact) { byParent[s.contact] = byParent[s.contact] || []; byParent[s.contact].push(s); } });
+    var families = Object.keys(byParent).filter(function(e) { return byParent[e].length >= 2; });
+
+    var modeTabStyle = 'padding:0.4rem 0.9rem;border-radius:8px;font-size:0.8rem;font-weight:600;cursor:pointer;border:2px solid transparent;transition:all 0.15s;';
+    var modeActiveStyle = 'background:var(--gold);color:#0a0a0a;border-color:var(--gold);';
+    var modeInactiveStyle = 'background:transparent;color:#64748b;border-color:#e2e8f0;';
+
     App.Utils.showModal(
-      '<div class="p-6">'
-      + '<h2 class="text-xl font-bold mb-4">Create Invoice</h2>'
+      '<div class="p-6" style="min-width:440px;max-width:560px">'
+      + '<h2 class="text-xl font-bold mb-1">Create Invoice</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Choose an invoice type below.</p>'
+
+      // ── Mode tabs ──
+      + '<div id="inv-mode-tabs" style="display:flex;gap:0.5rem;margin-bottom:1.25rem;">'
+      + '<button type="button" data-mode="single" onclick="App.Billing._setInvMode(\'single\')" style="' + modeTabStyle + modeActiveStyle + '">Single</button>'
+      + '<button type="button" data-mode="monthly" onclick="App.Billing._setInvMode(\'monthly\')" style="' + modeTabStyle + modeInactiveStyle + '">Monthly Batch</button>'
+      + (families.length > 0
+          ? '<button type="button" data-mode="sibling" onclick="App.Billing._setInvMode(\'sibling\')" style="' + modeTabStyle + modeInactiveStyle + '">Sibling</button>'
+          : '')
+      + '</div>'
+
       + '<form id="create-invoice-form" class="space-y-4">'
+
+      // ── SINGLE fields ──
+      + '<div id="inv-single-fields">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Student</label>'
-      + '<select name="studentId" class="form-input" required>'
+      + '<select name="studentId" class="form-input">'
       + '<option value="">Select student...</option>'
       + students.map(function(s) {
-          return '<option value="' + s.id + '"' + (s.id === _studentFilter ? ' selected' : '') + '>' + s.firstName + ' ' + s.lastName + '</option>';
+          return '<option value="' + s.id + '"' + (s.id === _studentFilter ? ' selected' : '') + '>' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</option>';
         }).join('')
       + '</select></div>'
-      + _field('Description', '<input name="description" class="form-input" placeholder="e.g. Mar 2026 Tuition" required>')
+      + _field('Description', '<input name="description" class="form-input" placeholder="e.g. Mar 2026 Tuition">')
       + '<div class="grid grid-cols-2 gap-4">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input"><option>Monthly</option><option>Adhoc</option></select></div>'
-      + _field('Amount (RM)', '<input id="inv-base-amount" name="amount" type="number" min="0" step="0.01" class="form-input" required oninput="App.Billing._updateNetAmount()">')
+      + _field('Amount (RM)', '<input id="inv-base-amount" name="amount" type="number" min="0" step="0.01" class="form-input" oninput="App.Billing._updateNetAmount()">')
       + '</div>'
-      // Early bird discount
-      + '<div style="background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;padding:0.85rem">'
+      + '</div>'
+
+      // ── MONTHLY BATCH fields ──
+      + '<div id="inv-monthly-fields" style="display:none">'
+      + '<p class="text-xs text-slate-500 mb-3">Creates one invoice per active student for the selected month. Already-invoiced students are skipped.</p>'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Month', '<input name="month" type="month" class="form-input" value="' + defaultMonth + '" onchange="App.Billing._previewMonthly(this.value)">')
+      + _field('Amount per student (RM)', '<input id="gen-amount" name="genAmount" type="number" min="0" step="0.01" class="form-input" value="150" oninput="App.Billing._updateGenPreview()">')
+      + '</div>'
+      + '<div id="gen-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.75rem;font-size:0.82rem;color:#166534;margin-top:0.5rem"></div>'
+      + '</div>'
+
+      // ── SIBLING fields ──
+      + '<div id="inv-sibling-fields" style="display:none">'
+      + '<p class="text-xs text-slate-500 mb-3">Create one combined invoice covering multiple children from the same family.</p>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Family</label>'
+      + '<select id="sibling-family-select" name="parentEmail" class="form-input" onchange="App.Billing._updateSiblingChildren(this.value)">'
+      + '<option value="">Select family...</option>'
+      + families.map(function(email) {
+          var children = byParent[email];
+          var label = children[0].parentName + ' (' + children.map(function(c) { return c.firstName; }).join(', ') + ')';
+          return '<option value="' + App.Utils.esc(email) + '">' + App.Utils.esc(label) + '</option>';
+        }).join('')
+      + '</select></div>'
+      + '<div id="sibling-children-list" style="display:none;background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;padding:0.75rem">'
+      +   '<p class="text-xs font-semibold text-slate-500 mb-2">Include children:</p>'
+      +   '<div id="sibling-children-checks"></div>'
+      + '</div>'
+      + _field('Description', '<input name="sibDescription" class="form-input" value="' + now.toLocaleDateString('en-MY', { month: 'long', year: 'numeric' }) + ' Tuition">')
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Amount per child (RM)', '<input id="sibling-per-child" name="amountPerChild" type="number" min="0" step="0.01" class="form-input" value="150" oninput="App.Billing._updateSiblingTotal()">')
+      + _field('Sibling Discount %', '<input id="sibling-discount" name="siblingDiscount" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateSiblingTotal()">')
+      + '</div>'
+      + '<div id="sibling-total-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem;font-size:0.82rem;color:#166534;display:none"></div>'
+      + '</div>'
+
+      // ── Shared: early bird + due date ──
+      + '<div id="inv-early-bird-section" style="background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;padding:0.85rem">'
       +   '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem">'
       +     '<input type="checkbox" id="early-bird-cb" onchange="App.Billing._toggleEarlyBird()" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">'
       +     '<label for="early-bird-cb" style="font-size:0.83rem;font-weight:600;color:#374151;cursor:pointer">Early Bird Discount</label>'
       +   '</div>'
       +   '<div id="early-bird-fields" style="display:none;margin-top:0.5rem">'
       +     '<div class="grid grid-cols-2 gap-3">'
-      +       _field('Discount %', '<input id="discount-pct" name="discountPct" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateNetAmount()">')
+      +       _field('Discount %', '<input id="discount-pct" name="discountPct" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateNetAmount();App.Billing._updateGenPreview()">')
       +       _field('Pay by (cutoff)', '<input name="earlyBirdCutoff" type="date" class="form-input">')
       +     '</div>'
       +     '<div id="net-amount-preview" style="margin-top:0.5rem;font-size:0.82rem;color:#6b7280"></div>'
       +   '</div>'
       + '</div>'
-      + _field('Due Date', '<input name="dueDate" type="date" class="form-input" required>')
+
+      + _field('Due Date', '<input name="dueDate" type="date" class="form-input" value="' + defaultDue + '" required>')
+
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Create Invoice</button>'
+      + '<button type="submit" id="inv-submit-btn" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Create Invoice</button>'
       + '</div>'
       + '</form>'
       + '</div>'
     );
+
+    // Auto-enable early bird if within first 7 days
+    (function() {
+      if (new Date().getDate() <= 7) {
+        var cb = document.getElementById('early-bird-cb');
+        if (cb) { cb.checked = true; _toggleEarlyBird(); }
+      }
+    })();
+    _updateGenPreview();
+
     document.getElementById('create-invoice-form').addEventListener('submit', function(e) {
       e.preventDefault();
-      const fd = new FormData(e.target);
-      const state = App.Store.get();
-      const baseAmount = parseFloat(fd.get('amount')) || 0;
-      const discountPct = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked
+      var mode = _currentInvMode || 'single';
+      if (mode === 'monthly') { _doGenerateMonthly(new FormData(e.target)); return; }
+      if (mode === 'sibling') { _doSiblingInvoice(new FormData(e.target)); return; }
+      // Single invoice
+      var fd = new FormData(e.target);
+      var st = App.Store.get();
+      if (!fd.get('studentId')) { App.Utils.showToast('Select a student', 'warning'); return; }
+      if (!fd.get('description')) { App.Utils.showToast('Enter a description', 'warning'); return; }
+      if (!fd.get('amount') || parseFloat(fd.get('amount')) <= 0) { App.Utils.showToast('Enter an amount', 'warning'); return; }
+      var baseAmount = parseFloat(fd.get('amount')) || 0;
+      var discountPct = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked
         ? (parseFloat(fd.get('discountPct')) || 0) : 0;
-      const finalAmount = parseFloat((baseAmount * (1 - discountPct / 100)).toFixed(2));
-      const newInvoice = {
-        id: 'INV' + String(state.invoices.length + 1).padStart(3,'0'),
+      var finalAmount = parseFloat((baseAmount * (1 - discountPct / 100)).toFixed(2));
+      var newInvoice = {
+        id: App.Utils.generateId('INV'),
         studentId: fd.get('studentId'),
         description: fd.get('description') + (discountPct > 0 ? ' (' + discountPct + '% early bird)' : ''),
         type: fd.get('type'),
@@ -430,11 +907,36 @@
         createdOn: App.Utils.today(),
         paidOn: null
       };
-      App.Store.set({ invoices: [...state.invoices, newInvoice] });
-      App.Utils.hideModal();
+      App.Store.set({ invoices: [...st.invoices, newInvoice] });
+      App.Utils.hideModal(true);
       App.Utils.showToast('Invoice created' + (discountPct > 0 ? ' with ' + discountPct + '% early bird discount' : ''), 'success');
       App.Router.refresh();
     });
+  }
+
+  var _currentInvMode = 'single';
+
+  function _setInvMode(mode) {
+    _currentInvMode = mode;
+    var tabs = document.querySelectorAll('#inv-mode-tabs button');
+    tabs.forEach(function(btn) {
+      var m = btn.getAttribute('data-mode');
+      btn.style.background = m === mode ? 'var(--gold)' : 'transparent';
+      btn.style.color = m === mode ? '#0a0a0a' : '#64748b';
+      btn.style.borderColor = m === mode ? 'var(--gold)' : '#e2e8f0';
+    });
+    var single  = document.getElementById('inv-single-fields');
+    var monthly = document.getElementById('inv-monthly-fields');
+    var sibling = document.getElementById('inv-sibling-fields');
+    if (single)  single.style.display  = mode === 'single'  ? 'block' : 'none';
+    if (monthly) monthly.style.display = mode === 'monthly' ? 'block' : 'none';
+    if (sibling) sibling.style.display = mode === 'sibling' ? 'block' : 'none';
+
+    var btn = document.getElementById('inv-submit-btn');
+    if (btn) {
+      btn.textContent = mode === 'monthly' ? 'Generate Invoices' : mode === 'sibling' ? 'Create Sibling Invoice' : 'Create Invoice';
+    }
+    if (mode === 'monthly') _updateGenPreview();
   }
 
   function _toggleEarlyBird() {
@@ -459,66 +961,10 @@
     }
   }
 
-  function _generateMonthlyModal() {
-    const state = App.Store.get();
-    const activeStudents = state.students.filter(function(s) { return s.status === 'Active' || s.status === 'New'; });
-    // Default month = current month
-    const now = new Date();
-    const defaultMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2,'0');
-    // Last day of current month for due date
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const defaultDue = lastDay.getFullYear() + '-' + String(lastDay.getMonth() + 1).padStart(2,'0') + '-' + String(lastDay.getDate()).padStart(2,'0');
-
-    App.Utils.showModal(
-      '<div class="p-6" style="min-width:420px;max-width:520px">'
-      + '<h2 class="text-xl font-bold mb-1">Generate Monthly Invoices</h2>'
-      + '<p class="text-sm text-slate-500 mb-5">Creates one invoice per active student for the selected month. Students who already have a Monthly invoice for that month are skipped.</p>'
-      + '<form id="gen-monthly-form" class="space-y-4">'
-      + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Month', '<input name="month" type="month" class="form-input" value="' + defaultMonth + '" required onchange="App.Billing._previewMonthly(this.value)">')
-      + _field('Default Amount (RM)', '<input id="gen-amount" name="amount" type="number" min="0" step="0.01" class="form-input" value="150" required oninput="App.Billing._updateGenPreview()">')
-      + '</div>'
-      // Early bird section
-      + '<div style="background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;padding:0.85rem">'
-      +   '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem">'
-      +     '<input type="checkbox" id="gen-early-bird-cb" onchange="App.Billing._updateGenPreview()" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">'
-      +     '<label for="gen-early-bird-cb" style="font-size:0.83rem;font-weight:600;color:#374151;cursor:pointer">Early Bird Discount</label>'
-      +   '</div>'
-      +   '<div id="gen-eb-fields" style="display:none">'
-      +     '<div class="grid grid-cols-2 gap-3">'
-      +       _field('Discount %', '<input id="gen-discount-pct" name="discountPct" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateGenPreview()">')
-      +       _field('Pay by (cutoff)', '<input name="earlyBirdCutoff" type="date" class="form-input">')
-      +     '</div>'
-      +   '</div>'
-      + '</div>'
-      + _field('Due Date', '<input name="dueDate" type="date" class="form-input" value="' + defaultDue + '" required>')
-      + '<div id="gen-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.75rem;font-size:0.82rem;color:#166534"></div>'
-      + '<div class="flex justify-end gap-3 pt-2">'
-      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Generate Invoices</button>'
-      + '</div>'
-      + '</form>'
-      + '</div>'
-    );
-
-    // Toggle early bird fields
-    document.getElementById('gen-early-bird-cb').addEventListener('change', function() {
-      var fields = document.getElementById('gen-eb-fields');
-      if (fields) fields.style.display = this.checked ? 'block' : 'none';
-    });
-
-    // Initial preview
-    _updateGenPreview();
-
-    document.getElementById('gen-monthly-form').addEventListener('submit', function(e) {
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      _doGenerateMonthly(fd);
-    });
-  }
+  // _generateMonthlyModal merged into _createModal (Monthly Batch tab)
 
   function _updateGenPreview() {
-    var monthInput = document.querySelector('#gen-monthly-form [name="month"]');
+    var monthInput = document.querySelector('#create-invoice-form [name="month"]');
     var month = monthInput ? monthInput.value : '';
     _previewMonthly(month);
   }
@@ -527,8 +973,9 @@
     var preview = document.getElementById('gen-preview');
     if (!preview || !month) return;
     var state = App.Store.get();
-    var [yr, mo] = month.split('-');
-    var monthLabel = new Date(parseInt(yr), parseInt(mo) - 1, 1).toLocaleDateString('en-MY', { month:'long', year:'numeric' });
+    var parts = month.split('-');
+    var yr = parseInt(parts[0]), mo = parseInt(parts[1]);
+    var monthLabel = new Date(yr, mo - 1, 1).toLocaleDateString('en-MY', { month:'long', year:'numeric' });
     var activeStudents = state.students.filter(function(s) { return s.status === 'Active' || s.status === 'New'; });
     var alreadyHas = {};
     state.invoices.forEach(function(i) {
@@ -538,8 +985,8 @@
     var skipped  = activeStudents.filter(function(s) { return  alreadyHas[s.id]; });
 
     var baseAmount = parseFloat((document.getElementById('gen-amount') || {}).value) || 0;
-    var ebCb = document.getElementById('gen-early-bird-cb');
-    var pctEl = document.getElementById('gen-discount-pct');
+    var ebCb = document.getElementById('early-bird-cb');
+    var pctEl = document.getElementById('discount-pct');
     var discountPct = (ebCb && ebCb.checked && pctEl) ? (parseFloat(pctEl.value) || 0) : 0;
     var net = parseFloat((baseAmount * (1 - discountPct / 100)).toFixed(2));
 
@@ -551,9 +998,9 @@
 
   function _doGenerateMonthly(fd) {
     var month = fd.get('month');
-    var baseAmount = parseFloat(fd.get('amount')) || 0;
+    var baseAmount = parseFloat(fd.get('genAmount')) || 0;
     var dueDate = fd.get('dueDate');
-    var ebCb = document.getElementById('gen-early-bird-cb');
+    var ebCb = document.getElementById('early-bird-cb');
     var discountPct = (ebCb && ebCb.checked) ? (parseFloat(fd.get('discountPct')) || 0) : 0;
     var earlyBirdCutoff = (ebCb && ebCb.checked) ? (fd.get('earlyBirdCutoff') || undefined) : undefined;
     var finalAmount = parseFloat((baseAmount * (1 - discountPct / 100)).toFixed(2));
@@ -571,14 +1018,14 @@
 
     if (toCreate.length === 0) {
       App.Utils.showToast('All active students already have invoices for ' + monthLabel, 'info');
-      App.Utils.hideModal();
+      App.Utils.hideModal(true);
       return;
     }
 
     var existing = state.invoices;
     var newInvoices = toCreate.map(function(s, idx) {
       return {
-        id: 'INV' + String(existing.length + idx + 1).padStart(3,'0'),
+        id: App.Utils.generateId('INV'),
         studentId: s.id,
         description: monthLabel + ' Tuition' + (discountPct > 0 ? ' (' + discountPct + '% early bird)' : ''),
         type: 'Monthly',
@@ -593,71 +1040,12 @@
     });
 
     App.Store.set({ invoices: existing.concat(newInvoices) });
-    App.Utils.hideModal();
+    App.Utils.hideModal(true);
     App.Utils.showToast('Generated ' + newInvoices.length + ' invoices for ' + monthLabel, 'success');
     App.Router.refresh();
   }
 
-  function _siblingInvoiceModal() {
-    const { students } = App.Store.get();
-    // Group students by parent contact (only families with 2+ children)
-    const byParent = {};
-    students.forEach(function(s) {
-      if (!s.contact) return;
-      byParent[s.contact] = byParent[s.contact] || [];
-      byParent[s.contact].push(s);
-    });
-    const families = Object.keys(byParent).filter(function(email) { return byParent[email].length >= 2; });
-
-    if (families.length === 0) {
-      App.Utils.showToast('No families with multiple children found.', 'info');
-      return;
-    }
-
-    const now = new Date();
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const defaultDue = lastDay.getFullYear() + '-' + String(lastDay.getMonth() + 1).padStart(2,'0') + '-' + String(lastDay.getDate()).padStart(2,'0');
-    const defaultMonth = now.toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
-
-    App.Utils.showModal(
-      '<div class="p-6" style="min-width:420px;max-width:520px">'
-      + '<h2 class="text-xl font-bold mb-1">Sibling Invoice</h2>'
-      + '<p class="text-sm text-slate-500 mb-5">Create one combined invoice covering multiple children from the same family.</p>'
-      + '<form id="sibling-invoice-form" class="space-y-4">'
-      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Family</label>'
-      + '<select id="sibling-family-select" name="parentEmail" class="form-input" required onchange="App.Billing._updateSiblingChildren(this.value)">'
-      + '<option value="">Select family...</option>'
-      + families.map(function(email) {
-          const children = byParent[email];
-          const label = children[0].parentName + ' (' + children.map(function(c) { return c.firstName; }).join(', ') + ')';
-          return '<option value="' + App.Utils.esc(email) + '">' + App.Utils.esc(label) + '</option>';
-        }).join('')
-      + '</select></div>'
-      + '<div id="sibling-children-list" style="display:none;background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;padding:0.75rem">'
-      +   '<p class="text-xs font-semibold text-slate-500 mb-2">Include children:</p>'
-      +   '<div id="sibling-children-checks"></div>'
-      + '</div>'
-      + _field('Description', '<input name="description" class="form-input" value="' + defaultMonth + ' Tuition" required>')
-      + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Amount per child (RM)', '<input id="sibling-per-child" name="amountPerChild" type="number" min="0" step="0.01" class="form-input" value="150" required oninput="App.Billing._updateSiblingTotal()">')
-      + _field('Sibling Discount %', '<input id="sibling-discount" name="siblingDiscount" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateSiblingTotal()">')
-      + '</div>'
-      + '<div id="sibling-total-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem;font-size:0.82rem;color:#166534;display:none"></div>'
-      + _field('Due Date', '<input name="dueDate" type="date" class="form-input" value="' + defaultDue + '" required>')
-      + '<div class="flex justify-end gap-3 pt-2">'
-      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Create Sibling Invoice</button>'
-      + '</div>'
-      + '</form>'
-      + '</div>'
-    );
-
-    document.getElementById('sibling-invoice-form').addEventListener('submit', function(e) {
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      _doSiblingInvoice(fd);
-    });
-  }
+  // _siblingInvoiceModal merged into _createModal (Sibling tab)
 
   function _updateSiblingChildren(email) {
     const { students } = App.Store.get();
@@ -696,7 +1084,8 @@
   function _doSiblingInvoice(fd) {
     const state = App.Store.get();
     const email = fd.get('parentEmail');
-    const description = fd.get('description');
+    if (!email) { App.Utils.showToast('Select a family', 'warning'); return; }
+    const description = fd.get('sibDescription') || fd.get('description');
     const perChild = parseFloat(fd.get('amountPerChild')) || 0;
     const discount = parseFloat(fd.get('siblingDiscount')) || 0;
     const dueDate  = fd.get('dueDate');
@@ -717,7 +1106,7 @@
 
     // Create a single combined invoice linked to the first child, with siblings listed in description
     const newInvoice = {
-      id: 'INV' + String(state.invoices.length + 1).padStart(3,'0'),
+      id: App.Utils.generateId('INV'),
       studentId: children[0].id,  // primary child
       siblingIds: children.slice(1).map(function(c) { return c.id; }),
       parentEmail: email,
@@ -732,7 +1121,7 @@
     };
 
     App.Store.set({ invoices: [...state.invoices, newInvoice] });
-    App.Utils.hideModal();
+    App.Utils.hideModal(true);
     App.Utils.showToast('Sibling invoice created — RM ' + totalAmount.toFixed(2) + ' for ' + childNames, 'success');
     App.Router.refresh();
   }
@@ -790,7 +1179,19 @@
     _markPaid: _markPaid,
     _markPaidModal: _markPaidModal,
     _confirmPaid: _confirmPaid,
+    _showAdminProofUpload: _showAdminProofUpload,
+    _showAdminPaymentMethods: _showAdminPaymentMethods,
+    _previewAdminProof: _previewAdminProof,
+    _adminSubmitWithProof: _adminSubmitWithProof,
     _markUnpaid: _markUnpaid,
+    _parentSubmitPaid: _parentSubmitPaid,
+    _parentConfirmSubmit: _parentConfirmSubmit,
+    _showProofUpload: _showProofUpload,
+    _showPaymentMethods: _showPaymentMethods,
+    _previewProof: _previewProof,
+    _parentSubmitWithProof: _parentSubmitWithProof,
+    _verifyPaid: _verifyPaid,
+    _confirmVerify: _confirmVerify,
     _deleteInvoice: _deleteInvoice,
     _editModal: _editModal,
     _createModal: _createModal,
@@ -800,14 +1201,14 @@
     _bulkDeselectInv: _bulkDeselectInv,
     _bulkMarkPaid: _bulkMarkPaid,
     _bulkConfirmPaid: _bulkConfirmPaid,
-    _generateMonthlyModal: _generateMonthlyModal,
+    _setInvMode: _setInvMode,
     _previewMonthly: _previewMonthly,
     _updateGenPreview: _updateGenPreview,
     _toggleEarlyBird: _toggleEarlyBird,
     _updateNetAmount: _updateNetAmount,
-    _siblingInvoiceModal: _siblingInvoiceModal,
     _updateSiblingChildren: _updateSiblingChildren,
     _updateSiblingTotal: _updateSiblingTotal,
-    _exportCSV: _exportCSV
+    _exportCSV: _exportCSV,
+    _setPage: _setBillingPage
   };
 })();

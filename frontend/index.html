@@ -13,6 +13,8 @@
 </head>
 <body class="bg-slate-50">
 
+<a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-white focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg focus:text-sm focus:font-semibold">Skip to content</a>
+
 <!-- ========================
      LOGIN SCREEN
 ========================= -->
@@ -42,9 +44,12 @@
           Sign In
         </button>
       </form>
+      <div class="mt-3 text-center">
+        <a href="#" id="forgot-password-link" class="text-sm text-slate-400 hover:text-blue-400 transition-colors">Forgot Password?</a>
+      </div>
 
-      <!-- Dev quick-login buttons -->
-      <div class="mt-5 pt-4 border-t border-slate-700">
+      <!-- Dev quick-login buttons (localhost only) -->
+      <div id="dev-quick-login" class="mt-5 pt-4 border-t border-slate-700" style="display:none">
         <p class="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">Dev quick login</p>
         <div class="flex gap-2">
           <button onclick="App.Login.quickLogin('admin@studyhub.com','admin123')"
@@ -61,6 +66,7 @@
           </button>
         </div>
       </div>
+      <script>if(location.hostname==='localhost'||location.hostname==='127.0.0.1'){document.getElementById('dev-quick-login').style.display='';}</script>
     </div>
 
     <p class="text-center text-xs text-slate-600 mt-4">The Study Hub &copy; 2026</p>
@@ -133,7 +139,7 @@
     </div>
 
     <!-- Nav -->
-    <nav class="flex-1 p-3 overflow-y-auto">
+    <nav class="flex-1 p-3 overflow-y-auto" role="navigation" aria-label="Main navigation">
       <!-- Dashboard -->
       <button data-page="dashboard" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium mb-1">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -141,7 +147,7 @@
       </button>
 
       <!-- ACADEMIC group -->
-      <div class="nav-group-label mt-3 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">ACADEMIC</div>
+      <div id="nav-group-academic" class="nav-group-label mt-3 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">ACADEMIC</div>
       <button data-page="calendar" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path stroke-linecap="round" d="M16 2v4M8 2v4M3 10h18"/></svg>
         <span>Schedule</span>
@@ -160,7 +166,7 @@
       </button>
 
       <!-- OPERATIONS group -->
-      <div class="nav-group-label mt-4 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">OPERATIONS</div>
+      <div id="nav-group-operations" class="nav-group-label mt-4 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">OPERATIONS</div>
       <button data-page="billing" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><path stroke-linecap="round" d="M1 10h22"/></svg>
         <span>Billing</span>
@@ -181,7 +187,7 @@
       -->
 
       <!-- INSIGHTS group -->
-      <div class="nav-group-label mt-4 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">INSIGHTS</div>
+      <div id="nav-group-insights" class="nav-group-label mt-4 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">INSIGHTS</div>
       <button data-page="analytics" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
         <span>Analytics</span>
@@ -190,7 +196,7 @@
 
     <!-- Data controls (admin only) -->
     <div class="p-3 border-t border-slate-700/60 space-y-1">
-      <div class="flex gap-1">
+      <div id="admin-tools" class="flex gap-1 hidden mb-1">
         <button id="export-btn" title="Export data to JSON" class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">Export</button>
         <button id="import-btn" title="Import data from JSON" class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">Import</button>
         <button id="reset-btn" title="Reset to default data" class="flex-1 text-xs px-2 py-1.5 rounded-lg bg-slate-700 hover:bg-red-800 text-slate-300 transition-colors">Reset</button>
@@ -268,12 +274,12 @@
         </button>
 
         <!-- Date -->
-        <div class="text-xs text-slate-400 whitespace-nowrap hidden sm:block">Mar 8, 2026</div>
+        <div class="text-xs text-slate-400 whitespace-nowrap hidden sm:block" id="header-date"></div>
       </div>
     </header>
 
     <!-- Page content -->
-    <main class="flex-1 overflow-auto p-6">
+    <main id="main-content" class="flex-1 overflow-auto p-6">
       <div id="dashboard-page"      class="page"></div>
       <div id="calendar-page"      class="page"></div>
       <div id="communication-page" class="page"></div>
@@ -297,7 +303,7 @@
 <div id="toast" class="fixed bottom-6 right-6 z-50 hidden"></div>
 
 <!-- DEV TOOLBAR — floating bottom-left, remove in production -->
-<div id="dev-toolbar" class="fixed bottom-4 left-4 z-50 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700 overflow-hidden" style="min-width:260px">
+<div id="dev-toolbar" class="fixed bottom-4 left-4 z-50 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700 overflow-hidden" style="min-width:260px;display:none">
   <div class="flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-slate-700">
     <div class="flex items-center gap-2">
       <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>

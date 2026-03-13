@@ -21,14 +21,42 @@
     return date.toLocaleDateString('en-MY', { day:'numeric', month:'short' });
   }
 
+  function fmtWeekRange(start, end) {
+    var startYear = start.getFullYear();
+    var endYear = end.getFullYear();
+    if (startYear === endYear) {
+      return fmtShortDate(start) + ' – ' + fmtShortDate(end) + ' ' + endYear;
+    }
+    return fmtShortDate(start) + ' ' + startYear + ' – ' + fmtShortDate(end) + ' ' + endYear;
+  }
+
+  function isHolidayDate(dateStr, holidays) {
+    for (var i = 0; i < holidays.length; i++) {
+      var h = holidays[i];
+      if (h.endDate && h.endDate >= h.date) {
+        if (dateStr >= h.date && dateStr <= h.endDate) return h;
+      } else {
+        if (dateStr === h.date) return h;
+      }
+    }
+    return null;
+  }
+
+  function _holidayBadge(h) {
+    var bg = h.type === 'closure' ? '#fef2f2' : '#fffbeb';
+    var color = h.type === 'closure' ? '#dc2626' : '#d97706';
+    return '<div style="font-size:0.62rem;font-weight:700;border-radius:4px;padding:1px 5px;margin-bottom:2px;background:' + bg + ';color:' + color + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(h.name) + '</div>';
+  }
+
   let _weekStart = getWeekStart(new Date());
   let _view = 'week'; // 'week' or 'month'
   let _filterTeacher = ''; // '' = all
   let _filterSearch  = ''; // text search on class name
 
   function render(container) {
-    const { classes, staff, students, cancelledClasses } = App.Store.get();
+    const { classes, staff, students, cancelledClasses, holidays } = App.Store.get();
     const _cancelledClasses = cancelledClasses || [];
+    const _holidays = holidays || [];
     const isAdmin = App.currentRole === 'admin';
     const isClient = App.currentRole === 'client';
     const isTeacher = App.currentRole === 'teacher';
@@ -77,14 +105,14 @@
       + '<button onclick="App.Calendar._setView(\'week\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='week'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='week'?'#0a0a0a':'#94a3b8') + '">Week</button>'
       + '<button onclick="App.Calendar._setView(\'month\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='month'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='month'?'#0a0a0a':'#94a3b8') + '">Month</button>'
       + '<button onclick="App.Calendar._setView(\'timetable\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='timetable'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='timetable'?'#0a0a0a':'#94a3b8') + '">Timetable</button>'
-      + (isAdmin ? '<button onclick="App.Calendar._setView(\'programs\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='programs'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='programs'?'#0a0a0a':'#94a3b8') + '">Programs</button>' : '')
+      + (isAdmin && !isClient ? '<button onclick="App.Calendar._setView(\'programs\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='programs'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='programs'?'#0a0a0a':'#94a3b8') + '">Programs</button>' : '')
       + '</div>';
 
     const headerHtml = ''
       + '<div class="flex items-center justify-between mb-6">'
       +   '<div>'
       +     '<h1 class="text-2xl font-bold text-slate-800">Class Schedule</h1>'
-      +     '<p class="text-sm text-slate-500 mt-0.5">Week of ' + fmtShortDate(_weekStart) + ' – ' + fmtShortDate(weekDates[6]) + '</p>'
+      +     '<p class="text-sm text-slate-500 mt-0.5">Week of ' + fmtWeekRange(_weekStart, weekDates[6]) + '</p>'
       +   '</div>'
       +   '<div class="flex items-center gap-3">'
       +     (_view === 'week'
@@ -190,10 +218,15 @@
               +   '<div class="mt-1 ' + (isToday ? 'w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center mx-auto text-sm font-bold' : 'text-slate-700 text-sm font-bold text-center') + '">' + weekDates[i].getDate() + '</div>'
               +   '<div class="text-xs text-slate-400 mt-0.5">' + weekDates[i].toLocaleDateString('en-MY', {month:'short'}) + '</div>'
               + '</div>'
+              + (function() {
+                  var dateStr = weekDates[i].toISOString().slice(0,10);
+                  var hol = isHolidayDate(dateStr, _holidays);
+                  return hol ? '<div style="padding:0.25rem 0.5rem">' + _holidayBadge(hol) + '</div>' : '';
+                })()
               + '<div class="p-2 space-y-2 min-h-24">'
               + (dayClasses.length === 0
                 ? '<div class="border border-dashed border-slate-200 rounded-lg p-2 text-center mt-1"><p class="text-xs text-slate-300">—</p></div>'
-                : dayClasses.map(function(c) { return _classCard(c, staff, _cancelledClasses, weekDates, i); }).join(''))
+                : dayClasses.map(function(c) { return _classCard(c, staff, _cancelledClasses, weekDates, i, students); }).join(''))
               + '</div>'
               + '</div>';
           }).join('')
@@ -202,6 +235,7 @@
   }
 
   function _renderMonthView(classes, staff, enrolledClassIds, isAdmin) {
+    var allHolidays = (App.Store.get().holidays || []);
     var today = new Date();
     var year  = _weekStart.getFullYear();
     var month = _weekStart.getMonth();
@@ -231,11 +265,19 @@
           if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
           return true;
         });
-        weekCells += '<td style="border:1px solid #f0ede8;vertical-align:top;width:' + (100/7) + '%;min-height:90px;padding:0.35rem;background:' + (!inMonth ? '#fafaf8' : '#fff') + '">'
+        var cellDateStr = d.toISOString().slice(0,10);
+        var cellHol = isHolidayDate(cellDateStr, allHolidays);
+        weekCells += '<td style="border:1px solid #f0ede8;vertical-align:top;width:' + (100/7) + '%;min-height:90px;padding:0.35rem;background:' + (cellHol ? (cellHol.type === 'closure' ? '#fef2f2' : '#fffbeb') : !inMonth ? '#fafaf8' : '#fff') + '">'
           + '<div style="font-size:0.72rem;font-weight:' + (isToday ? '800' : '500') + ';color:' + (isToday ? 'var(--gold, #f59e0b)' : inMonth ? '#374151' : '#cbd5e1') + ';margin-bottom:3px;width:1.4rem;height:1.4rem;display:flex;align-items:center;justify-content:center;border-radius:50%;background:' + (isToday ? 'var(--gold-dim, #fef3c7)' : 'transparent') + '">' + d.getDate() + '</div>'
+          + (cellHol ? _holidayBadge(cellHol) : '')
           + dayCls.slice(0, 3).map(function(c) {
               var colors = App.Utils.colorClasses(c.color);
-              return '<div style="font-size:0.65rem;font-weight:600;border-radius:4px;padding:1px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="' + colors.pill + '">' + App.Utils.formatTime(c.time) + ' ' + c.name + '</div>';
+              var monthChildTags = '';
+              if (App.currentRole === 'client' && App.clientParent) {
+                var monthKids = students.filter(function(st) { return st.contact === App.clientParent && (st.enrolledClasses || []).indexOf(c.id) > -1; });
+                if (monthKids.length > 0) monthChildTags = ' <span style="font-size:0.55rem;font-weight:700;color:#92400e">(' + monthKids.map(function(st){return st.firstName;}).join(', ') + ')</span>';
+              }
+              return '<div style="font-size:0.65rem;font-weight:600;border-radius:4px;padding:1px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="' + colors.pill + '">' + App.Utils.formatTime(c.time) + ' ' + c.name + monthChildTags + '</div>';
             }).join('')
           + (dayCls.length > 3 ? '<div style="font-size:0.63rem;color:#94a3b8">+' + (dayCls.length - 3) + ' more</div>' : '')
           + '</td>';
@@ -271,7 +313,7 @@
       + '</div>';
   }
 
-  function _classCard(c, staff, cancelledClasses, weekDates, dayIndex) {
+  function _classCard(c, staff, cancelledClasses, weekDates, dayIndex, allStudents) {
     const U = App.Utils;
     const colors = U.colorClasses(c.color);
     const fillPct = Math.round((c.enrolled / c.capacity) * 100);
@@ -280,6 +322,19 @@
       const s = staff.find(function(s) { return s.id === tid; });
       return s ? s.name : tid;
     }).join(', ');
+
+    // Child name badges for parent view
+    var childBadges = '';
+    if (App.currentRole === 'client' && App.clientParent && allStudents) {
+      var myKidsInClass = allStudents.filter(function(st) {
+        return st.contact === App.clientParent && (st.enrolledClasses || []).indexOf(c.id) > -1;
+      });
+      if (myKidsInClass.length > 0) {
+        childBadges = '<div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:3px">' + myKidsInClass.map(function(st) {
+          return '<span style="font-size:0.6rem;font-weight:700;background:rgba(201,162,39,0.18);color:#92400e;padding:1px 5px;border-radius:4px">' + U.esc(st.firstName) + '</span>';
+        }).join('') + '</div>';
+      }
+    }
 
     // Check if this class is cancelled on this specific date
     let dateStr = null;
@@ -295,13 +350,24 @@
         + '<div class="font-semibold text-xs text-red-300 leading-tight truncate line-through">' + c.name + '</div>'
         + '<div class="text-xs text-red-200 mt-0.5">' + U.formatTime(c.time) + ' – ' + U.formatTime(c.endTime) + '</div>'
         + '<div class="text-xs text-red-200 mt-0.5 truncate">' + teachers + '</div>'
+        + childBadges
         + '</div>';
     }
 
-    return '<div class="' + colors.bg + ' border-l-4 ' + colors.border + ' rounded-lg p-2 cursor-pointer hover:shadow-sm transition-shadow" onclick="App.Calendar._classModal(\'' + c.id + '\')">'
+    const isAdmin = App.currentRole === 'admin';
+    const adminBtns = isAdmin
+      ? '<div style="display:flex;gap:2px;position:absolute;top:3px;right:3px">'
+        + '<button onclick="event.stopPropagation();App.Calendar._editClassModal(\'' + c.id + '\')" style="width:20px;height:20px;border:none;background:rgba(255,255,255,0.85);border-radius:4px;cursor:pointer;font-size:0.6rem;line-height:1;display:flex;align-items:center;justify-content:center;color:#64748b" title="Edit">&#9998;</button>'
+        + '<button onclick="event.stopPropagation();App.Calendar._deleteClass(\'' + c.id + '\')" style="width:20px;height:20px;border:none;background:rgba(255,255,255,0.85);border-radius:4px;cursor:pointer;font-size:0.6rem;line-height:1;display:flex;align-items:center;justify-content:center;color:#ef4444" title="Delete">&#10005;</button>'
+        + '</div>'
+      : '';
+
+    return '<div class="' + colors.bg + ' border-l-4 ' + colors.border + ' rounded-lg p-2 cursor-pointer hover:shadow-sm transition-shadow relative" onclick="App.Calendar._classModal(\'' + c.id + '\')">'
+      + adminBtns
       + '<div class="font-semibold text-xs ' + colors.text + ' leading-tight truncate">' + c.name + '</div>'
       + '<div class="text-xs ' + colors.text + ' opacity-70 mt-0.5">' + U.formatTime(c.time) + ' – ' + U.formatTime(c.endTime) + '</div>'
       + '<div class="text-xs text-slate-500 mt-0.5 truncate">' + teachers + '</div>'
+      + childBadges
       + '<div class="mt-1.5 flex items-center gap-1">'
       +   '<div class="flex-1 h-1 bg-white/60 rounded-full overflow-hidden">'
       +     '<div class="h-full ' + fillBarColor + ' rounded-full" style="width:' + Math.min(fillPct,100) + '%"></div>'
@@ -415,9 +481,15 @@
       comment: comment.trim(),
       createdOn: App.Utils.today()
     };
-    App.Store.set({ feedback: [...(state.feedback||[]), newFeedback] });
-    App.Utils.hideModal();
-    App.Utils.showToast('Thank you for your feedback!', 'success');
+    App.Api.post('/api/feedback', newFeedback).then(function(result) {
+      App.Store.set({ feedback: [...(state.feedback||[]), newFeedback] });
+      App.Utils.hideModal(true);
+      App.Utils.showToast('Thank you for your feedback!', 'success');
+    }).catch(function(err) {
+      App.Store.set({ feedback: [...(state.feedback||[]), newFeedback] });
+      App.Utils.hideModal(true);
+      App.Utils.showToast('Saved locally (offline)', 'warning');
+    });
   }
 
   function _prevWeek() {
@@ -518,7 +590,6 @@
         color: classType === 'Private' ? 'purple' : 'blue',
         category: fd.get('category') || 'Academic'
       };
-      App.Store.set({ classes: [...state.classes, newClass] });
 
       // Send in-app announcement to notify parents of the new class
       const newAnnouncement = {
@@ -530,12 +601,22 @@
         createdOn: new Date().toISOString().slice(0, 10),
         createdBy: 'Admin'
       };
-      const updatedAnns = [...(App.Store.get().announcements || []), newAnnouncement];
-      App.Store.set({ announcements: updatedAnns });
 
-      App.Utils.hideModal();
-      App.Utils.showToast('Class added! Parents have been notified via announcement.', 'success');
-      App.Router.refresh();
+      App.Api.post('/api/classes', newClass).then(function(result) {
+        App.Store.set({ classes: [...state.classes, newClass] });
+        const updatedAnns = [...(App.Store.get().announcements || []), newAnnouncement];
+        App.Store.set({ announcements: updatedAnns });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Class added! Parents have been notified via announcement.', 'success');
+        App.Router.refresh();
+      }).catch(function(err) {
+        App.Store.set({ classes: [...state.classes, newClass] });
+        const updatedAnns = [...(App.Store.get().announcements || []), newAnnouncement];
+        App.Store.set({ announcements: updatedAnns });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Saved locally (offline)', 'warning');
+        App.Router.refresh();
+      });
     });
   }
 
@@ -704,6 +785,34 @@
         + '</div>';
     }).join('');
 
+    // Holidays section
+    const holidays = state.holidays || [];
+    const sortedHol = holidays.slice().sort(function(a,b) { return a.date.localeCompare(b.date); });
+    const todayStr = App.Utils.today();
+    const upcomingHol = sortedHol.filter(function(h) { return (h.endDate || h.date) >= todayStr; });
+    const pastHol = sortedHol.filter(function(h) { return (h.endDate || h.date) < todayStr; });
+
+    var holidayRows = (upcomingHol.length > 0 ? upcomingHol : pastHol.slice(-5).reverse()).map(function(h) {
+      var typeColor = h.type === 'closure' ? '#dc2626' : '#d97706';
+      var typeBg = h.type === 'closure' ? '#fef2f2' : '#fffbeb';
+      var dateDisplay = h.date.slice(8) + ' ' + new Date(h.date + 'T00:00:00').toLocaleDateString('en-MY',{month:'short',year:'numeric'});
+      if (h.endDate && h.endDate !== h.date) {
+        dateDisplay += ' – ' + h.endDate.slice(8) + ' ' + new Date(h.endDate + 'T00:00:00').toLocaleDateString('en-MY',{month:'short'});
+      }
+      return '<div style="display:flex;align-items:center;gap:1rem;padding:0.85rem 1.25rem;border-bottom:1px solid #f4f4f2">'
+        + '<div style="min-width:10px;height:10px;border-radius:50%;background:' + typeColor + ';flex-shrink:0"></div>'
+        + '<div style="flex:1;min-width:0">'
+        +   '<div style="font-size:0.85rem;font-weight:700;color:#111">' + App.Utils.esc(h.name) + '</div>'
+        +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + dateDisplay + (h.notes ? ' · ' + App.Utils.esc(h.notes) : '') + '</div>'
+        + '</div>'
+        + '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:' + typeBg + ';color:' + typeColor + ';flex-shrink:0">' + App.Utils.esc(h.type) + '</span>'
+        + (isAdmin ? '<div style="display:flex;gap:0.3rem;flex-shrink:0">'
+          + '<button onclick="App.Calendar._editHolidayModal(\'' + h.id + '\')" style="font-size:0.68rem;color:#64748b;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Edit">&#9998;</button>'
+          + '<button onclick="App.Calendar._deleteHoliday(\'' + h.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Delete">&#10005;</button>'
+          + '</div>' : '')
+        + '</div>';
+    }).join('');
+
     return '<div>'
       // Subjects
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
@@ -719,10 +828,21 @@
       +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Workshops</h2>'
       +   (isAdmin ? '<button onclick="App.Calendar._addWorkshopModal()" style="padding:0.35rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Workshop</button>' : '')
       + '</div>'
-      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden">'
+      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden;margin-bottom:2rem">'
       + (workshops.length === 0
           ? '<div style="padding:2rem;text-align:center;color:#94a3b8;font-size:0.84rem">No workshops yet.</div>'
           : workshopRows)
+      + '</div>'
+
+      // Holidays / Closures
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
+      +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Holidays / Closures</h2>'
+      +   (isAdmin ? '<button onclick="App.Calendar._addHolidayModal()" style="padding:0.35rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Holiday</button>' : '')
+      + '</div>'
+      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden">'
+      + (holidays.length === 0
+          ? '<div style="padding:2rem;text-align:center;color:#94a3b8;font-size:0.84rem">No holidays or closures scheduled.</div>'
+          : holidayRows)
       + '</div>'
       + '</div>';
   }
@@ -754,9 +874,7 @@
     document.getElementById('add-subject-form').addEventListener('submit', function(e) {
       e.preventDefault();
       const fd = new FormData(e.target);
-      const state = App.Store.get();
-      const subjects = (state.subjects || []).slice();
-      subjects.push({
+      const newSubject = {
         id: App.Utils.generateId('sub'),
         name: fd.get('name').trim(),
         category: fd.get('category'),
@@ -764,20 +882,39 @@
         description: fd.get('description').trim(),
         monthlyFee: parseFloat(fd.get('monthlyFee')) || 0,
         color: fd.get('color')
+      };
+      App.Api.post('/api/subjects', newSubject).then(function(result) {
+        const state = App.Store.get();
+        const subjects = (state.subjects || []).slice();
+        subjects.push(newSubject);
+        App.Store.set({ subjects: subjects });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Subject added', 'success');
+        App.Router.refresh();
+      }).catch(function(err) {
+        const state = App.Store.get();
+        const subjects = (state.subjects || []).slice();
+        subjects.push(newSubject);
+        App.Store.set({ subjects: subjects });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Saved locally (offline)', 'warning');
+        App.Router.refresh();
       });
-      App.Store.set({ subjects: subjects });
-      App.Utils.hideModal();
-      App.Utils.showToast('Subject added', 'success');
-      App.Router.refresh();
     });
   }
 
   function _deleteSubject(subId) {
     if (!confirm('Delete this subject? Classes linked to it will not be removed.')) return;
     const state = App.Store.get();
-    App.Store.set({ subjects: (state.subjects || []).filter(function(s) { return s.id !== subId; }) });
-    App.Utils.showToast('Subject deleted', 'info');
-    App.Router.refresh();
+    App.Api.del('/api/subjects/' + subId).then(function() {
+      App.Store.set({ subjects: (state.subjects || []).filter(function(s) { return s.id !== subId; }) });
+      App.Utils.showToast('Subject deleted', 'info');
+      App.Router.refresh();
+    }).catch(function(err) {
+      App.Store.set({ subjects: (state.subjects || []).filter(function(s) { return s.id !== subId; }) });
+      App.Utils.showToast('Deleted locally (offline)', 'warning');
+      App.Router.refresh();
+    });
   }
 
   function _addWorkshopModal() {
@@ -812,9 +949,7 @@
     document.getElementById('add-workshop-form').addEventListener('submit', function(e) {
       e.preventDefault();
       const fd = new FormData(e.target);
-      const state = App.Store.get();
-      const workshops = (state.workshops || []).slice();
-      workshops.push({
+      const newWorkshop = {
         id: App.Utils.generateId('ws'),
         name: fd.get('name').trim(),
         description: fd.get('description').trim(),
@@ -827,10 +962,115 @@
         fee: parseFloat(fd.get('fee')) || 0,
         teacherIds: [fd.get('teacherId')],
         status: 'upcoming'
+      };
+      App.Api.post('/api/workshops', newWorkshop).then(function(result) {
+        const state = App.Store.get();
+        const workshops = (state.workshops || []).slice();
+        workshops.push(newWorkshop);
+        App.Store.set({ workshops: workshops });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Workshop added', 'success');
+        App.Router.refresh();
+      }).catch(function(err) {
+        const state = App.Store.get();
+        const workshops = (state.workshops || []).slice();
+        workshops.push(newWorkshop);
+        App.Store.set({ workshops: workshops });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Saved locally (offline)', 'warning');
+        App.Router.refresh();
       });
-      App.Store.set({ workshops: workshops });
-      App.Utils.hideModal();
-      App.Utils.showToast('Workshop added', 'success');
+    });
+  }
+
+  function _editClassModal(classId) {
+    var state = App.Store.get();
+    var c = state.classes.find(function(x) { return x.id === classId; });
+    if (!c) return;
+    var colorOpts = ['green','blue','teal','orange','purple','red'].map(function(col) {
+      return '<option value="' + col + '"' + (c.color === col ? ' selected' : '') + '>' + col.charAt(0).toUpperCase() + col.slice(1) + '</option>';
+    }).join('');
+    var dayOpts = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(function(d) {
+      return '<option' + (c.day === d ? ' selected' : '') + '>' + d + '</option>';
+    }).join('');
+    var catOpts = ['Academic','Non-academic','Workshop'].map(function(cat) {
+      return '<option' + (c.category === cat ? ' selected' : '') + '>' + cat + '</option>';
+    }).join('');
+    var teacherCheckboxes = state.staff.map(function(s) {
+      var checked = (c.teacherIds || []).indexOf(s.id) > -1 ? ' checked' : '';
+      return '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem"><input type="checkbox" name="teacherIds" value="' + s.id + '"' + checked + ' style="accent-color:var(--gold)">' + App.Utils.esc(s.name) + '</label>';
+    }).join('');
+
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:400px">'
+      + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 1.25rem">Edit Class</h2>'
+      + '<form id="edit-class-form" class="space-y-3">'
+      + _field('Class Name', '<input name="name" class="form-input" value="' + App.Utils.esc(c.name) + '" required>')
+      + '<div class="grid grid-cols-2 gap-3">'
+      + _field('Day', '<select name="day" class="form-input">' + dayOpts + '</select>')
+      + _field('Classroom', '<input name="classroom" class="form-input" value="' + App.Utils.esc(c.classroom || '') + '">')
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-3">'
+      + _field('Start Time', '<input name="time" type="time" class="form-input" value="' + (c.time || '') + '" required>')
+      + _field('End Time', '<input name="endTime" type="time" class="form-input" value="' + (c.endTime || '') + '" required>')
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-3">'
+      + _field('Capacity', '<input name="capacity" type="number" min="1" class="form-input" value="' + c.capacity + '">')
+      + _field('Category', '<select name="category" class="form-input">' + catOpts + '</select>')
+      + '</div>'
+      + _field('Color', '<select name="color" class="form-input">' + colorOpts + '</select>')
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Teacher(s)</label>' + teacherCheckboxes + '</div>'
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save Changes</button>'
+      + '</div>'
+      + '</form></div>'
+    );
+    document.getElementById('edit-class-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      var teacherIds = [];
+      var checkboxes = e.target.querySelectorAll('input[name="teacherIds"]:checked');
+      checkboxes.forEach(function(cb) { teacherIds.push(cb.value); });
+      var updated = {
+        id: classId,
+        name: fd.get('name'),
+        teacherIds: teacherIds,
+        classroom: fd.get('classroom') || '',
+        day: fd.get('day'),
+        time: fd.get('time'),
+        endTime: fd.get('endTime'),
+        capacity: parseInt(fd.get('capacity')) || 5,
+        enrolled: c.enrolled,
+        color: fd.get('color'),
+        category: fd.get('category') || 'Academic'
+      };
+      App.Api.put('/api/classes/' + classId, updated).then(function() {
+        var classes = state.classes.map(function(x) { return x.id === classId ? updated : x; });
+        App.Store.set({ classes: classes });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Class updated', 'success');
+        App.Router.refresh();
+      }).catch(function(err) {
+        var classes = state.classes.map(function(x) { return x.id === classId ? updated : x; });
+        App.Store.set({ classes: classes });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Saved locally (offline)', 'warning');
+        App.Router.refresh();
+      });
+    });
+  }
+
+  function _deleteClass(classId) {
+    if (!confirm('Delete this class? This cannot be undone.')) return;
+    var state = App.Store.get();
+    App.Api.del('/api/classes/' + classId).then(function() {
+      App.Store.set({ classes: state.classes.filter(function(c) { return c.id !== classId; }) });
+      App.Utils.showToast('Class deleted', 'info');
+      App.Router.refresh();
+    }).catch(function() {
+      App.Store.set({ classes: state.classes.filter(function(c) { return c.id !== classId; }) });
+      App.Utils.showToast('Deleted locally (offline)', 'warning');
       App.Router.refresh();
     });
   }
@@ -838,10 +1078,129 @@
   function _deleteWorkshop(wsId) {
     if (!confirm('Delete this workshop?')) return;
     const state = App.Store.get();
-    App.Store.set({ workshops: (state.workshops || []).filter(function(w) { return w.id !== wsId; }) });
-    App.Utils.showToast('Workshop deleted', 'info');
-    App.Router.refresh();
+    App.Api.del('/api/workshops/' + wsId).then(function() {
+      App.Store.set({ workshops: (state.workshops || []).filter(function(w) { return w.id !== wsId; }) });
+      App.Utils.showToast('Workshop deleted', 'info');
+      App.Router.refresh();
+    }).catch(function(err) {
+      App.Store.set({ workshops: (state.workshops || []).filter(function(w) { return w.id !== wsId; }) });
+      App.Utils.showToast('Deleted locally (offline)', 'warning');
+      App.Router.refresh();
+    });
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _setStar: _setStar, _submitFeedback: _submitFeedback, _addSubjectModal: _addSubjectModal, _deleteSubject: _deleteSubject, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop };
+  // ── Holiday CRUD ─────────────────────────────────────────────────────────────
+
+  function _addHolidayModal() {
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:380px">'
+      + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 1.25rem">Add Holiday / Closure</h2>'
+      + '<form id="add-holiday-form" class="space-y-3">'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Name</label><input name="name" class="form-input" placeholder="e.g. Hari Raya Aidilfitri" required></div>'
+      + '<div class="grid grid-cols-2 gap-3">'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label><input name="date" type="date" class="form-input" required></div>'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">End Date (optional)</label><input name="endDate" type="date" class="form-input"></div>'
+      + '</div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input"><option value="holiday">Holiday</option><option value="closure">Closure</option></select></div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Notes</label><textarea name="notes" class="form-input" rows="2" placeholder="Optional notes"></textarea></div>'
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Holiday</button>'
+      + '</div>'
+      + '</form></div>'
+    );
+    document.getElementById('add-holiday-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      var newHoliday = {
+        id: App.Utils.generateId('HOL'),
+        name: fd.get('name').trim(),
+        date: fd.get('date'),
+        endDate: fd.get('endDate') || '',
+        type: fd.get('type'),
+        notes: fd.get('notes').trim()
+      };
+      App.Api.post('/api/holidays', newHoliday).then(function(result) {
+        var state = App.Store.get();
+        var holidays = (state.holidays || []).slice();
+        holidays.push(result || newHoliday);
+        App.Store.set({ holidays: holidays });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Holiday added', 'success');
+        App.Router.refresh();
+      }).catch(function() {
+        var state = App.Store.get();
+        var holidays = (state.holidays || []).slice();
+        holidays.push(newHoliday);
+        App.Store.set({ holidays: holidays });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Saved locally (offline)', 'warning');
+        App.Router.refresh();
+      });
+    });
+  }
+
+  function _editHolidayModal(holId) {
+    var state = App.Store.get();
+    var h = (state.holidays || []).find(function(x) { return x.id === holId; });
+    if (!h) return;
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:380px">'
+      + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 1.25rem">Edit Holiday / Closure</h2>'
+      + '<form id="edit-holiday-form" class="space-y-3">'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Name</label><input name="name" class="form-input" value="' + App.Utils.esc(h.name) + '" required></div>'
+      + '<div class="grid grid-cols-2 gap-3">'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label><input name="date" type="date" class="form-input" value="' + (h.date || '') + '" required></div>'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">End Date (optional)</label><input name="endDate" type="date" class="form-input" value="' + (h.endDate || '') + '"></div>'
+      + '</div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input"><option value="holiday"' + (h.type === 'holiday' ? ' selected' : '') + '>Holiday</option><option value="closure"' + (h.type === 'closure' ? ' selected' : '') + '>Closure</option></select></div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Notes</label><textarea name="notes" class="form-input" rows="2">' + App.Utils.esc(h.notes || '') + '</textarea></div>'
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save Changes</button>'
+      + '</div>'
+      + '</form></div>'
+    );
+    document.getElementById('edit-holiday-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      var updated = {
+        id: holId,
+        name: fd.get('name').trim(),
+        date: fd.get('date'),
+        endDate: fd.get('endDate') || '',
+        type: fd.get('type'),
+        notes: fd.get('notes').trim(),
+        createdBy: h.createdBy || ''
+      };
+      App.Api.put('/api/holidays/' + holId, updated).then(function() {
+        var holidays = (App.Store.get().holidays || []).map(function(x) { return x.id === holId ? updated : x; });
+        App.Store.set({ holidays: holidays });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Holiday updated', 'success');
+        App.Router.refresh();
+      }).catch(function() {
+        var holidays = (App.Store.get().holidays || []).map(function(x) { return x.id === holId ? updated : x; });
+        App.Store.set({ holidays: holidays });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Saved locally (offline)', 'warning');
+        App.Router.refresh();
+      });
+    });
+  }
+
+  function _deleteHoliday(holId) {
+    if (!confirm('Delete this holiday/closure?')) return;
+    App.Api.del('/api/holidays/' + holId).then(function() {
+      App.Store.set({ holidays: (App.Store.get().holidays || []).filter(function(h) { return h.id !== holId; }) });
+      App.Utils.showToast('Holiday deleted', 'info');
+      App.Router.refresh();
+    }).catch(function() {
+      App.Store.set({ holidays: (App.Store.get().holidays || []).filter(function(h) { return h.id !== holId; }) });
+      App.Utils.showToast('Deleted locally (offline)', 'warning');
+      App.Router.refresh();
+    });
+  }
+
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _setStar: _setStar, _submitFeedback: _submitFeedback, _addSubjectModal: _addSubjectModal, _deleteSubject: _deleteSubject, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday };
 })();

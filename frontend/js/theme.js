@@ -90,7 +90,7 @@
       var t    = THEMES[key];
       var active = key === _current;
       var preview = _themePreview(key);
-      html += '<button onclick="App.Theme.set(\'' + key + '\'); App.Utils.hideModal()" '
+      html += '<button onclick="App.Theme.set(\'' + key + '\'); App.Utils.hideModal(true)" '
         + 'class="w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all text-left '
         + (active ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50') + '">'
         + '<div class="w-16 h-10 rounded-lg overflow-hidden shrink-0 border border-slate-200">' + preview + '</div>'

@@ -43,6 +43,19 @@
         });
       });
 
+      // Payments submitted by parents awaiting verification
+      var pendingVerif = invoices.filter(function(i) { return i.status === 'Pending Verification'; });
+      if (pendingVerif.length > 0) {
+        notifs.push({
+          id: 'pending-verif-' + pendingVerif.length,
+          type: 'billing',
+          severity: 'warning',
+          title: pendingVerif.length + ' payment' + (pendingVerif.length > 1 ? 's' : '') + ' awaiting verification',
+          body: 'Parent' + (pendingVerif.length > 1 ? 's have' : ' has') + ' submitted payment — please confirm',
+          action: 'billing'
+        });
+      }
+
       // Pending registrations
       var regs = state.registrations || [];
       var pending = regs.filter(function(r) { return r.status === 'pending'; });
@@ -108,6 +121,68 @@
         var late   = stuIssues.filter(function(a) { return a.status === 'Late'; });
         if (absent.length > 0) notifs.push({ id: 'stu-absent-today', type: 'attendance', severity: 'error',   title: absent.length + ' student' + (absent.length!==1?'s':'') + ' absent today', body: absent.map(function(a){ var s=students.find(function(x){return x.id===a.personId;}); return s?s.firstName:a.personId; }).join(', '), action: 'attendance' });
         if (late.length > 0)   notifs.push({ id: 'stu-late-today',   type: 'attendance', severity: 'warning', title: late.length   + ' student' + (late.length!==1?'s':'')   + ' late today',   body: late.map(function(a){   var s=students.find(function(x){return x.id===a.personId;}); return s?s.firstName:a.personId; }).join(', '), action: 'attendance' });
+      }
+
+    } else if (App.currentRole === 'teacher') {
+      // Teacher view
+      var classes = state.classes || [];
+      var todayDayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+
+      // Classes happening today
+      var myClasses = classes.filter(function(c) {
+        return c.teacherIds && c.teacherIds.indexOf(App.currentTeacher) > -1 && c.day === todayDayName;
+      });
+      if (myClasses.length > 0) {
+        notifs.push({
+          id: 'tchr-classes-today',
+          type: 'attendance',
+          severity: 'info',
+          title: myClasses.length + ' class' + (myClasses.length > 1 ? 'es' : '') + ' today',
+          body: myClasses.map(function(c) { return c.name + ' (' + App.Utils.formatTime(c.time) + ')'; }).join(', '),
+          action: 'attendance'
+        });
+      }
+
+      // Students absent today (enrolled in teacher's today-classes but not checked in)
+      var absentNames = [];
+      myClasses.forEach(function(cls) {
+        var enrolled = students.filter(function(s) {
+          return (s.enrolledClasses || []).indexOf(cls.id) > -1;
+        });
+        enrolled.forEach(function(s) {
+          var hasRecord = attendance.some(function(a) {
+            return a.personId === s.id && a.classId === cls.id && a.date === today && a.checkIn;
+          });
+          if (!hasRecord && absentNames.indexOf(s.firstName) === -1) {
+            absentNames.push(s.firstName);
+          }
+        });
+      });
+      if (absentNames.length > 0) {
+        notifs.push({
+          id: 'tchr-absent-students',
+          type: 'attendance',
+          severity: 'warning',
+          title: absentNames.length + ' student' + (absentNames.length > 1 ? 's' : '') + ' not checked in',
+          body: absentNames.join(', '),
+          action: 'attendance'
+        });
+      }
+
+      // Pending announcement approvals submitted by this teacher
+      var announcements = state.announcements || [];
+      var pendingAnns = announcements.filter(function(a) {
+        return a.status === 'pending' && a.createdBy === App.currentTeacher;
+      });
+      if (pendingAnns.length > 0) {
+        notifs.push({
+          id: 'tchr-pending-announcements',
+          type: 'registration',
+          severity: 'info',
+          title: pendingAnns.length + ' announcement' + (pendingAnns.length > 1 ? 's' : '') + ' pending approval',
+          body: 'Your submitted announcements are awaiting admin review',
+          action: 'communication'
+        });
       }
 
     } else {

@@ -270,13 +270,34 @@ body.theme-b header {
    PRINT STYLES (Billing)
    ============================== */
 @media print {
-  body * { visibility: hidden; }
-  #billing-page, #billing-page * { visibility: visible; }
-  #billing-page { position: absolute; top: 0; left: 0; width: 100%; }
-  aside, header, button, .no-print { display: none !important; }
+  /* Hide non-essential UI */
+  .sidebar, #sidebar, aside, nav, #dev-toolbar, #toast-container, .nav-btn,
+  button:not(.print-btn), .hamburger-btn, #header-bar, header,
+  #loading-overlay, .no-print, #sidebar-backdrop, #top-navbar { display: none !important; }
+
+  /* Make content full-width */
+  .main-content, #main-content, [class*="ml-60"] {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Show active page content */
+  .page.active { display: block !important; }
+  .page:not(.active) { display: none !important; }
+
+  /* Clean backgrounds */
+  body { background: white !important; }
+  body * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Remove shadows */
   .shadow-sm, .shadow { box-shadow: none !important; }
+
+  /* Tables */
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid #e2e8f0; padding: 8px 12px; }
+
+  /* Billing-specific: full-width invoice table */
+  #billing-page { width: 100%; }
 }
 
 /* Nav group labels */
@@ -293,7 +314,35 @@ body.theme-b .nav-group-label {
   color: rgba(201,162,39,0.45);
 }
 
+/* Accessible gold for text on white (WCAG AA) */
+:root {
+  --gold-text: #9a7b1a;
+}
+
 /* Serif heading utility */
 .font-serif {
   font-family: var(--serif);
+}
+
+/* ==============================
+   FOCUS-VISIBLE STYLES
+   ============================== */
+:focus-visible {
+  outline: 2px solid var(--gold, #C9A227);
+  outline-offset: 2px;
+}
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--gold, #C9A227);
+  outline-offset: 2px;
+}
+
+/* ==============================
+   PREFERS REDUCED MOTION
+   ============================== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

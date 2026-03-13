@@ -316,8 +316,8 @@
     }
   });
 
-  // Teacher registration (localStorage)
-  document.getElementById('teacher-form').addEventListener('submit', function(e) {
+  // Teacher registration (API)
+  document.getElementById('teacher-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     var btn = document.getElementById('teacher-submit-btn');
     var errEl = document.getElementById('teacher-error');
@@ -337,32 +337,37 @@
       return;
     }
 
-    try {
-      var existing = JSON.parse(localStorage.getItem('sh_teacher_regs') || '[]');
-      var newApp = {
-        id: 'tr' + Date.now(),
-        type: 'teacher',
-        status: 'pending',
-        submittedOn: new Date().toISOString().slice(0,10),
-        fullName: data.fullName,
-        displayName: data.displayName || data.fullName,
-        email: data.email,
-        phone: data.phone,
-        specialty: data.specialty,
-        employmentType: data.employmentType,
-        experience: data.experience || '0',
-        qualifications: data.qualifications || '',
-        bio: data.bio || '',
-        schedule: data.schedule || '',
-        expectedSalary: data.expectedSalary || ''
-      };
-      existing.push(newApp);
-      localStorage.setItem('sh_teacher_regs', JSON.stringify(existing));
+    var body = {
+      type: 'teacher',
+      status: 'pending',
+      submittedOn: new Date().toISOString().slice(0,10),
+      fullName: data.fullName,
+      displayName: data.displayName || data.fullName,
+      email: data.email,
+      phone: data.phone,
+      specialty: data.specialty,
+      employmentType: data.employmentType,
+      experience: data.experience || '0',
+      qualifications: data.qualifications || '',
+      bio: data.bio || '',
+      schedule: data.schedule || '',
+      expectedSalary: data.expectedSalary || ''
+    };
 
+    try {
+      var res = await fetch('/api/register-teacher', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        var msg = await res.text();
+        throw new Error(msg || 'Submission failed');
+      }
       document.getElementById('teacher-form').classList.add('hidden');
       document.getElementById('success-teacher').classList.remove('hidden');
     } catch(err) {
-      errEl.textContent = 'Something went wrong. Please try again.';
+      errEl.textContent = err.message;
       errEl.classList.remove('hidden');
       btn.textContent = 'Submit Application';
       btn.disabled = false;

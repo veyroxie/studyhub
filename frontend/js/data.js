@@ -127,7 +127,14 @@ App.DATA = {
   ],
   messages: [],
   cancelledClasses: [],
-  feedback: [],
+  holidays: [],
+  feedback: [
+    { id:'FB001', classId:'c3', date:'2026-03-10', teacherId:'s3', topic:'Particle は vs が', mood:'Great', notes:'Students showed strong understanding of topic particles. Good class engagement overall.', studentNotes:[{studentId:'STU001',note:'Eita answered confidently — great progress.'},{studentId:'STU004',note:'Stephanie needs more practice with が usage.'}] },
+    { id:'FB002', classId:'c1', date:'2026-03-08', teacherId:'s1', topic:'Hiragana Row 3 (さしすせそ)', mood:'Good', notes:'Covered sa-row hiragana. Most students keeping up well.', studentNotes:[{studentId:'STU006',note:'Ryan writes neatly, good retention.'},{studentId:'STU009',note:'Mei Lin a bit distracted today, gentle reminder helped.'}] },
+    { id:'FB003', classId:'c5', date:'2026-03-11', teacherId:'s2', topic:'Te-form verbs review', mood:'Good', notes:'Revised te-form conjugation. Class was attentive but some struggled with irregular verbs.', studentNotes:[{studentId:'STU003',note:'Minjae did well on regular verbs, needs help with irregulars.'},{studentId:'STU007',note:'Sofia very strong — helped classmates.'}] },
+    { id:'FB004', classId:'c6', date:'2026-03-12', teacherId:'s1', topic:'Kanji compound words', mood:'Needs Work', notes:'Difficult session — compound kanji readings are challenging. Will revisit next week with more practice sheets.', studentNotes:[{studentId:'STU008',note:'Alex got frustrated, encouraged him to keep trying.'},{studentId:'STU012',note:'Tom absent today.'}] },
+    { id:'FB005', classId:'c4', date:'2026-03-11', teacherId:'s3', topic:'Cultural games day', mood:'Great', notes:'Fun session with Japanese card games (karuta). Students loved it, great energy.', studentNotes:[] }
+  ],
   subjects: [
     { id:'sub1', name:'Japanese Level 1 & 2', category:'Academic', level:'Beginner', description:'Foundational Japanese reading, writing and conversation for young learners.', monthlyFee:150, color:'green'  },
     { id:'sub2', name:'Japanese Level 3 & 4', category:'Academic', level:'Intermediate', description:'Intermediate Japanese with expanded vocabulary and grammar.', monthlyFee:150, color:'teal'   },
@@ -140,5 +147,6 @@ App.DATA = {
     { id:'ws2', name:'JLPT N5 Mock Exam',             description:'Full mock examination under timed conditions with review session.', date:'2026-04-05', time:'10:00', endTime:'14:00', classroom:'Classroom 2', capacity:15, enrolled:5, fee:50, teacherIds:['s3'], status:'upcoming'  },
     { id:'ws3', name:'Kanji Writing Workshop',         description:'Hands-on practice of the first 80 kanji with brush-pen exercises.',  date:'2026-02-08', time:'14:00', endTime:'16:00', classroom:'Classroom 1', capacity:10, enrolled:10, fee:60, teacherIds:['s2'], status:'completed' }
   ],
-  performanceReviews: []
+  performanceReviews: [],
+  selfStudySessions: []
 };

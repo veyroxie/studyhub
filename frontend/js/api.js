@@ -87,12 +87,14 @@
         credentials: 'include'
       });
       if (res.status === 401) { this._handle401(); return null; }
+      if (!res.ok) { const t = await res.text(); throw new Error(t); }
       return res.status === 204 ? null : res.json();
     },
 
     async del(path) {
       const res = await fetch(BASE + path, { method: 'DELETE', credentials: 'include' });
       if (res.status === 401) { this._handle401(); return null; }
+      if (!res.ok) { const t = await res.text(); throw new Error(t); }
       return null;
     },
 
@@ -128,7 +130,10 @@
               }
               if (App.Router.current() === 'attendance') App.Router.refresh();
             }
-          } catch(e) {}
+          } catch(e) { console.error('WS message error:', e); }
+        };
+        ws.onerror = function() {
+          console.error('WS error — will reconnect on close');
         };
         ws.onclose = function() {
           setTimeout(function() { App.Api.connectWS(); }, 5000);

@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 # context = project root, so backend/ prefix is needed
@@ -8,11 +8,15 @@ COPY backend/ .
 RUN CGO_ENABLED=0 GOOS=linux go build -o studyhub .
 
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates && \
+    addgroup -g 1000 studyhub && adduser -D -u 1000 -G studyhub studyhub
 WORKDIR /app
 COPY --from=builder /app/studyhub .
 # Serve frontend from the project root's frontend/ folder
 COPY frontend/ ./frontend/
+RUN mkdir -p /app/uploads /app/backups && chown -R studyhub:studyhub /app/uploads /app/backups /app
 
+USER 1000:1000
 EXPOSE 8080
-CMD ["./studyhub", "-db", "/data/studyhub.db"]
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://localhost:8080/api/auth/me || exit 0
+CMD ["./studyhub"]

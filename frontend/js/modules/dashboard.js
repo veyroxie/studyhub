@@ -94,9 +94,9 @@
       +     '<p style="font-size:0.8rem;color:#94a3b8;margin-top:4px">' + _dateFull() + '</p>'
       +   '</div>'
       +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">'
-      +     _qaBtn('Add Student',   'students',      '+ S')
-      +     _qaBtn('Add Invoice',   'billing',       '+ I')
-      +     _qaBtn('Announcement',  'communication', '+ A')
+      +     _qaBtn('Add Student',   null, '+ S', "App.Router.navigate('students');setTimeout(function(){App.Students._addModal();},150)")
+      +     _qaBtn('Add Invoice',   null, '+ I', "App.Router.navigate('billing');setTimeout(function(){App.Billing._createModal();},150)")
+      +     _qaBtn('Announcement',  null, '+ A', "App.Router.navigate('communication');setTimeout(function(){App.Communication._newModal();},150)")
       +     _qaBtn('Attendance',    'attendance',    '✓')
       +   '</div>'
       + '</div>'
@@ -235,6 +235,11 @@
       +     '<h1 style="font-size:1.7rem;font-weight:800;letter-spacing:-0.04em;color:#0d0d0d;line-height:1.2;margin-top:2px">' + (childNames ? childNames + '\'s Dashboard' : 'Welcome back') + '</h1>'
       +     '<p style="font-size:0.8rem;color:#94a3b8;margin-top:4px">' + _dateFull() + '</p>'
       +   '</div>'
+      +   '<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">'
+      +     '<button onclick="App.Router.navigate(\'billing\')" style="padding:0.4rem 0.85rem;font-size:0.75rem;font-weight:700;border-radius:8px;cursor:pointer;border:1.5px solid var(--gold);background:transparent;color:var(--gold);transition:all 0.15s" onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" onmouseout="this.style.background=\'transparent\';this.style.color=\'var(--gold)\'">Pay Invoice</button>'
+      +     '<button onclick="App.Router.navigate(\'calendar\')" style="padding:0.4rem 0.85rem;font-size:0.75rem;font-weight:700;border-radius:8px;cursor:pointer;border:1.5px solid var(--gold);background:transparent;color:var(--gold);transition:all 0.15s" onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" onmouseout="this.style.background=\'transparent\';this.style.color=\'var(--gold)\'">View Schedule</button>'
+      +     '<button onclick="App.Router.navigate(\'feedback\')" style="padding:0.4rem 0.85rem;font-size:0.75rem;font-weight:700;border-radius:8px;cursor:pointer;border:1.5px solid var(--gold);background:transparent;color:var(--gold);transition:all 0.15s" onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" onmouseout="this.style.background=\'transparent\';this.style.color=\'var(--gold)\'">View Feedback</button>'
+      +   '</div>'
       + '</div>'
       + '</div>'
 
@@ -295,7 +300,30 @@
         + '<button onclick="App.Router.navigate(\'communication\')" style="display:block;width:100%;margin-top:0.6rem;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;text-align:center;padding:0.4rem">View all →</button>'
         + '</div></div>' // close inner padding div + announcements card
 
-      + '</div>';
+      + '</div>'
+
+      // Recent Attendance
+      + card('Recent Attendance')
+      + (recentAttend.length === 0
+          ? '<p style="color:#94a3b8;font-size:0.84rem;padding:1.5rem 0;text-align:center">No attendance records yet</p>'
+          : recentAttend.map(function(a) {
+              var stu = myStudents.find(function(st) { return st.id === a.personId; });
+              var stuName = stu ? stu.firstName : a.personId;
+              var cls = classes.find(function(c) { return c.id === a.classId; });
+              var clsName = cls ? cls.name : (a.classId || '—');
+              return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.55rem 0;border-bottom:1px solid #f4f4f2">'
+                + '<div style="flex:1;min-width:0">'
+                +   '<div style="font-weight:600;font-size:0.83rem;color:#111">' + App.Utils.esc(stuName) + ' — ' + App.Utils.esc(clsName) + '</div>'
+                +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatDate(a.date) + '</div>'
+                + '</div>'
+                + '<div style="text-align:right;flex-shrink:0">'
+                +   (a.checkIn ? '<span style="font-size:0.72rem;color:#15803d;font-weight:600">In: ' + App.Utils.formatTime(a.checkIn) + '</span>' : '')
+                +   (a.checkOut ? '<span style="font-size:0.72rem;color:#991b1b;font-weight:600;margin-left:0.5rem">Out: ' + App.Utils.formatTime(a.checkOut) + '</span>' : '')
+                + '</div>'
+                + '</div>';
+            }).join(''))
+      + '<button onclick="App.Router.navigate(\'attendance\')" style="display:block;width:100%;margin-top:0.6rem;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;text-align:center;padding:0.4rem">View all attendance →</button>'
+      + '</div></div>';
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -601,16 +629,17 @@
                 + '<div style="font-size:0.78rem;font-weight:700;color:#15803d;background:#f0fdf4;padding:0.25rem 0.6rem;border-radius:6px">'
                 +   attCount + '/' + enrolled.length + ' in'
                 + '</div>'
-                + '<button onclick="App.Router.navigate(\'attendance\')" style="padding:0.3rem 0.7rem;font-size:0.72rem;font-weight:700;background:#f1f5f9;color:#374151;border:none;border-radius:7px;cursor:pointer">Attend</button>'
+                + '<button onclick="App._preselectedClass=\'' + c.id + '\';App.Router.navigate(\'attendance\')" style="padding:0.3rem 0.7rem;font-size:0.72rem;font-weight:700;background:#f1f5f9;color:#374151;border:none;border-radius:7px;cursor:pointer">Attend</button>'
                 + '</div>';
             }).join(''))
       +   '</div>'
       + '</div>'
 
       // Quick links
-      + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem">'
+      + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem">'
       + [
           { label:'My Students', page:'students', color:'#3b82f6' },
+          { label:'Log Feedback', page:'feedback', color:'#8b5cf6' },
           { label:'Attendance', page:'attendance', color:'#10b981' },
           { label:'Announcements', page:'communication', color:'#f59e0b' }
         ].map(function(item) {
@@ -620,8 +649,9 @@
       + '</div>';
   }
 
-  function _qaBtn(label, page, icon) {
-    return '<button onclick="App.Router.navigate(\'' + page + '\')" '
+  function _qaBtn(label, page, icon, customOnclick) {
+    var onclick = customOnclick || "App.Router.navigate('" + page + "')";
+    return '<button onclick="' + onclick + '" '
       + 'style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;font-size:0.78rem;font-weight:600;border-radius:8px;cursor:pointer;background:#fff;border:1px solid #e8e4df;color:#374151;text-align:left;transition:all 0.15s;white-space:nowrap" '
       + 'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
       + 'onmouseout="this.style.borderColor=\'#e8e4df\';this.style.color=\'#374151\'">'

@@ -135,7 +135,7 @@
   function _months(count) {
     const labels = [];
     const keys = [];
-    const now = new Date(2026, 2, 1); // March 2026
+    const now = new Date();
     for (let i = count - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
