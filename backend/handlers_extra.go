@@ -41,13 +41,54 @@ func listFeedback(db *DB) []Feedback {
 	return out
 }
 
+// parentClassIDs returns the set of class IDs the parent's children are enrolled in.
+func parentClassIDs(db *DB, email string) map[string]bool {
+	rows, err := db.Query(`SELECT enrolled_classes FROM students WHERE contact=? AND deleted_at IS NULL`, email)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	ids := map[string]bool{}
+	for rows.Next() {
+		var raw string
+		rows.Scan(&raw)
+		var arr []string
+		json.Unmarshal([]byte(raw), &arr)
+		for _, id := range arr {
+			ids[id] = true
+		}
+	}
+	return ids
+}
+
+// filterFeedbackForParent keeps only feedback for classes the parent's children attend.
+func filterFeedbackForParent(all []Feedback, classIDs map[string]bool) []Feedback {
+	if classIDs == nil {
+		return []Feedback{}
+	}
+	out := []Feedback{}
+	for _, f := range all {
+		if classIDs[f.ClassID] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 func handleListFeedback(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		isParent := c != nil && c.Role != "admin" && c.Role != "superadmin" && c.Role != "teacher"
+
 		date := r.URL.Query().Get("date")
 		classID := r.URL.Query().Get("classId")
 
 		if date == "" && classID == "" {
-			respond(w, listFeedback(db))
+			all := listFeedback(db)
+			if isParent {
+				all = filterFeedbackForParent(all, parentClassIDs(db, c.Email))
+			}
+			respond(w, all)
 			return
 		}
 
@@ -82,6 +123,9 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 			}
 			out = append(out, f)
 		}
+		if isParent {
+			out = filterFeedbackForParent(out, parentClassIDs(db, c.Email))
+		}
 		respond(w, out)
 	}
 }
@@ -89,6 +133,9 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 func handleCreateFeedback(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
+		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+			http.Error(w, "staff only", 403); return
+		}
 		var f Feedback
 		if err := json.NewDecoder(r.Body).Decode(&f); err != nil {
 			http.Error(w, "bad body", 400)
@@ -390,6 +437,21 @@ func handleDeleteWorkshop(db *DB) http.HandlerFunc {
 
 // ── Self-study Sessions ───────────────────────────────────────────────────────
 
+func parentStudentIDs(db *DB, email string) map[string]bool {
+	rows, err := db.Query(`SELECT id FROM students WHERE contact=? AND deleted_at IS NULL`, email)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	ids := map[string]bool{}
+	for rows.Next() {
+		var id string
+		rows.Scan(&id)
+		ids[id] = true
+	}
+	return ids
+}
+
 func listSelfStudy(db *DB) []SelfStudySession {
 	rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions ORDER BY date DESC`)
 	if err != nil {
@@ -407,10 +469,32 @@ func listSelfStudy(db *DB) []SelfStudySession {
 
 func handleListSelfStudy(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		isParent := c != nil && c.Role != "admin" && c.Role != "superadmin" && c.Role != "teacher"
+
 		studentID := r.URL.Query().Get("studentId")
 		if studentID == "" {
-			respond(w, listSelfStudy(db))
+			all := listSelfStudy(db)
+			if isParent {
+				stuIDs := parentStudentIDs(db, c.Email)
+				filtered := []SelfStudySession{}
+				for _, s := range all {
+					if stuIDs[s.StudentID] {
+						filtered = append(filtered, s)
+					}
+				}
+				all = filtered
+			}
+			respond(w, all)
 			return
+		}
+		// If parent, verify the student belongs to them
+		if isParent {
+			stuIDs := parentStudentIDs(db, c.Email)
+			if !stuIDs[studentID] {
+				respond(w, []SelfStudySession{})
+				return
+			}
 		}
 		rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE student_id=? ORDER BY date DESC`, studentID)
 		if err != nil {
@@ -431,6 +515,9 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 func handleCreateSelfStudy(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
+		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+			http.Error(w, "staff only", 403); return
+		}
 		var s SelfStudySession
 		if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
 			http.Error(w, "bad body", 400)
@@ -493,6 +580,12 @@ func listPerformanceReviews(db *DB) []PerformanceReview {
 
 func handleListPerformanceReviews(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		// Parents cannot view staff performance reviews
+		if c != nil && c.Role != "admin" && c.Role != "superadmin" && c.Role != "teacher" {
+			respond(w, []PerformanceReview{})
+			return
+		}
 		staffID := r.URL.Query().Get("staffId")
 		if staffID == "" {
 			respond(w, listPerformanceReviews(db))
@@ -517,6 +610,9 @@ func handleListPerformanceReviews(db *DB) http.HandlerFunc {
 func handleCreatePerformanceReview(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
+		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+			http.Error(w, "staff only", 403); return
+		}
 		var p PerformanceReview
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 			http.Error(w, "bad body", 400)
@@ -592,6 +688,9 @@ func handleListCancelledClasses(db *DB) http.HandlerFunc {
 func handleCreateCancelledClass(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
+		if c == nil || (c.Role != "admin" && c.Role != "superadmin") {
+			http.Error(w, "admin only", 403); return
+		}
 		var cc CancelledClass
 		if err := json.NewDecoder(r.Body).Decode(&cc); err != nil {
 			http.Error(w, "bad body", 400)

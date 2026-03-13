@@ -127,11 +127,15 @@
        SIDEBAR
   ========================= -->
   <aside id="sidebar" class="w-60 bg-slate-900 text-white flex flex-col shrink-0">
+    <!-- Collapse toggle -->
+    <button id="sidebar-collapse-btn" onclick="App.Theme.toggleCollapse()" title="Collapse sidebar">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
     <!-- Logo -->
     <div class="px-5 py-4 border-b border-slate-700/60">
       <div class="flex items-center gap-3">
-        <div class="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center text-lg font-bold shrink-0">🦉</div>
-        <div>
+        <div class="logo-icon w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center text-lg font-bold shrink-0">🦉</div>
+        <div class="logo-text">
           <div class="font-bold text-base leading-tight">Study Hub</div>
           <div class="text-xs text-slate-400">Education Manager</div>
         </div>
@@ -141,41 +145,41 @@
     <!-- Nav -->
     <nav class="flex-1 p-3 overflow-y-auto" role="navigation" aria-label="Main navigation">
       <!-- Dashboard -->
-      <button data-page="dashboard" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium mb-1">
+      <button data-page="dashboard" data-tooltip="Dashboard" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium mb-1">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <span>Dashboard</span>
       </button>
 
       <!-- ACADEMIC group -->
       <div id="nav-group-academic" class="nav-group-label mt-3 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">ACADEMIC</div>
-      <button data-page="calendar" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+      <button data-page="calendar" data-tooltip="Schedule" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path stroke-linecap="round" d="M16 2v4M8 2v4M3 10h18"/></svg>
         <span>Schedule</span>
       </button>
-      <button data-page="students" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+      <button data-page="students" data-tooltip="Students" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path stroke-linecap="round" d="M23 21v-2a4 4 0 00-3-3.87m-4-12a4 4 0 010 7.75"/></svg>
         <span>Students</span>
       </button>
-      <button data-page="attendance" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+      <button data-page="attendance" data-tooltip="Attendance" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path stroke-linecap="round" d="M9 12l2 2 4-4"/></svg>
         <span>Attendance</span>
       </button>
-      <button data-page="feedback" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+      <button data-page="feedback" data-tooltip="Feedback" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
         <span>Feedback</span>
       </button>
 
       <!-- OPERATIONS group -->
       <div id="nav-group-operations" class="nav-group-label mt-4 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">OPERATIONS</div>
-      <button data-page="billing" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+      <button data-page="billing" data-tooltip="Billing" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><path stroke-linecap="round" d="M1 10h22"/></svg>
         <span>Billing</span>
       </button>
-      <button data-page="staff" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+      <button data-page="staff" data-tooltip="Staff" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <span>Staff</span>
       </button>
-      <button data-page="communication" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+      <button data-page="communication" data-tooltip="Announcements" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
         <span>Announcements</span>
       </button>
@@ -188,7 +192,7 @@
 
       <!-- INSIGHTS group -->
       <div id="nav-group-insights" class="nav-group-label mt-4 mb-1 px-3 text-xs font-semibold tracking-wider" style="color:rgba(255,255,255,0.3)">INSIGHTS</div>
-      <button data-page="analytics" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
+      <button data-page="analytics" data-tooltip="Analytics" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
         <span>Analytics</span>
       </button>

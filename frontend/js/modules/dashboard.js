@@ -85,25 +85,24 @@
     var topOverdue = overdueInvs.slice(0, 3);
 
     // ── HTML ──────────────────────────────────────────────────────────────────
-    return card('')
-      // Greeting
-      + '<div class="flex items-start justify-between gap-4 flex-wrap">'
+    return '<div class="dash-hero">'
+      + '<div style="display:flex;align-items:start;justify-content:space-between;gap:1rem;flex-wrap:wrap;position:relative;z-index:1">'
       +   '<div>'
-      +     '<p class="text-xs font-semibold uppercase tracking-widest" style="color:var(--gold);letter-spacing:0.12em">Study Hub</p>'
-      +     '<h1 style="font-size:1.7rem;font-weight:800;letter-spacing:-0.04em;color:#0d0d0d;line-height:1.2;margin-top:2px">Good ' + _timeOfDay() + '</h1>'
-      +     '<p style="font-size:0.8rem;color:#94a3b8;margin-top:4px">' + _dateFull() + '</p>'
+      +     '<p style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:var(--gold);margin:0">Study Hub</p>'
+      +     '<h1 style="font-family:var(--serif);font-size:1.85rem;font-weight:700;letter-spacing:-0.04em;color:#fff;line-height:1.2;margin:6px 0 0">Good ' + _timeOfDay() + '</h1>'
+      +     '<p style="font-size:0.8rem;color:rgba(255,255,255,0.45);margin:4px 0 0">' + _dateFull() + '</p>'
       +   '</div>'
       +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">'
-      +     _qaBtn('Add Student',   null, '+ S', "App.Router.navigate('students');setTimeout(function(){App.Students._addModal();},150)")
-      +     _qaBtn('Add Invoice',   null, '+ I', "App.Router.navigate('billing');setTimeout(function(){App.Billing._createModal();},150)")
-      +     _qaBtn('Announcement',  null, '+ A', "App.Router.navigate('communication');setTimeout(function(){App.Communication._newModal();},150)")
-      +     _qaBtn('Attendance',    'attendance',    '✓')
+      +     _heroBtn('Add Student', "App.Router.navigate('students');setTimeout(function(){App.Students._addModal();},150)")
+      +     _heroBtn('Add Invoice', "App.Router.navigate('billing');setTimeout(function(){App.Billing._createModal();},150)")
+      +     _heroBtn('Announcement', "App.Router.navigate('communication');setTimeout(function(){App.Communication._newModal();},150)")
+      +     _heroBtn('Attendance', "App.Router.navigate('attendance')")
       +   '</div>'
       + '</div>'
-      + '</div>' // close greeting card
+      + '</div>'
 
       // Stats
-      + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem">'
+      + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem">'
       + stat('Active Students', activeStudents,  false, '#1d4ed8',   false, '#eff6ff')
       + stat('Revenue / Month', monthRevenue,    true,  '#92400e', true, '#fef9ec')
       + stat('Overdue Invoices',overdueInvs.length, false, overdueInvs.length > 0 ? '#991b1b' : '#94a3b8', false, overdueInvs.length > 0 ? '#fef2f2' : '#f9f9f9')
@@ -111,7 +110,7 @@
       + '</div>'
 
       // Main two-col
-      + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:0.75rem;align-items:start">'
+      + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:start">'
 
         // Today's classes
         + card('Today\'s Classes <span style="font-size:0.75rem;font-weight:500;color:#94a3b8;margin-left:6px">' + todayDay + '</span>')
@@ -153,7 +152,7 @@
       + _weeklyAttendanceCard(attendance, today, students)
 
       // Bottom two-col: recent students + overdue invoices
-      + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:0.75rem;align-items:start">'
+      + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:start">'
 
         // Recent students
         + card('Recent Students')
@@ -169,7 +168,7 @@
               + '<button onclick="App.Students && App.Students._viewModal(\'' + stu.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0 0.2rem">View</button>'
               + '</div>';
           }).join('')
-        + '<button onclick="App.Router.navigate(\'students\')" style="display:block;width:100%;margin-top:0.6rem;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;text-align:center;padding:0.4rem">View all students →</button>'
+        + '<button onclick="App.Router.navigate(\'students\')" class="dash-link">View all students →</button>'
         + '</div></div>' // close inner padding div + recent students card
 
         // Overdue invoices quick panel
@@ -186,7 +185,7 @@
                   + '<div style="font-size:0.82rem;font-weight:700;color:#dc2626;flex-shrink:0">' + App.Utils.formatCurrency(inv.amount) + '</div>'
                   + '</div>';
               }).join(''))
-        + '<button onclick="App.Router.navigate(\'billing\')" style="display:block;width:100%;margin-top:0.6rem;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;text-align:center;padding:0.4rem">Manage billing →</button>'
+        + '<button onclick="App.Router.navigate(\'billing\')" class="dash-link">Manage billing →</button>'
         + '</div></div>' // close inner padding div + overdue card
 
       + '</div>'; // close bottom row
@@ -228,17 +227,17 @@
       .sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); }).slice(0, 3);
     var childNames = myStudents.map(function(st) { return st.firstName; }).join(' & ');
 
-    return card('')
-      + '<div class="flex items-start justify-between gap-4 flex-wrap">'
+    return '<div class="dash-hero">'
+      + '<div style="display:flex;align-items:start;justify-content:space-between;gap:1rem;flex-wrap:wrap;position:relative;z-index:1">'
       +   '<div>'
-      +     '<p style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:var(--gold)">Parent Portal</p>'
-      +     '<h1 style="font-size:1.7rem;font-weight:800;letter-spacing:-0.04em;color:#0d0d0d;line-height:1.2;margin-top:2px">' + (childNames ? childNames + '\'s Dashboard' : 'Welcome back') + '</h1>'
-      +     '<p style="font-size:0.8rem;color:#94a3b8;margin-top:4px">' + _dateFull() + '</p>'
+      +     '<p style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:var(--gold);margin:0">Parent Portal</p>'
+      +     '<h1 style="font-family:var(--serif);font-size:1.85rem;font-weight:700;letter-spacing:-0.04em;color:#fff;line-height:1.2;margin:6px 0 0">' + (childNames ? childNames + '\'s Dashboard' : 'Welcome back') + '</h1>'
+      +     '<p style="font-size:0.8rem;color:rgba(255,255,255,0.45);margin:4px 0 0">' + _dateFull() + '</p>'
       +   '</div>'
       +   '<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">'
-      +     '<button onclick="App.Router.navigate(\'billing\')" style="padding:0.4rem 0.85rem;font-size:0.75rem;font-weight:700;border-radius:8px;cursor:pointer;border:1.5px solid var(--gold);background:transparent;color:var(--gold);transition:all 0.15s" onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" onmouseout="this.style.background=\'transparent\';this.style.color=\'var(--gold)\'">Pay Invoice</button>'
-      +     '<button onclick="App.Router.navigate(\'calendar\')" style="padding:0.4rem 0.85rem;font-size:0.75rem;font-weight:700;border-radius:8px;cursor:pointer;border:1.5px solid var(--gold);background:transparent;color:var(--gold);transition:all 0.15s" onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" onmouseout="this.style.background=\'transparent\';this.style.color=\'var(--gold)\'">View Schedule</button>'
-      +     '<button onclick="App.Router.navigate(\'feedback\')" style="padding:0.4rem 0.85rem;font-size:0.75rem;font-weight:700;border-radius:8px;cursor:pointer;border:1.5px solid var(--gold);background:transparent;color:var(--gold);transition:all 0.15s" onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" onmouseout="this.style.background=\'transparent\';this.style.color=\'var(--gold)\'">View Feedback</button>'
+      +     _heroBtn('Pay Invoice', "App.Router.navigate('billing')")
+      +     _heroBtn('View Schedule', "App.Router.navigate('calendar')")
+      +     _heroBtn('View Feedback', "App.Router.navigate('feedback')")
       +   '</div>'
       + '</div>'
       + '</div>'
@@ -251,14 +250,14 @@
           : '')
 
       // Stats
-      + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem">'
+      + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem">'
       + stat('My Children',      myStudents.length, false, '#1d4ed8',    false, '#eff6ff')
       + stat('Classes Enrolled', myClasses.length,  false, '#92400e', true, '#fef9ec')
       + stat('Balance Due',      totalOwed,         true,  totalOwed > 0 ? '#991b1b' : '#15803d', false, totalOwed > 0 ? '#fef2f2' : '#f0fdf4')
       + '</div>'
 
       // Two col: today's classes + announcements
-      + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:0.75rem;align-items:start">'
+      + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:start">'
 
         // Today's classes
         + card('Today\'s Classes')
@@ -278,7 +277,7 @@
                   + '<div style="font-size:0.72rem;color:#94a3b8;flex-shrink:0">' + c.classroom + '</div>'
                   + '</div>';
               }).join(''))
-        + '<button onclick="App.Router.navigate(\'calendar\')" style="display:block;width:100%;margin-top:0.6rem;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;text-align:center;padding:0.4rem">Full schedule →</button>'
+        + '<button onclick="App.Router.navigate(\'calendar\')" class="dash-link">Full schedule →</button>'
         + '</div></div>' // close inner padding div + today classes card
 
         // Announcements
@@ -297,7 +296,7 @@
                   + '<div style="font-size:0.72rem;color:#64748b;margin-top:2px">' + a.message.slice(0,80) + (a.message.length > 80 ? '…' : '') + '</div>'
                   + '</div>';
               }).join(''))
-        + '<button onclick="App.Router.navigate(\'communication\')" style="display:block;width:100%;margin-top:0.6rem;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;text-align:center;padding:0.4rem">View all →</button>'
+        + '<button onclick="App.Router.navigate(\'communication\')" class="dash-link">View all →</button>'
         + '</div></div>' // close inner padding div + announcements card
 
       + '</div>'
@@ -322,7 +321,7 @@
                 + '</div>'
                 + '</div>';
             }).join(''))
-      + '<button onclick="App.Router.navigate(\'attendance\')" style="display:block;width:100%;margin-top:0.6rem;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;text-align:center;padding:0.4rem">View all attendance →</button>'
+      + '<button onclick="App.Router.navigate(\'attendance\')" class="dash-link">View all attendance →</button>'
       + '</div></div>';
   }
 
@@ -331,9 +330,9 @@
   // card() opens a card; with title: opens outer div + inner padding div (caller needs two </div>s); without title: one div
   function card(title) {
     var header = title
-      ? '<div style="padding:0.85rem 1.25rem;border-bottom:1px solid #f0ede8;background:#faf9f7"><p style="font-size:0.8rem;font-weight:700;color:#111;margin:0">' + title + '</p></div><div style="padding:1rem 1.25rem">'
-      : '<div style="padding:1.25rem">';
-    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden">' + header;
+      ? '<div class="dash-card-header">' + title + '</div><div class="dash-card-body">'
+      : '<div style="padding:1.25rem 1.5rem">';
+    return '<div class="dash-card">' + header;
   }
 
   function stat(label, value, isCurr, color, goldBorder, bg) {
@@ -343,11 +342,11 @@
     var dataAttr = isCurr
       ? 'data-count="' + value + '" data-currency="1"'
       : 'data-count="' + value + '"';
-    var bgColor = bg || '#fff';
-    var borderTop = goldBorder ? 'border-top:2.5px solid var(--gold);' : '';
-    return '<div style="background:' + bgColor + ';border-radius:14px;border:1px solid rgba(0,0,0,0.06);padding:1.1rem 1.2rem;box-shadow:0 1px 2px rgba(0,0,0,0.04);' + borderTop + '">'
-      + '<p style="font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:' + color + ';opacity:0.6;margin:0 0 0.45rem">' + label + '</p>'
-      + '<p ' + dataAttr + ' style="font-family:\'Cormorant Garamond\',Georgia,serif;font-size:2rem;font-weight:600;line-height:1;color:' + color + ';margin:0">' + display + '</p>'
+    var bgGrad = bg ? 'background:linear-gradient(135deg,' + bg + ' 0%,#ffffff 70%)' : 'background:#fff';
+    var borderTop = goldBorder ? ';border-top:2.5px solid var(--gold)' : '';
+    return '<div class="dash-stat" style="' + bgGrad + borderTop + '">'
+      + '<p class="dash-stat-label" style="color:' + color + '">' + label + '</p>'
+      + '<p ' + dataAttr + ' class="dash-stat-number" style="color:' + color + '">' + display + '</p>'
       + '</div>';
   }
 
@@ -592,16 +591,18 @@
 
     return '<div>'
       // Greeting
-      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between">'
+      + '<div class="dash-hero" style="margin-bottom:1.25rem">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1">'
       +   '<div>'
-      +     '<p style="font-size:1.1rem;font-weight:800;color:#111;margin:0">Good ' + _timeOfDay() + ', ' + (teacher.name || 'Teacher') + '</p>'
-      +     '<p style="font-size:0.8rem;color:#94a3b8;margin:0.2rem 0 0">' + _dateFull() + '</p>'
+      +     '<p style="font-family:var(--serif);font-size:1.3rem;font-weight:700;color:#fff;margin:0">Good ' + _timeOfDay() + ', ' + (teacher.name || 'Teacher') + '</p>'
+      +     '<p style="font-size:0.8rem;color:rgba(255,255,255,0.45);margin:0.2rem 0 0">' + _dateFull() + '</p>'
       +   '</div>'
       +   '<div style="text-align:right">'
       +     (myRec && myRec.checkIn
-              ? '<div style="font-size:0.78rem;font-weight:700;color:#15803d">Checked in ' + App.Utils.formatTime(myRec.checkIn) + '</div>'
+              ? '<div style="font-size:0.78rem;font-weight:700;color:#6ee7b7">Checked in ' + App.Utils.formatTime(myRec.checkIn) + '</div>'
               : '<button onclick="App.Router.navigate(\'attendance\')" style="padding:0.4rem 0.9rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Check In</button>')
       +   '</div>'
+      + '</div>'
       + '</div>'
 
       // Stats row
@@ -612,9 +613,9 @@
       + '</div>'
 
       // Today's classes
-      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden;margin-bottom:1.25rem">'
-      +   '<div style="padding:0.85rem 1.25rem;border-bottom:1px solid #f0ede8;background:#faf9f7"><p style="font-size:0.8rem;font-weight:700;color:#111;margin:0">Today\'s Schedule</p></div>'
-      +   '<div style="padding:0.85rem 1.25rem">'
+      + '<div class="dash-card" style="margin-bottom:1.25rem">'
+      +   '<div class="dash-card-header">Today\'s Schedule</div>'
+      +   '<div class="dash-card-body">'
       +   (todayClasses.length === 0
           ? '<p style="font-size:0.82rem;color:#94a3b8;text-align:center;padding:1rem 0">No classes today — enjoy your day!</p>'
           : todayClasses.map(function(c) {
@@ -649,6 +650,15 @@
       + '</div>';
   }
 
+  function _heroBtn(label, onclick) {
+    return '<button onclick="' + onclick + '" '
+      + 'style="padding:0.4rem 0.85rem;font-size:0.75rem;font-weight:700;border-radius:8px;cursor:pointer;'
+      + 'border:1.5px solid rgba(201,162,39,0.5);background:transparent;color:var(--gold);transition:all 0.15s;white-space:nowrap" '
+      + 'onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" '
+      + 'onmouseout="this.style.background=\'transparent\';this.style.color=\'var(--gold)\'">'
+      + label + '</button>';
+  }
+
   function _qaBtn(label, page, icon, customOnclick) {
     var onclick = customOnclick || "App.Router.navigate('" + page + "')";
     return '<button onclick="' + onclick + '" '
@@ -676,20 +686,18 @@
       var total = students.filter(function(s) { return s.status === 'Active'; }).length;
       var pct = total > 0 ? Math.round(presentCount / total * 100) : 0;
       var isToday = dateStr === today;
-      return '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem">'
-        + '<div style="font-size:0.7rem;font-weight:700;color:' + (isToday ? 'var(--gold)' : '#94a3b8') + ';min-width:28px">' + dayLabel + '</div>'
-        + '<div style="flex:1;height:5px;background:#f1f5f9;border-radius:99px;overflow:hidden">'
-        +   '<div style="width:' + pct + '%;height:100%;background:' + (isToday ? 'var(--gold)' : '#94a3b8') + ';border-radius:99px;transition:width 0.4s"></div>'
+      return '<div class="dash-list-item" style="gap:0.75rem;padding:0.45rem 0;border-bottom:none">'
+        + '<div style="font-size:0.72rem;font-weight:700;color:' + (isToday ? 'var(--gold)' : '#94a3b8') + ';min-width:28px">' + dayLabel + '</div>'
+        + '<div style="flex:1;height:7px;background:#f1f5f9;border-radius:99px;overflow:hidden">'
+        +   '<div style="width:' + pct + '%;height:100%;background:' + (isToday ? 'var(--gold)' : '#c5c0b8') + ';border-radius:99px;transition:width 0.5s cubic-bezier(0.4,0,0.2,1)"></div>'
         + '</div>'
-        + '<div style="font-size:0.7rem;font-weight:600;color:#94a3b8;min-width:32px;text-align:right">' + pct + '%</div>'
+        + '<div style="font-size:0.72rem;font-weight:700;color:' + (isToday ? 'var(--gold)' : '#94a3b8') + ';min-width:32px;text-align:right">' + pct + '%</div>'
         + '</div>';
     }).join('');
 
-    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden;margin-bottom:0.75rem">'
-      + '<div style="padding:0.85rem 1.25rem;border-bottom:1px solid #f0ede8;background:#faf9f7">'
-      +   '<p style="font-size:0.8rem;font-weight:700;color:#111;margin:0">This Week\'s Attendance</p>'
-      + '</div>'
-      + '<div style="padding:1rem 1.25rem">' + rows + '</div>'
+    return '<div class="dash-card" style="margin-bottom:1rem">'
+      + '<div class="dash-card-header">This Week\'s Attendance</div>'
+      + '<div class="dash-card-body">' + rows + '</div>'
       + '</div>';
   }
 

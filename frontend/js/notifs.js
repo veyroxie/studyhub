@@ -223,22 +223,35 @@
         });
       });
 
-      // Their kids late or absent today
+      // Their kids checked in today
       attendance.filter(function(a) {
         return a.personType === 'student'
           && myIds.indexOf(a.personId) > -1
           && a.date === today
-          && (a.status === 'Late' || a.status === 'Absent');
+          && a.checkIn;
       }).forEach(function(rec) {
         var stu = students.find(function(s) { return s.id === rec.personId; });
-        notifs.push({
-          id: 'att-stu-' + rec.id,
-          type: 'attendance',
-          severity: rec.status === 'Absent' ? 'error' : 'warning',
-          title: (stu ? stu.firstName : 'Your child') + ' was ' + rec.status.toLowerCase() + ' today',
-          body: 'Attendance recorded' + (rec.checkIn ? ' at ' + App.Utils.formatTime(rec.checkIn) : ''),
-          action: 'attendance'
-        });
+        var cls = (state.classes || []).find(function(c) { return c.id === rec.classId; });
+        var clsName = cls ? cls.name : '';
+        if (rec.status === 'Late' || rec.status === 'Absent') {
+          notifs.push({
+            id: 'att-stu-' + rec.id,
+            type: 'attendance',
+            severity: rec.status === 'Absent' ? 'error' : 'warning',
+            title: (stu ? stu.firstName : 'Your child') + ' was ' + rec.status.toLowerCase() + ' today',
+            body: (clsName ? clsName + ' · ' : '') + 'Checked in at ' + App.Utils.formatTime(rec.checkIn),
+            action: 'attendance'
+          });
+        } else {
+          notifs.push({
+            id: 'att-checkin-' + rec.id,
+            type: 'attendance',
+            severity: 'info',
+            title: (stu ? stu.firstName : 'Your child') + ' checked in',
+            body: (clsName ? clsName + ' · ' : '') + App.Utils.formatTime(rec.checkIn) + (rec.checkOut ? ' — out ' + App.Utils.formatTime(rec.checkOut) : ''),
+            action: 'attendance'
+          });
+        }
       });
     }
 

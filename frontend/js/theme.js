@@ -9,6 +9,7 @@
 
   var _current = localStorage.getItem('sh_theme') || 'b';
   var _sidebarOpen = false;
+  var _collapsed = localStorage.getItem('sh_sidebar_collapsed') === '1';
 
   function _apply(theme) {
     document.body.classList.remove('theme-a', 'theme-b', 'theme-c');
@@ -79,6 +80,17 @@
     document.body.classList.toggle('sidebar-open', _sidebarOpen);
   }
 
+  // Toggle desktop sidebar collapse
+  function toggleCollapse() {
+    _collapsed = !_collapsed;
+    document.body.classList.toggle('sidebar-collapsed', _collapsed);
+    localStorage.setItem('sh_sidebar_collapsed', _collapsed ? '1' : '0');
+  }
+
+  function _restoreCollapse() {
+    if (_collapsed) document.body.classList.add('sidebar-collapsed');
+  }
+
   // Show theme picker modal
   function picker() {
     var html = '<div class="p-6">'
@@ -145,9 +157,10 @@
     current: function() { return _current; },
     picker:  picker,
     toggleSidebar: toggleSidebar,
+    toggleCollapse: toggleCollapse,
     syncTopNav: _syncTopNavActive,
     syncTopRole: _syncTopRole,
     syncTopBadge: _syncTopBadge,
-    init: function() { _apply(_current); }
+    init: function() { _restoreCollapse(); _apply(_current); }
   };
 })();

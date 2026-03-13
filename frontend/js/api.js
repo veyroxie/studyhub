@@ -119,18 +119,33 @@
           try {
             const data = JSON.parse(e.data);
             if (data.type === 'CHECK_IN' || data.type === 'CHECK_OUT') {
-              const { students } = App.Store.get();
+              const state = App.Store.get();
+              const students = state.students || [];
               const stu = students.find(function(s) { return s.id === data.personId; });
               const name = stu ? stu.firstName + ' ' + stu.lastName : data.personId;
               const time = data.checkIn || data.checkOut || '';
-              if (data.type === 'CHECK_IN') {
-                App.Utils.showToast('📱 ' + name + ' checked in at ' + App.Utils.formatTime(time), 'info');
-              } else {
-                App.Utils.showToast('📱 ' + name + ' checked out at ' + App.Utils.formatTime(time), 'success');
+
+              // For parents: only show toast for their own children
+              const isParent = App.currentRole === 'client';
+              const isMyChild = isParent && stu && stu.contact === App.clientParent;
+
+              if (!isParent || isMyChild) {
+                if (data.type === 'CHECK_IN') {
+                  App.Utils.showToast(name + ' checked in at ' + App.Utils.formatTime(time), 'info');
+                } else {
+                  App.Utils.showToast(name + ' checked out at ' + App.Utils.formatTime(time), 'success');
+                }
               }
-              if (App.Router.current() === 'attendance') App.Router.refresh();
+
+              // Reload data so notification panel + dashboard update
+              App.Api.loadSnapshot().then(function() {
+                if (App.Notifs) App.Notifs.refresh();
+                if (App.Router.current() === 'attendance' || App.Router.current() === 'dashboard') {
+                  App.Router.refresh();
+                }
+              });
             }
-          } catch(e) { console.error('WS message error:', e); }
+          } catch(ex) { console.error('WS message error:', ex); }
         };
         ws.onerror = function() {
           console.error('WS error — will reconnect on close');

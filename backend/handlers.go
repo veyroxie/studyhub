@@ -46,6 +46,30 @@ func generateID(prefix string) string {
 func handleSnapshot(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
+		isParent := c != nil && c.Role != "admin" && c.Role != "superadmin" && c.Role != "teacher"
+
+		feedback := listFeedback(db)
+		selfStudy := listSelfStudy(db)
+		perfReviews := listPerformanceReviews(db)
+
+		// Parents: filter to their children's data only
+		if isParent {
+			classIDs := parentClassIDs(db, c.Email)
+			feedback = filterFeedbackForParent(feedback, classIDs)
+
+			stuIDs := parentStudentIDs(db, c.Email)
+			filtered := []SelfStudySession{}
+			for _, s := range selfStudy {
+				if stuIDs[s.StudentID] {
+					filtered = append(filtered, s)
+				}
+			}
+			selfStudy = filtered
+
+			// Hide internal performance reviews from parents
+			perfReviews = []PerformanceReview{}
+		}
+
 		snap := Snapshot{
 			Students:           listStudents(db, c),
 			Classes:            listClasses(db),
@@ -54,11 +78,11 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 			Announcements:      listAnnouncements(db),
 			Attendance:         listAttendance(db, c),
 			Payroll:            listPayroll(db, c),
-			Feedback:           listFeedback(db),
+			Feedback:           feedback,
 			Subjects:           listSubjects(db),
 			Workshops:          listWorkshops(db),
-			SelfStudySessions:  listSelfStudy(db),
-			PerformanceReviews: listPerformanceReviews(db),
+			SelfStudySessions:  selfStudy,
+			PerformanceReviews: perfReviews,
 			CancelledClasses:   listCancelledClasses(db),
 			Holidays:           listHolidays(db),
 		}
