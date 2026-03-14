@@ -85,12 +85,18 @@
     var topOverdue = overdueInvs.slice(0, 3);
 
     // ── HTML ──────────────────────────────────────────────────────────────────
+    var _greetIcon = { morning:'<path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/><circle cx="12" cy="12" r="4"/>', afternoon:'<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>', evening:'<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>', night:'<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>' };
+    var _tod = _timeOfDay();
+
     return '<div class="dash-hero">'
       + '<div style="display:flex;align-items:start;justify-content:space-between;gap:1rem;flex-wrap:wrap;position:relative;z-index:1">'
       +   '<div>'
-      +     '<p style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:var(--gold);margin:0">Study Hub</p>'
-      +     '<h1 style="font-family:var(--serif);font-size:1.85rem;font-weight:700;letter-spacing:-0.04em;color:#fff;line-height:1.2;margin:6px 0 0">Good ' + _timeOfDay() + '</h1>'
-      +     '<p style="font-size:0.8rem;color:rgba(255,255,255,0.45);margin:4px 0 0">' + _dateFull() + '</p>'
+      +     '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:6px">'
+      +       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (_greetIcon[_tod] || _greetIcon.morning) + '</svg>'
+      +       '<p style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--gold);margin:0">' + _dateFull() + '</p>'
+      +     '</div>'
+      +     '<h1 style="font-family:var(--serif);font-size:1.85rem;font-weight:700;letter-spacing:-0.04em;color:#1a1a1a;line-height:1.2;margin:0">Good ' + _tod + '</h1>'
+      +     '<p style="font-size:0.82rem;color:#64748b;margin:4px 0 0">' + activeStudents + ' active students · ' + todayClasses.length + ' class' + (todayClasses.length !== 1 ? 'es' : '') + ' today</p>'
       +   '</div>'
       +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">'
       +     _heroBtn('Add Student', "App.Router.navigate('students');setTimeout(function(){App.Students._addModal();},150)")
@@ -103,17 +109,17 @@
 
       // Stats
       + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem">'
-      + stat('Active Students', activeStudents,  false, '#1d4ed8',   false, '#eff6ff')
-      + stat('Revenue / Month', monthRevenue,    true,  '#92400e', true, '#fef9ec')
-      + stat('Overdue Invoices',overdueInvs.length, false, overdueInvs.length > 0 ? '#991b1b' : '#94a3b8', false, overdueInvs.length > 0 ? '#fef2f2' : '#f9f9f9')
-      + stat('Pending Regs',   pendingRegs,     false, pendingRegs > 0 ? '#92400e' : '#94a3b8', false, pendingRegs > 0 ? '#fffbeb' : '#f9f9f9')
+      + stat('Active Students', activeStudents,  false, '#1d4ed8',   false, '#eff6ff', 'students')
+      + stat('Revenue / Month', monthRevenue,    true,  '#92400e', true, '#fef9ec', 'billing')
+      + stat('Overdue Invoices',overdueInvs.length, false, overdueInvs.length > 0 ? '#991b1b' : '#94a3b8', false, overdueInvs.length > 0 ? '#fef2f2' : '#f9f9f9', 'billing')
+      + stat('Pending Regs',   pendingRegs,     false, pendingRegs > 0 ? '#92400e' : '#94a3b8', false, pendingRegs > 0 ? '#fffbeb' : '#f9f9f9', 'students')
       + '</div>'
 
       // Main two-col
-      + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:start">'
+      + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:stretch">'
 
         // Today's classes
-        + card('Today\'s Classes <span style="font-size:0.75rem;font-weight:500;color:#94a3b8;margin-left:6px">' + todayDay + '</span>')
+        + card('Today\'s Classes <span style="font-size:0.75rem;font-weight:500;color:#94a3b8;margin-left:6px">' + todayDay + '</span>', 'calendar')
         + (todayClasses.length === 0
             ? '<p style="color:#94a3b8;font-size:0.84rem;padding:1.5rem 0;text-align:center">No classes today</p>'
             : todayClasses.map(function(c) {
@@ -143,7 +149,7 @@
         + '</div></div>' // close inner padding div + today card
 
         // Needs attention
-        + card('Needs Attention')
+        + card('Needs Attention', null)
         + _attnItems(pendingRegs, overdueInvs, dueSoonInvs, newStudents, students, attendance, staff, classes, today, todayDay, now, invoices)
         + '</div></div>' // close inner padding div + attn card
 
@@ -155,7 +161,7 @@
       + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:start">'
 
         // Recent students
-        + card('Recent Students')
+        + card('Recent Students', 'students')
         + recentStudents.map(function(stu) {
             var cls = classes.filter(function(c) { return stu.enrolledClasses.indexOf(c.id) > -1; }).map(function(c) { return c.name; }).join(', ');
             return '<div style="display:flex;align-items:center;gap:0.7rem;padding:0.55rem 0;border-bottom:1px solid #f4f4f2">'
@@ -172,7 +178,7 @@
         + '</div></div>' // close inner padding div + recent students card
 
         // Overdue invoices quick panel
-        + card('Overdue Invoices')
+        + card('Overdue Invoices', 'billing')
         + (topOverdue.length === 0
             ? '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1.5rem 0">No overdue invoices ✓</p>'
             : topOverdue.map(function(inv) {
@@ -227,12 +233,13 @@
       .sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); }).slice(0, 3);
     var childNames = myStudents.map(function(st) { return st.firstName; }).join(' & ');
 
+    var _tod = _timeOfDay();
     return '<div class="dash-hero">'
       + '<div style="display:flex;align-items:start;justify-content:space-between;gap:1rem;flex-wrap:wrap;position:relative;z-index:1">'
       +   '<div>'
-      +     '<p style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:var(--gold);margin:0">Parent Portal</p>'
-      +     '<h1 style="font-family:var(--serif);font-size:1.85rem;font-weight:700;letter-spacing:-0.04em;color:#fff;line-height:1.2;margin:6px 0 0">' + (childNames ? childNames + '\'s Dashboard' : 'Welcome back') + '</h1>'
-      +     '<p style="font-size:0.8rem;color:rgba(255,255,255,0.45);margin:4px 0 0">' + _dateFull() + '</p>'
+      +     '<p style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--gold);margin:0 0 6px">' + _dateFull() + '</p>'
+      +     '<h1 style="font-family:var(--serif);font-size:1.85rem;font-weight:700;letter-spacing:-0.04em;color:#1a1a1a;line-height:1.2;margin:0">Good ' + _tod + (childNames ? ', ' + childNames + '\'s family' : '') + '</h1>'
+      +     '<p style="font-size:0.82rem;color:#64748b;margin:4px 0 0">' + myStudents.length + ' child' + (myStudents.length !== 1 ? 'ren' : '') + ' enrolled · ' + todayClasses.length + ' class' + (todayClasses.length !== 1 ? 'es' : '') + ' today</p>'
       +   '</div>'
       +   '<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">'
       +     _heroBtn('Pay Invoice', "App.Router.navigate('billing')")
@@ -251,16 +258,16 @@
 
       // Stats
       + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem">'
-      + stat('My Children',      myStudents.length, false, '#1d4ed8',    false, '#eff6ff')
-      + stat('Classes Enrolled', myClasses.length,  false, '#92400e', true, '#fef9ec')
-      + stat('Balance Due',      totalOwed,         true,  totalOwed > 0 ? '#991b1b' : '#15803d', false, totalOwed > 0 ? '#fef2f2' : '#f0fdf4')
+      + stat('My Children',      myStudents.length, false, '#1d4ed8',    false, '#eff6ff', 'calendar')
+      + stat('Classes Enrolled', myClasses.length,  false, '#92400e', true, '#fef9ec', 'calendar')
+      + stat('Balance Due',      totalOwed,         true,  totalOwed > 0 ? '#991b1b' : '#15803d', false, totalOwed > 0 ? '#fef2f2' : '#f0fdf4', 'billing')
       + '</div>'
 
       // Two col: today's classes + announcements
       + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:start">'
 
         // Today's classes
-        + card('Today\'s Classes')
+        + card('Today\'s Classes', 'calendar')
         + (todayClasses.length === 0
             ? '<p style="color:#94a3b8;font-size:0.84rem;padding:1.5rem 0;text-align:center">No classes today</p>'
             : todayClasses.map(function(c) {
@@ -281,7 +288,7 @@
         + '</div></div>' // close inner padding div + today classes card
 
         // Announcements
-        + card('Announcements')
+        + card('Announcements', 'communication')
         + (latestAnnounce.length === 0
             ? '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1.5rem 0">No announcements</p>'
             : latestAnnounce.map(function(a) {
@@ -302,7 +309,7 @@
       + '</div>'
 
       // Recent Attendance
-      + card('Recent Attendance')
+      + card('Recent Attendance', 'attendance')
       + (recentAttend.length === 0
           ? '<p style="color:#94a3b8;font-size:0.84rem;padding:1.5rem 0;text-align:center">No attendance records yet</p>'
           : recentAttend.map(function(a) {
@@ -328,14 +335,16 @@
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
   // card() opens a card; with title: opens outer div + inner padding div (caller needs two </div>s); without title: one div
-  function card(title) {
+  function card(title, page) {
+    var clickStyle = page ? 'cursor:pointer' : '';
+    var clickAttr = page ? ' onclick="App.Router.navigate(\'' + page + '\')"' : '';
     var header = title
-      ? '<div class="dash-card-header">' + title + '</div><div class="dash-card-body">'
+      ? '<div class="dash-card-header" style="' + clickStyle + '"' + clickAttr + '>' + title + '</div><div class="dash-card-body">'
       : '<div style="padding:1.25rem 1.5rem">';
     return '<div class="dash-card">' + header;
   }
 
-  function stat(label, value, isCurr, color, goldBorder, bg) {
+  function stat(label, value, isCurr, color, goldBorder, bg, page) {
     var display = isCurr
       ? 'RM\u00a0' + value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
       : String(value);
@@ -344,7 +353,9 @@
       : 'data-count="' + value + '"';
     var bgGrad = bg ? 'background:linear-gradient(135deg,' + bg + ' 0%,#ffffff 70%)' : 'background:#fff';
     var borderTop = goldBorder ? ';border-top:2.5px solid var(--gold)' : '';
-    return '<div class="dash-stat" style="' + bgGrad + borderTop + '">'
+    var clickStyle = page ? ';cursor:pointer' : '';
+    var clickAttr = page ? ' onclick="App.Router.navigate(\'' + page + '\')"' : '';
+    return '<div class="dash-stat" style="' + bgGrad + borderTop + clickStyle + '"' + clickAttr + '>'
       + '<p class="dash-stat-label" style="color:' + color + '">' + label + '</p>'
       + '<p ' + dataAttr + ' class="dash-stat-number" style="color:' + color + '">' + display + '</p>'
       + '</div>';
@@ -589,17 +600,19 @@
     var todayClasses = myClasses.filter(function(c) { return c.day === todayDay; }).sort(function(a,b){ return a.time.localeCompare(b.time); });
     var myRec    = attendance.find(function(a) { return a.personId === tid && a.personType === 'staff' && a.date === today; });
 
+    var _tod = _timeOfDay();
     return '<div>'
       // Greeting
       + '<div class="dash-hero" style="margin-bottom:1.25rem">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1">'
       +   '<div>'
-      +     '<p style="font-family:var(--serif);font-size:1.3rem;font-weight:700;color:#fff;margin:0">Good ' + _timeOfDay() + ', ' + (teacher.name || 'Teacher') + '</p>'
-      +     '<p style="font-size:0.8rem;color:rgba(255,255,255,0.45);margin:0.2rem 0 0">' + _dateFull() + '</p>'
+      +     '<p style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--gold);margin:0 0 6px">' + _dateFull() + '</p>'
+      +     '<p style="font-family:var(--serif);font-size:1.3rem;font-weight:700;color:#1a1a1a;margin:0">Good ' + _tod + ', ' + (teacher.name || 'Teacher') + '</p>'
+      +     '<p style="font-size:0.82rem;color:#64748b;margin:4px 0 0">' + todayClasses.length + ' class' + (todayClasses.length !== 1 ? 'es' : '') + ' today · ' + myStudents.length + ' students</p>'
       +   '</div>'
       +   '<div style="text-align:right">'
       +     (myRec && myRec.checkIn
-              ? '<div style="font-size:0.78rem;font-weight:700;color:#6ee7b7">Checked in ' + App.Utils.formatTime(myRec.checkIn) + '</div>'
+              ? '<div style="font-size:0.78rem;font-weight:700;color:#15803d">Checked in ' + App.Utils.formatTime(myRec.checkIn) + '</div>'
               : '<button onclick="App.Router.navigate(\'attendance\')" style="padding:0.4rem 0.9rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Check In</button>')
       +   '</div>'
       + '</div>'
@@ -653,9 +666,9 @@
   function _heroBtn(label, onclick) {
     return '<button onclick="' + onclick + '" '
       + 'style="padding:0.4rem 0.85rem;font-size:0.75rem;font-weight:700;border-radius:8px;cursor:pointer;'
-      + 'border:1.5px solid rgba(201,162,39,0.5);background:transparent;color:var(--gold);transition:all 0.15s;white-space:nowrap" '
-      + 'onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" '
-      + 'onmouseout="this.style.background=\'transparent\';this.style.color=\'var(--gold)\'">'
+      + 'border:1.5px solid rgba(201,162,39,0.4);background:rgba(201,162,39,0.06);color:#9a7b1a;transition:all 0.15s;white-space:nowrap" '
+      + 'onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\';this.style.borderColor=\'var(--gold)\'" '
+      + 'onmouseout="this.style.background=\'rgba(201,162,39,0.06)\';this.style.color=\'#9a7b1a\';this.style.borderColor=\'rgba(201,162,39,0.4)\'">'
       + label + '</button>';
   }
 
@@ -696,14 +709,14 @@
     }).join('');
 
     return '<div class="dash-card" style="margin-bottom:1rem">'
-      + '<div class="dash-card-header">This Week\'s Attendance</div>'
+      + '<div class="dash-card-header" style="cursor:pointer" onclick="App.Router.navigate(\'attendance\')">This Week\'s Attendance</div>'
       + '<div class="dash-card-body">' + rows + '</div>'
       + '</div>';
   }
 
   function _timeOfDay() {
     var h = new Date().getHours();
-    return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+    return h < 5 ? 'night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night';
   }
 
   function _dateFull() {

@@ -3,7 +3,7 @@
 
   var THEMES = {
     a: { label: 'Slate',   desc: 'Clean & professional' },
-    b: { label: 'Gold',    desc: 'Black & gold branding' },
+    b: { label: 'Gold',    desc: 'Bottom dock, white & gold' },
     c: { label: 'Minimal', desc: 'Top nav, full width' }
   };
 
@@ -21,6 +21,14 @@
     if (theme === 'c') {
       _wireTopNav();
       _syncTopNavActive();
+    }
+
+    // Theme B: wire dock buttons
+    if (theme === 'b') {
+      _wireDock();
+      _syncDockActive();
+      _syncDockRole();
+      _syncDockBadge();
     }
 
     // Sync top role button
@@ -133,9 +141,10 @@
         + '</div>';
     }
     if (key === 'b') {
-      return '<div class="flex h-full">'
-        + '<div class="w-5 bg-black h-full flex flex-col items-center pt-1 gap-0.5"><div class="w-2 h-0.5 rounded-full bg-yellow-400"></div><div class="w-2 h-0.5 rounded-full bg-yellow-400 opacity-40"></div><div class="w-2 h-0.5 rounded-full bg-yellow-400 opacity-40"></div></div>'
-        + '<div class="flex-1" style="background:#f9f8f5"><div class="m-1 h-2 bg-white rounded border border-slate-100"></div></div>'
+      return '<div class="flex flex-col h-full">'
+        + '<div class="h-2.5 bg-white flex items-center px-1 border-b border-slate-100"><div class="w-2 h-1 rounded-sm" style="background:#C9A227"></div></div>'
+        + '<div class="flex-1" style="background:#FAF9F6;padding:2px"><div class="h-2 bg-white rounded border border-slate-100 mb-0.5"></div><div class="grid grid-cols-2 gap-0.5"><div class="h-1.5 bg-white rounded border border-slate-100"></div><div class="h-1.5 bg-white rounded border border-slate-100"></div></div></div>'
+        + '<div class="h-2 bg-gray-900 flex items-center justify-center gap-0.5 rounded-t"><div class="w-1 h-0.5 rounded-full bg-yellow-400"></div><div class="w-1 h-0.5 rounded-full bg-yellow-400 opacity-40"></div><div class="w-1 h-0.5 rounded-full bg-yellow-400 opacity-40"></div></div>'
         + '</div>';
     }
     if (key === 'c') {
@@ -145,6 +154,91 @@
         + '</div>';
     }
     return '';
+  }
+
+  // ── Bottom Dock (Theme B) ──────────────────────────────────────────────────
+  function _wireDock() {
+    document.querySelectorAll('.dock-btn').forEach(function(btn) {
+      if (btn.dataset.wired) return;
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', function() {
+        App.Router.navigate(btn.dataset.page);
+      });
+    });
+  }
+
+  function _syncDockActive() {
+    var current = App.Router ? App.Router.current() : null;
+    document.querySelectorAll('.dock-btn').forEach(function(btn) {
+      btn.classList.toggle('active', btn.dataset.page === current);
+    });
+  }
+
+  function _syncDockRole() {
+    var btn = document.getElementById('dock-role-btn');
+    if (!btn) return;
+    var isAdmin   = App.currentRole === 'admin';
+    var isTeacher = App.currentRole === 'teacher';
+    var labels = { admin: 'Admin', teacher: 'Teacher', client: 'Parent' };
+    btn.textContent = labels[App.currentRole] || 'Admin';
+
+    // hide admin-only dock buttons
+    document.querySelectorAll('.dock-admin').forEach(function(el) {
+      el.style.display = isAdmin ? '' : 'none';
+    });
+
+    // Show/hide role-specific dock buttons
+    var pageHidden = {
+      billing:    isTeacher,
+      staff:      !isAdmin,
+      analytics:  !isAdmin,
+      students:   App.currentRole === 'client',
+      attendance: false,
+      feedback:   false
+    };
+    document.querySelectorAll('.dock-btn').forEach(function(el) {
+      var page = el.dataset.page;
+      if (pageHidden[page] !== undefined) {
+        el.style.display = pageHidden[page] ? 'none' : '';
+      }
+    });
+
+    // Mirror selectors to dock topbar
+    var dockParentWrap = document.getElementById('dock-parent-selector-wrap');
+    var dockTeacherWrap = document.getElementById('dock-teacher-selector-wrap');
+    if (dockParentWrap) dockParentWrap.style.display = App.currentRole === 'client' ? 'flex' : 'none';
+    if (dockTeacherWrap) dockTeacherWrap.style.display = isTeacher ? 'flex' : 'none';
+
+    // Mirror the parent/teacher selects
+    var mainParentSel = document.getElementById('parent-select');
+    var dockParentSel = document.getElementById('dock-parent-select');
+    if (mainParentSel && dockParentSel && dockParentSel.innerHTML === '') {
+      dockParentSel.innerHTML = mainParentSel.innerHTML;
+      dockParentSel.value = mainParentSel.value;
+      dockParentSel.onchange = function() {
+        mainParentSel.value = this.value;
+        mainParentSel.dispatchEvent(new Event('change'));
+      };
+    }
+    var mainTeacherSel = document.getElementById('teacher-select');
+    var dockTeacherSel = document.getElementById('dock-teacher-select');
+    if (mainTeacherSel && dockTeacherSel && dockTeacherSel.innerHTML === '') {
+      dockTeacherSel.innerHTML = mainTeacherSel.innerHTML;
+      dockTeacherSel.value = mainTeacherSel.value;
+      dockTeacherSel.onchange = function() {
+        mainTeacherSel.value = this.value;
+        mainTeacherSel.dispatchEvent(new Event('change'));
+      };
+    }
+  }
+
+  function _syncDockBadge() {
+    var main = document.getElementById('notif-badge');
+    var dock = document.getElementById('dock-notif-badge');
+    if (!main || !dock) return;
+    dock.textContent = main.textContent;
+    var count = parseInt(main.textContent, 10) || 0;
+    dock.style.display = count > 0 ? 'flex' : 'none';
   }
 
   // Public API
@@ -161,6 +255,9 @@
     syncTopNav: _syncTopNavActive,
     syncTopRole: _syncTopRole,
     syncTopBadge: _syncTopBadge,
+    syncDock: _syncDockActive,
+    syncDockRole: _syncDockRole,
+    syncDockBadge: _syncDockBadge,
     init: function() { _restoreCollapse(); _apply(_current); }
   };
 })();

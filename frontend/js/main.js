@@ -157,6 +157,10 @@
     }
 
     App.Notifs.refresh();
+
+    // Sync dock (theme B) visibility
+    if (App.Theme && App.Theme.syncDockRole) App.Theme.syncDockRole();
+    if (App.Theme && App.Theme.syncDockBadge) App.Theme.syncDockBadge();
   }
 
   function toggleRole() {
