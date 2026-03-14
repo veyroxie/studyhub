@@ -109,15 +109,15 @@ func handleLogin(db *DB) http.HandlerFunc {
 		}
 
 		// ── Set HttpOnly cookie (JS cannot read this, prevents XSS token theft) ──
-		secure := r.TLS != nil // only Secure flag when running over HTTPS
+		secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" // behind reverse proxy (Caddy)
 		http.SetCookie(w, &http.Cookie{
 			Name:     "sh_token",
 			Value:    token,
 			Path:     "/",
 			Expires:  time.Now().Add(tokenExpiry),
-			HttpOnly: true,                    // JavaScript cannot access this cookie
-			Secure:   secure,                  // HTTPS only in production
-			SameSite: http.SameSiteStrictMode, // blocks cross-site request forgery
+			HttpOnly: true,                  // JavaScript cannot access this cookie
+			Secure:   secure,                // HTTPS only in production
+			SameSite: http.SameSiteLaxMode,  // Lax allows cookie on top-level navigation (Strict blocks it)
 		})
 
 		// Return role/name/email — NOT the token itself
@@ -128,13 +128,15 @@ func handleLogin(db *DB) http.HandlerFunc {
 
 // handleLogout clears the auth cookie
 func handleLogout(w http.ResponseWriter, r *http.Request) {
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "sh_token",
 		Value:    "",
 		Path:     "/",
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }

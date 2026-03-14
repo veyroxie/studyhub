@@ -85,7 +85,7 @@ func securityHeaders(next http.Handler) http.Handler {
 				"script-src 'self' https://cdn.tailwindcss.com https://cdn.jsdelivr.net 'unsafe-inline'; "+
 				"style-src 'self' https://cdn.tailwindcss.com https://fonts.googleapis.com 'unsafe-inline'; "+
 				"font-src 'self' https://fonts.gstatic.com; "+
-				"connect-src 'self' ws: wss:; "+
+				"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; "+
 				"img-src 'self' data:; "+
 				"frame-ancestors 'none'")
 		// HTTPS only (enable in production)

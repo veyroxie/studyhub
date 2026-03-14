@@ -7,7 +7,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { box-sizing: border-box; }
     body { font-family: 'DM Sans', sans-serif; background: #FAF9F6; color: #1a1a1a; }
@@ -89,19 +88,20 @@
       color: #dc2626; font-size: 0.8rem;
     }
 
+    .hidden { display: none !important; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; }
     @media (max-width: 480px) { .grid-2 { grid-template-columns: 1fr; } }
   </style>
 </head>
-<body class="min-h-screen py-10 px-4">
+<body style="min-height:100vh;padding:2.5rem 1rem">
 
 <!-- Subtle gold glow at top -->
 <div style="position:fixed;top:0;left:0;right:0;height:40%;background:linear-gradient(180deg,rgba(201,162,39,0.03) 0%,transparent 100%);pointer-events:none"></div>
 
-<div class="max-w-xl mx-auto relative">
+<div style="max-width:36rem;margin:0 auto;position:relative">
 
   <!-- Header -->
-  <div class="text-center mb-8">
+  <div style="text-align:center;margin-bottom:2rem">
     <div style="width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 0.85rem;background:linear-gradient(135deg,#C9A227 0%,#b08d20 100%);box-shadow:0 4px 16px rgba(201,162,39,0.2)">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
     </div>
@@ -200,7 +200,7 @@
         <div class="grid-2">
           <div>
             <label class="reg-label">Gender</label>
-            <select name="gender" class="reg-input">
+            <select name="studentGender" class="reg-input">
               <option value="">Select...</option>
               <option>Male</option>
               <option>Female</option>
@@ -218,34 +218,69 @@
           </div>
           <div>
             <label class="reg-label">Year / Grade</label>
-            <input name="yearGrade" class="reg-input" placeholder="e.g. Year 4, Form 2">
+            <select name="yearGrade" class="reg-input">
+              <option value="">Select...</option>
+              <optgroup label="Primary (SJKC / SK)">
+                <option value="Standard 1">Standard 1</option>
+                <option value="Standard 2">Standard 2</option>
+                <option value="Standard 3">Standard 3</option>
+                <option value="Standard 4">Standard 4</option>
+                <option value="Standard 5">Standard 5</option>
+                <option value="Standard 6">Standard 6</option>
+              </optgroup>
+              <optgroup label="Secondary">
+                <option value="Form 1">Form 1</option>
+                <option value="Form 2">Form 2</option>
+                <option value="Form 3">Form 3</option>
+                <option value="Form 4">Form 4</option>
+                <option value="Form 5">Form 5</option>
+              </optgroup>
+              <optgroup label="Pre-school">
+                <option value="Pre-school (4-5)">Pre-school (4-5)</option>
+                <option value="Pre-school (5-6)">Pre-school (5-6)</option>
+              </optgroup>
+            </select>
           </div>
         </div>
         <div>
-          <label class="reg-label">Class Type Interest</label>
+          <label class="reg-label">Interested Subjects</label>
+          <div id="subject-tags" style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.5rem"></div>
+          <div style="display:flex;gap:0.5rem">
+            <select id="subject-select" class="reg-input" style="flex:1" onchange="addSubject(this.value);this.value=''">
+              <option value="">Choose a subject...</option>
+              <optgroup label="Academic">
+                <option value="Mathematics">Mathematics</option>
+                <option value="Science">Science</option>
+                <option value="English">English</option>
+                <option value="Bahasa Melayu">Bahasa Melayu</option>
+                <option value="Mandarin">Mandarin</option>
+                <option value="Sejarah">Sejarah</option>
+                <option value="Geography">Geography</option>
+              </optgroup>
+              <optgroup label="Non-academic">
+                <option value="Art">Art</option>
+                <option value="Music">Music</option>
+                <option value="Public Speaking">Public Speaking</option>
+                <option value="Robotics">Robotics</option>
+                <option value="Coding">Coding</option>
+              </optgroup>
+            </select>
+            <input id="subject-custom" class="reg-input" style="flex:1" placeholder="Or type custom subject..." onkeydown="if(event.key==='Enter'){event.preventDefault();addSubject(this.value);this.value='';}">
+          </div>
+          <input type="hidden" name="subjectInterest" id="subject-interest-hidden">
+        </div>
+        <div>
+          <label class="reg-label">Preferred Learning Format</label>
           <select name="classTypeInterest" class="reg-input">
             <option value="">Select...</option>
-            <option value="Academic (Group)">Academic (Group)</option>
-            <option value="Academic (Private)">Academic (Private)</option>
-            <option value="Non-academic">Non-academic</option>
-            <option value="Workshop">Workshop</option>
+            <option value="Group">Group Class</option>
+            <option value="Private">Private / 1-on-1</option>
+            <option value="Both">Open to both</option>
           </select>
         </div>
         <div>
-          <label class="reg-label">Subject Interest</label>
-          <input name="subjectInterest" class="reg-input" placeholder="e.g. Mathematics, Science">
-        </div>
-        <div>
-          <label class="reg-label">School Fees (Monthly, RM) <span style="color:#94a3b8;font-weight:400;text-transform:none;letter-spacing:0">- optional</span></label>
-          <input name="schoolFees" type="number" min="0" step="0.01" class="reg-input" placeholder="Leave blank if not applicable">
-        </div>
-        <div>
-          <label class="reg-label">Class Interest</label>
-          <input name="classInterest" class="reg-input" placeholder="e.g. Level 3 & 4, English Writing...">
-        </div>
-        <div>
-          <label class="reg-label">Workshop Interest</label>
-          <textarea name="workshopInterest" rows="2" class="reg-input" placeholder="Any specific workshops? (optional)"></textarea>
+          <label class="reg-label">Workshop Interest <span style="color:#94a3b8;font-weight:400;text-transform:none;letter-spacing:0">- optional</span></label>
+          <textarea name="workshopInterest" rows="2" class="reg-input" placeholder="Any specific workshops you're interested in?"></textarea>
         </div>
         <div>
           <label class="reg-label">Additional Notes</label>
@@ -349,6 +384,35 @@
     if (el) el.value = today;
   })();
 
+  // ── Subject tag picker ──────────────────────────────────────────────────
+  var _subjects = [];
+  function addSubject(val) {
+    val = (val || '').trim();
+    if (!val || _subjects.indexOf(val) > -1) return;
+    _subjects.push(val);
+    _renderSubjects();
+  }
+  function removeSubject(val) {
+    _subjects = _subjects.filter(function(s) { return s !== val; });
+    _renderSubjects();
+  }
+  function _esc(str) {
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+  function _renderSubjects() {
+    var wrap = document.getElementById('subject-tags');
+    var hidden = document.getElementById('subject-interest-hidden');
+    hidden.value = _subjects.join(', ');
+    wrap.innerHTML = _subjects.map(function(s) {
+      var safe = _esc(s);
+      var safeAttr = safe.replace(/'/g, '&#39;');
+      return '<span style="display:inline-flex;align-items:center;gap:0.3rem;padding:0.25rem 0.6rem;background:rgba(201,162,39,0.08);border:1px solid rgba(201,162,39,0.2);border-radius:6px;font-size:0.78rem;font-weight:600;color:#92400e">'
+        + safe + '<button type="button" onclick="removeSubject(\'' + safeAttr + '\')" style="background:none;border:none;cursor:pointer;font-size:0.9rem;color:#94a3b8;line-height:1;padding:0">&times;</button></span>';
+    }).join('');
+  }
+
   function switchTab(tab) {
     var tabs = ['student', 'teacher'];
     tabs.forEach(function(t) {
@@ -378,6 +442,13 @@
     var fd = new FormData(e.target);
     var body = {};
     fd.forEach(function(v, k) { body[k] = v; });
+    // schoolFees is admin-assigned, send 0 (backend expects number)
+    body.schoolFees = 0;
+    // gender mirrors studentGender for backend compatibility
+    if (body.studentGender) body.gender = body.studentGender;
+    else body.gender = '';
+    // classInterest not in form anymore, default empty
+    if (!body.classInterest) body.classInterest = '';
 
     try {
       var res = await fetch('/api/register', {
