@@ -91,16 +91,22 @@ type Staff struct {
 }
 
 type Invoice struct {
-	ID           string  `json:"id"`
-	StudentID    string  `json:"studentId"`
-	Description  string  `json:"description"`
-	Type         string  `json:"type"`
-	Amount       float64 `json:"amount"`
-	DueDate      string  `json:"dueDate"`
-	Status       string  `json:"status"`
-	CreatedOn    string  `json:"createdOn"`
-	PaidOn       *string `json:"paidOn"`
-	PaymentProof string  `json:"paymentProof,omitempty"`
+	ID                string  `json:"id"`
+	StudentID         string  `json:"studentId"`
+	Description       string  `json:"description"`
+	Type              string  `json:"type"`
+	Amount            float64 `json:"amount"`
+	DueDate           string  `json:"dueDate"`
+	Status            string  `json:"status"`
+	CreatedOn         string  `json:"createdOn"`
+	PaidOn            *string `json:"paidOn"`
+	PaymentProof      string  `json:"paymentProof"`
+	PaymentMethod     string  `json:"paymentMethod"`
+	DiscountPct       float64 `json:"discountPct"`
+	SubmittedByParent bool    `json:"submittedByParent"`
+	SiblingIds        string  `json:"siblingIds"`
+	SiblingDiscount   float64 `json:"siblingDiscount"`
+	DeletedAt         *string `json:"deletedAt,omitempty"`
 }
 
 type Announcement struct {
@@ -161,6 +167,7 @@ type Registration struct {
 	Notes             string  `json:"notes"`
 	SubmittedOn       string  `json:"submittedOn"`
 	Status            string  `json:"status"` // pending | approved | rejected
+	Type              string  `json:"type"`   // "student" or "teacher"
 }
 
 type StudentNote struct {

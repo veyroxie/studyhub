@@ -60,17 +60,17 @@ func seedIfEmpty(db *DB) {
 
 	// ── Classes ────────────────────────────────────────────────────────────────
 	classes := [][]any{
-		{"c1", "Level 1 & 2", `["s1"]`, "Classroom 2", "Saturday", "09:30", "10:30", 6, 2, "green"},
-		{"c2", "English", `["s3"]`, "Classroom 2", "Monday", "15:00", "16:00", 6, 3, "blue"},
-		{"c3", "Level 3 & 4", `["s3","s1"]`, "Classroom 2", "Monday", "16:00", "17:00", 6, 4, "teal"},
-		{"c4", "TSH Members", `["s3"]`, "Classroom 1", "Tuesday", "15:00", "16:00", 6, 6, "orange"},
-		{"c5", "Level 3 & 4", `["s2"]`, "Classroom 2", "Tuesday", "15:30", "16:30", 6, 3, "teal"},
-		{"c6", "Level 5 & 6", `["s1"]`, "Classroom 1", "Wednesday", "16:00", "17:00", 6, 2, "purple"},
-		{"c7", "Math Special", `["s2"]`, "Classroom 2", "Thursday", "16:00", "17:00", 4, 2, "blue"},
-		{"c8", "Writing Workshop", `["s3"]`, "Classroom 1", "Friday", "15:00", "16:30", 8, 5, "green"},
+		{"c1", "Level 1 & 2", `["s1"]`, "Classroom 2", "Saturday", "09:30", "10:30", 6, 2, "green", "Academic"},
+		{"c2", "English", `["s3"]`, "Classroom 2", "Monday", "15:00", "16:00", 6, 3, "blue", "Academic"},
+		{"c3", "Level 3 & 4", `["s3","s1"]`, "Classroom 2", "Monday", "16:00", "17:00", 6, 4, "teal", "Academic"},
+		{"c4", "TSH Members", `["s3"]`, "Classroom 1", "Tuesday", "15:00", "16:00", 6, 6, "orange", "Non-academic"},
+		{"c5", "Level 3 & 4", `["s2"]`, "Classroom 2", "Tuesday", "15:30", "16:30", 6, 3, "teal", "Academic"},
+		{"c6", "Level 5 & 6", `["s1"]`, "Classroom 1", "Wednesday", "16:00", "17:00", 6, 2, "purple", "Academic"},
+		{"c7", "Math Special", `["s2"]`, "Classroom 2", "Thursday", "16:00", "17:00", 4, 2, "blue", "Academic"},
+		{"c8", "Writing Workshop", `["s3"]`, "Classroom 1", "Friday", "15:00", "16:30", 8, 5, "green", "Academic"},
 	}
 	for _, c := range classes {
-		db.Exec(`INSERT INTO classes(id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, c...)
+		db.Exec(`INSERT INTO classes(id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, c...)
 	}
 
 	// ── Students ───────────────────────────────────────────────────────────────

@@ -19,8 +19,9 @@ import (
 
 // ── Feedback CRUD ─────────────────────────────────────────────────────────────
 
-func listFeedback(db *DB) []Feedback {
-	rows, err := db.Query(`SELECT id,class_id,date,teacher_id,topic,mood,notes,student_notes FROM feedback WHERE deleted_at IS NULL ORDER BY date DESC`)
+func listFeedback(db *DB, c *Claims) []Feedback {
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,class_id,date,teacher_id,topic,mood,notes,student_notes FROM feedback WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
 	if err != nil {
 		return []Feedback{}
 	}
@@ -84,7 +85,7 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 		classID := r.URL.Query().Get("classId")
 
 		if date == "" && classID == "" {
-			all := listFeedback(db)
+			all := listFeedback(db, c)
 			if isParent {
 				all = filterFeedbackForParent(all, parentClassIDs(db, c.Email))
 			}
@@ -92,8 +93,9 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 			return
 		}
 
-		q := `SELECT id,class_id,date,teacher_id,topic,mood,notes,student_notes FROM feedback WHERE deleted_at IS NULL`
-		args := []any{}
+		tid := tenantID(c)
+		q := `SELECT id,class_id,date,teacher_id,topic,mood,notes,student_notes FROM feedback WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0)`
+		args := []any{tid, tid}
 		if date != "" {
 			q += ` AND date=?`
 			args = append(args, date)
@@ -223,8 +225,9 @@ func handleDeleteFeedback(db *DB) http.HandlerFunc {
 
 // ── Subject CRUD ──────────────────────────────────────────────────────────────
 
-func listSubjects(db *DB) []Subject {
-	rows, err := db.Query(`SELECT id,name,category,level,description,monthly_fee,color FROM subjects ORDER BY name`)
+func listSubjects(db *DB, c *Claims) []Subject {
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,name,category,level,description,monthly_fee,color FROM subjects WHERE (tenant_id=? OR ?=0) ORDER BY name`, tid, tid)
 	if err != nil {
 		return []Subject{}
 	}
@@ -240,7 +243,8 @@ func listSubjects(db *DB) []Subject {
 
 func handleListSubjects(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		respond(w, listSubjects(db))
+		c := claimsFrom(r)
+		respond(w, listSubjects(db, c))
 	}
 }
 
@@ -329,8 +333,9 @@ func handleDeleteSubject(db *DB) http.HandlerFunc {
 
 // ── Workshop CRUD ─────────────────────────────────────────────────────────────
 
-func listWorkshops(db *DB) []Workshop {
-	rows, err := db.Query(`SELECT id,name,description,date,time,end_time,classroom,capacity,enrolled,fee,teacher_ids,status FROM workshops ORDER BY date DESC`)
+func listWorkshops(db *DB, c *Claims) []Workshop {
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,name,description,date,time,end_time,classroom,capacity,enrolled,fee,teacher_ids,status FROM workshops WHERE (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
 	if err != nil {
 		return []Workshop{}
 	}
@@ -348,7 +353,8 @@ func listWorkshops(db *DB) []Workshop {
 
 func handleListWorkshops(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		respond(w, listWorkshops(db))
+		c := claimsFrom(r)
+		respond(w, listWorkshops(db, c))
 	}
 }
 
@@ -455,8 +461,9 @@ func parentStudentIDs(db *DB, email string) map[string]bool {
 	return ids
 }
 
-func listSelfStudy(db *DB) []SelfStudySession {
-	rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions ORDER BY date DESC`)
+func listSelfStudy(db *DB, c *Claims) []SelfStudySession {
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
 	if err != nil {
 		return []SelfStudySession{}
 	}
@@ -477,7 +484,7 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 
 		studentID := r.URL.Query().Get("studentId")
 		if studentID == "" {
-			all := listSelfStudy(db)
+			all := listSelfStudy(db, c)
 			if isParent {
 				stuIDs := parentStudentIDs(db, c.Email)
 				filtered := []SelfStudySession{}
@@ -499,7 +506,8 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 				return
 			}
 		}
-		rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE student_id=? ORDER BY date DESC`, studentID)
+		tid := tenantID(c)
+		rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE student_id=? AND (tenant_id=? OR ?=0) ORDER BY date DESC`, studentID, tid, tid)
 		if err != nil {
 			respond(w, []SelfStudySession{})
 			return
@@ -568,8 +576,9 @@ func handleDeleteSelfStudy(db *DB) http.HandlerFunc {
 
 // ── Performance Reviews ───────────────────────────────────────────────────────
 
-func listPerformanceReviews(db *DB) []PerformanceReview {
-	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews ORDER BY date DESC`)
+func listPerformanceReviews(db *DB, c *Claims) []PerformanceReview {
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
 	if err != nil {
 		return []PerformanceReview{}
 	}
@@ -593,10 +602,11 @@ func handleListPerformanceReviews(db *DB) http.HandlerFunc {
 		}
 		staffID := r.URL.Query().Get("staffId")
 		if staffID == "" {
-			respond(w, listPerformanceReviews(db))
+			respond(w, listPerformanceReviews(db, c))
 			return
 		}
-		rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE staff_id=? ORDER BY date DESC`, staffID)
+		tid := tenantID(c)
+		rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE staff_id=? AND (tenant_id=? OR ?=0) ORDER BY date DESC`, staffID, tid, tid)
 		if err != nil {
 			respond(w, []PerformanceReview{})
 			return
@@ -671,8 +681,9 @@ func handleDeletePerformanceReview(db *DB) http.HandlerFunc {
 
 // ── Cancelled Classes ─────────────────────────────────────────────────────────
 
-func listCancelledClasses(db *DB) []CancelledClass {
-	rows, err := db.Query(`SELECT id,class_id,date,reason,cancelled_by,created_on FROM cancelled_classes ORDER BY date DESC`)
+func listCancelledClasses(db *DB, c *Claims) []CancelledClass {
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,class_id,date,reason,cancelled_by,created_on FROM cancelled_classes WHERE (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
 	if err != nil {
 		return []CancelledClass{}
 	}
@@ -688,7 +699,8 @@ func listCancelledClasses(db *DB) []CancelledClass {
 
 func handleListCancelledClasses(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		respond(w, listCancelledClasses(db))
+		c := claimsFrom(r)
+		respond(w, listCancelledClasses(db, c))
 	}
 }
 
@@ -828,10 +840,10 @@ func handleStaffByID(db *DB) http.HandlerFunc {
 				http.Error(w, "admin only", 403)
 				return
 			}
-			db.Exec(`UPDATE staff SET status='Inactive' WHERE id=?`, id)
+			db.Exec(`UPDATE staff SET deleted_at=NOW() WHERE id=?`, id)
 			if c != nil {
 				db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-					c.Email, "staff_deleted", "staff", id, "soft deleted (set Inactive)")
+					c.Email, "staff_deleted", "staff", id, "soft deleted")
 			}
 			w.WriteHeader(http.StatusNoContent)
 		}
@@ -1011,8 +1023,9 @@ func handleServeUpload() http.HandlerFunc {
 
 // ── Holiday CRUD ──────────────────────────────────────────────────────────────
 
-func listHolidays(db *DB) []Holiday {
-	rows, err := db.Query(`SELECT id,name,date,end_date,type,notes,created_by FROM holidays ORDER BY date`)
+func listHolidays(db *DB, c *Claims) []Holiday {
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,name,date,end_date,type,notes,created_by FROM holidays WHERE (tenant_id=? OR ?=0) ORDER BY date`, tid, tid)
 	if err != nil {
 		return []Holiday{}
 	}
@@ -1035,7 +1048,8 @@ func listHolidays(db *DB) []Holiday {
 
 func handleListHolidays(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		respond(w, listHolidays(db))
+		c := claimsFrom(r)
+		respond(w, listHolidays(db, c))
 	}
 }
 

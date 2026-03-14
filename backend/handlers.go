@@ -50,9 +50,9 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 		c := claimsFrom(r)
 		isParent := c != nil && c.Role != "admin" && c.Role != "superadmin" && c.Role != "teacher"
 
-		feedback := listFeedback(db)
-		selfStudy := listSelfStudy(db)
-		perfReviews := listPerformanceReviews(db)
+		feedback := listFeedback(db, c)
+		selfStudy := listSelfStudy(db, c)
+		perfReviews := listPerformanceReviews(db, c)
 
 		// Parents: filter to their children's data only
 		if isParent {
@@ -74,22 +74,22 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 
 		snap := Snapshot{
 			Students:           listStudents(db, c),
-			Classes:            listClasses(db),
+			Classes:            listClasses(db, c),
 			Staff:              listStaff(db, c),
 			Invoices:           listInvoices(db, c),
-			Announcements:      listAnnouncements(db),
+			Announcements:      listAnnouncements(db, c),
 			Attendance:         listAttendance(db, c),
 			Payroll:            listPayroll(db, c),
 			Feedback:           feedback,
-			Subjects:           listSubjects(db),
-			Workshops:          listWorkshops(db),
+			Subjects:           listSubjects(db, c),
+			Workshops:          listWorkshops(db, c),
 			SelfStudySessions:  selfStudy,
 			PerformanceReviews: perfReviews,
-			CancelledClasses:   listCancelledClasses(db),
-			Holidays:           listHolidays(db),
+			CancelledClasses:   listCancelledClasses(db, c),
+			Holidays:           listHolidays(db, c),
 		}
 		if c != nil && (c.Role == "admin" || c.Role == "superadmin") {
-			snap.Registrations = listRegistrations(db)
+			snap.Registrations = listRegistrations(db, c)
 		}
 		respond(w, snap)
 	}
@@ -213,8 +213,9 @@ func handleStudent(db *DB) http.HandlerFunc {
 
 // ── Classes ───────────────────────────────────────────────────────────────────
 
-func listClasses(db *DB) []Class {
-	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category FROM classes WHERE deleted_at IS NULL`)
+func listClasses(db *DB, c *Claims) []Class {
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category FROM classes WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0)`, tid, tid)
 	if err != nil {
 		return []Class{}
 	}
@@ -232,11 +233,11 @@ func listClasses(db *DB) []Class {
 
 func handleClasses(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		cl := claimsFrom(r)
 		switch r.Method {
 		case http.MethodGet:
-			respond(w, listClasses(db))
+			respond(w, listClasses(db, cl))
 		case http.MethodPost:
-			cl := claimsFrom(r)
 			if cl == nil || (cl.Role != "admin" && cl.Role != "superadmin") {
 				http.Error(w, "admin only", 403)
 				return
@@ -295,7 +296,8 @@ func handleClasses(db *DB) http.HandlerFunc {
 // ── Staff ─────────────────────────────────────────────────────────────────────
 
 func listStaff(db *DB, c *Claims) []Staff {
-	rows, err := db.Query(`SELECT id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type,hourly_rate FROM staff`)
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type,hourly_rate FROM staff WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0)`, tid, tid)
 	if err != nil {
 		return []Staff{}
 	}
@@ -365,10 +367,11 @@ func handleStaff(db *DB) http.HandlerFunc {
 func listInvoices(db *DB, c *Claims) []Invoice {
 	var rows *sql.Rows
 	var err error
+	tid := tenantID(c)
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on,i.payment_proof FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND i.deleted_at IS NULL ORDER BY i.created_on DESC`, c.Email)
+		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on,COALESCE(i.payment_proof,''),COALESCE(i.payment_method,''),COALESCE(i.discount_pct,0),COALESCE(i.submitted_by_parent,false),COALESCE(i.sibling_ids,''),COALESCE(i.sibling_discount,0) FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND i.deleted_at IS NULL AND (i.tenant_id=? OR ?=0) ORDER BY i.created_on DESC`, c.Email, tid, tid)
 	} else {
-		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_proof FROM invoices WHERE deleted_at IS NULL ORDER BY created_on DESC`)
+		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on,COALESCE(payment_proof,''),COALESCE(payment_method,''),COALESCE(discount_pct,0),COALESCE(submitted_by_parent,false),COALESCE(sibling_ids,''),COALESCE(sibling_discount,0) FROM invoices WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0) ORDER BY created_on DESC`, tid, tid)
 	}
 	if err != nil {
 		return []Invoice{}
@@ -377,12 +380,11 @@ func listInvoices(db *DB, c *Claims) []Invoice {
 	out := []Invoice{}
 	for rows.Next() {
 		var inv Invoice
-		var paidOn, proof sql.NullString
-		rows.Scan(&inv.ID, &inv.StudentID, &inv.Description, &inv.Type, &inv.Amount, &inv.DueDate, &inv.Status, &inv.CreatedOn, &paidOn, &proof)
+		var paidOn sql.NullString
+		rows.Scan(&inv.ID, &inv.StudentID, &inv.Description, &inv.Type, &inv.Amount, &inv.DueDate, &inv.Status, &inv.CreatedOn, &paidOn, &inv.PaymentProof, &inv.PaymentMethod, &inv.DiscountPct, &inv.SubmittedByParent, &inv.SiblingIds, &inv.SiblingDiscount)
 		if paidOn.Valid {
 			inv.PaidOn = &paidOn.String
 		}
-		inv.PaymentProof = nullStr(proof)
 		out = append(out, inv)
 	}
 	return out
@@ -419,8 +421,9 @@ func handleInvoices(db *DB) http.HandlerFunc {
 				inv.CreatedOn = today()
 			}
 			inv.Status = "Unpaid"
-			db.Exec(`INSERT INTO invoices(id,student_id,description,type,amount,due_date,status,created_on,paid_on) VALUES(?,?,?,?,?,?,?,?,?)`,
-				inv.ID, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil)
+			tid := tenantID(c)
+			db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount)
 			respond(w, inv)
 		}
 	}
@@ -459,7 +462,7 @@ func handleInvoicePay(db *DB) http.HandlerFunc {
 		}
 
 		t := today()
-		if _, err := db.Exec(`UPDATE invoices SET status=?, paid_on=? WHERE id=?`, newStatus, t, id); err != nil {
+		if _, err := db.Exec(`UPDATE invoices SET status=?, paid_on=?, payment_method=COALESCE(NULLIF(?,''),payment_method) WHERE id=?`, newStatus, t, body.PaymentMethod, id); err != nil {
 			http.Error(w, "could not update invoice", 500)
 			return
 		}
@@ -501,8 +504,9 @@ func handleAuditLogs(db *DB) http.HandlerFunc {
 
 // ── Announcements ─────────────────────────────────────────────────────────────
 
-func listAnnouncements(db *DB) []Announcement {
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements ORDER BY created_on DESC`)
+func listAnnouncements(db *DB, c *Claims) []Announcement {
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE (tenant_id=? OR ?=0) ORDER BY created_on DESC`, tid, tid)
 	if err != nil {
 		return []Announcement{}
 	}
@@ -527,7 +531,7 @@ func handleAnnouncements(db *DB) http.HandlerFunc {
 		c := claimsFrom(r)
 		switch r.Method {
 		case http.MethodGet:
-			respond(w, listAnnouncements(db))
+			respond(w, listAnnouncements(db, c))
 		case http.MethodPost:
 			if c.Role != "admin" {
 				http.Error(w, "admin only", 403)
@@ -584,10 +588,11 @@ func handleAnnouncementDelete(db *DB) http.HandlerFunc {
 func listAttendance(db *DB, c *Claims) []Attendance {
 	var rows *sql.Rows
 	var err error
+	tid := tenantID(c)
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT a.id,a.person_id,a.person_type,a.date,a.class_id,a.check_in,a.check_out,a.status FROM attendance a JOIN students s ON s.id=a.person_id WHERE a.person_type='student' AND s.contact=? ORDER BY a.date DESC`, c.Email)
+		rows, err = db.Query(`SELECT a.id,a.person_id,a.person_type,a.date,a.class_id,a.check_in,a.check_out,a.status FROM attendance a JOIN students s ON s.id=a.person_id WHERE a.person_type='student' AND s.contact=? AND (a.tenant_id=? OR ?=0) ORDER BY a.date DESC`, c.Email, tid, tid)
 	} else {
-		rows, err = db.Query(`SELECT id,person_id,person_type,date,class_id,check_in,check_out,status FROM attendance ORDER BY date DESC`)
+		rows, err = db.Query(`SELECT id,person_id,person_type,date,class_id,check_in,check_out,status FROM attendance WHERE (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
 	}
 	if err != nil {
 		return []Attendance{}
@@ -685,7 +690,8 @@ func listPayroll(db *DB, c *Claims) []Payroll {
 	if c != nil && c.Role == "parent" {
 		return []Payroll{}
 	}
-	rows, err := db.Query(`SELECT id,staff_id,month,base_salary,bonus,deductions,total,status,paid_on FROM payroll ORDER BY month DESC`)
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,staff_id,month,base_salary,bonus,deductions,total,status,paid_on FROM payroll WHERE (tenant_id=? OR ?=0) ORDER BY month DESC`, tid, tid)
 	if err != nil {
 		return []Payroll{}
 	}
@@ -786,8 +792,9 @@ func handleUserDelete(db *DB) http.HandlerFunc {
 
 // ── Registrations ─────────────────────────────────────────────────────────────
 
-func listRegistrations(db *DB) []Registration {
-	rows, err := db.Query(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status FROM registrations WHERE status='pending' ORDER BY submitted_on DESC`)
+func listRegistrations(db *DB, c *Claims) []Registration {
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status,COALESCE(type,'student') FROM registrations WHERE status='pending' AND (tenant_id=? OR ?=0) ORDER BY submitted_on DESC`, tid, tid)
 	if err != nil {
 		return []Registration{}
 	}
@@ -799,7 +806,7 @@ func listRegistrations(db *DB) []Registration {
 			&reg.StudentFirstName, &reg.StudentLastName, &reg.StudentDOB, &reg.StudentGender,
 			&reg.Gender, &reg.SchoolName, &reg.YearGrade, &reg.ClassTypeInterest, &reg.SubjectInterest,
 			&reg.SchoolFees, &reg.RegistrationDate, &reg.WorkshopInterest,
-			&reg.ClassInterest, &reg.Notes, &reg.SubmittedOn, &reg.Status)
+			&reg.ClassInterest, &reg.Notes, &reg.SubmittedOn, &reg.Status, &reg.Type)
 		out = append(out, reg)
 	}
 	return out
@@ -824,12 +831,13 @@ func handleRegister(db *DB) http.HandlerFunc {
 		reg.ID = generateID("REG")
 		reg.SubmittedOn = today()
 		reg.Status = "pending"
-		_, err := db.Exec(`INSERT INTO registrations(id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		reg.Type = "student"
+		_, err := db.Exec(`INSERT INTO registrations(id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status,type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			reg.ID, reg.ParentName, reg.Email, reg.Phone, reg.EmergencyName, reg.EmergencyPhone,
 			reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
 			reg.Gender, reg.SchoolName, reg.YearGrade, reg.ClassTypeInterest, reg.SubjectInterest,
 			reg.SchoolFees, reg.RegistrationDate, reg.WorkshopInterest,
-			reg.ClassInterest, reg.Notes, reg.SubmittedOn, reg.Status)
+			reg.ClassInterest, reg.Notes, reg.SubmittedOn, reg.Status, reg.Type)
 		if err != nil {
 			http.Error(w, "could not save registration", 500)
 			return

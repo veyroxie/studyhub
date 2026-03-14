@@ -107,7 +107,8 @@ func createSchema(db *sql.DB) error {
 		emergency_name  TEXT,
 		emergency_phone TEXT,
 		employment_type TEXT DEFAULT 'Full-time',
-		hourly_rate     DOUBLE PRECISION DEFAULT 0
+		hourly_rate     DOUBLE PRECISION DEFAULT 0,
+		deleted_at      TIMESTAMPTZ
 	);
 
 	CREATE TABLE IF NOT EXISTS invoices (
@@ -120,9 +121,14 @@ func createSchema(db *sql.DB) error {
 		due_date      TEXT,
 		status        TEXT DEFAULT 'Unpaid',
 		created_on    TEXT,
-		paid_on       TEXT,
-		deleted_at    TEXT,
-		payment_proof TEXT DEFAULT ''
+		paid_on               TEXT,
+		deleted_at            TEXT,
+		payment_proof         TEXT DEFAULT '',
+		payment_method        TEXT DEFAULT '',
+		discount_pct          REAL DEFAULT 0,
+		submitted_by_parent   BOOLEAN DEFAULT FALSE,
+		sibling_ids           TEXT DEFAULT '[]',
+		sibling_discount      REAL DEFAULT 0
 	);
 
 	CREATE TABLE IF NOT EXISTS audit_logs (
@@ -302,6 +308,21 @@ func runMigrations(db *sql.DB) {
 		`CREATE INDEX IF NOT EXISTS idx_feedback_class ON feedback(class_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_students_parent ON students(contact)`,
 		`CREATE INDEX IF NOT EXISTS idx_holidays_date ON holidays(date)`,
+		`CREATE INDEX IF NOT EXISTS idx_invoices_student ON invoices(student_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_attendance_person ON attendance(person_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_feedback_teacher ON feedback(teacher_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_registrations_status ON registrations(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_cancelled_classes_class ON cancelled_classes(class_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_classes_day ON classes(day)`,
+
+		// Migrations — add columns if missing (safe for existing DBs)
+		`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT ''`,
+		`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS discount_pct REAL DEFAULT 0`,
+		`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS submitted_by_parent BOOLEAN DEFAULT FALSE`,
+		`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sibling_ids TEXT DEFAULT '[]'`,
+		`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sibling_discount REAL DEFAULT 0`,
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'student'`,
+		`ALTER TABLE staff ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (index/row already exists = OK)
