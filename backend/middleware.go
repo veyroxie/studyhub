@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -89,8 +90,12 @@ func securityHeaders(next http.Handler) http.Handler {
 				"img-src 'self' data:; "+
 				"frame-ancestors 'none'")
 		// HTTPS only (enable in production)
-		if r.TLS != nil {
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
+		// Prevent caching of static assets so CSS/JS changes take effect immediately
+		if strings.HasSuffix(r.URL.Path, ".css") || strings.HasSuffix(r.URL.Path, ".js") || strings.HasSuffix(r.URL.Path, ".html") || r.URL.Path == "/" {
+			h.Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		}
 		next.ServeHTTP(w, r)
 	})
