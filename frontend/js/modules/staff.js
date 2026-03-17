@@ -242,7 +242,7 @@
     App.Utils.showModal(
       '<div class="p-6">'
       + '<div class="flex items-center gap-4 mb-6">'
-      +   '<div class="w-16 h-16 rounded-2xl bg-blue-100 text-blue-700 font-bold text-2xl flex items-center justify-center">' + s.name.charAt(0) + '</div>'
+      +   '<div class="w-16 h-16 rounded-2xl bg-blue-100 text-blue-700 font-bold text-2xl flex items-center justify-center">' + (s.name || s.fullName || '?').charAt(0) + '</div>'
       +   '<div>'
       +     '<h2 class="text-xl font-bold text-slate-800">' + s.fullName + '</h2>'
       +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.badge(s.role, 'blue') + App.Utils.statusBadge(s.status) + '</div>'

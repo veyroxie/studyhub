@@ -202,7 +202,8 @@ func createSchema(db *sql.DB) error {
 		level       TEXT,
 		description TEXT,
 		monthly_fee DOUBLE PRECISION DEFAULT 0,
-		color       TEXT DEFAULT 'blue'
+		color       TEXT DEFAULT 'blue',
+		deleted_at  TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS workshops (
@@ -218,7 +219,8 @@ func createSchema(db *sql.DB) error {
 		enrolled    INTEGER DEFAULT 0,
 		fee         DOUBLE PRECISION DEFAULT 0,
 		teacher_ids TEXT DEFAULT '[]',
-		status      TEXT DEFAULT 'upcoming'
+		status      TEXT DEFAULT 'upcoming',
+		deleted_at  TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS self_study_sessions (
@@ -229,7 +231,8 @@ func createSchema(db *sql.DB) error {
 		start_time   TEXT,
 		end_time     TEXT,
 		duration_min INTEGER DEFAULT 0,
-		notes        TEXT
+		notes        TEXT,
+		deleted_at   TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS performance_reviews (
@@ -240,7 +243,8 @@ func createSchema(db *sql.DB) error {
 		date           TEXT NOT NULL,
 		rating         DOUBLE PRECISION DEFAULT 0,
 		parent_rating  DOUBLE PRECISION DEFAULT 0,
-		notes          TEXT
+		notes          TEXT,
+		deleted_at     TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS cancelled_classes (
@@ -288,7 +292,8 @@ func createSchema(db *sql.DB) error {
 		end_date   TEXT,
 		type       TEXT DEFAULT 'holiday',
 		notes      TEXT,
-		created_by TEXT
+		created_by TEXT,
+		deleted_at TEXT
 	);
 	`)
 	return err
@@ -323,6 +328,11 @@ func runMigrations(db *sql.DB) {
 		`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sibling_discount REAL DEFAULT 0`,
 		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'student'`,
 		`ALTER TABLE staff ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+		`ALTER TABLE subjects ADD COLUMN IF NOT EXISTS deleted_at TEXT`,
+		`ALTER TABLE workshops ADD COLUMN IF NOT EXISTS deleted_at TEXT`,
+		`ALTER TABLE self_study_sessions ADD COLUMN IF NOT EXISTS deleted_at TEXT`,
+		`ALTER TABLE performance_reviews ADD COLUMN IF NOT EXISTS deleted_at TEXT`,
+		`ALTER TABLE holidays ADD COLUMN IF NOT EXISTS deleted_at TEXT`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (index/row already exists = OK)

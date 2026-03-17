@@ -164,8 +164,9 @@ func handleStudents(db *DB) http.HandlerFunc {
 			if s.RegisteredOn == "" {
 				s.RegisteredOn = today()
 			}
-			_, err := db.Exec(`INSERT INTO students(id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,medical_info,allergies) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				s.ID, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies)
+			tid := tenantID(c)
+			_, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,medical_info,allergies) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies)
 			if err != nil {
 				http.Error(w, err.Error(), 500)
 				return
@@ -286,8 +287,9 @@ func handleClasses(db *DB) http.HandlerFunc {
 			if c.Category == "" {
 				c.Category = "Academic"
 			}
-			db.Exec(`INSERT INTO classes(id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-				c.ID, c.Name, jsonArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color, c.Category)
+			tid := tenantID(cl)
+			db.Exec(`INSERT INTO classes(id,tenant_id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+				c.ID, tid, c.Name, jsonArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color, c.Category)
 			respond(w, c)
 		}
 	}
@@ -355,8 +357,9 @@ func handleStaff(db *DB) http.HandlerFunc {
 			if s.EmploymentType == "" {
 				s.EmploymentType = "Full-time"
 			}
-			db.Exec(`INSERT INTO staff(id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type,hourly_rate) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				s.ID, s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate)
+			tid := tenantID(c)
+			db.Exec(`INSERT INTO staff(id,tenant_id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type,hourly_rate) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				s.ID, tid, s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate)
 			respond(w, s)
 		}
 	}
@@ -558,8 +561,9 @@ func handleAnnouncements(db *DB) http.HandlerFunc {
 			if a.Status == "" {
 				a.Status = "published"
 			}
-			db.Exec(`INSERT INTO announcements(id,title,message,audience,type,created_on,created_by,status,archive_on) VALUES(?,?,?,?,?,?,?,?,?)`,
-				a.ID, a.Title, a.Message, a.Audience, a.Type, a.CreatedOn, a.CreatedBy, a.Status, a.ArchiveOn)
+			tid := tenantID(c)
+			db.Exec(`INSERT INTO announcements(id,tenant_id,title,message,audience,type,created_on,created_by,status,archive_on) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+				a.ID, tid, a.Title, a.Message, a.Audience, a.Type, a.CreatedOn, a.CreatedBy, a.Status, a.ArchiveOn)
 			respond(w, a)
 		}
 	}
@@ -578,7 +582,7 @@ func handleAnnouncementDelete(db *DB) http.HandlerFunc {
 			return
 		}
 		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "announcement_deleted", "announcement", id, "hard deleted")
+			c.Email, "announcement_deleted", "announcement", id, "deleted")
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -661,8 +665,9 @@ func handleAttendance(db *DB, hub *WSHub) http.HandlerFunc {
 				a.ID = existingID
 				db.Exec(`UPDATE attendance SET check_in=?,check_out=?,status=? WHERE id=?`, checkIn, checkOut, a.Status, existingID)
 			} else {
-				db.Exec(`INSERT INTO attendance(id,person_id,person_type,date,class_id,check_in,check_out,status) VALUES(?,?,?,?,?,?,?,?)`,
-					a.ID, a.PersonID, a.PersonType, a.Date, classID, checkIn, checkOut, a.Status)
+				tid := tenantID(c)
+				db.Exec(`INSERT INTO attendance(id,tenant_id,person_id,person_type,date,class_id,check_in,check_out,status) VALUES(?,?,?,?,?,?,?,?,?)`,
+					a.ID, tid, a.PersonID, a.PersonType, a.Date, classID, checkIn, checkOut, a.Status)
 			}
 
 			// Broadcast check-in/out event to WebSocket clients
@@ -722,7 +727,9 @@ func handleUsers(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			rows, _ := db.Query(`SELECT id,email,role,name FROM users ORDER BY role,name`)
+			c := claimsFrom(r)
+			tid := tenantID(c)
+			rows, _ := db.Query(`SELECT id,email,role,name FROM users WHERE (tenant_id=? OR ?=0) ORDER BY role,name`, tid, tid)
 			defer rows.Close()
 			type userRow struct {
 				ID    int    `json:"id"`
@@ -760,7 +767,9 @@ func handleUsers(db *DB) http.HandlerFunc {
 				http.Error(w, "hash error", 500)
 				return
 			}
-			_, err = db.Exec(`INSERT INTO users(email,password_hash,role,name) VALUES(?,?,?,?)`, req.Email, hash, req.Role, req.Name)
+			c := claimsFrom(r)
+			tid := tenantID(c)
+			_, err = db.Exec(`INSERT INTO users(tenant_id,email,password_hash,role,name) VALUES(?,?,?,?,?)`, tid, req.Email, hash, req.Role, req.Name)
 			if err != nil {
 				if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "duplicate key") {
 					http.Error(w, "email already exists", 409)
@@ -850,6 +859,7 @@ func handleRegister(db *DB) http.HandlerFunc {
 // POST /api/registrations/{id}/approve — admin only
 func handleRegistrationApprove(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
 		id := chi.URLParam(r, "id")
 		var reg Registration
 		err := db.QueryRow(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes FROM registrations WHERE id=?`, id).
@@ -862,9 +872,10 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 		}
 
 		// Create student record
+		tid := tenantID(c)
 		stuID := generateID("STU")
-		if _, err := db.Exec(`INSERT INTO students(id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
-			stuID, reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
+		if _, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
+			stuID, tid, reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
 			reg.ParentName, reg.Email, reg.Phone, "The Study Hub", "New", today(), "[]", "[]", reg.Notes); err != nil {
 			http.Error(w, "could not create student record", 500)
 			return

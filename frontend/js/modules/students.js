@@ -343,20 +343,20 @@
 
     App.Utils.showModal(
       '<div class="p-6">'
-      + '<h2 class="text-xl font-bold mb-4">Edit Student — ' + s.firstName + ' ' + s.lastName + '</h2>'
+      + '<h2 class="text-xl font-bold mb-4">Edit Student — ' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName) + '</h2>'
       + '<form id="edit-student-form" class="space-y-4">'
       + '<div class="grid grid-cols-2 gap-4">'
-      + _field('First Name', '<input name="firstName" class="form-input" value="' + s.firstName + '" required>')
-      + _field('Last Name', '<input name="lastName" class="form-input" value="' + s.lastName + '" required>')
+      + _field('First Name', '<input name="firstName" class="form-input" value="' + App.Utils.esc(s.firstName) + '" required>')
+      + _field('Last Name', '<input name="lastName" class="form-input" value="' + App.Utils.esc(s.lastName) + '" required>')
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Date of Birth', '<input name="dob" type="date" class="form-input" value="' + s.dob + '">')
+      + _field('Date of Birth', '<input name="dob" type="date" class="form-input" value="' + App.Utils.esc(s.dob) + '">')
       + _field('Gender', '<select name="gender" class="form-input"><option' + (s.gender==='Male'?' selected':'') + '>Male</option><option' + (s.gender==='Female'?' selected':'') + '>Female</option></select>')
       + '</div>'
-      + _field('Parent / Guardian Name', '<input name="parentName" class="form-input" value="' + s.parentName + '">')
+      + _field('Parent / Guardian Name', '<input name="parentName" class="form-input" value="' + App.Utils.esc(s.parentName) + '">')
       + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Parent Email', '<input name="contact" type="email" class="form-input" value="' + s.contact + '">')
-      + _field('Phone', '<input name="phone" class="form-input" value="' + (s.phone||'') + '">')
+      + _field('Parent Email', '<input name="contact" type="email" class="form-input" value="' + App.Utils.esc(s.contact) + '">')
+      + _field('Phone', '<input name="phone" class="form-input" value="' + App.Utils.esc(s.phone||'') + '">')
       + '</div>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Status</label>'
       + '<select name="status" class="form-input">'
@@ -364,12 +364,12 @@
       + '</select></div>'
       + _multiClassField(s.enrolledClasses, state.classes)
       + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" value="' + (s.emergency2Name||'') + '" placeholder="e.g. Uncle David">')
-      + _field('Emergency Contact Phone', '<input name="emergency2Phone" class="form-input" value="' + (s.emergency2Phone||'') + '" placeholder="60123456789">')
+      + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" value="' + App.Utils.esc(s.emergency2Name||'') + '" placeholder="e.g. Uncle David">')
+      + _field('Emergency Contact Phone', '<input name="emergency2Phone" class="form-input" value="' + App.Utils.esc(s.emergency2Phone||'') + '" placeholder="60123456789">')
       + '</div>'
       + _field('Medical Conditions', '<textarea name="medicalInfo" class="form-input" rows="2" placeholder="e.g., Asthma, Diabetes">' + App.Utils.esc(s.medicalInfo||'') + '</textarea>')
       + _field('Allergies', '<textarea name="allergies" class="form-input" rows="2" placeholder="e.g., Peanuts, Penicillin">' + App.Utils.esc(s.allergies||'') + '</textarea>')
-      + _field('Notes', '<textarea name="notes" class="form-input" rows="2">' + (s.notes||'') + '</textarea>')
+      + _field('Notes', '<textarea name="notes" class="form-input" rows="2">' + App.Utils.esc(s.notes||'') + '</textarea>')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>'
@@ -528,18 +528,18 @@
               return '<div class="border border-slate-200 rounded-xl p-4">'
                 + '<div class="flex items-start justify-between gap-3 mb-3">'
                 +   '<div>'
-                +     '<div class="font-semibold text-slate-800">' + reg.studentFirstName + ' ' + reg.studentLastName + '</div>'
-                +     '<div class="text-xs text-slate-500 mt-0.5">Parent: ' + reg.parentName + ' · ' + reg.email + '</div>'
+                +     '<div class="font-semibold text-slate-800">' + App.Utils.esc(reg.studentFirstName) + ' ' + App.Utils.esc(reg.studentLastName) + '</div>'
+                +     '<div class="text-xs text-slate-500 mt-0.5">Parent: ' + App.Utils.esc(reg.parentName) + ' · ' + App.Utils.esc(reg.email) + '</div>'
                 +   '</div>'
                 +   '<span class="text-xs text-slate-400 shrink-0">' + App.Utils.formatDate(reg.submittedOn) + '</span>'
                 + '</div>'
                 + '<div class="grid grid-cols-2 gap-2 text-xs text-slate-600 mb-3">'
-                + (reg.phone ? '<div><span class="text-slate-400">Phone:</span> ' + reg.phone + '</div>' : '')
+                + (reg.phone ? '<div><span class="text-slate-400">Phone:</span> ' + App.Utils.esc(reg.phone) + '</div>' : '')
                 + (reg.studentDob ? '<div><span class="text-slate-400">DOB:</span> ' + App.Utils.formatDate(reg.studentDob) + '</div>' : '')
-                + (reg.studentGender ? '<div><span class="text-slate-400">Gender:</span> ' + reg.studentGender + '</div>' : '')
-                + (reg.classInterest ? '<div class="col-span-2"><span class="text-slate-400">Interested in:</span> ' + reg.classInterest + '</div>' : '')
-                + (reg.emergencyName ? '<div class="col-span-2"><span class="text-slate-400">Emergency:</span> ' + reg.emergencyName + ' · ' + reg.emergencyPhone + '</div>' : '')
-                + (reg.notes ? '<div class="col-span-2"><span class="text-slate-400">Notes:</span> ' + reg.notes + '</div>' : '')
+                + (reg.studentGender ? '<div><span class="text-slate-400">Gender:</span> ' + App.Utils.esc(reg.studentGender) + '</div>' : '')
+                + (reg.classInterest ? '<div class="col-span-2"><span class="text-slate-400">Interested in:</span> ' + App.Utils.esc(reg.classInterest) + '</div>' : '')
+                + (reg.emergencyName ? '<div class="col-span-2"><span class="text-slate-400">Emergency:</span> ' + App.Utils.esc(reg.emergencyName) + ' · ' + App.Utils.esc(reg.emergencyPhone) + '</div>' : '')
+                + (reg.notes ? '<div class="col-span-2"><span class="text-slate-400">Notes:</span> ' + App.Utils.esc(reg.notes) + '</div>' : '')
                 + '</div>'
                 + '<div class="flex gap-2">'
                 +   '<button onclick="App.Students._approveReg(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium">Approve</button>'

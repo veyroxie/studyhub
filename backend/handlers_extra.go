@@ -155,8 +155,9 @@ func handleCreateFeedback(db *DB) http.HandlerFunc {
 		if f.StudentNotes == nil {
 			snJSON = []byte("[]")
 		}
-		_, err := db.Exec(`INSERT INTO feedback(id,class_id,date,teacher_id,topic,mood,notes,student_notes) VALUES(?,?,?,?,?,?,?,?)`,
-			f.ID, f.ClassID, f.Date, f.TeacherID, f.Topic, f.Mood, f.Notes, string(snJSON))
+		tid := tenantID(c)
+		_, err := db.Exec(`INSERT INTO feedback(id,tenant_id,class_id,date,teacher_id,topic,mood,notes,student_notes) VALUES(?,?,?,?,?,?,?,?,?)`,
+			f.ID, tid, f.ClassID, f.Date, f.TeacherID, f.Topic, f.Mood, f.Notes, string(snJSON))
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -227,7 +228,7 @@ func handleDeleteFeedback(db *DB) http.HandlerFunc {
 
 func listSubjects(db *DB, c *Claims) []Subject {
 	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,name,category,level,description,monthly_fee,color FROM subjects WHERE (tenant_id=? OR ?=0) ORDER BY name`, tid, tid)
+	rows, err := db.Query(`SELECT id,name,category,level,description,monthly_fee,color FROM subjects WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY name`, tid, tid)
 	if err != nil {
 		return []Subject{}
 	}
@@ -267,8 +268,9 @@ func handleCreateSubject(db *DB) http.HandlerFunc {
 		if s.ID == "" {
 			s.ID = generateID("sub")
 		}
-		_, err := db.Exec(`INSERT INTO subjects(id,name,category,level,description,monthly_fee,color) VALUES(?,?,?,?,?,?,?)`,
-			s.ID, s.Name, s.Category, s.Level, s.Description, s.MonthlyFee, s.Color)
+		tid := tenantID(c)
+		_, err := db.Exec(`INSERT INTO subjects(id,tenant_id,name,category,level,description,monthly_fee,color) VALUES(?,?,?,?,?,?,?,?)`,
+			s.ID, tid, s.Name, s.Category, s.Level, s.Description, s.MonthlyFee, s.Color)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -322,10 +324,10 @@ func handleDeleteSubject(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`DELETE FROM subjects WHERE id=?`, id)
+		db.Exec(`UPDATE subjects SET deleted_at=NOW() WHERE id=?`, id)
 		if c != nil {
 			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "subject_deleted", "subject", id, "hard deleted")
+				c.Email, "subject_deleted", "subject", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -335,7 +337,7 @@ func handleDeleteSubject(db *DB) http.HandlerFunc {
 
 func listWorkshops(db *DB, c *Claims) []Workshop {
 	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,name,description,date,time,end_time,classroom,capacity,enrolled,fee,teacher_ids,status FROM workshops WHERE (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
+	rows, err := db.Query(`SELECT id,name,description,date,time,end_time,classroom,capacity,enrolled,fee,teacher_ids,status FROM workshops WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC`, tid, tid)
 	if err != nil {
 		return []Workshop{}
 	}
@@ -380,8 +382,9 @@ func handleCreateWorkshop(db *DB) http.HandlerFunc {
 		if ws.Status == "" {
 			ws.Status = "upcoming"
 		}
-		_, err := db.Exec(`INSERT INTO workshops(id,name,description,date,time,end_time,classroom,capacity,enrolled,fee,teacher_ids,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-			ws.ID, ws.Name, ws.Description, ws.Date, ws.Time, ws.EndTime, ws.Classroom, ws.Capacity, ws.Enrolled, ws.Fee, jsonArr(ws.TeacherIDs), ws.Status)
+		tid := tenantID(c)
+		_, err := db.Exec(`INSERT INTO workshops(id,tenant_id,name,description,date,time,end_time,classroom,capacity,enrolled,fee,teacher_ids,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			ws.ID, tid, ws.Name, ws.Description, ws.Date, ws.Time, ws.EndTime, ws.Classroom, ws.Capacity, ws.Enrolled, ws.Fee, jsonArr(ws.TeacherIDs), ws.Status)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -435,10 +438,10 @@ func handleDeleteWorkshop(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`DELETE FROM workshops WHERE id=?`, id)
+		db.Exec(`UPDATE workshops SET deleted_at=NOW() WHERE id=?`, id)
 		if c != nil {
 			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "workshop_deleted", "workshop", id, "hard deleted")
+				c.Email, "workshop_deleted", "workshop", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -463,7 +466,7 @@ func parentStudentIDs(db *DB, email string) map[string]bool {
 
 func listSelfStudy(db *DB, c *Claims) []SelfStudySession {
 	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
+	rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC`, tid, tid)
 	if err != nil {
 		return []SelfStudySession{}
 	}
@@ -507,7 +510,7 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 			}
 		}
 		tid := tenantID(c)
-		rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE student_id=? AND (tenant_id=? OR ?=0) ORDER BY date DESC`, studentID, tid, tid)
+		rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE student_id=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC`, studentID, tid, tid)
 		if err != nil {
 			respond(w, []SelfStudySession{})
 			return
@@ -542,8 +545,9 @@ func handleCreateSelfStudy(db *DB) http.HandlerFunc {
 		if s.ID == "" {
 			s.ID = generateID("SS")
 		}
-		_, err := db.Exec(`INSERT INTO self_study_sessions(id,student_id,date,start_time,end_time,duration_min,notes) VALUES(?,?,?,?,?,?,?)`,
-			s.ID, s.StudentID, s.Date, s.StartTime, s.EndTime, s.DurationMin, s.Notes)
+		tid := tenantID(c)
+		_, err := db.Exec(`INSERT INTO self_study_sessions(id,tenant_id,student_id,date,start_time,end_time,duration_min,notes) VALUES(?,?,?,?,?,?,?,?)`,
+			s.ID, tid, s.StudentID, s.Date, s.StartTime, s.EndTime, s.DurationMin, s.Notes)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -565,10 +569,10 @@ func handleDeleteSelfStudy(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`DELETE FROM self_study_sessions WHERE id=?`, id)
+		db.Exec(`UPDATE self_study_sessions SET deleted_at=NOW() WHERE id=?`, id)
 		if c := claimsFrom(r); c != nil {
 			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "self_study_deleted", "self_study", id, "hard deleted")
+				c.Email, "self_study_deleted", "self_study", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -578,7 +582,7 @@ func handleDeleteSelfStudy(db *DB) http.HandlerFunc {
 
 func listPerformanceReviews(db *DB, c *Claims) []PerformanceReview {
 	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
+	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC`, tid, tid)
 	if err != nil {
 		return []PerformanceReview{}
 	}
@@ -606,7 +610,7 @@ func handleListPerformanceReviews(db *DB) http.HandlerFunc {
 			return
 		}
 		tid := tenantID(c)
-		rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE staff_id=? AND (tenant_id=? OR ?=0) ORDER BY date DESC`, staffID, tid, tid)
+		rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE staff_id=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC`, staffID, tid, tid)
 		if err != nil {
 			respond(w, []PerformanceReview{})
 			return
@@ -647,8 +651,9 @@ func handleCreatePerformanceReview(db *DB) http.HandlerFunc {
 		if p.ReviewerEmail == "" && c != nil {
 			p.ReviewerEmail = c.Email
 		}
-		_, err := db.Exec(`INSERT INTO performance_reviews(id,staff_id,reviewer_email,date,rating,parent_rating,notes) VALUES(?,?,?,?,?,?,?)`,
-			p.ID, p.StaffID, p.ReviewerEmail, p.Date, p.Rating, p.ParentRating, p.Notes)
+		tid := tenantID(c)
+		_, err := db.Exec(`INSERT INTO performance_reviews(id,tenant_id,staff_id,reviewer_email,date,rating,parent_rating,notes) VALUES(?,?,?,?,?,?,?,?)`,
+			p.ID, tid, p.StaffID, p.ReviewerEmail, p.Date, p.Rating, p.ParentRating, p.Notes)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -670,10 +675,10 @@ func handleDeletePerformanceReview(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`DELETE FROM performance_reviews WHERE id=?`, id)
+		db.Exec(`UPDATE performance_reviews SET deleted_at=NOW() WHERE id=?`, id)
 		if c := claimsFrom(r); c != nil {
 			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "performance_review_deleted", "performance_review", id, "hard deleted")
+				c.Email, "performance_review_deleted", "performance_review", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -729,8 +734,9 @@ func handleCreateCancelledClass(db *DB) http.HandlerFunc {
 		if cc.CancelledBy == "" && c != nil {
 			cc.CancelledBy = c.Email
 		}
-		_, err := db.Exec(`INSERT INTO cancelled_classes(id,class_id,date,reason,cancelled_by,created_on) VALUES(?,?,?,?,?,?)`,
-			cc.ID, cc.ClassID, cc.Date, cc.Reason, cc.CancelledBy, cc.CreatedOn)
+		tid := tenantID(c)
+		_, err := db.Exec(`INSERT INTO cancelled_classes(id,tenant_id,class_id,date,reason,cancelled_by,created_on) VALUES(?,?,?,?,?,?,?)`,
+			cc.ID, tid, cc.ClassID, cc.Date, cc.Reason, cc.CancelledBy, cc.CreatedOn)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -1025,7 +1031,7 @@ func handleServeUpload() http.HandlerFunc {
 
 func listHolidays(db *DB, c *Claims) []Holiday {
 	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,name,date,end_date,type,notes,created_by FROM holidays WHERE (tenant_id=? OR ?=0) ORDER BY date`, tid, tid)
+	rows, err := db.Query(`SELECT id,name,date,end_date,type,notes,created_by FROM holidays WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date`, tid, tid)
 	if err != nil {
 		return []Holiday{}
 	}
@@ -1078,8 +1084,9 @@ func handleCreateHoliday(db *DB) http.HandlerFunc {
 		if h.CreatedBy == "" && c != nil {
 			h.CreatedBy = c.Email
 		}
-		_, err := db.Exec(`INSERT INTO holidays(id,name,date,end_date,type,notes,created_by) VALUES(?,?,?,?,?,?,?)`,
-			h.ID, h.Name, h.Date, h.EndDate, h.Type, h.Notes, h.CreatedBy)
+		tid := tenantID(c)
+		_, err := db.Exec(`INSERT INTO holidays(id,tenant_id,name,date,end_date,type,notes,created_by) VALUES(?,?,?,?,?,?,?,?)`,
+			h.ID, tid, h.Name, h.Date, h.EndDate, h.Type, h.Notes, h.CreatedBy)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -1132,9 +1139,9 @@ func handleDeleteHoliday(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`DELETE FROM holidays WHERE id=?`, id)
+		db.Exec(`UPDATE holidays SET deleted_at=NOW() WHERE id=?`, id)
 		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "holiday_deleted", "holiday", id, "hard deleted")
+			c.Email, "holiday_deleted", "holiday", id, "soft deleted")
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
