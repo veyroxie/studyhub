@@ -357,10 +357,6 @@
               0
             </span>
           </button>
-          <!-- Notification panel -->
-          <div id="notif-panel"
-            class="hidden absolute right-0 top-11 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-          </div>
         </div>
 
         <!-- Role toggle -->
@@ -455,6 +451,8 @@
 
 </div><!-- /app -->
 
+<!-- Notification panel (fixed, works in all themes) -->
+<div id="notif-panel" class="hidden fixed z-50 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden" style="top:60px;right:24px"></div>
 <!-- Notification backdrop (closes panel on outside click) -->
 <div id="notif-backdrop" class="hidden fixed inset-0 z-30" onclick="App.Notifs.close()"></div>
 
