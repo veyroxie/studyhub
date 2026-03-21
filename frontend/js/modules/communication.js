@@ -164,27 +164,37 @@
 
   function _delete(annId) {
     if (!confirm('Delete this announcement?')) return;
-    const state = App.Store.get();
-    App.Store.set({ announcements: state.announcements.filter(function(a) { return a.id !== annId; }) });
-    App.Utils.showToast('Announcement deleted', 'info');
-    App.Router.refresh();
+    App.Api.del('/api/announcements/' + annId).then(function() {
+      return App.Api.loadSnapshot();
+    }).then(function() {
+      App.Utils.showToast('Announcement deleted', 'info');
+      App.Router.refresh();
+    }).catch(function(e) {
+      App.Utils.showToast('Delete failed: ' + e.message, 'error');
+    });
   }
 
   function _approve(annId) {
-    const state = App.Store.get();
-    App.Store.set({ announcements: state.announcements.map(function(a) {
-      return a.id === annId ? Object.assign({}, a, { status: 'published' }) : a;
-    })});
-    App.Utils.showToast('Announcement approved and published', 'success');
-    App.Router.refresh();
+    App.Api.put('/api/announcements/' + annId + '/approve', { status: 'published' }).then(function() {
+      return App.Api.loadSnapshot();
+    }).then(function() {
+      App.Utils.showToast('Announcement approved and published', 'success');
+      App.Router.refresh();
+    }).catch(function(e) {
+      App.Utils.showToast('Approve failed: ' + e.message, 'error');
+    });
   }
 
   function _reject(annId) {
     if (!confirm('Reject and delete this announcement draft?')) return;
-    const state = App.Store.get();
-    App.Store.set({ announcements: state.announcements.filter(function(a) { return a.id !== annId; }) });
-    App.Utils.showToast('Announcement rejected', 'info');
-    App.Router.refresh();
+    App.Api.del('/api/announcements/' + annId).then(function() {
+      return App.Api.loadSnapshot();
+    }).then(function() {
+      App.Utils.showToast('Announcement rejected', 'info');
+      App.Router.refresh();
+    }).catch(function(e) {
+      App.Utils.showToast('Reject failed: ' + e.message, 'error');
+    });
   }
 
   function _newModal() {
@@ -233,21 +243,23 @@
           .map(function(c) { return c.id; });
       }
       const newAnn = {
-        id: App.Utils.generateId('ANN'),
         title: fd.get('title').trim(),
         message: fd.get('message').trim(),
         audience: audience,
         type: fd.get('type'),
         status: isTeacher ? 'pending_approval' : 'published',
-        createdOn: App.Utils.today(),
         createdBy: byline,
-        archiveOn: fd.get('archiveOn') || null,
-        targetClassIds: targetClassIds
+        archiveOn: fd.get('archiveOn') || ''
       };
-      App.Store.set({ announcements: [newAnn, ...state.announcements] });
-      App.Utils.hideModal(true);
-      App.Utils.showToast(isTeacher ? 'Submitted for admin approval' : 'Announcement published!', isTeacher ? 'info' : 'success');
-      App.Router.refresh();
+      App.Api.post('/api/announcements', newAnn).then(function() {
+        return App.Api.loadSnapshot();
+      }).then(function() {
+        App.Utils.hideModal(true);
+        App.Utils.showToast(isTeacher ? 'Submitted for admin approval' : 'Announcement published!', isTeacher ? 'info' : 'success');
+        App.Router.refresh();
+      }).catch(function(e) {
+        App.Utils.showToast('Failed: ' + e.message, 'error');
+      });
     });
   }
 
@@ -291,19 +303,20 @@
     document.getElementById('edit-ann-form').addEventListener('submit', function(e) {
       e.preventDefault();
       var fd = new FormData(e.target);
-      var st = App.Store.get();
-      App.Store.set({ announcements: st.announcements.map(function(a) {
-        if (a.id !== annId) return a;
-        return Object.assign({}, a, {
-          title: fd.get('title').trim(),
-          message: fd.get('message').trim(),
-          type: fd.get('type'),
-          archiveOn: fd.get('archiveOn') || null
-        });
-      })});
-      App.Utils.hideModal(true);
-      App.Utils.showToast('Announcement updated', 'success');
-      App.Router.refresh();
+      App.Api.put('/api/announcements/' + annId, {
+        title: fd.get('title').trim(),
+        message: fd.get('message').trim(),
+        type: fd.get('type'),
+        archiveOn: fd.get('archiveOn') || ''
+      }).then(function() {
+        return App.Api.loadSnapshot();
+      }).then(function() {
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Announcement updated', 'success');
+        App.Router.refresh();
+      }).catch(function(e) {
+        App.Utils.showToast('Update failed: ' + e.message, 'error');
+      });
     });
   }
 

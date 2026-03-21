@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,12 @@ import (
 func respond(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
+}
+
+func respondError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 func today() string { return time.Now().Format("2006-01-02") }
@@ -38,6 +45,44 @@ func validationError(checks ...string) string {
 
 // validAmount returns true if amount is a positive number.
 func validAmount(a float64) bool { return a > 0 }
+
+// ── Pagination ───────────────────────────────────────────────────────────────
+
+type Pagination struct {
+	Limit  int
+	Offset int
+	Active bool
+}
+
+type PaginatedResponse struct {
+	Data   any `json:"data"`
+	Total  int `json:"total"`
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+}
+
+func parsePagination(r *http.Request) Pagination {
+	q := r.URL.Query()
+	ls, os := q.Get("limit"), q.Get("offset")
+	if ls == "" && os == "" {
+		return Pagination{}
+	}
+	p := Pagination{Active: true, Limit: 50, Offset: 0}
+	if ls != "" {
+		if v, err := strconv.Atoi(ls); err == nil && v > 0 {
+			if v > 500 {
+				v = 500
+			}
+			p.Limit = v
+		}
+	}
+	if os != "" {
+		if v, err := strconv.Atoi(os); err == nil && v >= 0 {
+			p.Offset = v
+		}
+	}
+	return p
+}
 
 func generateID(prefix string) string {
 	return prefix + "_" + strings.ReplaceAll(time.Now().Format("20060102150405.000"), ".", "")
@@ -87,6 +132,7 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 			PerformanceReviews: perfReviews,
 			CancelledClasses:   listCancelledClasses(db, c),
 			Holidays:           listHolidays(db, c),
+			ReplacementCredits: listReplacementCredits(db, c),
 		}
 		if c != nil && (c.Role == "admin" || c.Role == "superadmin") {
 			snap.Registrations = listRegistrations(db, c)
@@ -135,24 +181,61 @@ func listStudents(db *DB, c *Claims) []Student {
 	return out
 }
 
+func listStudentsPaged(db *DB, c *Claims, p Pagination) ([]Student, int) {
+	tid := tenantID(c)
+	var total int
+	var rows *sql.Rows
+	var err error
+	if c != nil && c.Role == "parent" {
+		db.QueryRow(`SELECT COUNT(*) FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, c.Email, tid, tid).Scan(&total)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,'') FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
+	} else {
+		db.QueryRow(`SELECT COUNT(*) FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL`, tid, tid).Scan(&total)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,'') FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
+	}
+	if err != nil {
+		return []Student{}, total
+	}
+	defer rows.Close()
+	out := []Student{}
+	for rows.Next() {
+		var s Student
+		var ec, sib string
+		var e2name, e2phone sql.NullString
+		rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies)
+		s.EnrolledClasses = parseArr(ec)
+		s.Siblings = parseArr(sib)
+		s.Emergency2Name = nullStr(e2name)
+		s.Emergency2Phone = nullStr(e2phone)
+		out = append(out, s)
+	}
+	return out, total
+}
+
 func handleStudents(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		switch r.Method {
 		case http.MethodGet:
-			respond(w, listStudents(db, c))
+			p := parsePagination(r)
+			if !p.Active {
+				respond(w, listStudents(db, c))
+				return
+			}
+			data, total := listStudentsPaged(db, c, p)
+			respond(w, PaginatedResponse{Data: data, Total: total, Limit: p.Limit, Offset: p.Offset})
 		case http.MethodPost:
 			if c.Role != "admin" {
-				http.Error(w, "admin only", 403)
+				respondError(w, "admin only", 403)
 				return
 			}
 			var s Student
 			if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
-				http.Error(w, "bad body", 400)
+				respondError(w, "bad body", 400)
 				return
 			}
 			if msg := validationError("firstName", s.FirstName, "lastName", s.LastName, "contact", s.Contact); msg != "" {
-				http.Error(w, msg, 400)
+				respondError(w, msg, 400)
 				return
 			}
 			if s.Status == "" {
@@ -168,7 +251,7 @@ func handleStudents(db *DB) http.HandlerFunc {
 			_, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,medical_info,allergies) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies)
 			if err != nil {
-				http.Error(w, err.Error(), 500)
+				respondError(w, "server error", 500)
 				return
 			}
 			respond(w, s)
@@ -180,7 +263,7 @@ func handleStudent(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || c.Role != "admin" {
-			http.Error(w, "admin only", 403)
+			respondError(w, "admin only", 403)
 			return
 		}
 		id := chi.URLParam(r, "id")
@@ -188,13 +271,13 @@ func handleStudent(db *DB) http.HandlerFunc {
 		case http.MethodPut:
 			var s Student
 			if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
-				http.Error(w, "bad body", 400)
+				respondError(w, "bad body", 400)
 				return
 			}
 			s.ID = id
 			if _, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,siblings=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=? WHERE id=?`,
 				s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, id); err != nil {
-				http.Error(w, "could not update student", 500)
+				respondError(w, "could not update student", 500)
 				return
 			}
 			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
@@ -202,7 +285,7 @@ func handleStudent(db *DB) http.HandlerFunc {
 			respond(w, s)
 		case http.MethodDelete:
 			if _, err := db.Exec(`UPDATE students SET deleted_at=NOW() WHERE id=?`, id); err != nil {
-				http.Error(w, "could not delete student", 500)
+				respondError(w, "could not delete student", 500)
 				return
 			}
 			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
@@ -240,23 +323,23 @@ func handleClasses(db *DB) http.HandlerFunc {
 			respond(w, listClasses(db, cl))
 		case http.MethodPost:
 			if cl == nil || (cl.Role != "admin" && cl.Role != "superadmin") {
-				http.Error(w, "admin only", 403)
+				respondError(w, "admin only", 403)
 				return
 			}
 			var c Class
 			if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-				http.Error(w, "bad body", 400)
+				respondError(w, "bad body", 400)
 				return
 			}
 			if msg := validationError("name", c.Name, "day", c.Day, "time", c.Time, "endTime", c.EndTime); msg != "" {
-				http.Error(w, msg, 400)
+				respondError(w, msg, 400)
 				return
 			}
 			if c.Capacity < 1 {
 				c.Capacity = 5
 			}
 			if c.Time >= c.EndTime {
-				http.Error(w, "end time must be after start time", 400)
+				respondError(w, "end time must be after start time", 400)
 				return
 			}
 			if c.ID == "" {
@@ -268,18 +351,18 @@ func handleClasses(db *DB) http.HandlerFunc {
 			for _, tid2 := range c.TeacherIDs {
 				var cnt int
 				db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<?  AND end_time>? AND teacher_ids LIKE '%'||?||'%' AND deleted_at IS NULL`,
-					c.Day, c.ID, c.EndTime, c.Time, tid2).Scan(&cnt)
+					c.Day, c.ID, c.Time, c.EndTime, tid2).Scan(&cnt)
 				if cnt > 0 {
-					http.Error(w, "Conflict: teacher "+tid2+" is already booked at this time", http.StatusConflict)
+					respondError(w, "Conflict: teacher "+tid2+" is already booked at this time", http.StatusConflict)
 					return
 				}
 			}
 			if c.Classroom != "" {
 				var cnt int
 				db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`,
-					c.Day, c.Classroom, c.ID, c.EndTime, c.Time).Scan(&cnt)
+					c.Day, c.Classroom, c.ID, c.Time, c.EndTime).Scan(&cnt)
 				if cnt > 0 {
-					http.Error(w, "Conflict: "+c.Classroom+" is already booked at this time", http.StatusConflict)
+					respondError(w, "Conflict: "+c.Classroom+" is already booked at this time", http.StatusConflict)
 					return
 				}
 			}
@@ -336,16 +419,16 @@ func handleStaff(db *DB) http.HandlerFunc {
 			respond(w, listStaff(db, c))
 		case http.MethodPost:
 			if c.Role != "admin" {
-				http.Error(w, "admin only", 403)
+				respondError(w, "admin only", 403)
 				return
 			}
 			var s Staff
 			if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
-				http.Error(w, "bad body", 400)
+				respondError(w, "bad body", 400)
 				return
 			}
 			if msg := validationError("name", s.Name, "fullName", s.FullName, "role", s.Role, "email", s.Email); msg != "" {
-				http.Error(w, msg, 400)
+				respondError(w, msg, 400)
 				return
 			}
 			if s.Status == "" {
@@ -393,28 +476,63 @@ func listInvoices(db *DB, c *Claims) []Invoice {
 	return out
 }
 
+func listInvoicesPaged(db *DB, c *Claims, p Pagination) ([]Invoice, int) {
+	tid := tenantID(c)
+	var total int
+	var rows *sql.Rows
+	var err error
+	if c != nil && c.Role == "parent" {
+		db.QueryRow(`SELECT COUNT(*) FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND i.deleted_at IS NULL AND (i.tenant_id=? OR ?=0)`, c.Email, tid, tid).Scan(&total)
+		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on,COALESCE(i.payment_proof,''),COALESCE(i.payment_method,''),COALESCE(i.discount_pct,0),COALESCE(i.submitted_by_parent,false),COALESCE(i.sibling_ids,''),COALESCE(i.sibling_discount,0) FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND i.deleted_at IS NULL AND (i.tenant_id=? OR ?=0) ORDER BY i.created_on DESC LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
+	} else {
+		db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0)`, tid, tid).Scan(&total)
+		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on,COALESCE(payment_proof,''),COALESCE(payment_method,''),COALESCE(discount_pct,0),COALESCE(submitted_by_parent,false),COALESCE(sibling_ids,''),COALESCE(sibling_discount,0) FROM invoices WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0) ORDER BY created_on DESC LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
+	}
+	if err != nil {
+		return []Invoice{}, total
+	}
+	defer rows.Close()
+	out := []Invoice{}
+	for rows.Next() {
+		var inv Invoice
+		var paidOn sql.NullString
+		rows.Scan(&inv.ID, &inv.StudentID, &inv.Description, &inv.Type, &inv.Amount, &inv.DueDate, &inv.Status, &inv.CreatedOn, &paidOn, &inv.PaymentProof, &inv.PaymentMethod, &inv.DiscountPct, &inv.SubmittedByParent, &inv.SiblingIds, &inv.SiblingDiscount)
+		if paidOn.Valid {
+			inv.PaidOn = &paidOn.String
+		}
+		out = append(out, inv)
+	}
+	return out, total
+}
+
 func handleInvoices(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		switch r.Method {
 		case http.MethodGet:
-			respond(w, listInvoices(db, c))
+			p := parsePagination(r)
+			if !p.Active {
+				respond(w, listInvoices(db, c))
+				return
+			}
+			data, total := listInvoicesPaged(db, c, p)
+			respond(w, PaginatedResponse{Data: data, Total: total, Limit: p.Limit, Offset: p.Offset})
 		case http.MethodPost:
 			if c.Role != "admin" {
-				http.Error(w, "admin only", 403)
+				respondError(w, "admin only", 403)
 				return
 			}
 			var inv Invoice
 			if err := json.NewDecoder(r.Body).Decode(&inv); err != nil {
-				http.Error(w, "bad body", 400)
+				respondError(w, "bad body", 400)
 				return
 			}
 			if msg := validationError("studentId", inv.StudentID, "description", inv.Description, "dueDate", inv.DueDate); msg != "" {
-				http.Error(w, msg, 400)
+				respondError(w, msg, 400)
 				return
 			}
 			if !validAmount(inv.Amount) {
-				http.Error(w, "amount must be greater than 0", 400)
+				respondError(w, "amount must be greater than 0", 400)
 				return
 			}
 			if inv.ID == "" {
@@ -441,14 +559,14 @@ func handleInvoicePay(db *DB) http.HandlerFunc {
 		var studentID string
 		var amount float64
 		if err := db.QueryRow(`SELECT student_id, amount FROM invoices WHERE id=? AND deleted_at IS NULL`, id).Scan(&studentID, &amount); err != nil {
-			http.Error(w, "invoice not found", 404)
+			respondError(w, "invoice not found", 404)
 			return
 		}
 		if c != nil && c.Role == "parent" {
 			var ownerEmail string
 			db.QueryRow(`SELECT contact FROM students WHERE id=?`, studentID).Scan(&ownerEmail)
 			if ownerEmail != c.Email {
-				http.Error(w, "not your invoice", 403)
+				respondError(w, "not your invoice", 403)
 				return
 			}
 		}
@@ -466,7 +584,7 @@ func handleInvoicePay(db *DB) http.HandlerFunc {
 
 		t := today()
 		if _, err := db.Exec(`UPDATE invoices SET status=?, paid_on=?, payment_method=COALESCE(NULLIF(?,''),payment_method) WHERE id=?`, newStatus, t, body.PaymentMethod, id); err != nil {
-			http.Error(w, "could not update invoice", 500)
+			respondError(w, "could not update invoice", 500)
 			return
 		}
 		if c != nil {
@@ -480,12 +598,6 @@ func handleInvoicePay(db *DB) http.HandlerFunc {
 
 func handleAuditLogs(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query(`SELECT id,actor_email,action,entity_type,entity_id,detail,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 200`)
-		if err != nil {
-			respond(w, []any{})
-			return
-		}
-		defer rows.Close()
 		type LogEntry struct {
 			ID         int    `json:"id"`
 			ActorEmail string `json:"actorEmail"`
@@ -495,13 +607,40 @@ func handleAuditLogs(db *DB) http.HandlerFunc {
 			Detail     string `json:"detail"`
 			CreatedAt  string `json:"createdAt"`
 		}
+
+		p := parsePagination(r)
+		if !p.Active {
+			rows, err := db.Query(`SELECT id,actor_email,action,entity_type,entity_id,detail,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 200`)
+			if err != nil {
+				respond(w, []any{})
+				return
+			}
+			defer rows.Close()
+			out := []LogEntry{}
+			for rows.Next() {
+				var e LogEntry
+				rows.Scan(&e.ID, &e.ActorEmail, &e.Action, &e.EntityType, &e.EntityID, &e.Detail, &e.CreatedAt)
+				out = append(out, e)
+			}
+			respond(w, out)
+			return
+		}
+
+		var total int
+		db.QueryRow(`SELECT COUNT(*) FROM audit_logs`).Scan(&total)
+		rows, err := db.Query(`SELECT id,actor_email,action,entity_type,entity_id,detail,created_at FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?`, p.Limit, p.Offset)
+		if err != nil {
+			respond(w, PaginatedResponse{Data: []LogEntry{}, Total: total, Limit: p.Limit, Offset: p.Offset})
+			return
+		}
+		defer rows.Close()
 		out := []LogEntry{}
 		for rows.Next() {
 			var e LogEntry
 			rows.Scan(&e.ID, &e.ActorEmail, &e.Action, &e.EntityType, &e.EntityID, &e.Detail, &e.CreatedAt)
 			out = append(out, e)
 		}
-		respond(w, out)
+		respond(w, PaginatedResponse{Data: out, Total: total, Limit: p.Limit, Offset: p.Offset})
 	}
 }
 
@@ -529,24 +668,54 @@ func listAnnouncements(db *DB, c *Claims) []Announcement {
 	return out
 }
 
+func listAnnouncementsPaged(db *DB, c *Claims, p Pagination) ([]Announcement, int) {
+	tid := tenantID(c)
+	var total int
+	db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE (tenant_id=? OR ?=0)`, tid, tid).Scan(&total)
+	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE (tenant_id=? OR ?=0) ORDER BY created_on DESC LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
+	if err != nil {
+		return []Announcement{}, total
+	}
+	defer rows.Close()
+	out := []Announcement{}
+	for rows.Next() {
+		var a Announcement
+		var status, archiveOn sql.NullString
+		rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn)
+		a.Status = nullStr(status)
+		if a.Status == "" {
+			a.Status = "published"
+		}
+		a.ArchiveOn = nullStr(archiveOn)
+		out = append(out, a)
+	}
+	return out, total
+}
+
 func handleAnnouncements(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		switch r.Method {
 		case http.MethodGet:
-			respond(w, listAnnouncements(db, c))
+			p := parsePagination(r)
+			if !p.Active {
+				respond(w, listAnnouncements(db, c))
+				return
+			}
+			data, total := listAnnouncementsPaged(db, c, p)
+			respond(w, PaginatedResponse{Data: data, Total: total, Limit: p.Limit, Offset: p.Offset})
 		case http.MethodPost:
-			if c.Role != "admin" {
-				http.Error(w, "admin only", 403)
+			if c.Role != "admin" && c.Role != "teacher" {
+				respondError(w, "admin or teacher only", 403)
 				return
 			}
 			var a Announcement
 			if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
-				http.Error(w, "bad body", 400)
+				respondError(w, "bad body", 400)
 				return
 			}
 			if msg := validationError("title", a.Title, "message", a.Message); msg != "" {
-				http.Error(w, msg, 400)
+				respondError(w, msg, 400)
 				return
 			}
 			if a.ID == "" {
@@ -573,16 +742,57 @@ func handleAnnouncementDelete(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || c.Role != "admin" {
-			http.Error(w, "admin only", 403)
+			respondError(w, "admin only", 403)
 			return
 		}
 		id := chi.URLParam(r, "id")
 		if _, err := db.Exec(`DELETE FROM announcements WHERE id=?`, id); err != nil {
-			http.Error(w, "could not delete announcement", 500)
+			respondError(w, "could not delete announcement", 500)
 			return
 		}
 		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 			c.Email, "announcement_deleted", "announcement", id, "deleted")
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func handleAnnouncementUpdate(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		if c == nil || c.Role != "admin" {
+			respondError(w, "admin only", 403)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var a Announcement
+		if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
+			respondError(w, "bad body", 400)
+			return
+		}
+		db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=? WHERE id=?`,
+			a.Title, a.Message, a.Type, a.ArchiveOn, id)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func handleAnnouncementApprove(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		if c == nil || c.Role != "admin" {
+			respondError(w, "admin only", 403)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var body struct {
+			Status string `json:"status"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if body.Status == "" {
+			body.Status = "published"
+		}
+		db.Exec(`UPDATE announcements SET status=? WHERE id=?`, body.Status, id)
+		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
+			c.Email, "announcement_"+body.Status, "announcement", id, "status changed to "+body.Status)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -621,16 +831,57 @@ func listAttendance(db *DB, c *Claims) []Attendance {
 	return out
 }
 
+func listAttendancePaged(db *DB, c *Claims, p Pagination) ([]Attendance, int) {
+	tid := tenantID(c)
+	var total int
+	var rows *sql.Rows
+	var err error
+	if c != nil && c.Role == "parent" {
+		db.QueryRow(`SELECT COUNT(*) FROM attendance a JOIN students s ON s.id=a.person_id WHERE a.person_type='student' AND s.contact=? AND (a.tenant_id=? OR ?=0)`, c.Email, tid, tid).Scan(&total)
+		rows, err = db.Query(`SELECT a.id,a.person_id,a.person_type,a.date,a.class_id,a.check_in,a.check_out,a.status FROM attendance a JOIN students s ON s.id=a.person_id WHERE a.person_type='student' AND s.contact=? AND (a.tenant_id=? OR ?=0) ORDER BY a.date DESC LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
+	} else {
+		db.QueryRow(`SELECT COUNT(*) FROM attendance WHERE (tenant_id=? OR ?=0)`, tid, tid).Scan(&total)
+		rows, err = db.Query(`SELECT id,person_id,person_type,date,class_id,check_in,check_out,status FROM attendance WHERE (tenant_id=? OR ?=0) ORDER BY date DESC LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
+	}
+	if err != nil {
+		return []Attendance{}, total
+	}
+	defer rows.Close()
+	out := []Attendance{}
+	for rows.Next() {
+		var a Attendance
+		var classID, checkIn, checkOut sql.NullString
+		rows.Scan(&a.ID, &a.PersonID, &a.PersonType, &a.Date, &classID, &checkIn, &checkOut, &a.Status)
+		if classID.Valid {
+			a.ClassID = &classID.String
+		}
+		if checkIn.Valid {
+			a.CheckIn = &checkIn.String
+		}
+		if checkOut.Valid {
+			a.CheckOut = &checkOut.String
+		}
+		out = append(out, a)
+	}
+	return out, total
+}
+
 func handleAttendance(db *DB, hub *WSHub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		switch r.Method {
 		case http.MethodGet:
-			respond(w, listAttendance(db, c))
+			p := parsePagination(r)
+			if !p.Active {
+				respond(w, listAttendance(db, c))
+				return
+			}
+			data, total := listAttendancePaged(db, c, p)
+			respond(w, PaginatedResponse{Data: data, Total: total, Limit: p.Limit, Offset: p.Offset})
 		case http.MethodPost:
 			var a Attendance
 			if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
-				http.Error(w, "bad body", 400)
+				respondError(w, "bad body", 400)
 				return
 			}
 			if a.ID == "" {
@@ -747,16 +998,16 @@ func handleUsers(db *DB) http.HandlerFunc {
 		case http.MethodPost:
 			var req userCreateReq
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				http.Error(w, "bad body", 400)
+				respondError(w, "bad body", 400)
 				return
 			}
 			req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 			if !validateEmail(req.Email) {
-				http.Error(w, "invalid email format", http.StatusBadRequest)
+				respondError(w, "invalid email format", http.StatusBadRequest)
 				return
 			}
 			if ok, msg := validatePassword(req.Password); !ok {
-				http.Error(w, msg, http.StatusBadRequest)
+				respondError(w, msg, http.StatusBadRequest)
 				return
 			}
 			if req.Role == "" {
@@ -764,7 +1015,7 @@ func handleUsers(db *DB) http.HandlerFunc {
 			}
 			hash, err := hashPassword(req.Password)
 			if err != nil {
-				http.Error(w, "hash error", 500)
+				respondError(w, "server error", 500)
 				return
 			}
 			c := claimsFrom(r)
@@ -772,10 +1023,10 @@ func handleUsers(db *DB) http.HandlerFunc {
 			_, err = db.Exec(`INSERT INTO users(tenant_id,email,password_hash,role,name) VALUES(?,?,?,?,?)`, tid, req.Email, hash, req.Role, req.Name)
 			if err != nil {
 				if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "duplicate key") {
-					http.Error(w, "email already exists", 409)
+					respondError(w, "email already exists", 409)
 					return
 				}
-				http.Error(w, err.Error(), 500)
+				respondError(w, "server error", 500)
 				return
 			}
 			w.WriteHeader(http.StatusCreated)
@@ -788,7 +1039,7 @@ func handleUserDelete(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		if _, err := db.Exec(`DELETE FROM users WHERE id=?`, id); err != nil {
-			http.Error(w, "could not delete user", 500)
+			respondError(w, "could not delete user", 500)
 			return
 		}
 		if c := claimsFrom(r); c != nil {
@@ -826,15 +1077,15 @@ func handleRegister(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var reg Registration
 		if err := json.NewDecoder(r.Body).Decode(&reg); err != nil {
-			http.Error(w, "bad request", 400)
+			respondError(w, "bad request", 400)
 			return
 		}
 		if reg.ParentName == "" || reg.Email == "" || reg.StudentFirstName == "" {
-			http.Error(w, "parent name, email and student first name are required", 400)
+			respondError(w, "parent name, email and student first name are required", 400)
 			return
 		}
 		if !validateEmail(reg.Email) {
-			http.Error(w, "invalid email address", 400)
+			respondError(w, "invalid email address", 400)
 			return
 		}
 		reg.ID = generateID("REG")
@@ -848,7 +1099,7 @@ func handleRegister(db *DB) http.HandlerFunc {
 			reg.SchoolFees, reg.RegistrationDate, reg.WorkshopInterest,
 			reg.ClassInterest, reg.Notes, reg.SubmittedOn, reg.Status, reg.Type)
 		if err != nil {
-			http.Error(w, "could not save registration", 500)
+			respondError(w, "could not save registration", 500)
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
@@ -867,41 +1118,56 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 				&reg.StudentFirstName, &reg.StudentLastName, &reg.StudentDOB, &reg.StudentGender,
 				&reg.ClassInterest, &reg.Notes)
 		if err != nil {
-			http.Error(w, "registration not found", 404)
+			respondError(w, "registration not found", 404)
 			return
 		}
 
-		// Create student record
+		// Generate temp password before starting transaction
 		tid := tenantID(c)
 		stuID := generateID("STU")
-		if _, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
-			stuID, tid, reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
-			reg.ParentName, reg.Email, reg.Phone, "The Study Hub", "New", today(), "[]", "[]", reg.Notes); err != nil {
-			http.Error(w, "could not create student record", 500)
-			return
-		}
-
-		// Create parent user account with cryptographically random temp password
 		rawBytes := make([]byte, 8)
 		if _, err := rand.Read(rawBytes); err != nil {
-			http.Error(w, "could not generate password", 500)
+			respondError(w, "could not generate password", 500)
 			return
 		}
 		tempPassword := "Sh-" + hex.EncodeToString(rawBytes) // e.g. Sh-a3f8c2d1e4b59067
 		hash, err := hashPassword(tempPassword)
 		if err != nil {
-			http.Error(w, "could not hash password", 500)
+			respondError(w, "could not hash password", 500)
 			return
 		}
-		if _, err := db.Exec(`INSERT INTO users(email,password_hash,role,name) VALUES(?,?,?,?) ON CONFLICT(email) DO NOTHING`,
-			strings.ToLower(strings.TrimSpace(reg.Email)), hash, "parent", reg.ParentName); err != nil {
-			http.Error(w, "could not create parent account", 500)
+
+		// Start transaction
+		tx, err := db.BeginTx(r.Context())
+		if err != nil {
+			respondError(w, "server error", 500)
+			return
+		}
+		defer tx.Rollback()
+
+		// Create student record
+		if _, err := tx.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
+			stuID, tid, reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
+			reg.ParentName, reg.Email, reg.Phone, "The Study Hub", "New", today(), "[]", "[]", reg.Notes); err != nil {
+			respondError(w, "could not create student record", 500)
+			return
+		}
+
+		// Create parent user account
+		if _, err := tx.Exec(`INSERT INTO users(tenant_id,email,password_hash,role,name) VALUES(?,?,?,?,?) ON CONFLICT(email) DO NOTHING`,
+			tid, strings.ToLower(strings.TrimSpace(reg.Email)), hash, "parent", reg.ParentName); err != nil {
+			respondError(w, "could not create parent account", 500)
 			return
 		}
 
 		// Mark registration approved
-		if _, err := db.Exec(`UPDATE registrations SET status='approved' WHERE id=?`, id); err != nil {
-			http.Error(w, "could not update registration status", 500)
+		if _, err := tx.Exec(`UPDATE registrations SET status='approved' WHERE id=?`, id); err != nil {
+			respondError(w, "could not update registration status", 500)
+			return
+		}
+
+		if err := tx.Commit(); err != nil {
+			respondError(w, "server error", 500)
 			return
 		}
 
@@ -918,7 +1184,7 @@ func handleRegistrationReject(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		if _, err := db.Exec(`UPDATE registrations SET status='rejected' WHERE id=?`, id); err != nil {
-			http.Error(w, "could not reject registration", 500)
+			respondError(w, "could not reject registration", 500)
 			return
 		}
 		if c := claimsFrom(r); c != nil {

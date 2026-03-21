@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -32,6 +33,31 @@ func convertPlaceholders(query string) string {
 		}
 	}
 	return b.String()
+}
+
+// Tx wraps *sql.Tx to transparently convert ? placeholders to $N (PostgreSQL style).
+type Tx struct {
+	*sql.Tx
+}
+
+func (d *DB) BeginTx(ctx context.Context) (*Tx, error) {
+	tx, err := d.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &Tx{tx}, nil
+}
+
+func (t *Tx) Exec(query string, args ...any) (sql.Result, error) {
+	return t.Tx.Exec(convertPlaceholders(query), args...)
+}
+
+func (t *Tx) Query(query string, args ...any) (*sql.Rows, error) {
+	return t.Tx.Query(convertPlaceholders(query), args...)
+}
+
+func (t *Tx) QueryRow(query string, args ...any) *sql.Row {
+	return t.Tx.QueryRow(convertPlaceholders(query), args...)
 }
 
 func (d *DB) Exec(query string, args ...any) (sql.Result, error) {

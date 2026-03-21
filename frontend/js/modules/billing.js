@@ -437,33 +437,25 @@
     var { invoices } = App.Store.get();
     var inv = invoices.find(function(i) { return i.id === invId; });
     if (!inv) return;
-    App.Api && App.Api.updateInvoice
-      ? App.Api.updateInvoice(invId, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method })
-          .then(function() {
-            App.Utils.hideModal(true);
-            App.Utils.showToast('Marked paid · ' + method, 'success');
-            App.Notifs.refresh();
-            App.Router.refresh();
-          }).catch(function() {
-            var updated = invoices.map(function(i) {
-              return i.id === invId ? Object.assign({}, i, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method }) : i;
-            });
-            App.Store.set({ invoices: updated });
-            App.Utils.hideModal(true);
-            App.Utils.showToast('Marked paid · ' + method, 'success');
-            App.Notifs.refresh();
-            App.Router.refresh();
-          })
-      : (function() {
-          var updated = invoices.map(function(i) {
-            return i.id === invId ? Object.assign({}, i, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method }) : i;
-          });
-          App.Store.set({ invoices: updated });
-          App.Utils.hideModal(true);
-          App.Utils.showToast('Marked paid · ' + method, 'success');
-          App.Notifs.refresh();
-          App.Router.refresh();
-        })();
+    App.Api.put('/api/invoices/' + invId + '/pay', { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method })
+      .then(function() {
+        return App.Api.loadSnapshot();
+      }).then(function() {
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Marked paid · ' + method, 'success');
+        App.Notifs.refresh();
+        App.Router.refresh();
+      }).catch(function() {
+        // Fallback: update locally
+        var updated = invoices.map(function(i) {
+          return i.id === invId ? Object.assign({}, i, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method }) : i;
+        });
+        App.Store.set({ invoices: updated });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Marked paid · ' + method, 'success');
+        App.Notifs.refresh();
+        App.Router.refresh();
+      });
   }
 
   function _markPaid(invoiceId) {

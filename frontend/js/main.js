@@ -72,6 +72,7 @@
         App.Notifs.updateBadge();
         if (App.Billing && App.Billing.checkLoginNotifications) App.Billing.checkLoginNotifications();
         App.IdleTimeout.start();
+        if (App.Tutorial) App.Tutorial.autoStart();
       } catch(err) {
         _hideLoading();
         errEl.textContent = err.message || 'Login failed';
@@ -358,6 +359,7 @@
           App.Notifs.updateBadge();
           App.Api.connectWS();
           App.IdleTimeout.start();
+          if (App.Tutorial) App.Tutorial.autoStart();
         });
       } else {
         App.Login.show();

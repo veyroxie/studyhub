@@ -64,7 +64,7 @@
   function _renderParent(container, classes, students, staff, feedbacks) {
     // Find this parent's children
     var myChildren = students.filter(function(s) {
-      return s.contact === App.clientParent && s.status !== 'inactive';
+      return s.contact === App.clientParent && s.status !== 'Inactive';
     });
 
     // Collect all class ids across all children (or just the selected child)

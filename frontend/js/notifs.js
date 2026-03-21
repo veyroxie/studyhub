@@ -172,7 +172,7 @@
       // Pending announcement approvals submitted by this teacher
       var announcements = state.announcements || [];
       var pendingAnns = announcements.filter(function(a) {
-        return a.status === 'pending' && a.createdBy === App.currentTeacher;
+        return a.status === 'pending_approval' && a.createdBy === App.currentTeacher;
       });
       if (pendingAnns.length > 0) {
         notifs.push({

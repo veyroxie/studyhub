@@ -57,6 +57,7 @@ func main() {
 
 	// ── Global middleware ──────────────────────────────────────────────────────
 	r.Use(middleware.Logger)
+	r.Use(requestID)
 	r.Use(middleware.Recoverer)
 	r.Use(securityHeaders) // CSP, X-Frame-Options, etc.
 	r.Use(cors.Handler(cors.Options{
@@ -65,6 +66,7 @@ func main() {
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: true, // required for HttpOnly cookies to be sent cross-origin
 	}))
+	r.Use(rateLimitAPI)
 
 	// ── Public routes (no auth needed) ───────────────────────────────────────
 	r.With(rateLimitLogin).Post("/api/auth/login", handleLogin(db))
@@ -111,6 +113,8 @@ func main() {
 		r.Route("/api/announcements", func(r chi.Router) {
 			r.Get("/", handleAnnouncements(db))
 			r.Post("/", handleAnnouncements(db))
+			r.Put("/{id}", handleAnnouncementUpdate(db))
+			r.Put("/{id}/approve", handleAnnouncementApprove(db))
 			r.Delete("/{id}", handleAnnouncementDelete(db))
 		})
 
@@ -155,6 +159,13 @@ func main() {
 		r.Route("/api/cancelled-classes", func(r chi.Router) {
 			r.Get("/", handleListCancelledClasses(db))
 			r.Post("/", handleCreateCancelledClass(db))
+		})
+
+		r.Route("/api/replacement-credits", func(r chi.Router) {
+			r.Get("/", handleListReplacementCredits(db))
+			r.Post("/", handleCreateReplacementCredit(db))
+			r.Delete("/{id}", handleDeleteReplacementCredit(db))
+			r.Get("/balance", handleReplacementBalance(db))
 		})
 
 		r.Route("/api/holidays", func(r chi.Router) {

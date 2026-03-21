@@ -136,6 +136,10 @@
         '<span class="text-sm font-medium flex-1">' + message + '</span>' +
         '<button style="pointer-events:auto;background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:14px;padding:2px 4px;line-height:1" aria-label="Close">&times;</button>';
 
+      // Announce to screen readers
+      var announcer = document.getElementById('live-announcer');
+      if (announcer) announcer.textContent = message;
+
       // Close button handler
       el.querySelector('button').addEventListener('click', function() { _removeToast(el); });
 

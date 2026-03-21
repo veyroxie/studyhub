@@ -30,7 +30,7 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 
 	// Clean tables before each test to ensure isolation
 	tables := []string{
-		"audit_logs", "payroll", "performance_reviews", "self_study_sessions",
+		"replacement_credits", "audit_logs", "payroll", "performance_reviews", "self_study_sessions",
 		"cancelled_classes", "feedback", "attendance", "invoices",
 		"announcements", "registrations", "students", "classes",
 		"staff", "workshops", "subjects", "holidays", "users",
@@ -73,6 +73,10 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		r.Get("/api/performance-reviews", handleListPerformanceReviews(db))
 		r.Post("/api/performance-reviews", handleCreatePerformanceReview(db))
 		r.Post("/api/cancelled-classes", handleCreateCancelledClass(db))
+		r.Get("/api/replacement-credits", handleListReplacementCredits(db))
+		r.Post("/api/replacement-credits", handleCreateReplacementCredit(db))
+		r.Delete("/api/replacement-credits/{id}", handleDeleteReplacementCredit(db))
+		r.Get("/api/replacement-credits/balance", handleReplacementBalance(db))
 		r.Group(func(r chi.Router) {
 			r.Use(requireAdmin)
 			r.Get("/api/users", handleUsers(db))
@@ -856,5 +860,203 @@ func TestConcurrentRequests(t *testing.T) {
 	}
 	for i := 0; i < 20; i++ {
 		<-done
+	}
+}
+
+// ── Replacement Credits ──────────────────────────────────────────────────────
+
+func TestReplacementCredits_EarnAndUse(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+
+	// Create a student first
+	w := doRequest(r, "POST", "/api/students", token, map[string]any{
+		"firstName": "Ali", "lastName": "Test", "contact": "ali@test.com",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("create student: %d %s", w.Code, w.Body.String())
+	}
+	var stu map[string]any
+	json.Unmarshal(w.Body.Bytes(), &stu)
+	stuID := stu["id"].(string)
+
+	// Earn 60 min credit
+	w = doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
+		"studentId": stuID, "type": "earned", "minutes": 60, "note": "Absent from Math", "date": "2026-03-20",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("earn credit: %d %s", w.Code, w.Body.String())
+	}
+	var credit map[string]any
+	json.Unmarshal(w.Body.Bytes(), &credit)
+	if credit["minutes"].(float64) != 60 {
+		t.Fatalf("expected 60 min, got %v", credit["minutes"])
+	}
+
+	// Check balance = 60
+	w = doRequest(r, "GET", "/api/replacement-credits/balance?studentId="+stuID, token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("balance: %d %s", w.Code, w.Body.String())
+	}
+	var bal map[string]any
+	json.Unmarshal(w.Body.Bytes(), &bal)
+	if bal["balance"].(float64) != 60 {
+		t.Fatalf("expected balance 60, got %v", bal["balance"])
+	}
+
+	// Use 15 min
+	w = doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
+		"studentId": stuID, "type": "used", "minutes": 15, "note": "Extended English", "date": "2026-03-21",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("use credit: %d %s", w.Code, w.Body.String())
+	}
+
+	// Check balance = 45
+	w = doRequest(r, "GET", "/api/replacement-credits/balance?studentId="+stuID, token, nil)
+	json.Unmarshal(w.Body.Bytes(), &bal)
+	if bal["balance"].(float64) != 45 {
+		t.Fatalf("expected balance 45, got %v", bal["balance"])
+	}
+
+	// List credits — should have 2 entries
+	w = doRequest(r, "GET", "/api/replacement-credits?studentId="+stuID, token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", w.Code, w.Body.String())
+	}
+	var credits []map[string]any
+	json.Unmarshal(w.Body.Bytes(), &credits)
+	if len(credits) != 2 {
+		t.Fatalf("expected 2 credits, got %d", len(credits))
+	}
+}
+
+func TestReplacementCredits_InsufficientBalance(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+
+	// Create student
+	w := doRequest(r, "POST", "/api/students", token, map[string]any{
+		"firstName": "Siti", "lastName": "Test", "contact": "siti@test.com",
+	})
+	var stu map[string]any
+	json.Unmarshal(w.Body.Bytes(), &stu)
+	stuID := stu["id"].(string)
+
+	// Try to use credits with 0 balance — should fail
+	w = doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
+		"studentId": stuID, "type": "used", "minutes": 30, "date": "2026-03-21",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for insufficient balance, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Earn 30, try to use 45 — should fail
+	doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
+		"studentId": stuID, "type": "earned", "minutes": 30, "date": "2026-03-20",
+	})
+	w = doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
+		"studentId": stuID, "type": "used", "minutes": 45, "date": "2026-03-21",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for over-use, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestReplacementCredits_ParentReadOnly(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	parentToken := getParentToken(t, r)
+
+	// Parent should NOT be able to create credits
+	w := doRequest(r, "POST", "/api/replacement-credits", parentToken, map[string]any{
+		"studentId": "STU_test", "type": "earned", "minutes": 60, "date": "2026-03-20",
+	})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for parent creating credit, got %d", w.Code)
+	}
+
+	// Parent CAN list (even if empty)
+	w = doRequest(r, "GET", "/api/replacement-credits", parentToken, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("parent list: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestReplacementCredits_InvalidType(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+
+	w := doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
+		"studentId": "STU_test", "type": "bogus", "minutes": 60, "date": "2026-03-20",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid type, got %d", w.Code)
+	}
+}
+
+func TestReplacementCredits_ZeroMinutes(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+
+	w := doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
+		"studentId": "STU_test", "type": "earned", "minutes": 0, "date": "2026-03-20",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for 0 minutes, got %d", w.Code)
+	}
+}
+
+func TestReplacementCredits_InSnapshot(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+
+	w := doRequest(r, "GET", "/api/snapshot", token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("snapshot: %d", w.Code)
+	}
+	var snap map[string]any
+	json.Unmarshal(w.Body.Bytes(), &snap)
+	if _, ok := snap["replacementCredits"]; !ok {
+		t.Fatal("snapshot missing replacementCredits field")
+	}
+}
+
+func TestReplacementCredits_Delete(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+
+	// Create student + credit
+	w := doRequest(r, "POST", "/api/students", token, map[string]any{
+		"firstName": "Del", "lastName": "Test", "contact": "del@test.com",
+	})
+	var stu map[string]any
+	json.Unmarshal(w.Body.Bytes(), &stu)
+
+	w = doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
+		"studentId": stu["id"], "type": "earned", "minutes": 60, "date": "2026-03-20",
+	})
+	var credit map[string]any
+	json.Unmarshal(w.Body.Bytes(), &credit)
+	creditID := credit["id"].(string)
+
+	// Delete it
+	w = doRequest(r, "DELETE", "/api/replacement-credits/"+creditID, token, nil)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("delete: expected 204, got %d", w.Code)
+	}
+
+	// Balance should be 0
+	w = doRequest(r, "GET", "/api/replacement-credits/balance?studentId="+stu["id"].(string), token, nil)
+	var bal map[string]any
+	json.Unmarshal(w.Body.Bytes(), &bal)
+	if bal["balance"].(float64) != 0 {
+		t.Fatalf("expected 0 after delete, got %v", bal["balance"])
 	}
 }

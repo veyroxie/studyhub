@@ -62,17 +62,17 @@ func handleLogin(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req loginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
+			respondError(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
 		req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 		if !validateEmail(req.Email) {
-			http.Error(w, "invalid email format", http.StatusBadRequest)
+			respondError(w, "invalid email format", http.StatusBadRequest)
 			return
 		}
 		if len(req.Password) == 0 {
-			http.Error(w, "password is required", http.StatusBadRequest)
+			respondError(w, "password is required", http.StatusBadRequest)
 			return
 		}
 
@@ -89,22 +89,22 @@ func handleLogin(db *DB) http.HandlerFunc {
 
 		if err == sql.ErrNoRows {
 			// Use same error as wrong password — never reveal which one was wrong
-			http.Error(w, "invalid credentials", http.StatusUnauthorized)
+			respondError(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
 		if err != nil {
-			http.Error(w, "server error", http.StatusInternalServerError)
+			respondError(w, "server error", http.StatusInternalServerError)
 			return
 		}
 
 		if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)); err != nil {
-			http.Error(w, "invalid credentials", http.StatusUnauthorized)
+			respondError(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
 
 		token, err := makeToken(id, tenantID, req.Email, role, name)
 		if err != nil {
-			http.Error(w, "could not sign token", http.StatusInternalServerError)
+			respondError(w, "could not sign token", http.StatusInternalServerError)
 			return
 		}
 
@@ -145,7 +145,7 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 func handleMe(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	if c == nil {
-		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		respondError(w, "not authenticated", http.StatusUnauthorized)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -188,7 +188,7 @@ func jwtMiddleware(next http.Handler) http.Handler {
 		}
 
 		if tokenStr == "" {
-			http.Error(w, "missing token", http.StatusUnauthorized)
+			respondError(w, "missing token", http.StatusUnauthorized)
 			return
 		}
 
@@ -202,7 +202,7 @@ func jwtMiddleware(next http.Handler) http.Handler {
 		if err != nil || !token.Valid {
 			// Clear the bad cookie
 			http.SetCookie(w, &http.Cookie{Name: "sh_token", Value: "", Path: "/", Expires: time.Unix(0, 0), HttpOnly: true})
-			http.Error(w, "invalid or expired token", http.StatusUnauthorized)
+			respondError(w, "invalid or expired token", http.StatusUnauthorized)
 			return
 		}
 
@@ -220,7 +220,7 @@ func requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || c.Role != "admin" {
-			http.Error(w, "admin only", http.StatusForbidden)
+			respondError(w, "admin only", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -231,7 +231,7 @@ func requireAdminOrTeacher(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
-			http.Error(w, "staff only", http.StatusForbidden)
+			respondError(w, "staff only", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)

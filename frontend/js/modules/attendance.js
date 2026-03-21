@@ -47,7 +47,14 @@
       actionBtn = '<button onclick="App.Attendance._checkInStudent(\'' + s.id + '\')" style="'
         + 'min-height:52px;width:100%;padding:0.6rem 1.1rem;background:#22c55e;color:#fff;border:none;'
         + 'border-radius:12px;font-size:0.95rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
-        + 'onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check In</button>';
+        + 'onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check In</button>'
+        + ((App.currentRole === 'admin' || App.currentRole === 'teacher')
+          ? '<button onclick="App.Attendance._markAbsentCredit(\'' + s.id + '\')" style="'
+            + 'min-height:36px;width:100%;margin-top:0.35rem;padding:0.35rem 0.75rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;'
+            + 'border-radius:10px;font-size:0.75rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
+            + 'title="Mark absent and add 60 min replacement credit"'
+            + '>Absent + Credit</button>'
+          : '');
     } else if (!checkedOut) {
       actionBtn = '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" style="'
         + 'min-height:52px;width:100%;padding:0.6rem 1.1rem;background:#64748b;color:#fff;border:none;'
@@ -932,5 +939,45 @@
     App.Router.refresh();
   }
 
-  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV };
+  async function _markAbsentCredit(studentId) {
+    var state = App.Store.get();
+    var stu = state.students.find(function(s) { return s.id === studentId; });
+    var stuName = stu ? stu.firstName + ' ' + stu.lastName : studentId;
+    var cls = state.classes.find(function(c) { return c.id === _attClassId; });
+    var clsName = cls ? cls.name : _attClassId;
+
+    // Mark as absent in attendance
+    var newAtt = state.attendance.slice();
+    var existing = newAtt.findIndex(function(a) { return a.personId === studentId && a.classId === _attClassId && a.date === _attDate; });
+    if (existing > -1) {
+      newAtt[existing] = Object.assign({}, newAtt[existing], { status: 'Absent', checkIn: null, checkOut: null });
+    } else {
+      newAtt.push({ id: App.Utils.generateId('ATT'), personId: studentId, personType: 'student', date: _attDate, classId: _attClassId, checkIn: null, checkOut: null, status: 'Absent' });
+    }
+    App.Store.set({ attendance: newAtt });
+
+    // Post attendance to backend
+    try {
+      await App.Api.post('/api/attendance', { personId: studentId, personType: 'student', date: _attDate, classId: _attClassId, status: 'Absent' });
+    } catch(e) {}
+
+    // Add 60 min replacement credit
+    try {
+      await App.Api.post('/api/replacement-credits', {
+        studentId: studentId,
+        type: 'earned',
+        minutes: 60,
+        note: 'Absent from ' + clsName + ' on ' + _attDate,
+        classId: _attClassId,
+        date: _attDate
+      });
+      App.Utils.showToast(stuName + ' marked absent — 60 min credit added', 'info');
+    } catch(e) {
+      App.Utils.showToast(stuName + ' marked absent (credit failed: ' + e.message + ')', 'warning');
+    }
+
+    await App.Api.refresh();
+  }
+
+  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit };
 })();

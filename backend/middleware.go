@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	crand "crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"strings"
 	"sync"
@@ -59,7 +62,54 @@ func realIP(r *http.Request) string {
 func rateLimitLogin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !loginRateLimiter.allow(realIP(r)) {
-			http.Error(w, "too many login attempts, please wait a minute", http.StatusTooManyRequests)
+			respondError(w, "too many login attempts, please wait a minute", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ── General API Rate Limiter ──────────────────────────────────────────────────
+// 60 requests per minute per IP for writes, 120 for reads
+
+var apiRateLimiter = &rateLimiter{buckets: make(map[string]*ipBucket)}
+
+func rateLimitAPI(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip rate limiting for OPTIONS
+		if r.Method == "OPTIONS" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		limit := 120 // reads
+		if r.Method != "GET" {
+			limit = 60 // writes
+		}
+		ip := realIP(r)
+		apiRateLimiter.mu.Lock()
+		if len(apiRateLimiter.buckets) > 10000 {
+			now := time.Now()
+			for k, b := range apiRateLimiter.buckets {
+				if now.Sub(b.windowStart) > 2*time.Minute {
+					delete(apiRateLimiter.buckets, k)
+				}
+			}
+		}
+		b, ok := apiRateLimiter.buckets[ip]
+		if !ok || time.Since(b.windowStart) > time.Minute {
+			apiRateLimiter.buckets[ip] = &ipBucket{count: 1, windowStart: time.Now()}
+			apiRateLimiter.mu.Unlock()
+			next.ServeHTTP(w, r)
+			return
+		}
+		b.count++
+		allowed := b.count <= limit
+		apiRateLimiter.mu.Unlock()
+		if !allowed {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "60")
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"error":"rate limit exceeded, please wait"}`))
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -89,6 +139,7 @@ func securityHeaders(next http.Handler) http.Handler {
 				"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; "+
 				"img-src 'self' data:; "+
 				"frame-ancestors 'none'")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
 		// HTTPS only (enable in production)
 		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
@@ -99,4 +150,30 @@ func securityHeaders(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ── Request ID ───────────────────────────────────────────────────────────────
+// Adds a unique X-Request-Id header to every response for log correlation.
+
+func requestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get("X-Request-Id")
+		if id == "" {
+			b := make([]byte, 8)
+			crand.Read(b)
+			id = hex.EncodeToString(b)
+		}
+		w.Header().Set("X-Request-Id", id)
+		ctx := context.WithValue(r.Context(), reqIDKey, id)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+type ctxKey string
+
+const reqIDKey ctxKey = "requestId"
+
+func getRequestID(r *http.Request) string {
+	id, _ := r.Context().Value(reqIDKey).(string)
+	return id
 }

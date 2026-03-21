@@ -250,6 +250,17 @@ type Holiday struct {
 	CreatedBy string `json:"createdBy,omitempty"`
 }
 
+type ReplacementCredit struct {
+	ID        string `json:"id"`
+	StudentID string `json:"studentId"`
+	Type      string `json:"type"`
+	Minutes   int    `json:"minutes"`
+	Note      string `json:"note"`
+	ClassID   string `json:"classId"`
+	Date      string `json:"date"`
+	CreatedBy string `json:"createdBy"`
+}
+
 // Snapshot is what GET /api/snapshot returns — identical shape to App.DATA
 type Snapshot struct {
 	Students           []Student           `json:"students"`
@@ -267,4 +278,5 @@ type Snapshot struct {
 	PerformanceReviews []PerformanceReview `json:"performanceReviews"`
 	CancelledClasses   []CancelledClass    `json:"cancelledClasses"`
 	Holidays           []Holiday           `json:"holidays"`
+	ReplacementCredits []ReplacementCredit `json:"replacementCredits"`
 }

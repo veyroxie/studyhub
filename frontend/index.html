@@ -6,6 +6,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <title>Study Hub — Education Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -456,6 +457,8 @@
 <!-- Notification backdrop (closes panel on outside click) -->
 <div id="notif-backdrop" class="hidden fixed inset-0 z-30" onclick="App.Notifs.close()"></div>
 
+<div id="live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
 <!-- Scripts — order matters -->
 <script src="js/data.js"></script>
 <script src="js/store.js"></script>
@@ -464,6 +467,7 @@
 <script src="js/router.js"></script>
 <script src="js/theme.js"></script>
 <script src="js/notifs.js"></script>
+<script src="js/tutorial.js"></script>
 <script src="js/modules/dashboard.js"></script>
 <script src="js/modules/calendar.js"></script>
 <script src="js/modules/communication.js"></script>

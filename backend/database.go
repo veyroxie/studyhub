@@ -295,6 +295,19 @@ func createSchema(db *sql.DB) error {
 		created_by TEXT,
 		deleted_at TEXT
 	);
+
+	CREATE TABLE IF NOT EXISTS replacement_credits (
+		id          TEXT PRIMARY KEY,
+		tenant_id   INTEGER NOT NULL DEFAULT 1,
+		student_id  TEXT NOT NULL,
+		type        TEXT NOT NULL,
+		minutes     INTEGER NOT NULL,
+		note        TEXT DEFAULT '',
+		class_id    TEXT DEFAULT '',
+		date        TEXT NOT NULL,
+		created_by  TEXT DEFAULT '',
+		created_at  TIMESTAMPTZ DEFAULT NOW()
+	);
 	`)
 	return err
 }
@@ -333,6 +346,7 @@ func runMigrations(db *sql.DB) {
 		`ALTER TABLE self_study_sessions ADD COLUMN IF NOT EXISTS deleted_at TEXT`,
 		`ALTER TABLE performance_reviews ADD COLUMN IF NOT EXISTS deleted_at TEXT`,
 		`ALTER TABLE holidays ADD COLUMN IF NOT EXISTS deleted_at TEXT`,
+		`CREATE INDEX IF NOT EXISTS idx_replacement_credits_student ON replacement_credits(student_id)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (index/row already exists = OK)

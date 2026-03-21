@@ -106,16 +106,22 @@
               (isAdmin && !(_search || _statusFilter !== 'All')) ? '<button onclick="App.Students._addModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Student</button>' : (_search || _statusFilter !== 'All') ? '<button onclick="App.Students._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer">Clear Filters</button>' : ''
             ) + '</td></tr>'
           : paged.map(function(s) {
-              const { classes } = App.Store.get();
+              const { classes, replacementCredits } = App.Store.get();
               const enrolledNames = s.enrolledClasses.map(function(cid) {
                 const c = classes.find(function(x) { return x.id === cid; });
                 return c ? c.name : cid;
               });
+              // Replacement credit balance
+              var _rc = (replacementCredits || []).filter(function(rc) { return rc.studentId === s.id; });
+              var _bal = _rc.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0)
+                      - _rc.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
               return '<tr class="hover:bg-slate-50 transition-colors">'
                 + (isAdmin ? '<td class="td" style="width:36px"><input type="checkbox" class="stu-cb" data-id="' + s.id + '" onchange="App.Students._toggleSelect(\'' + s.id + '\',this.checked)" style="cursor:pointer"' + (_selected[s.id] ? ' checked' : '') + '></td>' : '')
                 + '<td class="td"><div class="flex items-center gap-3">'
                 +   '<div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">' + s.firstName.charAt(0) + s.lastName.charAt(0) + '</div>'
-                +   '<div><div class="font-medium text-slate-800">' + s.firstName + ' ' + s.lastName + '</div><div class="text-xs text-slate-400">' + s.id + '</div></div>'
+                +   '<div><div class="font-medium text-slate-800">' + s.firstName + ' ' + s.lastName
+                +     (_bal > 0 ? ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.65rem;font-weight:700;background:#fffbeb;color:#92400e;border:1px solid #fef3c7;border-radius:999px;vertical-align:middle;margin-left:4px" title="Replacement credit balance">' + _bal + 'm</span>' : '')
+                +   '</div><div class="text-xs text-slate-400">' + s.id + '</div></div>'
                 + '</div></td>'
                 + '<td class="td"><div class="flex flex-wrap gap-1">'
                 + (enrolledNames.length === 0 ? '<span class="text-xs text-slate-400">—</span>'
@@ -212,10 +218,17 @@
   function _setStudentPage(n) { _studentPage = Math.max(0, n); App.Router.refresh(); }
 
   function _viewModal(studentId) {
-    const { students, classes, invoices, selfStudySessions } = App.Store.get();
+    const { students, classes, invoices, selfStudySessions, replacementCredits } = App.Store.get();
     const isAdmin = App.currentRole === 'admin';
+    const isTeacher = App.currentRole === 'teacher';
     const s = students.find(function(x) { return x.id === studentId; });
     if (!s) return;
+
+    // Replacement credits for this student
+    var stuCredits = (replacementCredits || []).filter(function(rc) { return rc.studentId === studentId; });
+    var earnedMin = stuCredits.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
+    var usedMin = stuCredits.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
+    var balanceMin = earnedMin - usedMin;
 
     const enrolledClasses = s.enrolledClasses.map(function(cid) {
       return classes.find(function(c) { return c.id === cid; });
@@ -235,7 +248,7 @@
       + '</div>'
 
       + '<div class="flex border-b border-slate-100 mb-4 gap-1" id="student-tabs">'
-      + (App.currentRole === 'teacher' ? ['Details','Classes'] : ['Details','Classes','Invoices']).map(function(tab, i) {
+      + (App.currentRole === 'teacher' ? ['Details','Classes','Replacement'] : ['Details','Classes','Invoices','Replacement']).map(function(tab, i) {
           return '<button onclick="App.Students._switchTab(\'' + tab.toLowerCase() + '\')" id="tab-' + tab.toLowerCase() + '" class="tab-btn px-4 py-2 text-sm font-medium ' + (i===0?'border-b-2 border-blue-600 text-blue-600':'text-slate-500 hover:text-slate-700') + '">' + tab + '</button>';
         }).join('')
       + '</div>'
@@ -325,6 +338,47 @@
               return '<tr class="border-b border-slate-50"><td class="py-2"><div>' + inv.description + '</div><div class="text-xs text-slate-400">Due ' + App.Utils.formatDate(inv.dueDate) + '</div></td><td class="py-2 text-right font-medium">' + App.Utils.formatCurrency(inv.amount) + '</td><td class="py-2 text-right">' + App.Utils.statusBadge(inv.status) + '</td></tr>';
             }).join('')
           + '</tbody></table>')
+      + '</div>'
+
+      + '<div id="tab-panel-replacement" class="hidden">'
+      + '<div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem">'
+      +   '<div style="flex:1;min-width:140px;padding:0.85rem 1rem;background:' + (balanceMin > 0 ? '#fffbeb' : '#f8fafc') + ';border:1px solid ' + (balanceMin > 0 ? '#fef3c7' : '#e2e8f0') + ';border-radius:12px;display:flex;align-items:center;gap:0.65rem">'
+      +     '<div style="width:36px;height:36px;border-radius:10px;background:' + (balanceMin > 0 ? 'var(--gold-dim)' : '#f1f5f9') + ';display:flex;align-items:center;justify-content:center">'
+      +       '<svg width="18" height="18" fill="none" stroke="' + (balanceMin > 0 ? '#b08d20' : '#94a3b8') + '" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/></svg>'
+      +     '</div>'
+      +     '<div>'
+      +       '<div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Balance</div>'
+      +       '<div style="font-size:1.15rem;font-weight:700;color:' + (balanceMin > 0 ? '#92400e' : '#64748b') + ';font-family:\'Cormorant Garamond\',serif">' + balanceMin + ' min</div>'
+      +     '</div>'
+      +   '</div>'
+      +   ((isAdmin || isTeacher) ? '<div style="display:flex;gap:0.5rem">'
+      +     '<button onclick="App.Students._addCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer;white-space:nowrap">+ Add Credit</button>'
+      +     '<button onclick="App.Students._useCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;white-space:nowrap">' + String.fromCharCode(8722) + ' Use Credit</button>'
+      +   '</div>' : '')
+      + '</div>'
+      + (stuCredits.length === 0
+        ? '<div style="text-align:center;padding:2rem 1rem;color:#a1a1aa;font-size:0.85rem">No replacement credits recorded</div>'
+        : '<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-slate-100">'
+          + '<th class="text-left py-2 px-2 text-slate-500 font-medium">Date</th>'
+          + '<th class="text-left py-2 px-2 text-slate-500 font-medium">Type</th>'
+          + '<th class="text-right py-2 px-2 text-slate-500 font-medium">Minutes</th>'
+          + '<th class="text-left py-2 px-2 text-slate-500 font-medium">Note</th>'
+          + '<th class="text-left py-2 px-2 text-slate-500 font-medium">Class</th>'
+          + ((isAdmin || isTeacher) ? '<th class="text-right py-2 px-2 text-slate-500 font-medium"></th>' : '')
+          + '</tr></thead><tbody>'
+          + stuCredits.slice().sort(function(a, b) { return b.date < a.date ? -1 : b.date > a.date ? 1 : 0; }).map(function(rc) {
+              var cls = rc.classId ? classes.find(function(c) { return c.id === rc.classId; }) : null;
+              var typeBg = rc.type === 'earned' ? 'background:#ecfdf5;color:#059669;border:1px solid #a7f3d0' : 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+              return '<tr class="border-b border-slate-50">'
+                + '<td class="py-2 px-2 text-slate-600">' + App.Utils.formatDate(rc.date) + '</td>'
+                + '<td class="py-2 px-2"><span style="display:inline-block;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:600;border-radius:999px;' + typeBg + '">' + App.Utils.esc(rc.type) + '</span></td>'
+                + '<td class="py-2 px-2 text-right font-medium">' + (rc.type === 'earned' ? '+' : String.fromCharCode(8722)) + rc.minutes + '</td>'
+                + '<td class="py-2 px-2 text-slate-600">' + App.Utils.esc(rc.note || String.fromCharCode(8212)) + '</td>'
+                + '<td class="py-2 px-2 text-slate-500">' + (cls ? App.Utils.esc(cls.name) : String.fromCharCode(8212)) + '</td>'
+                + ((isAdmin || isTeacher) ? '<td class="py-2 px-2 text-right"><button onclick="App.Students._deleteCredit(\'' + rc.id + '\',\'' + studentId + '\')" style="font-size:0.7rem;color:#dc2626;background:none;border:none;cursor:pointer;text-decoration:underline">Delete</button></td>' : '')
+                + '</tr>';
+            }).join('')
+          + '</tbody></table></div>')
       + '</div>'
 
       + '<div class="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-4">'
@@ -503,7 +557,7 @@
   }
 
   function _switchTab(tab) {
-    ['details','classes','invoices'].forEach(function(t) {
+    ['details','classes','invoices','replacement'].forEach(function(t) {
       var panel = document.getElementById('tab-panel-' + t);
       if (panel) panel.classList.toggle('hidden', t !== tab);
       const btn = document.getElementById('tab-' + t);
@@ -627,6 +681,114 @@
     App.Utils.showToast('Exported ' + students.length + ' students', 'success');
   }
 
+  function _addCreditModal(studentId) {
+    var today = App.Utils.today ? App.Utils.today() : new Date().toISOString().slice(0, 10);
+    App.Utils.showModal(
+      '<div class="p-6">'
+      + '<h2 class="text-lg font-bold mb-1">Add Replacement Credit</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Award credit for a missed class (default 60 min)</p>'
+      + '<form id="add-credit-form" class="space-y-4">'
+      + _field('Minutes', '<select name="minutes" class="form-input"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60" selected>60 min</option></select>')
+      + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Absent from Math 12 Mar">')
+      + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
+      + '<div class="flex justify-end gap-2 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Credit</button>'
+      + '</div>'
+      + '</form>'
+      + '</div>'
+    );
+    document.getElementById('add-credit-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      try {
+        await App.Api.post('/api/replacement-credits', {
+          studentId: studentId,
+          type: 'earned',
+          minutes: parseInt(fd.get('minutes'), 10),
+          note: fd.get('note') || '',
+          date: fd.get('date')
+        });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Credit added', 'success');
+        await App.Api.refresh();
+        _viewModal(studentId);
+        _switchTab('replacement');
+      } catch(err) {
+        App.Utils.showToast(err.message || 'Failed to add credit', 'error');
+      }
+    });
+  }
+
+  function _useCreditModal(studentId) {
+    var today = App.Utils.today ? App.Utils.today() : new Date().toISOString().slice(0, 10);
+    var state = App.Store.get();
+    var stuClasses = (state.students.find(function(x) { return x.id === studentId; }) || {}).enrolledClasses || [];
+    var classOpts = '<option value="">-- none --</option>'
+      + state.classes.map(function(c) {
+          return '<option value="' + c.id + '">' + App.Utils.esc(c.name) + '</option>';
+        }).join('');
+    App.Utils.showModal(
+      '<div class="p-6">'
+      + '<h2 class="text-lg font-bold mb-1">Use Replacement Credit</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Redeem credit as a class extension (15/30/45/60 min)</p>'
+      + '<form id="use-credit-form" class="space-y-4">'
+      + _field('Minutes', '<select name="minutes" class="form-input"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select>')
+      + _field('Class (optional)', '<select name="classId" class="form-input">' + classOpts + '</select>')
+      + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Extended English session">')
+      + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
+      + '<div class="flex justify-end gap-2 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Use Credit</button>'
+      + '</div>'
+      + '</form>'
+      + '</div>'
+    );
+    document.getElementById('use-credit-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      var mins = parseInt(fd.get('minutes'), 10);
+      // Check balance
+      var creds = (App.Store.get().replacementCredits || []).filter(function(rc) { return rc.studentId === studentId; });
+      var bal = creds.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0)
+              - creds.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
+      if (mins > bal) {
+        App.Utils.showToast('Insufficient balance (' + bal + ' min available)', 'error');
+        return;
+      }
+      try {
+        await App.Api.post('/api/replacement-credits', {
+          studentId: studentId,
+          type: 'used',
+          minutes: mins,
+          classId: fd.get('classId') || '',
+          note: fd.get('note') || '',
+          date: fd.get('date')
+        });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Credit used (' + mins + ' min)', 'success');
+        await App.Api.refresh();
+        _viewModal(studentId);
+        _switchTab('replacement');
+      } catch(err) {
+        App.Utils.showToast(err.message || 'Failed to use credit', 'error');
+      }
+    });
+  }
+
+  async function _deleteCredit(creditId, studentId) {
+    if (!confirm('Delete this credit entry?')) return;
+    try {
+      await App.Api.del('/api/replacement-credits/' + creditId);
+      App.Utils.showToast('Credit entry deleted', 'info');
+      await App.Api.refresh();
+      _viewModal(studentId);
+      _switchTab('replacement');
+    } catch(err) {
+      App.Utils.showToast(err.message || 'Failed to delete', 'error');
+    }
+  }
+
   App.Students = {
     render: render,
     _onSearch: _onSearch,
@@ -646,6 +808,9 @@
     _clearFilters: _clearFilters,
     _exportCSV: _exportCSV,
     _setPage: _setStudentPage,
-    _saveQuickNote: _saveQuickNote
+    _saveQuickNote: _saveQuickNote,
+    _addCreditModal: _addCreditModal,
+    _useCreditModal: _useCreditModal,
+    _deleteCredit: _deleteCredit
   };
 })();
