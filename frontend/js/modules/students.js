@@ -120,7 +120,7 @@
                 + '<td class="td"><div class="flex items-center gap-3">'
                 +   '<div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">' + s.firstName.charAt(0) + s.lastName.charAt(0) + '</div>'
                 +   '<div><div class="font-medium text-slate-800">' + s.firstName + ' ' + s.lastName
-                +     (_bal > 0 ? ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.65rem;font-weight:700;background:#fffbeb;color:#92400e;border:1px solid #fef3c7;border-radius:999px;vertical-align:middle;margin-left:4px" title="Replacement credit balance">' + _bal + 'm</span>' : '')
+                +     (_bal > 0 ? ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.65rem;font-weight:700;background:#fffbeb;color:#92400e;border:1px solid #fef3c7;border-radius:999px;vertical-align:middle;margin-left:4px" title="Replacement balance">' + _bal + 'm</span>' : '')
                 +   '</div><div class="text-xs text-slate-400">' + s.id + '</div></div>'
                 + '</div></td>'
                 + '<td class="td"><div class="flex flex-wrap gap-1">'
@@ -248,7 +248,7 @@
       + '</div>'
 
       + '<div class="flex border-b border-slate-100 mb-4 gap-1" id="student-tabs">'
-      + (App.currentRole === 'teacher' ? ['Details','Classes','Replacement'] : ['Details','Classes','Invoices','Replacement']).map(function(tab, i) {
+      + (App.currentRole === 'teacher' ? ['Details','Classes','Replacements'] : ['Details','Classes','Invoices','Replacements']).map(function(tab, i) {
           return '<button onclick="App.Students._switchTab(\'' + tab.toLowerCase() + '\')" id="tab-' + tab.toLowerCase() + '" class="tab-btn px-4 py-2 text-sm font-medium ' + (i===0?'border-b-2 border-blue-600 text-blue-600':'text-slate-500 hover:text-slate-700') + '">' + tab + '</button>';
         }).join('')
       + '</div>'
@@ -340,24 +340,24 @@
           + '</tbody></table>')
       + '</div>'
 
-      + '<div id="tab-panel-replacement" class="hidden">'
+      + '<div id="tab-panel-replacements" class="hidden">'
       + '<div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem">'
       +   '<div style="flex:1;min-width:140px;padding:0.85rem 1rem;background:' + (balanceMin > 0 ? '#fffbeb' : '#f8fafc') + ';border:1px solid ' + (balanceMin > 0 ? '#fef3c7' : '#e2e8f0') + ';border-radius:12px;display:flex;align-items:center;gap:0.65rem">'
       +     '<div style="width:36px;height:36px;border-radius:10px;background:' + (balanceMin > 0 ? 'var(--gold-dim)' : '#f1f5f9') + ';display:flex;align-items:center;justify-content:center">'
       +       '<svg width="18" height="18" fill="none" stroke="' + (balanceMin > 0 ? '#b08d20' : '#94a3b8') + '" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/></svg>'
       +     '</div>'
       +     '<div>'
-      +       '<div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Balance</div>'
+      +       '<div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Replacement Balance</div>'
       +       '<div style="font-size:1.15rem;font-weight:700;color:' + (balanceMin > 0 ? '#92400e' : '#64748b') + ';font-family:\'Cormorant Garamond\',serif">' + balanceMin + ' min</div>'
       +     '</div>'
       +   '</div>'
       +   ((isAdmin || isTeacher) ? '<div style="display:flex;gap:0.5rem">'
-      +     '<button onclick="App.Students._addCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer;white-space:nowrap">+ Add Credit</button>'
-      +     '<button onclick="App.Students._useCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;white-space:nowrap">' + String.fromCharCode(8722) + ' Use Credit</button>'
+      +     '<button onclick="App.Students._addCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer;white-space:nowrap">Log Absence</button>'
+      +     '<button onclick="App.Students._useCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;white-space:nowrap">Log Extension</button>'
       +   '</div>' : '')
       + '</div>'
       + (stuCredits.length === 0
-        ? '<div style="text-align:center;padding:2rem 1rem;color:#a1a1aa;font-size:0.85rem">No replacement credits recorded</div>'
+        ? '<div style="text-align:center;padding:2rem 1rem;color:#a1a1aa;font-size:0.85rem">No replacements recorded</div>'
         : '<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-slate-100">'
           + '<th class="text-left py-2 px-2 text-slate-500 font-medium">Date</th>'
           + '<th class="text-left py-2 px-2 text-slate-500 font-medium">Type</th>'
@@ -371,7 +371,7 @@
               var typeBg = rc.type === 'earned' ? 'background:#ecfdf5;color:#059669;border:1px solid #a7f3d0' : 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
               return '<tr class="border-b border-slate-50">'
                 + '<td class="py-2 px-2 text-slate-600">' + App.Utils.formatDate(rc.date) + '</td>'
-                + '<td class="py-2 px-2"><span style="display:inline-block;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:600;border-radius:999px;' + typeBg + '">' + App.Utils.esc(rc.type) + '</span></td>'
+                + '<td class="py-2 px-2"><span style="display:inline-block;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:600;border-radius:999px;' + typeBg + '">' + (rc.type === 'earned' ? 'Absent' : 'Extended') + '</span></td>'
                 + '<td class="py-2 px-2 text-right font-medium">' + (rc.type === 'earned' ? '+' : String.fromCharCode(8722)) + rc.minutes + '</td>'
                 + '<td class="py-2 px-2 text-slate-600">' + App.Utils.esc(rc.note || String.fromCharCode(8212)) + '</td>'
                 + '<td class="py-2 px-2 text-slate-500">' + (cls ? App.Utils.esc(cls.name) : String.fromCharCode(8212)) + '</td>'
@@ -557,7 +557,7 @@
   }
 
   function _switchTab(tab) {
-    ['details','classes','invoices','replacement'].forEach(function(t) {
+    ['details','classes','invoices','replacements'].forEach(function(t) {
       var panel = document.getElementById('tab-panel-' + t);
       if (panel) panel.classList.toggle('hidden', t !== tab);
       const btn = document.getElementById('tab-' + t);
@@ -685,15 +685,15 @@
     var today = App.Utils.today ? App.Utils.today() : new Date().toISOString().slice(0, 10);
     App.Utils.showModal(
       '<div class="p-6">'
-      + '<h2 class="text-lg font-bold mb-1">Add Replacement Credit</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">Award credit for a missed class (default 60 min)</p>'
+      + '<h2 class="text-lg font-bold mb-1">Log Absence</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Record an absence for a missed class (default 60 min)</p>'
       + '<form id="add-credit-form" class="space-y-4">'
       + _field('Minutes', '<select name="minutes" class="form-input"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60" selected>60 min</option></select>')
       + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Absent from Math 12 Mar">')
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
       + '<div class="flex justify-end gap-2 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Credit</button>'
+      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Log Absence</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -710,12 +710,12 @@
           date: fd.get('date')
         });
         App.Utils.hideModal(true);
-        App.Utils.showToast('Credit added', 'success');
+        App.Utils.showToast('Replacement added', 'success');
         await App.Api.refresh();
         _viewModal(studentId);
-        _switchTab('replacement');
+        _switchTab('replacements');
       } catch(err) {
-        App.Utils.showToast(err.message || 'Failed to add credit', 'error');
+        App.Utils.showToast(err.message || 'Failed to add replacement', 'error');
       }
     });
   }
@@ -730,8 +730,8 @@
         }).join('');
     App.Utils.showModal(
       '<div class="p-6">'
-      + '<h2 class="text-lg font-bold mb-1">Use Replacement Credit</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">Redeem credit as a class extension (15/30/45/60 min)</p>'
+      + '<h2 class="text-lg font-bold mb-1">Log Extension</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Use replacement balance as a class extension (15/30/45/60 min)</p>'
       + '<form id="use-credit-form" class="space-y-4">'
       + _field('Minutes', '<select name="minutes" class="form-input"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select>')
       + _field('Class (optional)', '<select name="classId" class="form-input">' + classOpts + '</select>')
@@ -739,7 +739,7 @@
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
       + '<div class="flex justify-end gap-2 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Use Credit</button>'
+      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Log Extension</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -753,7 +753,7 @@
       var bal = creds.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0)
               - creds.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
       if (mins > bal) {
-        App.Utils.showToast('Insufficient balance (' + bal + ' min available)', 'error');
+        App.Utils.showToast('Insufficient replacement balance (' + bal + ' min available)', 'error');
         return;
       }
       try {
@@ -766,24 +766,24 @@
           date: fd.get('date')
         });
         App.Utils.hideModal(true);
-        App.Utils.showToast('Credit used (' + mins + ' min)', 'success');
+        App.Utils.showToast('Replacement used (' + mins + ' min)', 'success');
         await App.Api.refresh();
         _viewModal(studentId);
-        _switchTab('replacement');
+        _switchTab('replacements');
       } catch(err) {
-        App.Utils.showToast(err.message || 'Failed to use credit', 'error');
+        App.Utils.showToast(err.message || 'Failed to use replacement', 'error');
       }
     });
   }
 
   async function _deleteCredit(creditId, studentId) {
-    if (!confirm('Delete this credit entry?')) return;
+    if (!confirm('Delete this replacement entry?')) return;
     try {
       await App.Api.del('/api/replacement-credits/' + creditId);
-      App.Utils.showToast('Credit entry deleted', 'info');
+      App.Utils.showToast('Replacement entry deleted', 'info');
       await App.Api.refresh();
       _viewModal(studentId);
-      _switchTab('replacement');
+      _switchTab('replacements');
     } catch(err) {
       App.Utils.showToast(err.message || 'Failed to delete', 'error');
     }

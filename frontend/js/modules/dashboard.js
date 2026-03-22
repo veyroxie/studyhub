@@ -194,7 +194,53 @@
         + '<button onclick="App.Router.navigate(\'billing\')" class="dash-link">Manage billing →</button>'
         + '</div></div>' // close inner padding div + overdue card
 
-      + '</div>'; // close bottom row
+      + '</div>' // close bottom row
+
+      // Replacement credits summary
+      + _replacementCreditsCard(students, s.replacementCredits || [], classes);
+  }
+
+  function _replacementCreditsCard(students, credits, classes) {
+    // Build per-student balances
+    var balances = {};
+    credits.forEach(function(rc) {
+      if (!balances[rc.studentId]) balances[rc.studentId] = { earned: 0, used: 0 };
+      if (rc.type === 'earned') balances[rc.studentId].earned += rc.minutes;
+      else balances[rc.studentId].used += rc.minutes;
+    });
+    var rows = [];
+    Object.keys(balances).forEach(function(sid) {
+      var b = balances[sid];
+      var bal = b.earned - b.used;
+      if (bal <= 0) return;
+      var stu = students.find(function(s) { return s.id === sid; });
+      if (!stu) return;
+      rows.push({ id: sid, name: stu.firstName + ' ' + stu.lastName, balance: bal, earned: b.earned, used: b.used });
+    });
+    rows.sort(function(a, b) { return b.balance - a.balance; });
+
+    if (rows.length === 0) return '';
+
+    return '<div style="margin-top:1rem">'
+      + card('Pending Replacements', 'students')
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.75rem">'
+      + rows.map(function(r) {
+          return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0.85rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px;cursor:pointer" onclick="App.Students._viewModal(\'' + r.id + '\')">'
+            + '<div style="width:2.2rem;height:2.2rem;border-radius:10px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:0.85rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + r.name.charAt(0) + '</div>'
+            + '<div style="flex:1;min-width:0">'
+            +   '<div style="font-size:0.83rem;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(r.name) + '</div>'
+            +   '<div style="font-size:0.7rem;color:#94a3b8">Absent ' + r.earned + 'm · Extended ' + r.used + 'm</div>'
+            + '</div>'
+            + '<div style="text-align:right;flex-shrink:0">'
+            +   '<div style="font-family:var(--serif);font-size:1.2rem;font-weight:700;color:#92400e">' + r.balance + '</div>'
+            +   '<div style="font-size:0.6rem;color:#b08d20;font-weight:600">MIN OWED</div>'
+            + '</div>'
+            + '</div>';
+        }).join('')
+      + '</div>'
+      + '<button onclick="App.Router.navigate(\'students\')" class="dash-link">View all students →</button>'
+      + '</div></div>'
+      + '</div>';
   }
 
   // ── Parent ────────────────────────────────────────────────────────────────────
@@ -329,7 +375,9 @@
                 + '</div>';
             }).join(''))
       + '<button onclick="App.Router.navigate(\'attendance\')" class="dash-link">View all attendance →</button>'
-      + '</div></div>';
+      + '</div></div>'
+
+      + _replacementCreditsCard(myStudents, s.replacementCredits || [], classes);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────

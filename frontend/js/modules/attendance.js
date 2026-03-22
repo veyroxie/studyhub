@@ -52,8 +52,8 @@
           ? '<button onclick="App.Attendance._markAbsentCredit(\'' + s.id + '\')" style="'
             + 'min-height:36px;width:100%;margin-top:0.35rem;padding:0.35rem 0.75rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;'
             + 'border-radius:10px;font-size:0.75rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
-            + 'title="Mark absent and add 60 min replacement credit"'
-            + '>Absent + Credit</button>'
+            + 'title="Mark absent and add 60 min replacement"'
+            + '>Absent + Replacement</button>'
           : '');
     } else if (!checkedOut) {
       actionBtn = '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" style="'
@@ -971,9 +971,9 @@
         classId: _attClassId,
         date: _attDate
       });
-      App.Utils.showToast(stuName + ' marked absent — 60 min credit added', 'info');
+      App.Utils.showToast(stuName + ' marked absent — 60 min replacement added', 'info');
     } catch(e) {
-      App.Utils.showToast(stuName + ' marked absent (credit failed: ' + e.message + ')', 'warning');
+      App.Utils.showToast(stuName + ' marked absent (replacement failed: ' + e.message + ')', 'warning');
     }
 
     await App.Api.refresh();
