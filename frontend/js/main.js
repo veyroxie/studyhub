@@ -353,6 +353,7 @@
         return App.Api.loadSnapshot().then(function() {
           _hideLoading();
           App.Login.hide();
+          App.Theme.init();
           App.Dev.init();
           applyRole();
           App.Router.navigate('dashboard');
