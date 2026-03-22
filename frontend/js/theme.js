@@ -7,7 +7,7 @@
     c: { label: 'Minimal', desc: 'Top nav, full width' }
   };
 
-  var _current = localStorage.getItem('sh_theme') || 'b';
+  var _current = 'b'; // locked to Gold theme
   var _sidebarOpen = false;
   var _collapsed = localStorage.getItem('sh_sidebar_collapsed') === '1';
 
@@ -243,13 +243,9 @@
 
   // Public API
   App.Theme = {
-    set: function(t) {
-      _apply(t);
-      // Re-apply role visibility
-      if (App.Router && App.Router.current()) App.Router.refresh();
-    },
-    current: function() { return _current; },
-    picker:  picker,
+    set: function() { /* locked to theme B */ },
+    current: function() { return 'b'; },
+    picker:  function() { /* disabled */ },
     toggleSidebar: toggleSidebar,
     toggleCollapse: toggleCollapse,
     syncTopNav: _syncTopNavActive,
