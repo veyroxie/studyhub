@@ -146,7 +146,7 @@
           : '<p class="text-sm text-slate-600 mt-2 leading-relaxed">' + App.Utils.esc(ann.message) + '</p>')
       +     '<div class="flex items-center justify-between mt-3">'
       +       '<span class="text-xs text-slate-400">'
-      +         App.Utils.formatDate(ann.createdOn) + ' · ' + ann.createdBy
+      +         App.Utils.formatDate(ann.createdOn) + ' · ' + App.Utils.esc(ann.createdBy)
       +         (ann.archiveOn ? ' · <span title="Auto-archives on ' + ann.archiveOn + '" style="color:' + (ann.archiveOn < today ? '#ef4444' : '#94a3b8') + '">expires ' + App.Utils.formatDate(ann.archiveOn) + '</span>' : '')
       +       '</span>'
       +       (isAdmin ? '<button onclick="App.Communication._editModal(\'' + ann.id + '\')" class="text-xs text-blue-400 hover:text-blue-600 mr-2">Edit</button>' : '')

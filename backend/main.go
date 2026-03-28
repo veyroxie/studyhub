@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"flag"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -13,6 +16,19 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
 )
+
+// Limit request body size globally (1MB). File upload has its own 5MB limit.
+func maxBodySize(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" || r.Method == "PUT" {
+			// Skip file upload endpoint (has its own limit)
+			if r.URL.Path != "/api/upload-proof" {
+				r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func main() {
 	// Load .env file if present (silently ignored in production where env vars are set directly)
@@ -67,6 +83,30 @@ func main() {
 		AllowCredentials: true, // required for HttpOnly cookies to be sent cross-origin
 	}))
 	r.Use(rateLimitAPI)
+	r.Use(maxBodySize)
+
+	// Origin validation for state-changing requests (extra CSRF protection)
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" {
+				origin := r.Header.Get("Origin")
+				if origin != "" {
+					ok := false
+					for _, ao := range allowedOrigins {
+						if origin == ao {
+							ok = true
+							break
+						}
+					}
+					if !ok {
+						respondError(w, "origin not allowed", http.StatusForbidden)
+						return
+					}
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 
 	// ── Public routes (no auth needed) ───────────────────────────────────────
 	r.With(rateLimitLogin).Post("/api/auth/login", handleLogin(db))
@@ -210,7 +250,22 @@ func main() {
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatal(err)
+	// Graceful shutdown
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatal("Server forced to shutdown:", err)
 	}
+	log.Println("Server stopped")
 }

@@ -133,8 +133,8 @@
                   + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;min-width:48px;flex-shrink:0">' + App.Utils.formatTime(c.time) + '</div>'
                   + '<div style="width:1px;background:#f0ede8;align-self:stretch;flex-shrink:0"></div>'
                   + '<div style="flex:1;min-width:0">'
-                  +   '<div style="font-weight:600;font-size:0.85rem;color:#111">' + c.name + '</div>'
-                  +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + (teachers ? '&nbsp;·&nbsp;' + teachers : '') + '&nbsp;·&nbsp;' + c.classroom + '</div>'
+                  +   '<div style="font-weight:600;font-size:0.85rem;color:#111">' + App.Utils.esc(c.name) + '</div>'
+                  +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + (teachers ? '&nbsp;·&nbsp;' + App.Utils.esc(teachers) : '') + '&nbsp;·&nbsp;' + App.Utils.esc(c.classroom) + '</div>'
                   + '</div>'
                   + '<div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">'
                   +   '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:2px 7px;border-radius:5px;background:' + pillColor.bg + ';color:' + pillColor.text + '">' + pillLabel + '</span>'
@@ -165,10 +165,10 @@
         + recentStudents.map(function(stu) {
             var cls = classes.filter(function(c) { return stu.enrolledClasses.indexOf(c.id) > -1; }).map(function(c) { return c.name; }).join(', ');
             return '<div style="display:flex;align-items:center;gap:0.7rem;padding:0.55rem 0;border-bottom:1px solid #f4f4f2">'
-              + '<div style="width:2rem;height:2rem;border-radius:50%;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.25);color:var(--gold);font-weight:800;font-size:0.78rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + stu.firstName.charAt(0) + '</div>'
+              + '<div style="width:2rem;height:2rem;border-radius:50%;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.25);color:var(--gold);font-weight:800;font-size:0.78rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + App.Utils.esc(stu.firstName.charAt(0)) + '</div>'
               + '<div style="flex:1;min-width:0">'
-              +   '<div style="font-size:0.83rem;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + stu.firstName + ' ' + stu.lastName + '</div>'
-              +   '<div style="font-size:0.71rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (cls || 'No class') + '</div>'
+              +   '<div style="font-size:0.83rem;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(stu.firstName) + ' ' + App.Utils.esc(stu.lastName) + '</div>'
+              +   '<div style="font-size:0.71rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(cls || 'No class') + '</div>'
               + '</div>'
               + App.Utils.statusBadge(stu.status)
               + '<button onclick="App.Students && App.Students._viewModal(\'' + stu.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0 0.2rem">View</button>'
@@ -185,7 +185,7 @@
                 var stu = students.find(function(s) { return s.id === inv.studentId; });
                 return '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.55rem 0;border-bottom:1px solid #f4f4f2">'
                   + '<div style="flex:1;min-width:0">'
-                  +   '<div style="font-size:0.82rem;font-weight:600;color:#111">' + (stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + '</div>'
+                  +   '<div style="font-size:0.82rem;font-weight:600;color:#111">' + App.Utils.esc(stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + '</div>'
                   +   '<div style="font-size:0.7rem;color:#94a3b8">' + App.Utils.formatDate(inv.dueDate) + '</div>'
                   + '</div>'
                   + '<div style="font-size:0.82rem;font-weight:700;color:#dc2626;flex-shrink:0">' + App.Utils.formatCurrency(inv.amount) + '</div>'
@@ -277,7 +277,7 @@
       .sort(function(a, b) { return b.date.localeCompare(a.date); }).slice(0, 5);
     var latestAnnounce = (s.announcements || []).slice()
       .sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); }).slice(0, 3);
-    var childNames = myStudents.map(function(st) { return st.firstName; }).join(' & ');
+    var childNames = myStudents.map(function(st) { return App.Utils.esc(st.firstName); }).join(' &amp; ');
 
     var _tod = _timeOfDay();
     return '<div class="dash-hero">'
@@ -323,11 +323,11 @@
                 return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0;border-bottom:1px solid #f4f4f2">'
                   + '<div style="width:3px;border-radius:99px;align-self:stretch;min-height:36px;flex-shrink:0" class="' + colors.dot + '"></div>'
                   + '<div style="flex:1;min-width:0">'
-                  +   '<div style="font-weight:600;font-size:0.85rem;color:#111">' + c.name + '</div>'
-                  +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + (teachers ? '&nbsp;·&nbsp;' + teachers : '') + '</div>'
-                  +   '<div style="font-size:0.72rem;color:var(--gold);margin-top:1px;font-weight:600">' + who + '</div>'
+                  +   '<div style="font-weight:600;font-size:0.85rem;color:#111">' + App.Utils.esc(c.name) + '</div>'
+                  +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + (teachers ? '&nbsp;·&nbsp;' + App.Utils.esc(teachers) : '') + '</div>'
+                  +   '<div style="font-size:0.72rem;color:var(--gold);margin-top:1px;font-weight:600">' + App.Utils.esc(who) + '</div>'
                   + '</div>'
-                  + '<div style="font-size:0.72rem;color:#94a3b8;flex-shrink:0">' + c.classroom + '</div>'
+                  + '<div style="font-size:0.72rem;color:#94a3b8;flex-shrink:0">' + App.Utils.esc(c.classroom) + '</div>'
                   + '</div>';
               }).join(''))
         + '<button onclick="App.Router.navigate(\'calendar\')" class="dash-link">Full schedule →</button>'
@@ -345,8 +345,8 @@
                   +   '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (tc[a.type]||'#2563eb') + ';background:' + (tb[a.type]||'#eff6ff') + ';padding:1px 6px;border-radius:4px">' + a.type + '</span>'
                   +   '<span style="font-size:0.68rem;color:#94a3b8">' + App.Utils.formatDate(a.createdOn) + '</span>'
                   + '</div>'
-                  + '<div style="font-size:0.82rem;font-weight:600;color:#111;line-height:1.3">' + a.title + '</div>'
-                  + '<div style="font-size:0.72rem;color:#64748b;margin-top:2px">' + a.message.slice(0,80) + (a.message.length > 80 ? '…' : '') + '</div>'
+                  + '<div style="font-size:0.82rem;font-weight:600;color:#111;line-height:1.3">' + App.Utils.esc(a.title) + '</div>'
+                  + '<div style="font-size:0.72rem;color:#64748b;margin-top:2px">' + App.Utils.esc(a.message.slice(0,80)) + (a.message.length > 80 ? '…' : '') + '</div>'
                   + '</div>';
               }).join(''))
         + '<button onclick="App.Router.navigate(\'communication\')" class="dash-link">View all →</button>'
@@ -450,7 +450,7 @@
         return !attendance.find(function(a) { return a.personId === tid && a.personType === 'staff' && a.date === today && a.checkIn; });
       });
       if (notCheckedIn.length > 0) {
-        var names = notCheckedIn.map(function(tid) { var st = staff.find(function(x){return x.id===tid;}); return st ? st.name : tid; }).join(', ');
+        var names = notCheckedIn.map(function(tid) { var st = staff.find(function(x){return x.id===tid;}); return st ? App.Utils.esc(st.name) : tid; }).join(', ');
         attn.push({ sev:'error', title: notCheckedIn.length + ' tutor' + (notCheckedIn.length!==1?'s':'') + ' not checked in', sub: names + ' · class started or within 30 min', page:'staff' });
       }
     }
@@ -598,8 +598,8 @@
               return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid #f4f4f2">'
                 + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;min-width:48px">' + App.Utils.formatTime(c.time) + '</div>'
                 + '<div style="flex:1;min-width:0">'
-                +   '<div style="font-size:0.83rem;font-weight:600;color:#111">' + c.name + '</div>'
-                +   '<div style="font-size:0.7rem;color:#94a3b8">' + teachers + ' · ' + (c.category||'Academic') + '</div>'
+                +   '<div style="font-size:0.83rem;font-weight:600;color:#111">' + App.Utils.esc(c.name) + '</div>'
+                +   '<div style="font-size:0.7rem;color:#94a3b8">' + App.Utils.esc(teachers) + ' · ' + (c.category||'Academic') + '</div>'
                 + '</div>'
                 + '<div style="font-size:0.72rem;font-weight:700;color:#15803d">' + attCount + '/' + c.enrolled + '</div>'
                 + '</div>';
@@ -655,7 +655,7 @@
       + '<div style="display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1">'
       +   '<div>'
       +     '<p style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--gold);margin:0 0 6px">' + _dateFull() + '</p>'
-      +     '<p style="font-family:var(--serif);font-size:1.3rem;font-weight:700;color:#1a1a1a;margin:0">Good ' + _tod + ', ' + (teacher.name || 'Teacher') + '</p>'
+      +     '<p style="font-family:var(--serif);font-size:1.3rem;font-weight:700;color:#1a1a1a;margin:0">Good ' + _tod + ', ' + App.Utils.esc(teacher.name || 'Teacher') + '</p>'
       +     '<p style="font-size:0.82rem;color:#64748b;margin:4px 0 0">' + todayClasses.length + ' class' + (todayClasses.length !== 1 ? 'es' : '') + ' today · ' + myStudents.length + ' students</p>'
       +   '</div>'
       +   '<div style="text-align:right">'
@@ -685,8 +685,8 @@
               return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0;border-bottom:1px solid #f4f4f2">'
                 + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;min-width:52px">' + App.Utils.formatTime(c.time) + '</div>'
                 + '<div style="flex:1">'
-                +   '<div style="font-size:0.85rem;font-weight:600;color:#111">' + c.name + '</div>'
-                +   '<div style="font-size:0.7rem;color:#94a3b8">' + c.classroom + ' · ' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + '</div>'
+                +   '<div style="font-size:0.85rem;font-weight:600;color:#111">' + App.Utils.esc(c.name) + '</div>'
+                +   '<div style="font-size:0.7rem;color:#94a3b8">' + App.Utils.esc(c.classroom) + ' · ' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + '</div>'
                 + '</div>'
                 + '<div style="font-size:0.78rem;font-weight:700;color:#15803d;background:#f0fdf4;padding:0.25rem 0.6rem;border-radius:6px">'
                 +   attCount + '/' + enrolled.length + ' in'

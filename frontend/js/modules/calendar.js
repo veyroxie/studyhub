@@ -275,9 +275,9 @@
               var monthChildTags = '';
               if (App.currentRole === 'client' && App.clientParent) {
                 var monthKids = students.filter(function(st) { return st.contact === App.clientParent && (st.enrolledClasses || []).indexOf(c.id) > -1; });
-                if (monthKids.length > 0) monthChildTags = ' <span style="font-size:0.55rem;font-weight:700;color:#92400e">(' + monthKids.map(function(st){return st.firstName;}).join(', ') + ')</span>';
+                if (monthKids.length > 0) monthChildTags = ' <span style="font-size:0.55rem;font-weight:700;color:#92400e">(' + monthKids.map(function(st){return App.Utils.esc(st.firstName);}).join(', ') + ')</span>';
               }
-              return '<div style="font-size:0.65rem;font-weight:600;border-radius:4px;padding:1px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="' + colors.pill + '">' + App.Utils.formatTime(c.time) + ' ' + c.name + monthChildTags + '</div>';
+              return '<div style="font-size:0.65rem;font-weight:600;border-radius:4px;padding:1px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="' + colors.pill + '">' + App.Utils.formatTime(c.time) + ' ' + App.Utils.esc(c.name) + monthChildTags + '</div>';
             }).join('')
           + (dayCls.length > 3 ? '<div style="font-size:0.63rem;color:#94a3b8">+' + (dayCls.length - 3) + ' more</div>' : '')
           + '</td>';
@@ -347,9 +347,9 @@
     if (isCancelled) {
       return '<div class="bg-red-50 border-l-4 border-red-300 rounded-lg p-2 opacity-60 relative">'
         + '<div style="position:absolute;top:3px;right:4px;font-size:0.6rem;font-weight:700;color:#ef4444;background:#fee2e2;padding:1px 5px;border-radius:4px">Cancelled</div>'
-        + '<div class="font-semibold text-xs text-red-300 leading-tight truncate line-through">' + c.name + '</div>'
+        + '<div class="font-semibold text-xs text-red-300 leading-tight truncate line-through">' + U.esc(c.name) + '</div>'
         + '<div class="text-xs text-red-200 mt-0.5">' + U.formatTime(c.time) + ' – ' + U.formatTime(c.endTime) + '</div>'
-        + '<div class="text-xs text-red-200 mt-0.5 truncate">' + teachers + '</div>'
+        + '<div class="text-xs text-red-200 mt-0.5 truncate">' + U.esc(teachers) + '</div>'
         + childBadges
         + '</div>';
     }
@@ -364,9 +364,9 @@
 
     return '<div class="' + colors.bg + ' border-l-4 ' + colors.border + ' rounded-lg p-2 cursor-pointer hover:shadow-sm transition-shadow relative" onclick="App.Calendar._classModal(\'' + c.id + '\')">'
       + adminBtns
-      + '<div class="font-semibold text-xs ' + colors.text + ' leading-tight truncate">' + c.name + '</div>'
+      + '<div class="font-semibold text-xs ' + colors.text + ' leading-tight truncate">' + U.esc(c.name) + '</div>'
       + '<div class="text-xs ' + colors.text + ' opacity-70 mt-0.5">' + U.formatTime(c.time) + ' – ' + U.formatTime(c.endTime) + '</div>'
-      + '<div class="text-xs text-slate-500 mt-0.5 truncate">' + teachers + '</div>'
+      + '<div class="text-xs text-slate-500 mt-0.5 truncate">' + U.esc(teachers) + '</div>'
       + childBadges
       + '<div class="mt-1.5 flex items-center gap-1">'
       +   '<div class="flex-1 h-1 bg-white/60 rounded-full overflow-hidden">'
@@ -409,7 +409,7 @@
       +   '<div class="w-3 h-12 rounded-full ' + colors.bg + ' ' + colors.border + ' border-2"></div>'
       +   '<div>'
       +     '<h2 class="text-xl font-bold">' + App.Utils.esc(c.name) + '</h2>'
-      +     '<div class="text-sm text-slate-500">' + c.day + ' · ' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + ' · ' + c.classroom + '</div>'
+      +     '<div class="text-sm text-slate-500">' + c.day + ' · ' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + ' · ' + App.Utils.esc(c.classroom) + '</div>'
       +   '</div>'
       + '</div>'
       + '<div class="grid grid-cols-2 gap-3 mb-5 text-sm">'
@@ -700,10 +700,10 @@
                   var endH   = parseInt((c.endTime||c.time||'08:00').split(':')[0],10), endM = parseInt((c.endTime||c.time||'08:00').split(':')[1]||'0',10);
                   var dur = (endH*60+endM) - (startH*60+startM);
                   var fmtT = function(hh,mm){ return (hh>12?hh-12:hh)+':'+(mm<10?'0'+mm:mm)+(hh>=12?'pm':'am'); };
-                  return '<div onclick="App.Calendar._classModal(\'' + c.id + '\')" style="background:' + col.bg + ';border:1px solid ' + col.border + ';border-left:3px solid ' + col.border + ';border-radius:6px;padding:0.3rem 0.45rem;cursor:pointer" title="' + c.name + '">'
-                    + '<div style="font-size:0.72rem;font-weight:700;color:' + col.text + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + c.name + '</div>'
+                  return '<div onclick="App.Calendar._classModal(\'' + c.id + '\')" style="background:' + col.bg + ';border:1px solid ' + col.border + ';border-left:3px solid ' + col.border + ';border-radius:6px;padding:0.3rem 0.45rem;cursor:pointer" title="' + App.Utils.esc(c.name) + '">'
+                    + '<div style="font-size:0.72rem;font-weight:700;color:' + col.text + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(c.name) + '</div>'
                     + '<div style="font-size:0.62rem;color:' + col.text + ';opacity:0.75">' + fmtT(startH,startM) + (dur>0?' · '+dur+'m':'') + '</div>'
-                    + (teacher ? '<div style="font-size:0.62rem;color:' + col.text + ';opacity:0.65">' + teacher.name + '</div>' : '')
+                    + (teacher ? '<div style="font-size:0.62rem;color:' + col.text + ';opacity:0.65">' + App.Utils.esc(teacher.name) + '</div>' : '')
                     + '</div>';
                 }).join('')
               + '</div>';
@@ -773,7 +773,7 @@
         + '<div style="width:1px;background:#f0ede8;align-self:stretch;flex-shrink:0"></div>'
         + '<div style="flex:1;min-width:0">'
         +   '<div style="font-size:0.85rem;font-weight:700;color:#111">' + App.Utils.esc(ws.name) + '</div>'
-        +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatTime(ws.time) + '–' + App.Utils.formatTime(ws.endTime) + ' · ' + App.Utils.esc(ws.classroom) + (teacherNames ? ' · ' + teacherNames : '') + '</div>'
+        +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatTime(ws.time) + '–' + App.Utils.formatTime(ws.endTime) + ' · ' + App.Utils.esc(ws.classroom) + (teacherNames ? ' · ' + App.Utils.esc(teacherNames) : '') + '</div>'
         + '</div>'
         + '<div style="text-align:right;flex-shrink:0">'
         +   '<div style="font-size:0.72rem;font-weight:700;color:' + (pct >= 100 ? '#dc2626' : '#374151') + '">' + ws.enrolled + '/' + ws.capacity + '</div>'

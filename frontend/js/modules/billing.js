@@ -141,7 +141,7 @@
       +     '<select onchange="App.Billing._setStudentFilter(this.value)" class="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-600">'
       +     '<option value="">All Students</option>'
       +     (isClient ? students.filter(function(s) { return s.contact === App.clientParent; }) : students).map(function(s) {
-              return '<option value="' + s.id + '"' + (s.id === _studentFilter ? ' selected' : '') + '>' + s.firstName + ' ' + s.lastName + '</option>';
+              return '<option value="' + s.id + '"' + (s.id === _studentFilter ? ' selected' : '') + '>' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</option>';
             }).join('')
       +     '</select>'
       +   '</div>'
@@ -169,8 +169,8 @@
               const isNearDue = inv.status === 'Unpaid' && new Date(inv.dueDate) <= in7 && new Date(inv.dueDate) >= today;
               return '<tr class="hover:bg-slate-50 transition-colors">'
                 + (isAdmin ? '<td class="td" style="width:36px"><input type="checkbox" class="inv-cb" data-id="' + inv.id + '" onchange="App.Billing._toggleSelectInv(\'' + inv.id + '\',this.checked)" style="cursor:pointer"' + (_selectedInv[inv.id] ? ' checked' : '') + '></td>' : '')
-                + '<td class="td"><div class="font-medium text-slate-800">' + stuName + '</div><div class="text-xs text-slate-400">' + inv.id + '</div></td>'
-                + '<td class="td text-sm text-slate-600">' + inv.description + '</td>'
+                + '<td class="td"><div class="font-medium text-slate-800">' + App.Utils.esc(stuName) + '</div><div class="text-xs text-slate-400">' + inv.id + '</div></td>'
+                + '<td class="td text-sm text-slate-600">' + App.Utils.esc(inv.description) + '</td>'
                 + '<td class="td">' + App.Utils.badge(inv.type, inv.type === 'Monthly' ? 'blue' : 'purple') + '</td>'
                 + '<td class="td text-sm ' + (isNearDue ? 'text-amber-600 font-medium' : 'text-slate-600') + '">'
                 +   App.Utils.formatDate(inv.dueDate) + (isNearDue ? ' <span class="text-xs">(soon)</span>' : '')
@@ -181,7 +181,7 @@
                 +   App.Utils.statusBadge(inv.status)
                 +   (inv.paymentProof ? '<a href="/' + App.Utils.esc(inv.paymentProof) + '" target="_blank" title="View receipt" style="display:inline-flex;align-items:center;color:#94a3b8;hover:color:#374151"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></a>' : '')
                 +   '</div>'
-                +   (inv.status === 'Pending Verification' && inv.paymentMethod ? '<div style="font-size:0.68rem;color:#94a3b8;margin-top:3px">' + inv.paymentMethod + (inv.paidOn ? ' · ' + App.Utils.formatDate(inv.paidOn) : '') + '</div>' : '')
+                +   (inv.status === 'Pending Verification' && inv.paymentMethod ? '<div style="font-size:0.68rem;color:#94a3b8;margin-top:3px">' + App.Utils.esc(inv.paymentMethod) + (inv.paidOn ? ' · ' + App.Utils.formatDate(inv.paidOn) : '') + '</div>' : '')
                 + '</td>'
                 + (isAdmin ? '<td class="td">'
                   + '<div class="relative flex justify-center">'
@@ -675,7 +675,7 @@
       + '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;margin-bottom:1rem">'
       +   '<div style="display:flex;justify-content:space-between;align-items:center">'
       +     '<div>'
-      +       '<div style="font-size:0.78rem;color:#94a3b8">' + (inv.paymentMethod || 'Unknown method') + '</div>'
+      +       '<div style="font-size:0.78rem;color:#94a3b8">' + App.Utils.esc(inv.paymentMethod || 'Unknown method') + '</div>'
       +       '<div style="font-size:0.9rem;font-weight:700;color:#111">' + App.Utils.esc(inv.description) + '</div>'
       +     '</div>'
       +     '<div style="font-size:1rem;font-weight:800;color:var(--gold)">' + App.Utils.formatCurrency(inv.amount) + '</div>'
@@ -720,9 +720,9 @@
     App.Utils.showModal(
       '<div class="p-6">'
       + '<h2 class="text-xl font-bold mb-1">Edit Invoice</h2>'
-      + '<p class="text-sm text-slate-500 mb-5">' + (stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + ' · ' + inv.id + '</p>'
+      + '<p class="text-sm text-slate-500 mb-5">' + App.Utils.esc(stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + ' · ' + inv.id + '</p>'
       + '<form id="edit-invoice-form" class="space-y-4">'
-      + _field('Description', '<input name="description" class="form-input" value="' + inv.description + '" required>')
+      + _field('Description', '<input name="description" class="form-input" value="' + App.Utils.esc(inv.description) + '" required>')
       + '<div class="grid grid-cols-2 gap-4">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input"><option' + (inv.type==='Monthly'?' selected':'') + '>Monthly</option><option' + (inv.type==='Adhoc'?' selected':'') + '>Adhoc</option></select></div>'
       + _field('Amount (RM)', '<input name="amount" type="number" min="0" step="0.01" class="form-input" value="' + inv.amount + '" required>')
@@ -1050,7 +1050,7 @@
       return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;font-size:0.84rem;cursor:pointer">'
         + '<input type="checkbox" name="childIds" value="' + s.id + '" checked style="width:15px;height:15px;accent-color:var(--gold);cursor:pointer" onchange="App.Billing._updateSiblingTotal()">'
         + '<span class="font-medium">' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</span>'
-        + '<span style="color:#94a3b8;font-size:0.75rem">(' + s.status + ')</span>'
+        + '<span style="color:#94a3b8;font-size:0.75rem">(' + App.Utils.esc(s.status) + ')</span>'
         + '</label>';
     }).join('');
     list.style.display = 'block';

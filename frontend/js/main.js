@@ -434,12 +434,12 @@
         } else if (isTeacher) {
           const { staff } = App.Store.get();
           const t = staff.find(function(s) { return s.id === App.currentTeacher; });
-          statusEl.innerHTML = '<span class="text-purple-400 font-semibold">Teacher</span>: ' + (t ? t.fullName : App.currentTeacher);
+          statusEl.innerHTML = '<span class="text-purple-400 font-semibold">Teacher</span>: ' + App.Utils.esc(t ? t.fullName : App.currentTeacher);
         } else {
           const { students } = App.Store.get();
           const myStudents = students.filter(function(s) { return s.contact === App.clientParent; });
-          const names = myStudents.map(function(s) { return s.firstName; }).join(', ');
-          statusEl.innerHTML = '<span class="text-emerald-400 font-semibold">Parent</span>: ' + (App.clientParent || '—')
+          const names = myStudents.map(function(s) { return App.Utils.esc(s.firstName); }).join(', ');
+          statusEl.innerHTML = '<span class="text-emerald-400 font-semibold">Parent</span>: ' + App.Utils.esc(App.clientParent || '—')
             + '<br>Children: <span class="text-white">' + (names || 'none') + '</span>';
         }
       }
@@ -476,7 +476,7 @@
       const devTeacherSel = document.getElementById('dev-teacher-select');
       if (devTeacherSel) {
         devTeacherSel.innerHTML = staff.map(function(s) {
-          return '<option value="' + s.id + '">' + s.fullName + '</option>';
+          return '<option value="' + s.id + '">' + App.Utils.esc(s.fullName) + '</option>';
         }).join('');
         if (App.currentTeacher) devTeacherSel.value = App.currentTeacher;
         else App.currentTeacher = (staff[0] && staff[0].id) || '';
@@ -486,7 +486,7 @@
       const headerTeacherSel = document.getElementById('teacher-select');
       if (headerTeacherSel) {
         headerTeacherSel.innerHTML = staff.map(function(s) {
-          return '<option value="' + s.id + '">' + s.fullName + '</option>';
+          return '<option value="' + s.id + '">' + App.Utils.esc(s.fullName) + '</option>';
         }).join('');
         if (App.currentTeacher) headerTeacherSel.value = App.currentTeacher;
       }

@@ -117,7 +117,7 @@ func handleLogin(db *DB) http.HandlerFunc {
 			Expires:  time.Now().Add(tokenExpiry),
 			HttpOnly: true,                  // JavaScript cannot access this cookie
 			Secure:   secure,                // HTTPS only in production
-			SameSite: http.SameSiteLaxMode,  // Lax allows cookie on top-level navigation (Strict blocks it)
+			SameSite: http.SameSiteStrictMode,  // Lax allows cookie on top-level navigation (Strict blocks it)
 		})
 
 		// Return role/name/email — NOT the token itself
@@ -136,7 +136,7 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
 		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }

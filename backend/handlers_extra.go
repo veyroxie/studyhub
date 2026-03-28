@@ -256,8 +256,9 @@ func handleUpdateFeedback(db *DB) http.HandlerFunc {
 		if f.StudentNotes == nil {
 			snJSON = []byte("[]")
 		}
-		res, err := db.Exec(`UPDATE feedback SET class_id=?,date=?,teacher_id=?,topic=?,mood=?,notes=?,student_notes=? WHERE id=? AND deleted_at IS NULL`,
-			f.ClassID, f.Date, f.TeacherID, f.Topic, f.Mood, f.Notes, string(snJSON), id)
+		tid := tenantID(c)
+		res, err := db.Exec(`UPDATE feedback SET class_id=?,date=?,teacher_id=?,topic=?,mood=?,notes=?,student_notes=? WHERE id=? AND deleted_at IS NULL AND (tenant_id=? OR ?=0)`,
+			f.ClassID, f.Date, f.TeacherID, f.Topic, f.Mood, f.Notes, string(snJSON), id, tid, tid)
 		if err != nil {
 			respondError(w, "server error", 500)
 			return
@@ -282,7 +283,8 @@ func handleDeleteFeedback(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`UPDATE feedback SET deleted_at=NOW() WHERE id=?`, id)
+		tid := tenantID(c)
+		db.Exec(`UPDATE feedback SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
 		if c := claimsFrom(r); c != nil {
 			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 				c.Email, "feedback_deleted", "feedback", id, "soft deleted")
@@ -365,8 +367,9 @@ func handleUpdateSubject(db *DB) http.HandlerFunc {
 			return
 		}
 		s.ID = id
-		res, err := db.Exec(`UPDATE subjects SET name=?,category=?,level=?,description=?,monthly_fee=?,color=? WHERE id=?`,
-			s.Name, s.Category, s.Level, s.Description, s.MonthlyFee, s.Color, id)
+		tid := tenantID(c)
+		res, err := db.Exec(`UPDATE subjects SET name=?,category=?,level=?,description=?,monthly_fee=?,color=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+			s.Name, s.Category, s.Level, s.Description, s.MonthlyFee, s.Color, id, tid, tid)
 		if err != nil {
 			respondError(w, "server error", 500)
 			return
@@ -391,7 +394,8 @@ func handleDeleteSubject(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`UPDATE subjects SET deleted_at=NOW() WHERE id=?`, id)
+		tid := tenantID(c)
+		db.Exec(`UPDATE subjects SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
 		if c != nil {
 			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 				c.Email, "subject_deleted", "subject", id, "soft deleted")
@@ -479,8 +483,9 @@ func handleUpdateWorkshop(db *DB) http.HandlerFunc {
 			return
 		}
 		ws.ID = id
-		res, err := db.Exec(`UPDATE workshops SET name=?,description=?,date=?,time=?,end_time=?,classroom=?,capacity=?,enrolled=?,fee=?,teacher_ids=?,status=? WHERE id=?`,
-			ws.Name, ws.Description, ws.Date, ws.Time, ws.EndTime, ws.Classroom, ws.Capacity, ws.Enrolled, ws.Fee, jsonArr(ws.TeacherIDs), ws.Status, id)
+		tid := tenantID(c)
+		res, err := db.Exec(`UPDATE workshops SET name=?,description=?,date=?,time=?,end_time=?,classroom=?,capacity=?,enrolled=?,fee=?,teacher_ids=?,status=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+			ws.Name, ws.Description, ws.Date, ws.Time, ws.EndTime, ws.Classroom, ws.Capacity, ws.Enrolled, ws.Fee, jsonArr(ws.TeacherIDs), ws.Status, id, tid, tid)
 		if err != nil {
 			respondError(w, "server error", 500)
 			return
@@ -505,7 +510,8 @@ func handleDeleteWorkshop(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`UPDATE workshops SET deleted_at=NOW() WHERE id=?`, id)
+		tid := tenantID(c)
+		db.Exec(`UPDATE workshops SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
 		if c != nil {
 			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 				c.Email, "workshop_deleted", "workshop", id, "soft deleted")
@@ -678,7 +684,8 @@ func handleDeleteSelfStudy(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`UPDATE self_study_sessions SET deleted_at=NOW() WHERE id=?`, id)
+		tid := tenantID(c)
+		db.Exec(`UPDATE self_study_sessions SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
 		if c := claimsFrom(r); c != nil {
 			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 				c.Email, "self_study_deleted", "self_study", id, "soft deleted")
@@ -807,7 +814,8 @@ func handleDeletePerformanceReview(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`UPDATE performance_reviews SET deleted_at=NOW() WHERE id=?`, id)
+		tid := tenantID(c)
+		db.Exec(`UPDATE performance_reviews SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
 		if c := claimsFrom(r); c != nil {
 			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 				c.Email, "performance_review_deleted", "performance_review", id, "soft deleted")
@@ -921,8 +929,9 @@ func handleClassByID(db *DB) http.HandlerFunc {
 				}
 			}
 
-			db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,enrolled=?,color=?,category=? WHERE id=?`,
-				cl.Name, jsonArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Enrolled, cl.Color, cl.Category, id)
+			tid := tenantID(c)
+			db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,enrolled=?,color=?,category=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+				cl.Name, jsonArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Enrolled, cl.Color, cl.Category, id, tid, tid)
 			if c != nil {
 				db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 					c.Email, "class_updated", "class", id, cl.Name)
@@ -934,7 +943,8 @@ func handleClassByID(db *DB) http.HandlerFunc {
 				respondError(w, "admin only", 403)
 				return
 			}
-			db.Exec(`UPDATE classes SET deleted_at=NOW() WHERE id=?`, id)
+			tid := tenantID(c)
+			db.Exec(`UPDATE classes SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
 			if c != nil {
 				db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 					c.Email, "class_deleted", "class", id, "soft deleted")
@@ -965,8 +975,9 @@ func handleStaffByID(db *DB) http.HandlerFunc {
 			if s.EmploymentType == "" {
 				s.EmploymentType = "Full-time"
 			}
-			db.Exec(`UPDATE staff SET name=?,full_name=?,role=?,email=?,phone=?,salary=?,join_date=?,status=?,specialization=?,nric=?,emergency_name=?,emergency_phone=?,employment_type=?,hourly_rate=? WHERE id=?`,
-				s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate, id)
+			tid := tenantID(c)
+			db.Exec(`UPDATE staff SET name=?,full_name=?,role=?,email=?,phone=?,salary=?,join_date=?,status=?,specialization=?,nric=?,emergency_name=?,emergency_phone=?,employment_type=?,hourly_rate=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+				s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate, id, tid, tid)
 			if c != nil {
 				db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 					c.Email, "staff_updated", "staff", id, s.Name)
@@ -978,7 +989,8 @@ func handleStaffByID(db *DB) http.HandlerFunc {
 				respondError(w, "admin only", 403)
 				return
 			}
-			db.Exec(`UPDATE staff SET deleted_at=NOW() WHERE id=?`, id)
+			tid := tenantID(c)
+			db.Exec(`UPDATE staff SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
 			if c != nil {
 				db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 					c.Email, "staff_deleted", "staff", id, "soft deleted")
@@ -1129,7 +1141,8 @@ func handleUploadProof(db *DB) http.HandlerFunc {
 
 		// Update invoice record
 		proofPath := "uploads/" + filename
-		db.Exec(`UPDATE invoices SET payment_proof=? WHERE id=?`, proofPath, invoiceID)
+		tid := tenantID(c)
+		db.Exec(`UPDATE invoices SET payment_proof=? WHERE id=? AND (tenant_id=? OR ?=0)`, proofPath, invoiceID, tid, tid)
 
 		// Audit log
 		if c := claimsFrom(r); c != nil {
@@ -1262,8 +1275,9 @@ func handleUpdateHoliday(db *DB) http.HandlerFunc {
 		if h.Type == "" {
 			h.Type = "holiday"
 		}
-		res, err := db.Exec(`UPDATE holidays SET name=?,date=?,end_date=?,type=?,notes=? WHERE id=?`,
-			h.Name, h.Date, h.EndDate, h.Type, h.Notes, id)
+		tid := tenantID(c)
+		res, err := db.Exec(`UPDATE holidays SET name=?,date=?,end_date=?,type=?,notes=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+			h.Name, h.Date, h.EndDate, h.Type, h.Notes, id, tid, tid)
 		if err != nil {
 			respondError(w, "server error", 500)
 			return
@@ -1286,7 +1300,8 @@ func handleDeleteHoliday(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`UPDATE holidays SET deleted_at=NOW() WHERE id=?`, id)
+		tid := tenantID(c)
+		db.Exec(`UPDATE holidays SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
 		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 			c.Email, "holiday_deleted", "holiday", id, "soft deleted")
 		w.WriteHeader(http.StatusNoContent)
@@ -1373,16 +1388,6 @@ func handleCreateReplacementCredit(db *DB) http.HandlerFunc {
 			respondError(w, "minutes must be greater than 0", 400)
 			return
 		}
-		if rc.Type == "used" {
-			tid := tenantID(c)
-			var earned, used int
-			db.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND (tenant_id=? OR ?=0)`, rc.StudentID, tid, tid).Scan(&earned, &used)
-			balance := earned - used
-			if rc.Minutes > balance {
-				respondError(w, fmt.Sprintf("insufficient balance: %d min available, trying to use %d min", balance, rc.Minutes), 400)
-				return
-			}
-		}
 		if rc.ID == "" {
 			rc.ID = generateID("RC")
 		}
@@ -1390,11 +1395,39 @@ func handleCreateReplacementCredit(db *DB) http.HandlerFunc {
 			rc.CreatedBy = c.Email
 		}
 		tid := tenantID(c)
-		_, err := db.Exec(`INSERT INTO replacement_credits(id,tenant_id,student_id,type,minutes,note,class_id,date,created_by) VALUES(?,?,?,?,?,?,?,?,?)`,
-			rc.ID, tid, rc.StudentID, rc.Type, rc.Minutes, rc.Note, rc.ClassID, rc.Date, rc.CreatedBy)
-		if err != nil {
-			respondError(w, "server error", 500)
-			return
+		if rc.Type == "used" {
+			tx, err := db.BeginTx(r.Context())
+			if err != nil {
+				respondError(w, "server error", 500)
+				return
+			}
+			defer tx.Rollback()
+
+			var earned, used int
+			tx.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND (tenant_id=? OR ?=0)`, rc.StudentID, tid, tid).Scan(&earned, &used)
+			balance := earned - used
+			if rc.Minutes > balance {
+				respondError(w, fmt.Sprintf("insufficient balance: %d min available, trying to use %d min", balance, rc.Minutes), 400)
+				return
+			}
+
+			_, err = tx.Exec(`INSERT INTO replacement_credits(id,tenant_id,student_id,type,minutes,note,class_id,date,created_by) VALUES(?,?,?,?,?,?,?,?,?)`,
+				rc.ID, tid, rc.StudentID, rc.Type, rc.Minutes, rc.Note, rc.ClassID, rc.Date, rc.CreatedBy)
+			if err != nil {
+				respondError(w, "server error", 500)
+				return
+			}
+			if err := tx.Commit(); err != nil {
+				respondError(w, "server error", 500)
+				return
+			}
+		} else {
+			_, err := db.Exec(`INSERT INTO replacement_credits(id,tenant_id,student_id,type,minutes,note,class_id,date,created_by) VALUES(?,?,?,?,?,?,?,?,?)`,
+				rc.ID, tid, rc.StudentID, rc.Type, rc.Minutes, rc.Note, rc.ClassID, rc.Date, rc.CreatedBy)
+			if err != nil {
+				respondError(w, "server error", 500)
+				return
+			}
 		}
 		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 			c.Email, "replacement_credit_"+rc.Type, "replacement_credit", rc.ID, fmt.Sprintf("student=%s minutes=%d", rc.StudentID, rc.Minutes))
@@ -1411,7 +1444,8 @@ func handleDeleteReplacementCredit(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		db.Exec(`DELETE FROM replacement_credits WHERE id=?`, id)
+		tid := tenantID(c)
+		db.Exec(`DELETE FROM replacement_credits WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
 		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 			c.Email, "replacement_credit_deleted", "replacement_credit", id, "deleted")
 		w.WriteHeader(http.StatusNoContent)

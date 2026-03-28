@@ -118,17 +118,17 @@
               return '<tr class="hover:bg-slate-50 transition-colors">'
                 + (isAdmin ? '<td class="td" style="width:36px"><input type="checkbox" class="stu-cb" data-id="' + s.id + '" onchange="App.Students._toggleSelect(\'' + s.id + '\',this.checked)" style="cursor:pointer"' + (_selected[s.id] ? ' checked' : '') + '></td>' : '')
                 + '<td class="td"><div class="flex items-center gap-3">'
-                +   '<div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">' + s.firstName.charAt(0) + s.lastName.charAt(0) + '</div>'
-                +   '<div><div class="font-medium text-slate-800">' + s.firstName + ' ' + s.lastName
+                +   '<div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">' + App.Utils.esc(s.firstName.charAt(0)) + App.Utils.esc(s.lastName.charAt(0)) + '</div>'
+                +   '<div><div class="font-medium text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName)
                 +     (_bal > 0 ? ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.65rem;font-weight:700;background:#fffbeb;color:#92400e;border:1px solid #fef3c7;border-radius:999px;vertical-align:middle;margin-left:4px" title="Replacement balance">' + _bal + 'm</span>' : '')
                 +   '</div><div class="text-xs text-slate-400">' + s.id + '</div></div>'
                 + '</div></td>'
                 + '<td class="td"><div class="flex flex-wrap gap-1">'
                 + (enrolledNames.length === 0 ? '<span class="text-xs text-slate-400">—</span>'
-                  : enrolledNames.map(function(n) { return '<span class="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full border border-blue-100">' + n + '</span>'; }).join(''))
+                  : enrolledNames.map(function(n) { return '<span class="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full border border-blue-100">' + App.Utils.esc(n) + '</span>'; }).join(''))
                 + '</div></td>'
                 + '<td class="td text-sm text-slate-600">' + App.Utils.formatDate(s.dob) + '</td>'
-                + '<td class="td text-sm"><div class="text-slate-700">' + s.parentName + '</div><div class="text-slate-400 text-xs">' + s.contact + '</div></td>'
+                + '<td class="td text-sm"><div class="text-slate-700">' + App.Utils.esc(s.parentName) + '</div><div class="text-slate-400 text-xs">' + App.Utils.esc(s.contact) + '</div></td>'
                 + '<td class="td">' + App.Utils.statusBadge(s.status) + '</td>'
                 + '<td class="td"><button onclick="App.Students._viewModal(\'' + s.id + '\')" class="text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">View</button></td>'
                 + '</tr>';
@@ -240,9 +240,9 @@
     App.Utils.showModal(
       '<div class="p-6">'
       + '<div class="flex items-center gap-4 mb-6">'
-      +   '<div class="w-16 h-16 rounded-2xl bg-blue-100 text-blue-700 font-bold text-2xl flex items-center justify-center">' + s.firstName.charAt(0) + s.lastName.charAt(0) + '</div>'
+      +   '<div class="w-16 h-16 rounded-2xl bg-blue-100 text-blue-700 font-bold text-2xl flex items-center justify-center">' + App.Utils.esc(s.firstName.charAt(0)) + App.Utils.esc(s.lastName.charAt(0)) + '</div>'
       +   '<div>'
-      +     '<h2 class="text-xl font-bold text-slate-800">' + s.firstName + ' ' + s.lastName + '</h2>'
+      +     '<h2 class="text-xl font-bold text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName) + '</h2>'
       +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.statusBadge(s.status) + '<span class="text-xs text-slate-400">' + s.id + '</span></div>'
       +   '</div>'
       + '</div>'
@@ -256,20 +256,20 @@
       + '<div id="tab-panel-details">'
       +   '<div class="grid grid-cols-2 gap-3 text-sm">'
       +   _infoRow('Date of Birth', App.Utils.formatDate(s.dob))
-      +   _infoRow('Gender', s.gender)
-      +   _infoRow('Parent / Guardian', s.parentName)
-      +   _infoRow('Email', s.contact)
-      +   _infoRow('Phone', s.phone)
-      +   _infoRow('Branch', s.branch)
+      +   _infoRow('Gender', App.Utils.esc(s.gender))
+      +   _infoRow('Parent / Guardian', App.Utils.esc(s.parentName))
+      +   _infoRow('Email', App.Utils.esc(s.contact))
+      +   _infoRow('Phone', App.Utils.esc(s.phone))
+      +   _infoRow('Branch', App.Utils.esc(s.branch))
       +   _infoRow('Registered On', App.Utils.formatDate(s.registeredOn))
       +   (s.siblings && s.siblings.length ? _infoRow('Siblings', (function() {
             var allStudents = App.Store.get().students;
             return s.siblings.map(function(sibId) {
               var sib = allStudents.find(function(x) { return x.id === sibId; });
-              return sib ? sib.firstName + ' ' + sib.lastName : sibId;
+              return sib ? App.Utils.esc(sib.firstName + ' ' + sib.lastName) : sibId;
             }).join(', ');
           })()) : '')
-      +   (s.emergency2Name ? _infoRow('Emergency Contact', s.emergency2Name + (s.emergency2Phone ? ' · ' + s.emergency2Phone : '')) : '')
+      +   (s.emergency2Name ? _infoRow('Emergency Contact', App.Utils.esc(s.emergency2Name) + (s.emergency2Phone ? ' · ' + App.Utils.esc(s.emergency2Phone) : '')) : '')
       +   (s.notes ? _infoRow('Notes', '<div style="white-space:pre-wrap">' + App.Utils.esc(s.notes) + '</div>') : '')
       +   '</div>'
       +   '<div style="margin-top:1rem;padding:1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px">'
@@ -323,9 +323,9 @@
             return st ? st.fullName : tid;
           }).join(', ');
           return '<div class="' + colors.bg + ' border-l-4 ' + colors.border + ' rounded-xl p-4 mb-2">'
-            + '<div class="font-semibold ' + colors.text + '">' + c.name + '</div>'
+            + '<div class="font-semibold ' + colors.text + '">' + App.Utils.esc(c.name) + '</div>'
             + '<div class="text-sm text-slate-600 mt-1">' + c.day + ' · ' + App.Utils.formatTime(c.time) + ' – ' + App.Utils.formatTime(c.endTime) + '</div>'
-            + '<div class="text-sm text-slate-500">' + teachers + ' · ' + c.classroom + '</div>'
+            + '<div class="text-sm text-slate-500">' + App.Utils.esc(teachers) + ' · ' + App.Utils.esc(c.classroom) + '</div>'
             + '</div>';
         }).join('')
       + '</div>'
@@ -335,7 +335,7 @@
       + (studentInvoices.length === 0 ? '<p class="text-sm text-slate-400 text-center py-6">No invoices</p>'
         : '<table class="w-full text-sm"><thead><tr class="border-b"><th class="text-left py-2 text-slate-500 font-medium">Description</th><th class="text-right py-2 text-slate-500 font-medium">Amount</th><th class="text-right py-2 text-slate-500 font-medium">Status</th></tr></thead><tbody>'
           + studentInvoices.map(function(inv) {
-              return '<tr class="border-b border-slate-50"><td class="py-2"><div>' + inv.description + '</div><div class="text-xs text-slate-400">Due ' + App.Utils.formatDate(inv.dueDate) + '</div></td><td class="py-2 text-right font-medium">' + App.Utils.formatCurrency(inv.amount) + '</td><td class="py-2 text-right">' + App.Utils.statusBadge(inv.status) + '</td></tr>';
+              return '<tr class="border-b border-slate-50"><td class="py-2"><div>' + App.Utils.esc(inv.description) + '</div><div class="text-xs text-slate-400">Due ' + App.Utils.formatDate(inv.dueDate) + '</div></td><td class="py-2 text-right font-medium">' + App.Utils.formatCurrency(inv.amount) + '</td><td class="py-2 text-right">' + App.Utils.statusBadge(inv.status) + '</td></tr>';
             }).join('')
           + '</tbody></table>')
       + '</div>'
@@ -466,7 +466,7 @@
 
       App.Store.set({ students: st.students.map(function(x) { return x.id === studentId ? updated : x; }), classes: newClasses2 });
       App.Utils.hideModal(true);
-      App.Utils.showToast(updated.firstName + ' ' + updated.lastName + ' updated', 'success');
+      App.Utils.showToast(App.Utils.esc(updated.firstName) + ' ' + App.Utils.esc(updated.lastName) + ' updated', 'success');
       App.Router.refresh();
     });
   }
@@ -535,7 +535,7 @@
       });
       App.Store.set({ students: [...state.students, newStudent], classes: newClasses });
       App.Utils.hideModal(true);
-      App.Utils.showToast(newStudent.firstName + ' ' + newStudent.lastName + ' added!', 'success');
+      App.Utils.showToast(App.Utils.esc(newStudent.firstName) + ' ' + App.Utils.esc(newStudent.lastName) + ' added!', 'success');
       App.Router.refresh();
     });
   }
@@ -549,7 +549,7 @@
           const checked = selected.indexOf(c.id) > -1 ? ' checked' : '';
           return '<label class="flex items-center gap-2.5 cursor-pointer group">'
             + '<input type="checkbox" name="classIds" value="' + c.id + '"' + checked + ' class="w-3.5 h-3.5 rounded accent-blue-600">'
-            + '<span class="text-sm text-slate-700 group-hover:text-blue-600 transition-colors">' + c.name + '</span>'
+            + '<span class="text-sm text-slate-700 group-hover:text-blue-600 transition-colors">' + App.Utils.esc(c.name) + '</span>'
             + '<span class="text-xs text-slate-400 ml-auto">' + c.day + ' ' + App.Utils.formatTime(c.time) + '</span>'
             + '</label>';
         }).join('')
@@ -683,11 +683,18 @@
 
   function _addCreditModal(studentId) {
     var today = App.Utils.today ? App.Utils.today() : new Date().toISOString().slice(0, 10);
+    var state = App.Store.get();
+    var stuClasses = (state.students.find(function(x) { return x.id === studentId; }) || {}).enrolledClasses || [];
+    var classOpts = '<option value="">-- select class --</option>'
+      + state.classes.filter(function(c) { return stuClasses.indexOf(c.id) > -1; }).map(function(c) {
+          return '<option value="' + c.id + '">' + App.Utils.esc(c.name) + '</option>';
+        }).join('');
     App.Utils.showModal(
       '<div class="p-6">'
       + '<h2 class="text-lg font-bold mb-1">Log Absence</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">Record an absence for a missed class (default 60 min)</p>'
+      + '<p class="text-sm text-slate-500 mb-4">Record an absence for a missed class (default 60 min). This also marks the student absent in attendance.</p>'
       + '<form id="add-credit-form" class="space-y-4">'
+      + _field('Class', '<select name="classId" class="form-input">' + classOpts + '</select>')
       + _field('Minutes', '<select name="minutes" class="form-input"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60" selected>60 min</option></select>')
       + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Absent from Math 12 Mar">')
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
@@ -701,13 +708,22 @@
     document.getElementById('add-credit-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       var fd = new FormData(e.target);
+      var classId = fd.get('classId') || '';
+      var date = fd.get('date');
       try {
+        // Mark absent in attendance if class selected
+        if (classId) {
+          await App.Api.post('/api/attendance', { personId: studentId, personType: 'student', date: date, classId: classId, status: 'Absent' });
+        }
+        // Add replacement minutes
+        var cls = classId ? state.classes.find(function(c) { return c.id === classId; }) : null;
         await App.Api.post('/api/replacement-credits', {
           studentId: studentId,
           type: 'earned',
           minutes: parseInt(fd.get('minutes'), 10),
-          note: fd.get('note') || '',
-          date: fd.get('date')
+          note: fd.get('note') || (cls ? 'Absent from ' + cls.name + ' on ' + date : ''),
+          classId: classId,
+          date: date
         });
         App.Utils.hideModal(true);
         App.Utils.showToast('Replacement added', 'success');

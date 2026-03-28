@@ -347,6 +347,11 @@ func runMigrations(db *sql.DB) {
 		`ALTER TABLE performance_reviews ADD COLUMN IF NOT EXISTS deleted_at TEXT`,
 		`ALTER TABLE holidays ADD COLUMN IF NOT EXISTS deleted_at TEXT`,
 		`CREATE INDEX IF NOT EXISTS idx_replacement_credits_student ON replacement_credits(student_id)`,
+
+		// Compound indexes for multi-tenant queries
+		`CREATE INDEX IF NOT EXISTS idx_students_tenant_contact ON students(tenant_id, contact)`,
+		`CREATE INDEX IF NOT EXISTS idx_invoices_tenant_status ON invoices(tenant_id, status)`,
+		`CREATE INDEX IF NOT EXISTS idx_classes_tenant_day ON classes(tenant_id, day)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (index/row already exists = OK)

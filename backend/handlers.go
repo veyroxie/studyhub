@@ -275,8 +275,9 @@ func handleStudent(db *DB) http.HandlerFunc {
 				return
 			}
 			s.ID = id
-			if _, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,siblings=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=? WHERE id=?`,
-				s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, id); err != nil {
+			tid := tenantID(c)
+			if _, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,siblings=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+				s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, id, tid, tid); err != nil {
 				respondError(w, "could not update student", 500)
 				return
 			}
@@ -284,7 +285,8 @@ func handleStudent(db *DB) http.HandlerFunc {
 				c.Email, "student_updated", "student", id, s.FirstName+" "+s.LastName)
 			respond(w, s)
 		case http.MethodDelete:
-			if _, err := db.Exec(`UPDATE students SET deleted_at=NOW() WHERE id=?`, id); err != nil {
+			tid := tenantID(c)
+			if _, err := db.Exec(`UPDATE students SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
 				respondError(w, "could not delete student", 500)
 				return
 			}
@@ -583,7 +585,8 @@ func handleInvoicePay(db *DB) http.HandlerFunc {
 		}
 
 		t := today()
-		if _, err := db.Exec(`UPDATE invoices SET status=?, paid_on=?, payment_method=COALESCE(NULLIF(?,''),payment_method) WHERE id=?`, newStatus, t, body.PaymentMethod, id); err != nil {
+		tid := tenantID(c)
+		if _, err := db.Exec(`UPDATE invoices SET status=?, paid_on=?, payment_method=COALESCE(NULLIF(?,''),payment_method) WHERE id=? AND (tenant_id=? OR ?=0)`, newStatus, t, body.PaymentMethod, id, tid, tid); err != nil {
 			respondError(w, "could not update invoice", 500)
 			return
 		}
@@ -746,7 +749,8 @@ func handleAnnouncementDelete(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		if _, err := db.Exec(`DELETE FROM announcements WHERE id=?`, id); err != nil {
+		tid := tenantID(c)
+		if _, err := db.Exec(`DELETE FROM announcements WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
 			respondError(w, "could not delete announcement", 500)
 			return
 		}
@@ -769,8 +773,9 @@ func handleAnnouncementUpdate(db *DB) http.HandlerFunc {
 			respondError(w, "bad body", 400)
 			return
 		}
-		db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=? WHERE id=?`,
-			a.Title, a.Message, a.Type, a.ArchiveOn, id)
+		tid := tenantID(c)
+		db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+			a.Title, a.Message, a.Type, a.ArchiveOn, id, tid, tid)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -790,7 +795,8 @@ func handleAnnouncementApprove(db *DB) http.HandlerFunc {
 		if body.Status == "" {
 			body.Status = "published"
 		}
-		db.Exec(`UPDATE announcements SET status=? WHERE id=?`, body.Status, id)
+		tid := tenantID(c)
+		db.Exec(`UPDATE announcements SET status=? WHERE id=? AND (tenant_id=? OR ?=0)`, body.Status, id, tid, tid)
 		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 			c.Email, "announcement_"+body.Status, "announcement", id, "status changed to "+body.Status)
 		w.WriteHeader(http.StatusNoContent)
@@ -1038,7 +1044,8 @@ func handleUsers(db *DB) http.HandlerFunc {
 func handleUserDelete(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		if _, err := db.Exec(`DELETE FROM users WHERE id=?`, id); err != nil {
+		tid := tenantID(claimsFrom(r))
+		if _, err := db.Exec(`DELETE FROM users WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
 			respondError(w, "could not delete user", 500)
 			return
 		}
@@ -1183,7 +1190,8 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 func handleRegistrationReject(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		if _, err := db.Exec(`UPDATE registrations SET status='rejected' WHERE id=?`, id); err != nil {
+		tid := tenantID(claimsFrom(r))
+		if _, err := db.Exec(`UPDATE registrations SET status='rejected' WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
 			respondError(w, "could not reject registration", 500)
 			return
 		}

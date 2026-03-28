@@ -244,7 +244,7 @@
       + '<div class="flex items-center gap-4 mb-6">'
       +   '<div class="w-16 h-16 rounded-2xl bg-blue-100 text-blue-700 font-bold text-2xl flex items-center justify-center">' + (s.name || s.fullName || '?').charAt(0) + '</div>'
       +   '<div>'
-      +     '<h2 class="text-xl font-bold text-slate-800">' + s.fullName + '</h2>'
+      +     '<h2 class="text-xl font-bold text-slate-800">' + App.Utils.esc(s.fullName) + '</h2>'
       +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.badge(s.role, 'blue') + App.Utils.statusBadge(s.status) + '</div>'
       +   '</div>'
       + '</div>'
@@ -257,13 +257,13 @@
 
       + '<div id="stab-panel-info">'
       +   '<div class="grid grid-cols-2 gap-3 text-sm">'
-      +   _infoRow('Email', s.email)
-      +   _infoRow('Phone', s.phone)
-      +   _infoRow('Role', s.role)
+      +   _infoRow('Email', App.Utils.esc(s.email))
+      +   _infoRow('Phone', App.Utils.esc(s.phone))
+      +   _infoRow('Role', App.Utils.esc(s.role))
       +   _infoRow('Joined', App.Utils.formatDate(s.joinDate))
-      +   (s.specialization ? _infoRow('Specialization', s.specialization) : '')
-      +   (isAdmin && s.nric ? _infoRow('IC / NRIC', s.nric) : '')
-      +   (isAdmin && s.emergencyName ? _infoRow('Emergency Contact', s.emergencyName + (s.emergencyPhone ? ' · ' + s.emergencyPhone : '')) : '')
+      +   (s.specialization ? _infoRow('Specialization', App.Utils.esc(s.specialization)) : '')
+      +   (isAdmin && s.nric ? _infoRow('IC / NRIC', App.Utils.esc(s.nric)) : '')
+      +   (isAdmin && s.emergencyName ? _infoRow('Emergency Contact', App.Utils.esc(s.emergencyName) + (s.emergencyPhone ? ' · ' + App.Utils.esc(s.emergencyPhone) : '')) : '')
       +   (isAdmin ? _infoRow('Monthly Salary', App.Utils.formatCurrency(s.salary)) : '')
       +   '</div>'
       + '</div>'
@@ -272,7 +272,7 @@
       + (teachingClasses.length === 0 ? '<p class="text-sm text-slate-400 text-center py-6">No classes assigned</p>'
         : '<table class="w-full text-sm"><thead><tr class="border-b"><th class="text-left py-2 text-slate-500 font-medium">Class</th><th class="text-left py-2 text-slate-500 font-medium">Schedule</th><th class="text-left py-2 text-slate-500 font-medium">Room</th><th class="text-right py-2 text-slate-500 font-medium">Enrolled</th></tr></thead><tbody>'
         + teachingClasses.map(function(c) {
-            return '<tr class="border-b border-slate-50"><td class="py-2 font-medium">' + c.name + '</td><td class="py-2 text-slate-600">' + c.day + ' ' + App.Utils.formatTime(c.time) + '</td><td class="py-2 text-slate-500">' + c.classroom + '</td><td class="py-2 text-right">' + c.enrolled + '/' + c.capacity + '</td></tr>';
+            return '<tr class="border-b border-slate-50"><td class="py-2 font-medium">' + App.Utils.esc(c.name) + '</td><td class="py-2 text-slate-600">' + c.day + ' ' + App.Utils.formatTime(c.time) + '</td><td class="py-2 text-slate-500">' + App.Utils.esc(c.classroom) + '</td><td class="py-2 text-right">' + c.enrolled + '/' + c.capacity + '</td></tr>';
           }).join('')
         + '</tbody></table>')
       + '</div>'
@@ -392,7 +392,7 @@
       };
       App.Store.set({ staff: [...state.staff, newStaff] });
       App.Utils.hideModal(true);
-      App.Utils.showToast(newStaff.fullName + ' added!', 'success');
+      App.Utils.showToast(App.Utils.esc(newStaff.fullName) + ' added!', 'success');
       App.Router.refresh();
     });
   }
@@ -404,7 +404,7 @@
 
     App.Utils.showModal(
       '<div class="p-6">'
-      + '<h2 class="text-xl font-bold mb-4">Edit Staff — ' + s.fullName + '</h2>'
+      + '<h2 class="text-xl font-bold mb-4">Edit Staff — ' + App.Utils.esc(s.fullName) + '</h2>'
       + '<form id="edit-staff-form" class="space-y-4">'
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Full Name', '<input name="fullName" class="form-input" value="' + App.Utils.esc(s.fullName) + '" required>')
@@ -478,7 +478,7 @@
       App.Api.put('/api/staff/' + staffId, updated).then(function(result) {
         var st = App.Store.get();
         App.Store.set({ staff: st.staff.map(function(x) { return x.id === staffId ? updated : x; }) });
-        App.Utils.showToast(updated.fullName + ' updated!', 'success');
+        App.Utils.showToast(App.Utils.esc(updated.fullName) + ' updated!', 'success');
         App.Router.refresh();
       }).catch(function(err) {
         var st = App.Store.get();
@@ -655,7 +655,7 @@
     localStorage.setItem('sh_teacher_regs', JSON.stringify(regs));
 
     App.Utils.hideModal(true);
-    App.Utils.showToast(reg.fullName + ' added to staff', 'success');
+    App.Utils.showToast(App.Utils.esc(reg.fullName) + ' added to staff', 'success');
     App.Router.navigate('staff');
   }
 

@@ -38,7 +38,7 @@
           type: 'billing',
           severity: 'info',
           title: 'Payment received',
-          body: (stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + ' · ' + App.Utils.formatCurrency(inv.amount),
+          body: App.Utils.esc(stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + ' · ' + App.Utils.formatCurrency(inv.amount),
           action: 'billing'
         });
       });
@@ -79,7 +79,7 @@
             type: 'billing',
             severity: 'error',
             title: 'Overdue invoice',
-            body: (stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + ' · ' + App.Utils.formatCurrency(inv.amount),
+            body: App.Utils.esc(stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + ' · ' + App.Utils.formatCurrency(inv.amount),
             action: 'billing'
           });
         });
@@ -97,7 +97,7 @@
           type: 'billing',
           severity: 'warning',
           title: 'Payment due soon',
-          body: (stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + ' · due in ' + days + ' day' + (days !== 1 ? 's' : ''),
+          body: App.Utils.esc(stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + ' · due in ' + days + ' day' + (days !== 1 ? 's' : ''),
           action: 'billing'
         });
       });
@@ -106,11 +106,11 @@
       var lateStaff   = attendance.filter(function(a) { return a.personType === 'staff' && a.date === today && a.status === 'Late'; });
       var absentStaff = attendance.filter(function(a) { return a.personType === 'staff' && a.date === today && a.status === 'Absent'; });
       if (absentStaff.length > 0) {
-        var names = absentStaff.map(function(rec) { var s = staff.find(function(x) { return x.id === rec.personId; }); return s ? s.fullName.split(' ')[0] : rec.personId; }).join(', ');
+        var names = absentStaff.map(function(rec) { var s = staff.find(function(x) { return x.id === rec.personId; }); return s ? App.Utils.esc(s.fullName.split(' ')[0]) : rec.personId; }).join(', ');
         notifs.push({ id: 'staff-absent-today', type: 'attendance', severity: 'error', title: absentStaff.length + ' staff absent today', body: names, action: 'attendance' });
       }
       if (lateStaff.length > 0) {
-        var lateNames = lateStaff.map(function(rec) { var s = staff.find(function(x) { return x.id === rec.personId; }); return s ? s.fullName.split(' ')[0] : rec.personId; }).join(', ');
+        var lateNames = lateStaff.map(function(rec) { var s = staff.find(function(x) { return x.id === rec.personId; }); return s ? App.Utils.esc(s.fullName.split(' ')[0]) : rec.personId; }).join(', ');
         notifs.push({ id: 'staff-late-today', type: 'attendance', severity: 'warning', title: lateStaff.length + ' staff late today', body: lateNames, action: 'attendance' });
       }
 
@@ -119,8 +119,8 @@
       if (stuIssues.length > 0) {
         var absent = stuIssues.filter(function(a) { return a.status === 'Absent'; });
         var late   = stuIssues.filter(function(a) { return a.status === 'Late'; });
-        if (absent.length > 0) notifs.push({ id: 'stu-absent-today', type: 'attendance', severity: 'error',   title: absent.length + ' student' + (absent.length!==1?'s':'') + ' absent today', body: absent.map(function(a){ var s=students.find(function(x){return x.id===a.personId;}); return s?s.firstName:a.personId; }).join(', '), action: 'attendance' });
-        if (late.length > 0)   notifs.push({ id: 'stu-late-today',   type: 'attendance', severity: 'warning', title: late.length   + ' student' + (late.length!==1?'s':'')   + ' late today',   body: late.map(function(a){   var s=students.find(function(x){return x.id===a.personId;}); return s?s.firstName:a.personId; }).join(', '), action: 'attendance' });
+        if (absent.length > 0) notifs.push({ id: 'stu-absent-today', type: 'attendance', severity: 'error',   title: absent.length + ' student' + (absent.length!==1?'s':'') + ' absent today', body: absent.map(function(a){ var s=students.find(function(x){return x.id===a.personId;}); return s?App.Utils.esc(s.firstName):a.personId; }).join(', '), action: 'attendance' });
+        if (late.length > 0)   notifs.push({ id: 'stu-late-today',   type: 'attendance', severity: 'warning', title: late.length   + ' student' + (late.length!==1?'s':'')   + ' late today',   body: late.map(function(a){   var s=students.find(function(x){return x.id===a.personId;}); return s?App.Utils.esc(s.firstName):a.personId; }).join(', '), action: 'attendance' });
       }
 
     } else if (App.currentRole === 'teacher') {
@@ -138,7 +138,7 @@
           type: 'attendance',
           severity: 'info',
           title: myClasses.length + ' class' + (myClasses.length > 1 ? 'es' : '') + ' today',
-          body: myClasses.map(function(c) { return c.name + ' (' + App.Utils.formatTime(c.time) + ')'; }).join(', '),
+          body: myClasses.map(function(c) { return App.Utils.esc(c.name) + ' (' + App.Utils.formatTime(c.time) + ')'; }).join(', '),
           action: 'attendance'
         });
       }
@@ -153,8 +153,8 @@
           var hasRecord = attendance.some(function(a) {
             return a.personId === s.id && a.classId === cls.id && a.date === today && a.checkIn;
           });
-          if (!hasRecord && absentNames.indexOf(s.firstName) === -1) {
-            absentNames.push(s.firstName);
+          if (!hasRecord && absentNames.indexOf(App.Utils.esc(s.firstName)) === -1) {
+            absentNames.push(App.Utils.esc(s.firstName));
           }
         });
       });
@@ -200,7 +200,7 @@
             type: 'billing',
             severity: 'error',
             title: 'Payment overdue',
-            body: (stu ? stu.firstName : inv.studentId) + ' · ' + App.Utils.formatCurrency(inv.amount),
+            body: App.Utils.esc(stu ? stu.firstName : inv.studentId) + ' · ' + App.Utils.formatCurrency(inv.amount),
             action: 'billing'
           });
         });
@@ -218,7 +218,7 @@
           type: 'billing',
           severity: 'warning',
           title: 'Payment due soon',
-          body: (stu ? stu.firstName : inv.studentId) + ' · due in ' + days + ' day' + (days !== 1 ? 's' : ''),
+          body: App.Utils.esc(stu ? stu.firstName : inv.studentId) + ' · due in ' + days + ' day' + (days !== 1 ? 's' : ''),
           action: 'billing'
         });
       });
@@ -238,8 +238,8 @@
             id: 'att-stu-' + rec.id,
             type: 'attendance',
             severity: rec.status === 'Absent' ? 'error' : 'warning',
-            title: (stu ? stu.firstName : 'Your child') + ' was ' + rec.status.toLowerCase() + ' today',
-            body: (clsName ? clsName + ' · ' : '') + 'Checked in at ' + App.Utils.formatTime(rec.checkIn),
+            title: App.Utils.esc(stu ? stu.firstName : 'Your child') + ' was ' + rec.status.toLowerCase() + ' today',
+            body: (clsName ? App.Utils.esc(clsName) + ' · ' : '') + 'Checked in at ' + App.Utils.formatTime(rec.checkIn),
             action: 'attendance'
           });
         } else {
@@ -247,8 +247,8 @@
             id: 'att-checkin-' + rec.id,
             type: 'attendance',
             severity: 'info',
-            title: (stu ? stu.firstName : 'Your child') + ' checked in',
-            body: (clsName ? clsName + ' · ' : '') + App.Utils.formatTime(rec.checkIn) + (rec.checkOut ? ' — out ' + App.Utils.formatTime(rec.checkOut) : ''),
+            title: App.Utils.esc(stu ? stu.firstName : 'Your child') + ' checked in',
+            body: (clsName ? App.Utils.esc(clsName) + ' · ' : '') + App.Utils.formatTime(rec.checkIn) + (rec.checkOut ? ' — out ' + App.Utils.formatTime(rec.checkOut) : ''),
             action: 'attendance'
           });
         }
@@ -317,7 +317,7 @@
         + '<div class="w-8 h-8 rounded-lg ' + colors.icon + ' flex items-center justify-center shrink-0 mt-0.5">' + icon + '</div>'
         + '<div class="flex-1 min-w-0">'
         +   '<div class="flex items-center gap-1.5">'
-        +     '<span class="text-sm font-medium text-slate-800 leading-snug">' + n.title + '</span>'
+        +     '<span class="text-sm font-medium text-slate-800 leading-snug">' + App.Utils.esc(n.title) + '</span>'
         +     (!isRead ? '<span class="w-1.5 h-1.5 rounded-full ' + colors.dot + ' shrink-0"></span>' : '')
         +   '</div>'
         +   '<div class="text-xs text-slate-500 mt-0.5 truncate">' + n.body + '</div>'

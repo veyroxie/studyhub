@@ -34,16 +34,22 @@
   function _studentRow(s, rec) {
     var checkedIn  = rec && rec.checkIn;
     var checkedOut = rec && rec.checkOut;
-    var rowBg      = checkedOut ? '#f0fdf4' : checkedIn ? '#fefce8' : '#fff';
-    var avatarBg   = checkedOut ? '#dcfce7' : checkedIn ? '#fef9c3' : '#f1f5f9';
-    var avatarCol  = checkedOut ? '#15803d' : checkedIn ? '#a16207' : '#64748b';
-    var timeStr    = checkedOut
+    var isAbsent   = rec && rec.status === 'Absent';
+    var rowBg      = isAbsent ? '#fef2f2' : checkedOut ? '#f0fdf4' : checkedIn ? '#fefce8' : '#fff';
+    var avatarBg   = isAbsent ? '#fee2e2' : checkedOut ? '#dcfce7' : checkedIn ? '#fef9c3' : '#f1f5f9';
+    var avatarCol  = isAbsent ? '#dc2626' : checkedOut ? '#15803d' : checkedIn ? '#a16207' : '#64748b';
+    var timeStr    = isAbsent ? 'Absent'
+      : checkedOut
       ? 'In: ' + App.Utils.formatTime(rec.checkIn) + '  ·  Out: ' + App.Utils.formatTime(rec.checkOut)
       : checkedIn ? 'In: ' + App.Utils.formatTime(rec.checkIn) + '  · still in'
       : 'Not checked in';
 
     var actionBtn;
-    if (!checkedIn) {
+    if (isAbsent) {
+      actionBtn = '<div style="display:flex;align-items:center;justify-content:center;padding:0.6rem 1rem;'
+        + 'background:#fee2e2;border-radius:12px;min-height:52px">'
+        + '<span style="font-size:0.95rem;font-weight:700;color:#dc2626">Absent</span></div>';
+    } else if (!checkedIn) {
       actionBtn = '<button onclick="App.Attendance._checkInStudent(\'' + s.id + '\')" style="'
         + 'min-height:52px;width:100%;padding:0.6rem 1.1rem;background:#22c55e;color:#fff;border:none;'
         + 'border-radius:12px;font-size:0.95rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
@@ -296,7 +302,7 @@
       +   '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">'
       +     '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px;flex:1;min-width:140px">'
       +     '<select onchange="App.Attendance._setClass(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px;flex:2;min-width:180px;background:#fff">'
-      +     displayClasses.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === _attClassId ? 'selected' : '') + '>' + c.name + ' — ' + App.Utils.formatTime(c.time) + '</option>'; }).join('')
+      +     displayClasses.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === _attClassId ? 'selected' : '') + '>' + App.Utils.esc(c.name) + ' — ' + App.Utils.formatTime(c.time) + '</option>'; }).join('')
       +     '</select>'
       +     (classes.length !== scheduledClasses.length || _showAllClasses
             ? '<button onclick="App.Attendance._toggleAllClasses()" style="font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;white-space:nowrap;min-height:48px">'
@@ -764,7 +770,7 @@
     App.Store.set({ attendance: newAtt });
     const stu = state.students.find(function(s) { return s.id === studentId; });
     const stuName = stu ? stu.firstName + ' ' + stu.lastName : studentId;
-    App.Utils.showToast('📱 Parent notified: ' + stuName + ' checked out at ' + App.Utils.formatTime(now), 'success');
+    App.Utils.showToast('📱 Parent notified: ' + App.Utils.esc(stuName) + ' checked out at ' + App.Utils.formatTime(now), 'success');
     try {
       const ch = new BroadcastChannel('studyhub_notifs');
       ch.postMessage({ type: 'CHECK_OUT', student: stuName, time: now, parent: stu ? stu.contact : '' });
@@ -812,7 +818,7 @@
 
     return '<div style="background:' + bgColor + ';border-radius:14px;border:2px solid ' + borderColor + ';padding:1rem 1.25rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">'
       + '<div style="display:flex;align-items:center;gap:0.85rem">'
-      +   '<div style="' + AVATAR_STYLE + ';background:rgba(139,92,246,0.12);color:#7c3aed;border:1px solid rgba(139,92,246,0.2)">' + teacherName.charAt(0) + '</div>'
+      +   '<div style="' + AVATAR_STYLE + ';background:rgba(139,92,246,0.12);color:#7c3aed;border:1px solid rgba(139,92,246,0.2)">' + App.Utils.esc(teacherName.charAt(0)) + '</div>'
       +   '<div>'
       +     '<div style="' + NAME_STYLE + '">' + App.Utils.esc(teacherName) + '</div>'
       +     '<div style="font-size:0.82rem;color:' + statusColor + ';margin-top:2px">' + statusText + '</div>'
@@ -898,7 +904,7 @@
       +   '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">'
       +     '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px">'
       +     '<select onchange="App.Attendance._setClass(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px;background:#fff">'
-      +     myClasses.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === selectedClass.id ? 'selected' : '') + '>' + c.name + ' — ' + c.day + ' ' + App.Utils.formatTime(c.time) + '</option>'; }).join('')
+      +     myClasses.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === selectedClass.id ? 'selected' : '') + '>' + App.Utils.esc(c.name) + ' — ' + c.day + ' ' + App.Utils.formatTime(c.time) + '</option>'; }).join('')
       +     '</select>'
       +     '<button onclick="App.Attendance._checkAllIn()" style="padding:0.5rem 0.9rem;font-size:0.82rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:9px;cursor:pointer;min-height:48px;white-space:nowrap;transition:opacity 0.15s" onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check All In</button>'
       +   '</div>'
