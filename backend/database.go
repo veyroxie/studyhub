@@ -2,7 +2,9 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -73,6 +75,19 @@ func createSchema(db *sql.DB) error {
 		emergency2_phone TEXT,
 		medical_info     TEXT DEFAULT '',
 		allergies        TEXT DEFAULT ''
+	);
+
+	CREATE TABLE IF NOT EXISTS families (
+		id          TEXT PRIMARY KEY,
+		tenant_id   INTEGER NOT NULL DEFAULT 1,
+		name        TEXT NOT NULL,
+		contact     TEXT NOT NULL,
+		phone       TEXT DEFAULT '',
+		parent_name TEXT DEFAULT '',
+		address     TEXT DEFAULT '',
+		notes       TEXT DEFAULT '',
+		created_at  TIMESTAMPTZ DEFAULT NOW(),
+		deleted_at  TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS classes (
@@ -348,12 +363,69 @@ func runMigrations(db *sql.DB) {
 		`ALTER TABLE holidays ADD COLUMN IF NOT EXISTS deleted_at TEXT`,
 		`CREATE INDEX IF NOT EXISTS idx_replacement_credits_student ON replacement_credits(student_id)`,
 
+		// Teacher registration columns
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS specialization TEXT DEFAULT ''`,
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS nric TEXT DEFAULT ''`,
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS display_name TEXT DEFAULT ''`,
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS employment_type TEXT DEFAULT 'Full-time'`,
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS experience TEXT DEFAULT ''`,
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS qualifications TEXT DEFAULT ''`,
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT ''`,
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS schedule TEXT DEFAULT ''`,
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS expected_salary TEXT DEFAULT ''`,
+
 		// Compound indexes for multi-tenant queries
 		`CREATE INDEX IF NOT EXISTS idx_students_tenant_contact ON students(tenant_id, contact)`,
 		`CREATE INDEX IF NOT EXISTS idx_invoices_tenant_status ON invoices(tenant_id, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_classes_tenant_day ON classes(tenant_id, day)`,
+
+		// Families feature
+		`ALTER TABLE students ADD COLUMN IF NOT EXISTS family_id TEXT DEFAULT ''`,
+		`CREATE INDEX IF NOT EXISTS idx_students_family ON students(family_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_families_contact ON families(contact)`,
+		`CREATE INDEX IF NOT EXISTS idx_families_tenant ON families(tenant_id)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (index/row already exists = OK)
 	}
+
+	migrateStudentsToFamilies(db)
+}
+
+func migrateStudentsToFamilies(db *sql.DB) {
+	var count int
+	db.QueryRow(`SELECT COUNT(*) FROM students WHERE (family_id = '' OR family_id IS NULL) AND contact != '' AND deleted_at IS NULL`).Scan(&count)
+	if count == 0 {
+		return
+	}
+	log.Printf("Migrating %d students into families...", count)
+
+	rows, err := db.Query(`SELECT DISTINCT contact, parent_name, phone FROM students WHERE contact != '' AND deleted_at IS NULL ORDER BY contact`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var contact, parentName, phone string
+		rows.Scan(&contact, &parentName, &phone)
+
+		var existingID string
+		db.QueryRow(`SELECT id FROM families WHERE contact = $1`, contact).Scan(&existingID)
+
+		famID := existingID
+		if famID == "" {
+			famID = "FAM_" + time.Now().Format("20060102150405") + fmt.Sprintf("%04d", time.Now().Nanosecond()/1000000)
+			familyName := parentName + " Family"
+			if parentName == "" {
+				familyName = contact
+			}
+			db.Exec(`INSERT INTO families(id, tenant_id, name, contact, phone, parent_name) VALUES($1, 1, $2, $3, $4, $5)`,
+				famID, familyName, contact, phone, parentName)
+			time.Sleep(time.Millisecond) // ensure unique IDs
+		}
+
+		db.Exec(`UPDATE students SET family_id = $1 WHERE contact = $2 AND (family_id = '' OR family_id IS NULL) AND deleted_at IS NULL`, famID, contact)
+	}
+	log.Println("Family migration complete.")
 }

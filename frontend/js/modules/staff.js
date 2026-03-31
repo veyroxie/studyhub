@@ -5,7 +5,8 @@
     const { staff, classes, payroll } = App.Store.get();
     const isAdmin = App.currentRole === 'admin';
 
-    const pendingTeachers = isAdmin ? JSON.parse(localStorage.getItem('sh_teacher_regs') || '[]').filter(function(r) { return r.status === 'pending'; }) : [];
+    const { registrations } = App.Store.get();
+    const pendingTeachers = isAdmin ? (registrations || []).filter(function(r) { return r.status === 'pending' && r.type === 'teacher'; }) : [];
 
     container.innerHTML = ''
       + '<div class="flex items-center justify-between mb-6">'
@@ -595,8 +596,8 @@
   }
 
   function _pendingTeacherModal() {
-    var regs = JSON.parse(localStorage.getItem('sh_teacher_regs') || '[]');
-    var pending = regs.filter(function(r) { return r.status === 'pending'; });
+    var { registrations } = App.Store.get();
+    var pending = (registrations || []).filter(function(r) { return r.status === 'pending' && r.type === 'teacher'; });
     var html = '<div style="max-height:70vh;overflow-y:auto">'
       + '<h2 class="text-xl font-bold text-slate-800 mb-4">Teacher Applications (' + pending.length + ')</h2>'
       + (pending.length === 0
@@ -605,18 +606,20 @@
             return '<div class="border border-slate-100 rounded-xl p-4 mb-3">'
               + '<div class="flex items-start justify-between gap-3 mb-2">'
               +   '<div>'
-              +     '<div class="font-semibold text-slate-800">' + App.Utils.esc(reg.fullName) + '</div>'
-              +     '<div class="text-xs text-slate-500">' + App.Utils.esc(reg.email) + ' · ' + App.Utils.esc(reg.phone) + '</div>'
+              +     '<div class="font-semibold text-slate-800">' + App.Utils.esc(reg.displayName || reg.parentName) + '</div>'
+              +     '<div class="text-xs text-slate-500">' + App.Utils.esc(reg.email) + (reg.phone ? ' · ' + App.Utils.esc(reg.phone) : '') + '</div>'
               +   '</div>'
-              +   '<span class="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">' + App.Utils.esc(reg.employmentType || 'full-time') + '</span>'
+              +   '<span class="text-xs text-slate-400 shrink-0">' + App.Utils.formatDate(reg.submittedOn) + '</span>'
               + '</div>'
               + '<div class="grid grid-cols-2 gap-2 text-xs text-slate-600 mb-3">'
-              +   '<div><span class="text-slate-400">Specialty: </span>' + App.Utils.esc(reg.specialty) + '</div>'
-              +   '<div><span class="text-slate-400">Experience: </span>' + App.Utils.esc(reg.experience || '—') + ' yrs</div>'
-              +   '<div><span class="text-slate-400">Qualifications: </span>' + App.Utils.esc(reg.qualifications || '—') + '</div>'
-              +   '<div><span class="text-slate-400">Expected: </span>' + (reg.expectedSalary ? 'RM ' + reg.expectedSalary + '/mo' : '—') + '</div>'
+              +   (reg.specialization ? '<div><span class="text-slate-400">Specialization:</span> ' + App.Utils.esc(reg.specialization) + '</div>' : '')
+              +   (reg.employmentType ? '<div><span class="text-slate-400">Employment:</span> ' + App.Utils.esc(reg.employmentType) + '</div>' : '')
+              +   (reg.experience ? '<div><span class="text-slate-400">Experience:</span> ' + App.Utils.esc(reg.experience) + '</div>' : '')
+              +   (reg.qualifications ? '<div><span class="text-slate-400">Qualifications:</span> ' + App.Utils.esc(reg.qualifications) + '</div>' : '')
+              +   (reg.expectedSalary ? '<div><span class="text-slate-400">Expected Salary:</span> ' + App.Utils.esc(reg.expectedSalary) + '</div>' : '')
+              +   (reg.bio ? '<div class="col-span-2"><span class="text-slate-400">Bio:</span> ' + App.Utils.esc(reg.bio) + '</div>' : '')
+              +   (reg.emergencyName ? '<div class="col-span-2"><span class="text-slate-400">Emergency:</span> ' + App.Utils.esc(reg.emergencyName) + ' · ' + App.Utils.esc(reg.emergencyPhone) + '</div>' : '')
               + '</div>'
-              + (reg.bio ? '<div class="text-xs text-slate-500 mb-3 italic">"' + App.Utils.esc(reg.bio.slice(0,150)) + (reg.bio.length > 150 ? '…' : '') + '"</div>' : '')
               + '<div class="flex gap-2">'
               +   '<button onclick="App.Staff._approveTeacher(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium">Approve &amp; Add to Staff</button>'
               +   '<button onclick="App.Staff._rejectTeacher(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100 font-medium border border-red-200">Reject</button>'
@@ -628,46 +631,33 @@
     App.Utils.showModal(html);
   }
 
-  function _approveTeacher(regId) {
-    var regs = JSON.parse(localStorage.getItem('sh_teacher_regs') || '[]');
-    var reg = regs.find(function(r) { return r.id === regId; });
-    if (!reg) return;
-
-    // Add to staff store
-    var { staff } = App.Store.get();
-    var newStaff = {
-      id: 'st' + Date.now(),
-      name: (reg.displayName || reg.fullName).split(' ')[0],
-      fullName: reg.fullName,
-      role: 'Teacher — ' + reg.specialty,
-      email: reg.email,
-      phone: reg.phone,
-      salary: parseInt(reg.expectedSalary) || 3000,
-      joinDate: new Date().toISOString().slice(0,10),
-      status: 'Active',
-      employmentType: reg.employmentType === 'part-time' ? 'parttime' : 'fulltime',
-      notes: reg.bio || ''
-    };
-    App.Store.set({ staff: staff.concat([newStaff]) });
-
-    // Mark approved in localStorage
-    reg.status = 'approved';
-    localStorage.setItem('sh_teacher_regs', JSON.stringify(regs));
-
-    App.Utils.hideModal(true);
-    App.Utils.showToast(App.Utils.esc(reg.fullName) + ' added to staff', 'success');
-    App.Router.navigate('staff');
+  async function _approveTeacher(regId) {
+    try {
+      var result = await App.Api.post('/api/registrations/' + regId + '/approve', {});
+      if (result) {
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Teacher added to staff! Temp password: ' + result.tempPassword, 'success', 15000);
+        await App.Api.loadSnapshot();
+        App.Notifs.refresh();
+        App.Router.refresh();
+      }
+    } catch(err) {
+      App.Utils.showToast(err.message || 'Approval failed', 'error');
+    }
   }
 
-  function _rejectTeacher(regId) {
+  async function _rejectTeacher(regId) {
     if (!confirm('Reject this application?')) return;
-    var regs = JSON.parse(localStorage.getItem('sh_teacher_regs') || '[]');
-    var reg = regs.find(function(r) { return r.id === regId; });
-    if (reg) { reg.status = 'rejected'; }
-    localStorage.setItem('sh_teacher_regs', JSON.stringify(regs));
-    App.Utils.hideModal(true);
-    App.Utils.showToast('Application rejected', 'info');
-    App.Router.navigate('staff');
+    try {
+      await App.Api.del('/api/registrations/' + regId);
+      await App.Api.loadSnapshot();
+      App.Notifs.refresh();
+      App.Utils.hideModal(true);
+      App.Utils.showToast('Application rejected', 'info');
+      App.Router.refresh();
+    } catch(err) {
+      App.Utils.showToast(err.message || 'Rejection failed', 'error');
+    }
   }
 
   App.Staff = { render: render, _viewModal: _viewModal, _switchTab: _switchTab, _addModal: _addModal, _editModal: _editModal, _togglePayFields: _togglePayFields, _genPayrollModal: _genPayrollModal, _previewPayroll: _previewPayroll, _saveNotes: _saveNotes, _addReviewModal: _addReviewModal, _pendingTeacherModal: _pendingTeacherModal, _approveTeacher: _approveTeacher, _rejectTeacher: _rejectTeacher };

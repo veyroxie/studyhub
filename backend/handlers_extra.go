@@ -1478,13 +1478,19 @@ func handleRegisterTeacher(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var reg struct {
 			FullName       string `json:"fullName"`
+			DisplayName    string `json:"displayName"`
 			Email          string `json:"email"`
 			Phone          string `json:"phone"`
-			Specialization string `json:"specialization"`
-			NRIC           string `json:"nric"`
+			Specialty      string `json:"specialty"`
+			EmploymentType string `json:"employmentType"`
+			Experience     string `json:"experience"`
+			Qualifications string `json:"qualifications"`
+			Bio            string `json:"bio"`
+			Schedule       string `json:"schedule"`
+			ExpectedSalary string `json:"expectedSalary"`
 			EmergencyName  string `json:"emergencyName"`
 			EmergencyPhone string `json:"emergencyPhone"`
-			Notes          string `json:"notes"`
+			NRIC           string `json:"nric"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&reg); err != nil {
 			respondError(w, "bad request", 400)
@@ -1498,18 +1504,123 @@ func handleRegisterTeacher(db *DB) http.HandlerFunc {
 			respondError(w, "invalid email address", 400)
 			return
 		}
+		if reg.DisplayName == "" {
+			reg.DisplayName = reg.FullName
+		}
+		if reg.EmploymentType == "" {
+			reg.EmploymentType = "Full-time"
+		}
 
 		id := generateID("REG")
-		// Store in registrations table with type='teacher'
-		_, err := db.Exec(`INSERT INTO registrations(id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status,type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		_, err := db.Exec(`INSERT INTO registrations(id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status,type,specialization,nric,display_name,employment_type,experience,qualifications,bio,schedule,expected_salary) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			id, reg.FullName, reg.Email, reg.Phone, reg.EmergencyName, reg.EmergencyPhone,
-			reg.FullName, "", "", "", "", "", "", reg.Specialization, reg.NRIC, 0, "", "",
-			"", reg.Notes, today(), "pending", "teacher")
+			reg.FullName, "", "", "", "", "", "", "", "", 0, "", "",
+			"", reg.Bio, today(), "pending", "teacher",
+			reg.Specialty, reg.NRIC, reg.DisplayName, reg.EmploymentType, reg.Experience, reg.Qualifications, reg.Bio, reg.Schedule, reg.ExpectedSalary)
 		if err != nil {
 			respondError(w, "could not save registration", 500)
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
 		respond(w, map[string]string{"id": id, "status": "pending", "type": "teacher"})
+	}
+}
+
+// ── Families ─────────────────────────────────────────────────────────────────
+
+func listFamilies(db *DB, c *Claims) []Family {
+	tid := tenantID(c)
+	var rows *sql.Rows
+	var err error
+	if c != nil && c.Role == "parent" {
+		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,'') FROM families WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY name`, c.Email, tid, tid)
+	} else {
+		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,'') FROM families WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY name`, tid, tid)
+	}
+	if err != nil {
+		return []Family{}
+	}
+	defer rows.Close()
+	out := []Family{}
+	for rows.Next() {
+		var f Family
+		rows.Scan(&f.ID, &f.Name, &f.Contact, &f.Phone, &f.ParentName, &f.Address, &f.Notes)
+		out = append(out, f)
+	}
+	return out
+}
+
+func handleFamilies(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		switch r.Method {
+		case http.MethodGet:
+			respond(w, listFamilies(db, c))
+		case http.MethodPost:
+			if c.Role != "admin" {
+				respondError(w, "admin only", 403)
+				return
+			}
+			var f Family
+			if err := json.NewDecoder(r.Body).Decode(&f); err != nil {
+				respondError(w, "bad body", 400)
+				return
+			}
+			if msg := validationError("name", f.Name, "contact", f.Contact); msg != "" {
+				respondError(w, msg, 400)
+				return
+			}
+			if f.ID == "" {
+				f.ID = generateID("FAM")
+			}
+			tid := tenantID(c)
+			_, err := db.Exec(`INSERT INTO families(id,tenant_id,name,contact,phone,parent_name,address,notes) VALUES(?,?,?,?,?,?,?,?)`,
+				f.ID, tid, f.Name, f.Contact, f.Phone, f.ParentName, f.Address, f.Notes)
+			if err != nil {
+				respondError(w, "server error", 500)
+				return
+			}
+			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
+				c.Email, "family_created", "family", f.ID, f.Name)
+			w.WriteHeader(http.StatusCreated)
+			respond(w, f)
+		}
+	}
+}
+
+func handleFamilyByID(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		if c == nil || c.Role != "admin" {
+			respondError(w, "admin only", 403)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		tid := tenantID(c)
+		switch r.Method {
+		case http.MethodPut:
+			var f Family
+			if err := json.NewDecoder(r.Body).Decode(&f); err != nil {
+				respondError(w, "bad body", 400)
+				return
+			}
+			f.ID = id
+			if _, err := db.Exec(`UPDATE families SET name=?,contact=?,phone=?,parent_name=?,address=?,notes=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+				f.Name, f.Contact, f.Phone, f.ParentName, f.Address, f.Notes, id, tid, tid); err != nil {
+				respondError(w, "could not update family", 500)
+				return
+			}
+			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
+				c.Email, "family_updated", "family", id, f.Name)
+			respond(w, f)
+		case http.MethodDelete:
+			if _, err := db.Exec(`UPDATE families SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+				respondError(w, "could not delete family", 500)
+				return
+			}
+			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
+				c.Email, "family_deleted", "family", id, "soft deleted")
+			w.WriteHeader(http.StatusNoContent)
+		}
 	}
 }

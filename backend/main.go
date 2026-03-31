@@ -208,6 +208,13 @@ func main() {
 			r.Get("/balance", handleReplacementBalance(db))
 		})
 
+		r.Route("/api/families", func(r chi.Router) {
+			r.Get("/", handleFamilies(db))
+			r.Post("/", handleFamilies(db))
+			r.Put("/{id}", handleFamilyByID(db))
+			r.Delete("/{id}", handleFamilyByID(db))
+		})
+
 		r.Route("/api/holidays", func(r chi.Router) {
 			r.Get("/", handleListHolidays(db))
 			r.Post("/", handleCreateHoliday(db))

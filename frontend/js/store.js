@@ -37,7 +37,8 @@
   const ARRAY_DEFAULTS = {
     feedback: [], subjects: [], workshops: [], selfStudySessions: [],
     performanceReviews: [], cancelledClasses: [], messages: [], holidays: [],
-    replacementCredits: []
+    replacementCredits: [],
+    families: []
   };
 
   function loadState() {

@@ -56,6 +56,17 @@ type Student struct {
 	Emergency2Phone string   `json:"emergency2Phone,omitempty"`
 	MedicalInfo     string   `json:"medicalInfo,omitempty"`
 	Allergies       string   `json:"allergies,omitempty"`
+	FamilyID        string   `json:"familyId,omitempty"`
+}
+
+type Family struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Contact    string `json:"contact"`
+	Phone      string `json:"phone"`
+	ParentName string `json:"parentName"`
+	Address    string `json:"address,omitempty"`
+	Notes      string `json:"notes,omitempty"`
 }
 
 type Class struct {
@@ -168,6 +179,15 @@ type Registration struct {
 	SubmittedOn       string  `json:"submittedOn"`
 	Status            string  `json:"status"` // pending | approved | rejected
 	Type              string  `json:"type"`   // "student" or "teacher"
+	Specialization    string  `json:"specialization"`
+	NRIC              string  `json:"nric"`
+	DisplayName       string  `json:"displayName"`
+	EmploymentType    string  `json:"employmentType"`
+	Experience        string  `json:"experience"`
+	Qualifications    string  `json:"qualifications"`
+	Bio               string  `json:"bio"`
+	Schedule          string  `json:"schedule"`
+	ExpectedSalary    string  `json:"expectedSalary"`
 }
 
 type StudentNote struct {
@@ -279,4 +299,5 @@ type Snapshot struct {
 	CancelledClasses   []CancelledClass    `json:"cancelledClasses"`
 	Holidays           []Holiday           `json:"holidays"`
 	ReplacementCredits []ReplacementCredit `json:"replacementCredits"`
+	Families           []Family            `json:"families"`
 }

@@ -6,6 +6,7 @@
   let _selected = {};
   let _studentPage = 0;
   var _PAGE_SIZE = 15;
+  let _studentsTab = 'students'; // 'students' or 'families'
 
   function _paginationControls(page, total, moduleFn) {
     var totalPages = Math.ceil(total / _PAGE_SIZE);
@@ -52,7 +53,7 @@
     displayStudents.forEach(function(s) { if (counts[s.status] !== undefined) counts[s.status]++; });
 
     const { registrations } = App.Store.get();
-    const pendingRegs = (registrations || []).filter(function(r) { return r.status === 'pending'; });
+    const pendingRegs = (registrations || []).filter(function(r) { return r.status === 'pending' && r.type !== 'teacher'; });
 
     var paged = filtered.slice(_studentPage * _PAGE_SIZE, (_studentPage + 1) * _PAGE_SIZE);
 
@@ -70,7 +71,17 @@
       +   '</div>'
       + '</div>'
 
-      + '<div class="grid grid-cols-5 gap-4 mb-6">'
+      + ((isAdmin || isTeacher) ? '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px;margin-bottom:1rem;width:fit-content">'
+      + '<button onclick="App.Students._setTab(\'students\')" style="padding:0.35rem 1rem;font-size:0.78rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_studentsTab==='students'?'var(--gold)':'transparent') + ';color:' + (_studentsTab==='students'?'#0a0a0a':'#94a3b8') + '">Students</button>'
+      + '<button onclick="App.Students._setTab(\'families\')" style="padding:0.35rem 1rem;font-size:0.78rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_studentsTab==='families'?'var(--gold)':'transparent') + ';color:' + (_studentsTab==='families'?'#0a0a0a':'#94a3b8') + '">Families</button>'
+      + '</div>' : '');
+
+    if (_studentsTab === 'families' && (isAdmin || isTeacher)) {
+      container.innerHTML += _familiesView();
+      return;
+    }
+
+    container.innerHTML += '<div class="grid grid-cols-5 gap-4 mb-6">'
       + ['Total','Active','Inactive','New','Waitlisted'].map(function(k) {
           const colors = { Total:'text-blue-600', Active:'text-emerald-600', Inactive:'text-red-500', New:'text-blue-500', Waitlisted:'text-amber-500' };
           return '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-center">'
@@ -261,6 +272,10 @@
       +   _infoRow('Email', App.Utils.esc(s.contact))
       +   _infoRow('Phone', App.Utils.esc(s.phone))
       +   _infoRow('Branch', App.Utils.esc(s.branch))
+      +   (function() {
+            var fam = (App.Store.get().families || []).find(function(x) { return x.id === s.familyId; });
+            return fam ? _infoRow('Family', '<a href="#" onclick="event.preventDefault();App.Utils.hideModal(true);App.Students._familyModal(\'' + fam.id + '\')" style="color:var(--gold);font-weight:600;text-decoration:none">' + App.Utils.esc(fam.name) + '</a>') : '';
+          })()
       +   _infoRow('Registered On', App.Utils.formatDate(s.registeredOn))
       +   (s.siblings && s.siblings.length ? _infoRow('Siblings', (function() {
             var allStudents = App.Store.get().students;
@@ -805,6 +820,189 @@
     }
   }
 
+  function _setStudentsTab(tab) {
+    _studentsTab = tab;
+    App.Router.refresh();
+  }
+
+  function _familiesView() {
+    var { families, students, invoices } = App.Store.get();
+    var isAdmin = App.currentRole === 'admin';
+
+    var familyCards = (families || []).map(function(f) {
+        var children = students.filter(function(s) { return s.familyId === f.id && s.status !== 'Inactive'; });
+        var childNames = children.map(function(s) { return App.Utils.esc(s.firstName); }).join(', ');
+        var childIds = children.map(function(s) { return s.id; });
+        var outstanding = invoices.filter(function(i) {
+            return childIds.indexOf(i.studentId) > -1 && (i.status === 'Unpaid' || i.status === 'Overdue');
+        }).reduce(function(a, i) { return a + i.amount; }, 0);
+
+        return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem;cursor:pointer;transition:box-shadow 0.15s" onclick="App.Students._familyModal(\'' + f.id + '\')" onmouseover="this.style.boxShadow=\'0 4px 12px rgba(0,0,0,0.08)\'" onmouseout="this.style.boxShadow=\'none\'">'
+            + '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">'
+            +   '<div style="width:2.5rem;height:2.5rem;border-radius:10px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + App.Utils.esc(f.name).charAt(0) + '</div>'
+            +   '<div style="flex:1;min-width:0">'
+            +     '<div style="font-weight:700;font-size:0.95rem;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(f.name) + '</div>'
+            +     '<div style="font-size:0.75rem;color:#94a3b8">' + App.Utils.esc(f.contact) + '</div>'
+            +   '</div>'
+            + '</div>'
+            + '<div style="display:flex;gap:1rem;font-size:0.78rem;color:#64748b">'
+            +   '<div><span style="font-weight:700;color:#111">' + children.length + '</span> child' + (children.length !== 1 ? 'ren' : '') + '</div>'
+            +   (outstanding > 0 ? '<div><span style="font-weight:700;color:#dc2626">' + App.Utils.formatCurrency(outstanding) + '</span> due</div>' : '<div style="color:#15803d">Paid up</div>')
+            + '</div>'
+            + (childNames ? '<div style="font-size:0.72rem;color:#94a3b8;margin-top:0.5rem">' + childNames + '</div>' : '')
+            + '</div>';
+    }).join('');
+
+    return (isAdmin ? '<div style="display:flex;justify-content:flex-end;margin-bottom:1rem"><button onclick="App.Students._addFamilyModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Add Family</button></div>' : '')
+        + (familyCards.length === 0
+            ? '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07)">' + App.Utils.emptyState('No families yet', 'Families will be created automatically when students are added.') + '</div>'
+            : '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem">' + familyCards + '</div>');
+  }
+
+  function _familyModal(familyId) {
+    var { families, students, invoices, classes } = App.Store.get();
+    var isAdmin = App.currentRole === 'admin';
+    var f = (families || []).find(function(x) { return x.id === familyId; });
+    if (!f) return;
+
+    var children = students.filter(function(s) { return s.familyId === familyId; });
+    var childIds = children.map(function(s) { return s.id; });
+    var familyInvoices = invoices.filter(function(i) { return childIds.indexOf(i.studentId) > -1; });
+    var outstanding = familyInvoices.filter(function(i) { return i.status === 'Unpaid' || i.status === 'Overdue'; }).reduce(function(a, i) { return a + i.amount; }, 0);
+    var totalPaid = familyInvoices.filter(function(i) { return i.status === 'Paid'; }).reduce(function(a, i) { return a + i.amount; }, 0);
+
+    App.Utils.showModal(
+        '<div class="p-6">'
+        + '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem">'
+        +   '<div style="width:3rem;height:3rem;border-radius:12px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:1.25rem;display:flex;align-items:center;justify-content:center">' + App.Utils.esc(f.name).charAt(0) + '</div>'
+        +   '<div>'
+        +     '<h2 style="font-size:1.15rem;font-weight:700;color:#111;margin:0">' + App.Utils.esc(f.name) + '</h2>'
+        +     '<div style="font-size:0.78rem;color:#94a3b8">' + App.Utils.esc(f.contact) + (f.phone ? ' · ' + App.Utils.esc(f.phone) : '') + '</div>'
+        +   '</div>'
+        +   (isAdmin ? '<button onclick="App.Students._editFamilyModal(\'' + familyId + '\')" style="margin-left:auto;font-size:0.75rem;padding:0.35rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Edit</button>' : '')
+        + '</div>'
+
+        // Billing summary
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1.25rem">'
+        +   '<div style="padding:0.75rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;text-align:center">'
+        +     '<div style="font-size:0.65rem;color:#15803d;text-transform:uppercase;font-weight:600;letter-spacing:0.04em">Total Paid</div>'
+        +     '<div style="font-family:var(--serif);font-size:1.1rem;font-weight:700;color:#15803d">' + App.Utils.formatCurrency(totalPaid) + '</div>'
+        +   '</div>'
+        +   '<div style="padding:0.75rem;background:' + (outstanding > 0 ? '#fef2f2' : '#f8fafc') + ';border:1px solid ' + (outstanding > 0 ? '#fecaca' : '#e2e8f0') + ';border-radius:10px;text-align:center">'
+        +     '<div style="font-size:0.65rem;color:' + (outstanding > 0 ? '#dc2626' : '#64748b') + ';text-transform:uppercase;font-weight:600;letter-spacing:0.04em">Outstanding</div>'
+        +     '<div style="font-family:var(--serif);font-size:1.1rem;font-weight:700;color:' + (outstanding > 0 ? '#dc2626' : '#64748b') + '">' + App.Utils.formatCurrency(outstanding) + '</div>'
+        +   '</div>'
+        + '</div>'
+
+        // Children
+        + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.5rem">Children (' + children.length + ')</div>'
+        + (children.length === 0
+            ? '<div style="padding:1.5rem;text-align:center;color:#94a3b8;font-size:0.83rem">No students in this family</div>'
+            : children.map(function(s) {
+                var enrolledNames = s.enrolledClasses.map(function(cid) { var c = classes.find(function(x) { return x.id === cid; }); return c ? App.Utils.esc(c.name) : cid; }).join(', ');
+                return '<div style="display:flex;align-items:center;gap:0.65rem;padding:0.6rem 0;border-bottom:1px solid #f4f4f2;cursor:pointer" onclick="App.Utils.hideModal(true);App.Students._viewModal(\'' + s.id + '\')">'
+                    + '<div style="width:2rem;height:2rem;border-radius:50%;background:#eff6ff;color:#1d4ed8;font-weight:700;font-size:0.75rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + App.Utils.esc(s.firstName).charAt(0) + App.Utils.esc(s.lastName).charAt(0) + '</div>'
+                    + '<div style="flex:1;min-width:0">'
+                    +   '<div style="font-weight:600;font-size:0.85rem;color:#111">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName) + '</div>'
+                    +   '<div style="font-size:0.72rem;color:#94a3b8">' + (enrolledNames || 'No classes') + '</div>'
+                    + '</div>'
+                    + App.Utils.statusBadge(s.status)
+                    + '</div>';
+            }).join(''))
+
+        + (f.address ? '<div style="margin-top:1rem;font-size:0.78rem;color:#64748b"><span style="font-weight:600">Address:</span> ' + App.Utils.esc(f.address) + '</div>' : '')
+        + (f.notes ? '<div style="margin-top:0.5rem;font-size:0.78rem;color:#64748b"><span style="font-weight:600">Notes:</span> ' + App.Utils.esc(f.notes) + '</div>' : '')
+
+        + '<div style="margin-top:1.25rem;display:flex;justify-content:flex-end;gap:0.5rem">'
+        + (isAdmin ? '<button onclick="App.Utils.hideModal(true);App.Students._addModal(\'' + familyId + '\')" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Child</button>' : '')
+        + '<button onclick="App.Utils.hideModal()" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Close</button>'
+        + '</div>'
+        + '</div>'
+    );
+  }
+
+  function _addFamilyModal() {
+    App.Utils.showModal(
+        '<div class="p-6">'
+        + '<h2 class="text-lg font-bold mb-4">Add Family</h2>'
+        + '<form id="add-family-form" class="space-y-3">'
+        + _field('Family Name', '<input name="name" class="form-input" placeholder="e.g. The Ahmad Family" required>')
+        + _field('Parent Email', '<input name="contact" type="email" class="form-input" placeholder="parent@email.com" required>')
+        + _field('Parent Name', '<input name="parentName" class="form-input" placeholder="Full name">')
+        + _field('Phone', '<input name="phone" class="form-input" placeholder="Phone number">')
+        + _field('Address', '<input name="address" class="form-input" placeholder="Home address">')
+        + _field('Notes', '<textarea name="notes" class="form-input" rows="2" placeholder="Any notes"></textarea>')
+        + '<div class="flex justify-end gap-2 pt-2">'
+        + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+        + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Family</button>'
+        + '</div>'
+        + '</form>'
+        + '</div>'
+    );
+    document.getElementById('add-family-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var fd = new FormData(e.target);
+        try {
+            await App.Api.post('/api/families', {
+                name: fd.get('name'),
+                contact: fd.get('contact'),
+                parentName: fd.get('parentName') || '',
+                phone: fd.get('phone') || '',
+                address: fd.get('address') || '',
+                notes: fd.get('notes') || ''
+            });
+            App.Utils.hideModal(true);
+            App.Utils.showToast('Family added', 'success');
+            await App.Api.refresh();
+        } catch(err) {
+            App.Utils.showToast(err.message || 'Failed to add family', 'error');
+        }
+    });
+  }
+
+  function _editFamilyModal(familyId) {
+    var { families } = App.Store.get();
+    var f = (families || []).find(function(x) { return x.id === familyId; });
+    if (!f) return;
+
+    App.Utils.showModal(
+        '<div class="p-6">'
+        + '<h2 class="text-lg font-bold mb-4">Edit Family</h2>'
+        + '<form id="edit-family-form" class="space-y-3">'
+        + _field('Family Name', '<input name="name" class="form-input" value="' + App.Utils.esc(f.name) + '" required>')
+        + _field('Parent Email', '<input name="contact" type="email" class="form-input" value="' + App.Utils.esc(f.contact) + '" required>')
+        + _field('Parent Name', '<input name="parentName" class="form-input" value="' + App.Utils.esc(f.parentName || '') + '">')
+        + _field('Phone', '<input name="phone" class="form-input" value="' + App.Utils.esc(f.phone || '') + '">')
+        + _field('Address', '<input name="address" class="form-input" value="' + App.Utils.esc(f.address || '') + '">')
+        + _field('Notes', '<textarea name="notes" class="form-input" rows="2">' + App.Utils.esc(f.notes || '') + '</textarea>')
+        + '<div class="flex justify-end gap-2 pt-2">'
+        + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+        + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save</button>'
+        + '</div>'
+        + '</form>'
+        + '</div>'
+    );
+    document.getElementById('edit-family-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var fd = new FormData(e.target);
+        try {
+            await App.Api.put('/api/families/' + familyId, {
+                name: fd.get('name'),
+                contact: fd.get('contact'),
+                parentName: fd.get('parentName') || '',
+                phone: fd.get('phone') || '',
+                address: fd.get('address') || '',
+                notes: fd.get('notes') || ''
+            });
+            App.Utils.hideModal(true);
+            App.Utils.showToast('Family updated', 'success');
+            await App.Api.refresh();
+        } catch(err) {
+            App.Utils.showToast(err.message || 'Failed to update family', 'error');
+        }
+    });
+  }
+
   App.Students = {
     render: render,
     _onSearch: _onSearch,
@@ -827,6 +1025,10 @@
     _saveQuickNote: _saveQuickNote,
     _addCreditModal: _addCreditModal,
     _useCreditModal: _useCreditModal,
-    _deleteCredit: _deleteCredit
+    _deleteCredit: _deleteCredit,
+    _setTab: _setStudentsTab,
+    _familyModal: _familyModal,
+    _addFamilyModal: _addFamilyModal,
+    _editFamilyModal: _editFamilyModal
   };
 })();

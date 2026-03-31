@@ -133,6 +133,7 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 			CancelledClasses:   listCancelledClasses(db, c),
 			Holidays:           listHolidays(db, c),
 			ReplacementCredits: listReplacementCredits(db, c),
+			Families:           listFamilies(db, c),
 		}
 		if c != nil && (c.Role == "admin" || c.Role == "superadmin") {
 			snap.Registrations = listRegistrations(db, c)
@@ -158,9 +159,9 @@ func listStudents(db *DB, c *Claims) []Student {
 	var err error
 	tid := tenantID(c)
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,'') FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, c.Email, tid, tid)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,'') FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, c.Email, tid, tid)
 	} else {
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,'') FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, tid, tid)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,'') FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, tid, tid)
 	}
 	if err != nil {
 		return []Student{}
@@ -171,7 +172,7 @@ func listStudents(db *DB, c *Claims) []Student {
 		var s Student
 		var ec, sib string
 		var e2name, e2phone sql.NullString
-		rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies)
+		rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID)
 		s.EnrolledClasses = parseArr(ec)
 		s.Siblings = parseArr(sib)
 		s.Emergency2Name = nullStr(e2name)
@@ -188,10 +189,10 @@ func listStudentsPaged(db *DB, c *Claims, p Pagination) ([]Student, int) {
 	var err error
 	if c != nil && c.Role == "parent" {
 		db.QueryRow(`SELECT COUNT(*) FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, c.Email, tid, tid).Scan(&total)
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,'') FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,'') FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
 	} else {
 		db.QueryRow(`SELECT COUNT(*) FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL`, tid, tid).Scan(&total)
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,'') FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,'') FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
 	}
 	if err != nil {
 		return []Student{}, total
@@ -202,7 +203,7 @@ func listStudentsPaged(db *DB, c *Claims, p Pagination) ([]Student, int) {
 		var s Student
 		var ec, sib string
 		var e2name, e2phone sql.NullString
-		rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies)
+		rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID)
 		s.EnrolledClasses = parseArr(ec)
 		s.Siblings = parseArr(sib)
 		s.Emergency2Name = nullStr(e2name)
@@ -248,8 +249,23 @@ func handleStudents(db *DB) http.HandlerFunc {
 				s.RegisteredOn = today()
 			}
 			tid := tenantID(c)
-			_, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,medical_info,allergies) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies)
+			// Auto-find or create family for this student
+			if s.FamilyID == "" && s.Contact != "" {
+				var famID string
+				db.QueryRow(`SELECT id FROM families WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, s.Contact, tid, tid).Scan(&famID)
+				if famID == "" {
+					famID = generateID("FAM")
+					familyName := s.ParentName + " Family"
+					if s.ParentName == "" {
+						familyName = s.Contact
+					}
+					db.Exec(`INSERT INTO families(id,tenant_id,name,contact,phone,parent_name) VALUES(?,?,?,?,?,?)`,
+						famID, tid, familyName, s.Contact, s.Phone, s.ParentName)
+				}
+				s.FamilyID = famID
+			}
+			_, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,medical_info,allergies,family_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID)
 			if err != nil {
 				respondError(w, "server error", 500)
 				return
@@ -276,8 +292,8 @@ func handleStudent(db *DB) http.HandlerFunc {
 			}
 			s.ID = id
 			tid := tenantID(c)
-			if _, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,siblings=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=? WHERE id=? AND (tenant_id=? OR ?=0)`,
-				s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, id, tid, tid); err != nil {
+			if _, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,siblings=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+				s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, id, tid, tid); err != nil {
 				respondError(w, "could not update student", 500)
 				return
 			}
@@ -1061,7 +1077,7 @@ func handleUserDelete(db *DB) http.HandlerFunc {
 
 func listRegistrations(db *DB, c *Claims) []Registration {
 	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status,COALESCE(type,'student') FROM registrations WHERE status='pending' AND (tenant_id=? OR ?=0) ORDER BY submitted_on DESC`, tid, tid)
+	rows, err := db.Query(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status,COALESCE(type,'student'),COALESCE(specialization,''),COALESCE(nric,''),COALESCE(display_name,''),COALESCE(employment_type,'Full-time'),COALESCE(experience,''),COALESCE(qualifications,''),COALESCE(bio,''),COALESCE(schedule,''),COALESCE(expected_salary,'') FROM registrations WHERE status='pending' AND (tenant_id=? OR ?=0) ORDER BY submitted_on DESC`, tid, tid)
 	if err != nil {
 		return []Registration{}
 	}
@@ -1073,7 +1089,8 @@ func listRegistrations(db *DB, c *Claims) []Registration {
 			&reg.StudentFirstName, &reg.StudentLastName, &reg.StudentDOB, &reg.StudentGender,
 			&reg.Gender, &reg.SchoolName, &reg.YearGrade, &reg.ClassTypeInterest, &reg.SubjectInterest,
 			&reg.SchoolFees, &reg.RegistrationDate, &reg.WorkshopInterest,
-			&reg.ClassInterest, &reg.Notes, &reg.SubmittedOn, &reg.Status, &reg.Type)
+			&reg.ClassInterest, &reg.Notes, &reg.SubmittedOn, &reg.Status, &reg.Type,
+			&reg.Specialization, &reg.NRIC, &reg.DisplayName, &reg.EmploymentType, &reg.Experience, &reg.Qualifications, &reg.Bio, &reg.Schedule, &reg.ExpectedSalary)
 		out = append(out, reg)
 	}
 	return out
@@ -1120,10 +1137,11 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 		c := claimsFrom(r)
 		id := chi.URLParam(r, "id")
 		var reg Registration
-		err := db.QueryRow(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes FROM registrations WHERE id=?`, id).
+		err := db.QueryRow(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes,COALESCE(type,'student'),COALESCE(specialization,''),COALESCE(nric,''),COALESCE(display_name,''),COALESCE(employment_type,'Full-time'),COALESCE(experience,''),COALESCE(qualifications,''),COALESCE(expected_salary,'') FROM registrations WHERE id=?`, id).
 			Scan(&reg.ID, &reg.ParentName, &reg.Email, &reg.Phone, &reg.EmergencyName, &reg.EmergencyPhone,
 				&reg.StudentFirstName, &reg.StudentLastName, &reg.StudentDOB, &reg.StudentGender,
-				&reg.ClassInterest, &reg.Notes)
+				&reg.ClassInterest, &reg.Notes, &reg.Type,
+				&reg.Specialization, &reg.NRIC, &reg.DisplayName, &reg.EmploymentType, &reg.Experience, &reg.Qualifications, &reg.ExpectedSalary)
 		if err != nil {
 			respondError(w, "registration not found", 404)
 			return
@@ -1131,13 +1149,12 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 
 		// Generate temp password before starting transaction
 		tid := tenantID(c)
-		stuID := generateID("STU")
 		rawBytes := make([]byte, 8)
 		if _, err := rand.Read(rawBytes); err != nil {
 			respondError(w, "could not generate password", 500)
 			return
 		}
-		tempPassword := "Sh-" + hex.EncodeToString(rawBytes) // e.g. Sh-a3f8c2d1e4b59067
+		tempPassword := "Sh-" + hex.EncodeToString(rawBytes)
 		hash, err := hashPassword(tempPassword)
 		if err != nil {
 			respondError(w, "could not hash password", 500)
@@ -1152,19 +1169,75 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		// Create student record
-		if _, err := tx.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
-			stuID, tid, reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
-			reg.ParentName, reg.Email, reg.Phone, "The Study Hub", "New", today(), "[]", "[]", reg.Notes); err != nil {
-			respondError(w, "could not create student record", 500)
-			return
-		}
+		var responseData map[string]string
 
-		// Create parent user account
-		if _, err := tx.Exec(`INSERT INTO users(tenant_id,email,password_hash,role,name) VALUES(?,?,?,?,?) ON CONFLICT(email) DO NOTHING`,
-			tid, strings.ToLower(strings.TrimSpace(reg.Email)), hash, "parent", reg.ParentName); err != nil {
-			respondError(w, "could not create parent account", 500)
-			return
+		if reg.Type == "teacher" {
+			// Teacher registration: create staff record + teacher user account
+			staffID := generateID("stf")
+			displayName := reg.DisplayName
+			if displayName == "" {
+				displayName = reg.ParentName
+			}
+			shortName := strings.Split(displayName, " ")[0]
+			empType := reg.EmploymentType
+			if empType == "" {
+				empType = "Full-time"
+			}
+
+			if _, err := tx.Exec(`INSERT INTO staff(id,tenant_id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				staffID, tid, shortName, displayName,
+				"Teacher", reg.Email, reg.Phone, 0, today(), "Active",
+				reg.Specialization, reg.NRIC,
+				reg.EmergencyName, reg.EmergencyPhone, empType); err != nil {
+				respondError(w, "could not create staff record", 500)
+				return
+			}
+			if _, err := tx.Exec(`INSERT INTO users(tenant_id,email,password_hash,role,name) VALUES(?,?,?,?,?) ON CONFLICT(email) DO NOTHING`,
+				tid, strings.ToLower(strings.TrimSpace(reg.Email)), hash, "teacher", displayName); err != nil {
+				respondError(w, "could not create teacher account", 500)
+				return
+			}
+			responseData = map[string]string{
+				"staffId":      staffID,
+				"tempPassword": tempPassword,
+				"type":         "teacher",
+				"message":      "Teacher added to staff. Share temp password.",
+			}
+		} else {
+			// Student registration: create student + parent user account
+			stuID := generateID("STU")
+			if _, err := tx.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
+				stuID, tid, reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
+				reg.ParentName, reg.Email, reg.Phone, "The Study Hub", "New", today(), "[]", "[]", reg.Notes); err != nil {
+				respondError(w, "could not create student record", 500)
+				return
+			}
+			if _, err := tx.Exec(`INSERT INTO users(tenant_id,email,password_hash,role,name) VALUES(?,?,?,?,?) ON CONFLICT(email) DO NOTHING`,
+				tid, strings.ToLower(strings.TrimSpace(reg.Email)), hash, "parent", reg.ParentName); err != nil {
+				respondError(w, "could not create parent account", 500)
+				return
+			}
+
+			// Find or create family for parent
+			var famID string
+			tx.QueryRow(`SELECT id FROM families WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, strings.ToLower(strings.TrimSpace(reg.Email)), tid, tid).Scan(&famID)
+			if famID == "" {
+				famID = generateID("FAM")
+				familyName := reg.ParentName + " Family"
+				if reg.ParentName == "" {
+					familyName = reg.Email
+				}
+				tx.Exec(`INSERT INTO families(id,tenant_id,name,contact,phone,parent_name) VALUES(?,?,?,?,?,?)`,
+					famID, tid, familyName, reg.Email, reg.Phone, reg.ParentName)
+			}
+			tx.Exec(`UPDATE students SET family_id=? WHERE id=?`, famID, stuID)
+
+			responseData = map[string]string{
+				"studentId":    stuID,
+				"tempPassword": tempPassword,
+				"type":         "student",
+				"message":      "Student created. Share temp password with parent.",
+			}
 		}
 
 		// Mark registration approved
@@ -1178,11 +1251,7 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 			return
 		}
 
-		respond(w, map[string]string{
-			"studentId":    stuID,
-			"tempPassword": tempPassword,
-			"message":      "Student created. Share temp password with parent.",
-		})
+		respond(w, responseData)
 	}
 }
 
