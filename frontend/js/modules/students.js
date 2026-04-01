@@ -6,7 +6,8 @@
   let _selected = {};
   let _studentPage = 0;
   var _PAGE_SIZE = 15;
-  let _studentsTab = 'students'; // 'students' or 'families'
+  let _studentsTab = 'families'; // default to families for admin
+  let _familySearch = '';
 
   function _paginationControls(page, total, moduleFn) {
     var totalPages = Math.ceil(total / _PAGE_SIZE);
@@ -28,6 +29,9 @@
     const isAdmin = App.currentRole === 'admin';
     const isClient = App.currentRole === 'client';
     const isTeacher = App.currentRole === 'teacher';
+
+    // Parents always see students list, not families
+    if (isClient) _studentsTab = 'students';
 
     let displayStudents = students;
     if (isClient && App.clientParent) {
@@ -825,44 +829,104 @@
     App.Router.refresh();
   }
 
+  function _searchFamilies(val) {
+    _familySearch = val;
+    App.Router.refresh();
+  }
+
   function _familiesView() {
-    var { families, students, invoices } = App.Store.get();
+    var { families, students, invoices, classes } = App.Store.get();
     var isAdmin = App.currentRole === 'admin';
 
-    var familyCards = (families || []).map(function(f) {
+    var allFamilies = families || [];
+    // Filter by search
+    if (_familySearch) {
+      var q = _familySearch.toLowerCase();
+      allFamilies = allFamilies.filter(function(f) {
+        return (f.name || '').toLowerCase().indexOf(q) > -1
+          || (f.parentName || '').toLowerCase().indexOf(q) > -1
+          || (f.contact || '').toLowerCase().indexOf(q) > -1;
+      });
+    }
+
+    var familyCards = allFamilies.map(function(f) {
         var children = students.filter(function(s) { return s.familyId === f.id && s.status !== 'Inactive'; });
-        var childNames = children.map(function(s) { return App.Utils.esc(s.firstName); }).join(', ');
         var childIds = children.map(function(s) { return s.id; });
         var outstanding = invoices.filter(function(i) {
             return childIds.indexOf(i.studentId) > -1 && (i.status === 'Unpaid' || i.status === 'Overdue');
         }).reduce(function(a, i) { return a + i.amount; }, 0);
 
-        return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem;cursor:pointer;transition:box-shadow 0.15s" onclick="App.Students._familyModal(\'' + f.id + '\')" onmouseover="this.style.boxShadow=\'0 4px 12px rgba(0,0,0,0.08)\'" onmouseout="this.style.boxShadow=\'none\'">'
-            + '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">'
+        // Count active classes across all children
+        var activeClassSet = {};
+        children.forEach(function(s) { (s.enrolledClasses || []).forEach(function(cid) { activeClassSet[cid] = true; }); });
+        var activeClassCount = Object.keys(activeClassSet).length;
+
+        // Children with status pills
+        var childPills = children.map(function(s) {
+          var statusColor = s.status === 'Active' ? 'background:#ecfdf5;color:#059669;border:1px solid #a7f3d0'
+            : s.status === 'New' ? 'background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe'
+            : s.status === 'Waitlisted' ? 'background:#fffbeb;color:#d97706;border:1px solid #fde68a'
+            : 'background:#f8fafc;color:#94a3b8;border:1px solid #e2e8f0';
+          return '<span style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.72rem;margin-right:0.25rem">'
+            + App.Utils.esc(s.firstName)
+            + ' <span style="display:inline-block;padding:0.05rem 0.4rem;font-size:0.62rem;font-weight:600;border-radius:999px;' + statusColor + '">' + App.Utils.esc(s.status) + '</span>'
+            + '</span>';
+        }).join('');
+
+        return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.25rem 1rem;cursor:pointer;transition:box-shadow 0.15s" onclick="App.Students._familyModal(\'' + f.id + '\')" onmouseover="this.style.boxShadow=\'0 4px 12px rgba(0,0,0,0.08)\'" onmouseout="this.style.boxShadow=\'none\'">'
+            // Family name + avatar
+            + '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.65rem">'
             +   '<div style="width:2.5rem;height:2.5rem;border-radius:10px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + App.Utils.esc(f.name).charAt(0) + '</div>'
             +   '<div style="flex:1;min-width:0">'
             +     '<div style="font-weight:700;font-size:0.95rem;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(f.name) + '</div>'
-            +     '<div style="font-size:0.75rem;color:#94a3b8">' + App.Utils.esc(f.contact) + '</div>'
+            +     '<div style="font-size:0.73rem;color:#64748b">' + App.Utils.esc(f.parentName || '') + '</div>'
             +   '</div>'
             + '</div>'
-            + '<div style="display:flex;gap:1rem;font-size:0.78rem;color:#64748b">'
-            +   '<div><span style="font-weight:700;color:#111">' + children.length + '</span> child' + (children.length !== 1 ? 'ren' : '') + '</div>'
-            +   (outstanding > 0 ? '<div><span style="font-weight:700;color:#dc2626">' + App.Utils.formatCurrency(outstanding) + '</span> due</div>' : '<div style="color:#15803d">Paid up</div>')
+            // Parent contact info
+            + '<div style="font-size:0.72rem;color:#94a3b8;margin-bottom:0.65rem;display:flex;flex-wrap:wrap;gap:0.15rem 0.75rem">'
+            +   '<span>' + App.Utils.esc(f.contact) + '</span>'
+            +   (f.phone ? '<span>' + App.Utils.esc(f.phone) + '</span>' : '')
             + '</div>'
-            + (childNames ? '<div style="font-size:0.72rem;color:#94a3b8;margin-top:0.5rem">' + childNames + '</div>' : '')
+            // Children with status pills
+            + (childPills ? '<div style="margin-bottom:0.65rem;line-height:1.7">' + childPills + '</div>' : '')
+            // Stats row
+            + '<div style="display:flex;gap:0.75rem;font-size:0.75rem;color:#64748b;padding-top:0.5rem;border-top:1px solid #f4f4f2">'
+            +   '<div><span style="font-weight:700;color:#111">' + children.length + '</span> child' + (children.length !== 1 ? 'ren' : '') + '</div>'
+            +   '<div><span style="font-weight:700;color:#111">' + activeClassCount + '</span> class' + (activeClassCount !== 1 ? 'es' : '') + '</div>'
+            +   (outstanding > 0
+              ? '<div style="margin-left:auto"><span style="font-weight:700;color:#dc2626">' + App.Utils.formatCurrency(outstanding) + '</span> due</div>'
+              : '<div style="margin-left:auto;color:#15803d;font-weight:600">All paid</div>')
+            + '</div>'
             + '</div>';
     }).join('');
 
-    return (isAdmin ? '<div style="display:flex;justify-content:flex-end;margin-bottom:1rem"><button onclick="App.Students._addFamilyModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Add Family</button></div>' : '')
+    // Search bar + Add Family button
+    var toolbar = '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">'
+        + '<input type="text" placeholder="Search families..." oninput="App.Students._searchFamilies(this.value)" value="' + App.Utils.esc(_familySearch) + '" style="flex:1;min-width:200px;padding:0.5rem 0.85rem;font-size:0.84rem;border:1px solid #e2e8f0;border-radius:10px;outline:none;background:#fff;font-family:inherit">'
+        + (isAdmin ? '<button onclick="App.Students._addFamilyModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700" style="white-space:nowrap">+ Add Family</button>' : '')
+        + '</div>';
+
+    return toolbar
         + (familyCards.length === 0
-            ? '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07)">' + App.Utils.emptyState('No families yet', 'Families will be created automatically when students are added.') + '</div>'
-            : '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem">' + familyCards + '</div>');
+            ? '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07)">' + App.Utils.emptyState(
+                _familySearch ? 'No families match your search' : 'No families yet',
+                _familySearch ? 'Try adjusting your search term.' : 'Families will be created automatically when students are added.',
+                _familySearch ? '<button onclick="App.Students._searchFamilies(\'\')" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer">Clear Search</button>' : ''
+              ) + '</div>'
+            : '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem">' + familyCards + '</div>');
   }
 
   function _familyModal(familyId) {
-    var { families, students, invoices, classes } = App.Store.get();
+    var state = App.Store.get();
+    var families = state.families || [];
+    var students = state.students || [];
+    var invoices = state.invoices || [];
+    var classes = state.classes || [];
+    var staff = state.staff || [];
+    var feedbackEntries = state.feedback || [];
+    var replacementCredits = state.replacementCredits || [];
     var isAdmin = App.currentRole === 'admin';
-    var f = (families || []).find(function(x) { return x.id === familyId; });
+    var f = families.find(function(x) { return x.id === familyId; });
     if (!f) return;
 
     var children = students.filter(function(s) { return s.familyId === familyId; });
@@ -870,6 +934,100 @@
     var familyInvoices = invoices.filter(function(i) { return childIds.indexOf(i.studentId) > -1; });
     var outstanding = familyInvoices.filter(function(i) { return i.status === 'Unpaid' || i.status === 'Overdue'; }).reduce(function(a, i) { return a + i.amount; }, 0);
     var totalPaid = familyInvoices.filter(function(i) { return i.status === 'Paid'; }).reduce(function(a, i) { return a + i.amount; }, 0);
+
+    // Collect all class IDs the family's children are enrolled in
+    var familyClassIds = [];
+    children.forEach(function(s) { (s.enrolledClasses || []).forEach(function(cid) { if (familyClassIds.indexOf(cid) === -1) familyClassIds.push(cid); }); });
+
+    // --- Recent Feedback (last 3) ---
+    var familyFeedback = feedbackEntries.filter(function(fb) {
+      return familyClassIds.indexOf(fb.classId) > -1;
+    }).sort(function(a, b) { return (b.date || '') > (a.date || '') ? 1 : -1; }).slice(0, 3);
+
+    var feedbackHtml = '';
+    if (familyFeedback.length > 0) {
+      feedbackHtml = '<div style="margin-top:1rem">'
+        + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.4rem">Recent Feedback</div>'
+        + '<div style="border-top:1px solid #f1f5f9">'
+        + familyFeedback.map(function(fb) {
+            var cls = classes.find(function(c) { return c.id === fb.classId; });
+            var teacher = fb.teacherId ? staff.find(function(st) { return st.id === fb.teacherId; }) : null;
+            var teacherName = teacher ? teacher.fullName : (fb.teacher || '');
+            return '<div style="padding:0.45rem 0;border-bottom:1px solid #f8f8f6;font-size:0.78rem">'
+              + '<div style="color:#374151;font-style:italic">"' + App.Utils.esc(fb.notes || fb.content || '') + '"</div>'
+              + '<div style="font-size:0.68rem;color:#94a3b8;margin-top:0.15rem">'
+              + (teacherName ? App.Utils.esc(teacherName) + ', ' : '')
+              + (cls ? App.Utils.esc(cls.name) : '')
+              + (fb.date ? ', ' + App.Utils.formatDate(fb.date) : '')
+              + '</div></div>';
+          }).join('')
+        + '</div></div>';
+    }
+
+    // --- Upcoming Classes (today + tomorrow) ---
+    var today = new Date();
+    var tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    var dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    var todayDay = dayNames[today.getDay()];
+    var tomorrowDay = dayNames[tomorrow.getDay()];
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var todayLabel = todayDay.slice(0,3) + ' ' + today.getDate() + ' ' + months[today.getMonth()];
+    var tomorrowLabel = tomorrowDay.slice(0,3) + ' ' + tomorrow.getDate() + ' ' + months[tomorrow.getMonth()];
+
+    var upcomingClasses = classes.filter(function(c) {
+      return familyClassIds.indexOf(c.id) > -1 && (c.day === todayDay || c.day === tomorrowDay);
+    }).sort(function(a, b) {
+      var dayOrder = a.day === todayDay ? 0 : 1;
+      var dayOrder2 = b.day === todayDay ? 0 : 1;
+      if (dayOrder !== dayOrder2) return dayOrder - dayOrder2;
+      return (a.time || '') < (b.time || '') ? -1 : 1;
+    });
+
+    var upcomingHtml = '';
+    if (upcomingClasses.length > 0) {
+      upcomingHtml = '<div style="margin-top:1rem">'
+        + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.4rem">Upcoming Classes</div>'
+        + '<div style="border-top:1px solid #f1f5f9">'
+        + upcomingClasses.map(function(c) {
+            var dayLabel = c.day === todayDay ? todayLabel : tomorrowLabel;
+            var enrolledChildren = children.filter(function(s) { return (s.enrolledClasses || []).indexOf(c.id) > -1; });
+            var childNameStr = enrolledChildren.map(function(s) { return App.Utils.esc(s.firstName); }).join(', ');
+            var teacherNames = (c.teacherIds || []).map(function(tid) {
+              var st = staff.find(function(x) { return x.id === tid; });
+              return st ? st.fullName : '';
+            }).filter(Boolean).join(', ');
+            return '<div style="padding:0.4rem 0;border-bottom:1px solid #f8f8f6;font-size:0.78rem;display:flex;gap:0.5rem;align-items:baseline">'
+              + '<span style="font-weight:600;color:#374151;white-space:nowrap">' + dayLabel + ' ' + App.Utils.formatTime(c.time) + '</span>'
+              + '<span style="color:#64748b">' + App.Utils.esc(c.name) + ' (' + childNameStr + ')'
+              + (c.classroom ? ' · ' + App.Utils.esc(c.classroom) : '')
+              + (teacherNames ? ' · ' + App.Utils.esc(teacherNames) : '')
+              + '</span></div>';
+          }).join('')
+        + '</div></div>';
+    }
+
+    // --- Replacement Balances per child ---
+    var hasAnyBalance = false;
+    var replacementRows = children.map(function(s) {
+      var creds = replacementCredits.filter(function(rc) { return rc.studentId === s.id; });
+      var earned = creds.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
+      var used = creds.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
+      var bal = earned - used;
+      if (bal > 0) hasAnyBalance = true;
+      return '<div style="display:flex;justify-content:space-between;padding:0.3rem 0;font-size:0.78rem;border-bottom:1px solid #f8f8f6">'
+        + '<span style="color:#374151">' + App.Utils.esc(s.firstName) + '</span>'
+        + '<span style="font-weight:600;color:' + (bal > 0 ? '#92400e' : '#94a3b8') + '">' + (bal > 0 ? bal + ' min owed' : '0 min') + '</span>'
+        + '</div>';
+    }).join('');
+
+    var replacementHtml = '';
+    if (children.length > 0) {
+      replacementHtml = '<div style="margin-top:1rem">'
+        + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.4rem">Replacements</div>'
+        + '<div style="border-top:1px solid #f1f5f9">' + replacementRows + '</div>'
+        + '</div>';
+    }
 
     App.Utils.showModal(
         '<div class="p-6">'
@@ -909,6 +1067,11 @@
                     + App.Utils.statusBadge(s.status)
                     + '</div>';
             }).join(''))
+
+        // New sections: feedback, upcoming, replacements
+        + upcomingHtml
+        + feedbackHtml
+        + replacementHtml
 
         + (f.address ? '<div style="margin-top:1rem;font-size:0.78rem;color:#64748b"><span style="font-weight:600">Address:</span> ' + App.Utils.esc(f.address) + '</div>' : '')
         + (f.notes ? '<div style="margin-top:0.5rem;font-size:0.78rem;color:#64748b"><span style="font-weight:600">Notes:</span> ' + App.Utils.esc(f.notes) + '</div>' : '')
@@ -1027,6 +1190,7 @@
     _useCreditModal: _useCreditModal,
     _deleteCredit: _deleteCredit,
     _setTab: _setStudentsTab,
+    _searchFamilies: _searchFamilies,
     _familyModal: _familyModal,
     _addFamilyModal: _addFamilyModal,
     _editFamilyModal: _editFamilyModal

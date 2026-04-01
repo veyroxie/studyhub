@@ -243,7 +243,7 @@
       + '</div>';
   }
 
-  // ── Parent ────────────────────────────────────────────────────────────────────
+  // ── Parent (family-centric) ──────────────────────────────────────────────────
   function _parentDash() {
     var s             = App.Store.get();
     var students      = s.students      || [];
@@ -251,133 +251,343 @@
     var invoices      = s.invoices      || [];
     var announcements = s.announcements || [];
     var attendance    = s.attendance    || [];
+    var feedbacks     = s.feedback      || [];
+    var repCredits    = s.replacementCredits || [];
+    var staff         = s.staff         || [];
 
     var myStudents = students.filter(function(st) { return st.contact === App.clientParent && st.status !== 'Inactive'; });
     var myIds      = myStudents.map(function(st) { return st.id; });
     var myInvoices = invoices.filter(function(i)  { return myIds.indexOf(i.studentId) > -1; });
 
-    var now = new Date(); var in7 = new Date(now); in7.setDate(now.getDate() + 7);
+    var now   = new Date();
     var today = App.Utils.today();
+    var in7   = new Date(now); in7.setDate(now.getDate() + 7);
+    var todayDay = new Date(today + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+    var dayOrder = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    var todayIdx = dayOrder.indexOf(todayDay);
+    var cutoff30 = new Date(now); cutoff30.setDate(cutoff30.getDate() - 30);
+    var cutoff30Str = cutoff30.toISOString().slice(0, 10);
 
     var overdueInvs = myInvoices.filter(function(i) { return i.status === 'Overdue'; });
     var dueSoonInvs = myInvoices.filter(function(i) {
       if (i.status !== 'Unpaid') return false;
       var d = new Date(i.dueDate); return d >= now && d <= in7;
     });
-    var totalOwed = myInvoices.filter(function(i) { return i.status === 'Overdue' || i.status === 'Unpaid'; })
-      .reduce(function(a, i) { return a + i.amount; }, 0);
 
-    var enrolledIds = [];
-    myStudents.forEach(function(st) { st.enrolledClasses.forEach(function(id) { if (enrolledIds.indexOf(id) === -1) enrolledIds.push(id); }); });
-    var myClasses = classes.filter(function(c) { return enrolledIds.indexOf(c.id) > -1; });
-
-    var todayDay      = new Date(today + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
-    var todayClasses  = myClasses.filter(function(c) { return c.day === todayDay; });
-    var recentAttend  = attendance.filter(function(a) { return myIds.indexOf(a.personId) > -1; })
-      .sort(function(a, b) { return b.date.localeCompare(a.date); }).slice(0, 5);
-    var latestAnnounce = (s.announcements || []).slice()
-      .sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); }).slice(0, 3);
     var childNames = myStudents.map(function(st) { return App.Utils.esc(st.firstName); }).join(' &amp; ');
-
     var _tod = _timeOfDay();
-    return '<div class="dash-hero">'
+
+    // ── Hero ──────────────────────────────────────────────────────────────────
+    var html = '<div class="dash-hero">'
       + '<div style="display:flex;align-items:start;justify-content:space-between;gap:1rem;flex-wrap:wrap;position:relative;z-index:1">'
       +   '<div>'
       +     '<p style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--gold);margin:0 0 6px">' + _dateFull() + '</p>'
-      +     '<h1 style="font-family:var(--serif);font-size:1.85rem;font-weight:700;letter-spacing:-0.04em;color:#1a1a1a;line-height:1.2;margin:0">Good ' + _tod + (childNames ? ', ' + childNames + '\'s family' : '') + '</h1>'
-      +     '<p style="font-size:0.82rem;color:#64748b;margin:4px 0 0">' + myStudents.length + ' child' + (myStudents.length !== 1 ? 'ren' : '') + ' enrolled · ' + todayClasses.length + ' class' + (todayClasses.length !== 1 ? 'es' : '') + ' today</p>'
-      +   '</div>'
-      +   '<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">'
-      +     _heroBtn('Pay Invoice', "App.Router.navigate('billing')")
-      +     _heroBtn('View Schedule', "App.Router.navigate('calendar')")
-      +     _heroBtn('View Feedback', "App.Router.navigate('feedback')")
+      +     '<h1 style="font-family:var(--serif);font-size:1.7rem;font-weight:700;letter-spacing:-0.04em;color:#1a1a1a;line-height:1.2;margin:0">Good ' + _tod + (childNames ? ', ' + childNames + '\'s family' : '') + '</h1>'
+      +     '<p style="font-size:0.82rem;color:#64748b;margin:4px 0 0">' + myStudents.length + ' child' + (myStudents.length !== 1 ? 'ren' : '') + ' enrolled</p>'
       +   '</div>'
       + '</div>'
-      + '</div>'
+      + '</div>';
 
-      // Alert banner
-      + (overdueInvs.length > 0
-          ? '<div style="padding:0.85rem 1.1rem;background:#fef2f2;border:1px solid #fecaca;border-left:3px solid #dc2626;border-radius:12px;display:flex;align-items:center;gap:0.75rem"><div style="flex:1;font-size:0.83rem;color:#991b1b"><strong>Payment overdue</strong> — ' + overdueInvs.length + ' invoice' + (overdueInvs.length !== 1 ? 's are' : ' is') + ' past due.</div><button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#dc2626;background:#fff;border:1px solid #fecaca;border-radius:7px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">Pay Now</button></div>'
-          : dueSoonInvs.length > 0
-          ? '<div style="padding:0.85rem 1.1rem;background:#fffbeb;border:1px solid #fde68a;border-left:3px solid #d97706;border-radius:12px;display:flex;align-items:center;gap:0.75rem"><div style="flex:1;font-size:0.83rem;color:#92400e"><strong>Payment due soon</strong> — ' + dueSoonInvs.length + ' invoice' + (dueSoonInvs.length !== 1 ? 's' : '') + ' due within 7 days.</div><button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#d97706;background:#fff;border:1px solid #fde68a;border-radius:7px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">View</button></div>'
-          : '')
+    // ── Alert banner ──────────────────────────────────────────────────────────
+    if (overdueInvs.length > 0) {
+      html += '<div style="padding:0.85rem 1.1rem;background:#fef2f2;border:1px solid #fecaca;border-left:3px solid #dc2626;border-radius:12px;display:flex;align-items:center;gap:0.75rem">'
+        + '<div style="flex:1;font-size:0.83rem;color:#991b1b"><strong>Payment overdue</strong> — ' + overdueInvs.length + ' invoice' + (overdueInvs.length !== 1 ? 's are' : ' is') + ' past due.</div>'
+        + '<button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#dc2626;background:#fff;border:1px solid #fecaca;border-radius:7px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">Pay Now</button></div>';
+    } else if (dueSoonInvs.length > 0) {
+      html += '<div style="padding:0.85rem 1.1rem;background:#fffbeb;border:1px solid #fde68a;border-left:3px solid #d97706;border-radius:12px;display:flex;align-items:center;gap:0.75rem">'
+        + '<div style="flex:1;font-size:0.83rem;color:#92400e"><strong>Payment due soon</strong> — ' + dueSoonInvs.length + ' invoice' + (dueSoonInvs.length !== 1 ? 's' : '') + ' due within 7 days.</div>'
+        + '<button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#d97706;background:#fff;border:1px solid #fde68a;border-radius:7px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">View</button></div>';
+    }
 
-      // Stats
-      + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem">'
-      + stat('My Children',      myStudents.length, false, '#1d4ed8',    false, '#eff6ff', 'calendar')
-      + stat('Classes Enrolled', myClasses.length,  false, '#92400e', true, '#fef9ec', 'calendar')
-      + stat('Balance Due',      totalOwed,         true,  totalOwed > 0 ? '#991b1b' : '#15803d', false, totalOwed > 0 ? '#fef2f2' : '#f0fdf4', 'billing')
-      + '</div>'
+    // ── Children Cards ────────────────────────────────────────────────────────
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:1.25rem">';
 
-      // Two col: today's classes + announcements
-      + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:start">'
+    myStudents.forEach(function(stu) {
+      var stuClasses = classes.filter(function(c) { return (stu.enrolledClasses || []).indexOf(c.id) > -1; });
+      var stuClassIds = stuClasses.map(function(c) { return c.id; });
 
-        // Today's classes
-        + card('Today\'s Classes', 'calendar')
-        + (todayClasses.length === 0
-            ? '<p style="color:#94a3b8;font-size:0.84rem;padding:1.5rem 0;text-align:center">No classes today</p>'
-            : todayClasses.map(function(c) {
-                var colors   = App.Utils.colorClasses(c.color);
-                var teachers = (s.staff||[]).filter(function(t){ return c.teacherIds.indexOf(t.id)>-1; }).map(function(t){ return t.name; }).join(', ');
-                var who      = myStudents.filter(function(st){ return st.enrolledClasses.indexOf(c.id)>-1; }).map(function(st){ return st.firstName; }).join(', ');
-                return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0;border-bottom:1px solid #f4f4f2">'
-                  + '<div style="width:3px;border-radius:99px;align-self:stretch;min-height:36px;flex-shrink:0" class="' + colors.dot + '"></div>'
-                  + '<div style="flex:1;min-width:0">'
-                  +   '<div style="font-weight:600;font-size:0.85rem;color:#111">' + App.Utils.esc(c.name) + '</div>'
-                  +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + (teachers ? '&nbsp;·&nbsp;' + App.Utils.esc(teachers) : '') + '</div>'
-                  +   '<div style="font-size:0.72rem;color:var(--gold);margin-top:1px;font-weight:600">' + App.Utils.esc(who) + '</div>'
-                  + '</div>'
-                  + '<div style="font-size:0.72rem;color:#94a3b8;flex-shrink:0">' + App.Utils.esc(c.classroom) + '</div>'
-                  + '</div>';
-              }).join(''))
-        + '<button onclick="App.Router.navigate(\'calendar\')" class="dash-link">Full schedule →</button>'
-        + '</div></div>' // close inner padding div + today classes card
+      // Attendance: present in last 30 days vs total sessions
+      var stuAttend = attendance.filter(function(a) {
+        return a.personId === stu.id && a.personType === 'student' && a.date >= cutoff30Str;
+      });
+      var presentCount = stuAttend.filter(function(a) { return a.status === 'Present'; }).length;
+      var totalSessions = stuAttend.length;
 
-        // Announcements
-        + card('Announcements', 'communication')
-        + (latestAnnounce.length === 0
-            ? '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1.5rem 0">No announcements</p>'
-            : latestAnnounce.map(function(a) {
-                var tc = { Notice:'#2563eb', Reminder:'#d97706', Urgent:'#dc2626' };
-                var tb = { Notice:'#eff6ff', Reminder:'#fffbeb', Urgent:'#fef2f2' };
-                return '<div style="padding:0.65rem 0;border-bottom:1px solid #f4f4f2">'
-                  + '<div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:3px">'
-                  +   '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (tc[a.type]||'#2563eb') + ';background:' + (tb[a.type]||'#eff6ff') + ';padding:1px 6px;border-radius:4px">' + a.type + '</span>'
-                  +   '<span style="font-size:0.68rem;color:#94a3b8">' + App.Utils.formatDate(a.createdOn) + '</span>'
-                  + '</div>'
-                  + '<div style="font-size:0.82rem;font-weight:600;color:#111;line-height:1.3">' + App.Utils.esc(a.title) + '</div>'
-                  + '<div style="font-size:0.72rem;color:#64748b;margin-top:2px">' + App.Utils.esc(a.message.slice(0,80)) + (a.message.length > 80 ? '…' : '') + '</div>'
-                  + '</div>';
-              }).join(''))
-        + '<button onclick="App.Router.navigate(\'communication\')" class="dash-link">View all →</button>'
-        + '</div></div>' // close inner padding div + announcements card
+      // Next class: find next upcoming class by matching days of week
+      var nextClass = null;
+      var nextClassDay = '';
+      for (var d = 0; d < 7; d++) {
+        var checkIdx = (todayIdx + d) % 7;
+        var checkDay = dayOrder[checkIdx];
+        var candidates = stuClasses.filter(function(c) { return c.day === checkDay; })
+          .sort(function(a, b) { return a.time.localeCompare(b.time); });
+        if (d === 0) {
+          // Today: only classes that haven't ended yet
+          var nowTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+          candidates = candidates.filter(function(c) { return (c.endTime || c.time) > nowTime; });
+        }
+        if (candidates.length > 0) {
+          nextClass = candidates[0];
+          nextClassDay = d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : checkDay.slice(0, 3);
+          break;
+        }
+      }
 
-      + '</div>'
+      // Replacement balance
+      var stuCredits = repCredits.filter(function(rc) { return rc.studentId === stu.id; });
+      var earnedMin = 0, usedMin = 0;
+      stuCredits.forEach(function(rc) {
+        if (rc.type === 'earned') earnedMin += rc.minutes;
+        else usedMin += rc.minutes;
+      });
+      var repBalance = earnedMin - usedMin;
 
-      // Recent Attendance
-      + card('Recent Attendance', 'attendance')
-      + (recentAttend.length === 0
-          ? '<p style="color:#94a3b8;font-size:0.84rem;padding:1.5rem 0;text-align:center">No attendance records yet</p>'
-          : recentAttend.map(function(a) {
-              var stu = myStudents.find(function(st) { return st.id === a.personId; });
-              var stuName = stu ? stu.firstName : a.personId;
-              var cls = classes.find(function(c) { return c.id === a.classId; });
-              var clsName = cls ? cls.name : (a.classId || '—');
-              return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.55rem 0;border-bottom:1px solid #f4f4f2">'
-                + '<div style="flex:1;min-width:0">'
-                +   '<div style="font-weight:600;font-size:0.83rem;color:#111">' + App.Utils.esc(stuName) + ' — ' + App.Utils.esc(clsName) + '</div>'
-                +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatDate(a.date) + '</div>'
-                + '</div>'
-                + '<div style="text-align:right;flex-shrink:0">'
-                +   (a.checkIn ? '<span style="font-size:0.72rem;color:#15803d;font-weight:600">In: ' + App.Utils.formatTime(a.checkIn) + '</span>' : '')
-                +   (a.checkOut ? '<span style="font-size:0.72rem;color:#991b1b;font-weight:600;margin-left:0.5rem">Out: ' + App.Utils.formatTime(a.checkOut) + '</span>' : '')
-                + '</div>'
-                + '</div>';
-            }).join(''))
-      + '<button onclick="App.Router.navigate(\'attendance\')" class="dash-link">View all attendance →</button>'
-      + '</div></div>'
+      // Billing: outstanding for this student
+      var stuInvoices = myInvoices.filter(function(i) { return i.studentId === stu.id; });
+      var outstanding = stuInvoices.filter(function(i) { return i.status === 'Overdue' || i.status === 'Unpaid'; })
+        .reduce(function(a, i) { return a + i.amount; }, 0);
 
-      + _replacementCreditsCard(myStudents, s.replacementCredits || [], classes);
+      // Latest feedback for any class this child is enrolled in
+      var latestFb = null;
+      var latestFbTeacher = '';
+      var latestFbNote = '';
+      // Check studentNotes first for personalized feedback
+      feedbacks.filter(function(fb) { return stuClassIds.indexOf(fb.classId) > -1; })
+        .sort(function(a, b) { return b.date.localeCompare(a.date); })
+        .some(function(fb) {
+          // Look for a note specific to this child
+          var childNote = (fb.studentNotes || []).find(function(sn) { return sn.studentId === stu.id && sn.note && sn.note.trim(); });
+          if (childNote) {
+            latestFb = fb;
+            latestFbNote = childNote.note;
+            return true;
+          }
+          // Fall back to general class notes
+          if (!latestFb && fb.notes && fb.notes.trim()) {
+            latestFb = fb;
+            latestFbNote = fb.notes;
+          }
+          return false;
+        });
+      if (latestFb) {
+        var fbTeacher = staff.find(function(t) { return t.id === latestFb.teacherId; });
+        latestFbTeacher = fbTeacher ? App.Utils.esc(fbTeacher.name) : 'Teacher';
+      }
+
+      // Subjects list from enrolled classes
+      var subjects = stuClasses.map(function(c) { return App.Utils.esc(c.name); }).slice(0, 3).join(', ');
+      if (stuClasses.length > 3) subjects += ' +' + (stuClasses.length - 3);
+
+      // Status color
+      var statusColor = stu.status === 'Active' ? '#15803d' : stu.status === 'New' ? '#2563eb' : '#94a3b8';
+      var statusBg    = stu.status === 'Active' ? '#f0fdf4' : stu.status === 'New' ? '#eff6ff' : '#f8fafc';
+
+      // Avatar initial
+      var initial = App.Utils.esc(stu.firstName).charAt(0).toUpperCase();
+
+      html += '<div onclick="App.Students._viewModal(\'' + stu.id + '\')" style="background:#fff;border-radius:16px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 2px 8px rgba(0,0,0,0.04);cursor:pointer;transition:box-shadow 0.2s,transform 0.2s;overflow:hidden" onmouseover="this.style.boxShadow=\'0 4px 16px rgba(0,0,0,0.1)\';this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.boxShadow=\'0 2px 8px rgba(0,0,0,0.04)\';this.style.transform=\'none\'">'
+
+        // Header row: avatar + name + status
+        + '<div style="padding:1.25rem 1.5rem 0.75rem;display:flex;align-items:center;gap:0.9rem">'
+        +   '<div style="width:3rem;height:3rem;border-radius:12px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:1.2rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:var(--serif)">' + initial + '</div>'
+        +   '<div style="flex:1;min-width:0">'
+        +     '<div style="font-size:1.05rem;font-weight:700;color:#111;font-family:var(--serif)">' + App.Utils.esc(stu.firstName) + ' ' + App.Utils.esc(stu.lastName) + '</div>'
+        +     '<div style="font-size:0.78rem;color:#64748b;margin-top:2px">' + App.Utils.esc(stu.grade || '') + (subjects ? ' · ' + subjects : '') + '</div>'
+        +   '</div>'
+        +   '<span style="font-size:0.68rem;font-weight:700;color:' + statusColor + ';background:' + statusBg + ';padding:3px 10px;border-radius:6px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.04em">' + App.Utils.esc(stu.status) + '</span>'
+        + '</div>'
+
+        // Mini stats grid
+        + '<div style="padding:0.5rem 1.5rem 1rem;display:grid;grid-template-columns:repeat(4,1fr);gap:0.6rem">'
+
+        // Attendance
+        +   '<div style="background:#f0fdf4;border-radius:10px;padding:0.65rem 0.7rem;text-align:center">'
+        +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#15803d;margin-bottom:0.3rem">Attendance</div>'
+        +     '<div style="font-family:var(--serif);font-size:1.15rem;font-weight:700;color:#15803d">' + presentCount + '/' + totalSessions + '</div>'
+        +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">Present</div>'
+        +   '</div>'
+
+        // Next class
+        +   '<div style="background:#eff6ff;border-radius:10px;padding:0.65rem 0.7rem;text-align:center">'
+        +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#2563eb;margin-bottom:0.3rem">Next Class</div>'
+        +     (nextClass
+              ? '<div style="font-size:0.82rem;font-weight:700;color:#2563eb">' + nextClassDay + ' ' + App.Utils.formatTime(nextClass.time) + '</div>'
+                + '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(nextClass.name) + '</div>'
+              : '<div style="font-size:0.78rem;color:#94a3b8">None</div>')
+        +   '</div>'
+
+        // Replacement balance
+        +   '<div style="background:' + (repBalance > 0 ? '#fffbeb' : '#f8fafc') + ';border-radius:10px;padding:0.65rem 0.7rem;text-align:center">'
+        +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (repBalance > 0 ? '#92400e' : '#94a3b8') + ';margin-bottom:0.3rem">Replace</div>'
+        +     '<div style="font-family:var(--serif);font-size:1.15rem;font-weight:700;color:' + (repBalance > 0 ? '#92400e' : '#64748b') + '">' + repBalance + 'm</div>'
+        +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (repBalance > 0 ? 'owed' : 'none') + '</div>'
+        +   '</div>'
+
+        // Billing
+        +   '<div style="background:' + (outstanding > 0 ? '#fef2f2' : '#f0fdf4') + ';border-radius:10px;padding:0.65rem 0.7rem;text-align:center">'
+        +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (outstanding > 0 ? '#991b1b' : '#15803d') + ';margin-bottom:0.3rem">Billing</div>'
+        +     '<div style="font-family:var(--serif);font-size:1.05rem;font-weight:700;color:' + (outstanding > 0 ? '#991b1b' : '#15803d') + '">RM ' + outstanding.toFixed(0) + '</div>'
+        +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (outstanding > 0 ? 'outstanding' : 'Paid up') + '</div>'
+        +   '</div>'
+
+        + '</div>';
+
+      // Latest feedback
+      if (latestFb) {
+        var notePreview = latestFbNote.length > 120 ? latestFbNote.slice(0, 120) + '...' : latestFbNote;
+        html += '<div style="padding:0 1.5rem 1.15rem">'
+          + '<div style="background:linear-gradient(135deg,#fef9ec 0%,#fff 70%);border:1px solid #fef3c7;border-radius:10px;padding:0.75rem 0.9rem">'
+          +   '<div style="font-size:0.8rem;color:#44403c;line-height:1.45;font-style:italic">"' + App.Utils.esc(notePreview) + '"</div>'
+          +   '<div style="font-size:0.68rem;color:#94a3b8;margin-top:0.4rem">— ' + latestFbTeacher + ', ' + App.Utils.formatDate(latestFb.date) + '</div>'
+          + '</div>'
+          + '</div>';
+      }
+
+      html += '</div>'; // close child card
+    });
+
+    html += '</div>'; // close children grid
+
+    // ── Empty state ───────────────────────────────────────────────────────────
+    if (myStudents.length === 0) {
+      html += '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:3rem;text-align:center">'
+        + '<p style="font-size:1rem;font-weight:600;color:#475569">No children enrolled yet</p>'
+        + '<p style="font-size:0.82rem;color:#94a3b8;margin-top:0.4rem">Contact the centre to register your child.</p>'
+        + '</div>';
+    }
+
+    // ── Quick Actions Row ─────────────────────────────────────────────────────
+    html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem;margin-top:0.25rem">';
+    var qActions = [
+      { label: 'Pay Invoice',     page: 'billing',     icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>' },
+      { label: 'View Schedule',   page: 'calendar',    icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' },
+      { label: 'View Feedback',   page: 'feedback',    icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>' },
+      { label: 'View Attendance', page: 'attendance',  icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>' }
+    ];
+    qActions.forEach(function(qa) {
+      html += '<button onclick="App.Router.navigate(\'' + qa.page + '\')" '
+        + 'style="display:flex;align-items:center;justify-content:center;gap:0.45rem;padding:0.7rem;font-size:0.78rem;font-weight:600;border-radius:10px;cursor:pointer;background:#fff;border:1px solid #e8e4df;color:#374151;transition:all 0.15s" '
+        + 'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
+        + 'onmouseout="this.style.borderColor=\'#e8e4df\';this.style.color=\'#374151\'">'
+        + qa.icon + ' ' + qa.label + '</button>';
+    });
+    html += '</div>';
+
+    // ── Recent Activity Timeline ──────────────────────────────────────────────
+    var timeline = [];
+
+    // Attendance events
+    attendance.filter(function(a) { return myIds.indexOf(a.personId) > -1 && a.personType === 'student'; })
+      .forEach(function(a) {
+        var stu = myStudents.find(function(st) { return st.id === a.personId; });
+        var stuName = stu ? App.Utils.esc(stu.firstName) : a.personId;
+        var cls = classes.find(function(c) { return c.id === a.classId; });
+        var clsName = cls ? App.Utils.esc(cls.name) : '';
+        var timeStr = a.checkOut ? App.Utils.formatTime(a.checkOut) : (a.checkIn ? App.Utils.formatTime(a.checkIn) : '');
+        var action = a.checkOut ? 'checked out of' : 'checked in to';
+        timeline.push({
+          date: a.date,
+          time: a.checkOut || a.checkIn || '00:00',
+          sort: a.date + 'T' + (a.checkOut || a.checkIn || '00:00'),
+          color: '#10b981',
+          icon: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"/></svg>',
+          text: stuName + ' ' + action + ' ' + clsName,
+          sub: App.Utils.formatDate(a.date) + (timeStr ? ' · ' + timeStr : '')
+        });
+      });
+
+    // Invoice payments
+    myInvoices.filter(function(i) { return i.status === 'Paid' && i.paidOn; })
+      .forEach(function(i) {
+        var stu = myStudents.find(function(st) { return st.id === i.studentId; });
+        var stuName = stu ? App.Utils.esc(stu.firstName) : '';
+        timeline.push({
+          date: i.paidOn,
+          time: '12:00',
+          sort: i.paidOn + 'T12:00',
+          color: '#15803d',
+          icon: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>',
+          text: 'Payment of RM ' + i.amount.toFixed(2) + ' for ' + stuName,
+          sub: App.Utils.formatDate(i.paidOn)
+        });
+      });
+
+    // Announcements
+    (announcements || []).filter(function(a) { return a.status === 'published' || !a.status; })
+      .forEach(function(a) {
+        timeline.push({
+          date: a.createdOn,
+          time: '09:00',
+          sort: a.createdOn + 'T09:00',
+          color: '#2563eb',
+          icon: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>',
+          text: App.Utils.esc(a.title),
+          sub: App.Utils.formatDate(a.createdOn) + ' · ' + (a.type || 'Notice')
+        });
+      });
+
+    // Feedback posted
+    var allEnrolledIds = [];
+    myStudents.forEach(function(st) { (st.enrolledClasses || []).forEach(function(id) { if (allEnrolledIds.indexOf(id) === -1) allEnrolledIds.push(id); }); });
+    feedbacks.filter(function(fb) { return allEnrolledIds.indexOf(fb.classId) > -1; })
+      .forEach(function(fb) {
+        var cls = classes.find(function(c) { return c.id === fb.classId; });
+        var teacher = staff.find(function(t) { return t.id === fb.teacherId; });
+        timeline.push({
+          date: fb.date,
+          time: '15:00',
+          sort: fb.date + 'T15:00',
+          color: '#8b5cf6',
+          icon: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>',
+          text: 'Feedback for ' + App.Utils.esc(cls ? cls.name : fb.classId),
+          sub: App.Utils.formatDate(fb.date) + ' · ' + App.Utils.esc(teacher ? teacher.name : 'Teacher')
+        });
+      });
+
+    // Sort newest first, take 8
+    timeline.sort(function(a, b) { return b.sort.localeCompare(a.sort); });
+    timeline = timeline.slice(0, 8);
+
+    html += '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:start">';
+
+    // Timeline card
+    html += card('Recent Activity')
+      + (timeline.length === 0
+        ? '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1.5rem 0">No recent activity</p>'
+        : timeline.map(function(item) {
+            return '<div style="display:flex;align-items:start;gap:0.65rem;padding:0.55rem 0;border-bottom:1px solid #f4f4f2">'
+              + '<div style="width:1.65rem;height:1.65rem;border-radius:8px;background:' + item.color + '12;color:' + item.color + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">' + item.icon + '</div>'
+              + '<div style="flex:1;min-width:0">'
+              +   '<div style="font-size:0.8rem;font-weight:600;color:#111;line-height:1.3">' + item.text + '</div>'
+              +   '<div style="font-size:0.68rem;color:#94a3b8;margin-top:2px">' + item.sub + '</div>'
+              + '</div>'
+              + '</div>';
+          }).join(''))
+      + '</div></div>';
+
+    // ── Announcements (compact) ───────────────────────────────────────────────
+    var latestAnnounce = (announcements || []).filter(function(a) { return a.status === 'published' || !a.status; })
+      .slice().sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); }).slice(0, 3);
+
+    html += card('Announcements', 'communication')
+      + (latestAnnounce.length === 0
+        ? '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1rem 0">No announcements</p>'
+        : latestAnnounce.map(function(a) {
+            var tc = { Notice:'#2563eb', Reminder:'#d97706', Urgent:'#dc2626' };
+            return '<div style="display:flex;align-items:center;gap:0.65rem;padding:0.5rem 0;border-bottom:1px solid #f4f4f2">'
+              + '<span style="width:6px;height:6px;border-radius:50%;background:' + (tc[a.type] || '#2563eb') + ';flex-shrink:0"></span>'
+              + '<div style="flex:1;min-width:0">'
+              +   '<div style="font-size:0.8rem;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(a.title) + '</div>'
+              + '</div>'
+              + '<span style="font-size:0.68rem;color:#94a3b8;flex-shrink:0">' + App.Utils.formatDate(a.createdOn) + '</span>'
+              + '</div>';
+          }).join(''))
+      + '<button onclick="App.Router.navigate(\'communication\')" class="dash-link">View all →</button>'
+      + '</div></div>';
+
+    html += '</div>'; // close 2-col grid
+
+    return html;
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
