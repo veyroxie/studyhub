@@ -55,18 +55,20 @@ type Student struct {
 	Emergency2Name  string   `json:"emergency2Name,omitempty"`
 	Emergency2Phone string   `json:"emergency2Phone,omitempty"`
 	MedicalInfo     string   `json:"medicalInfo,omitempty"`
-	Allergies       string   `json:"allergies,omitempty"`
-	FamilyID        string   `json:"familyId,omitempty"`
+	Allergies           string   `json:"allergies,omitempty"`
+	FamilyID            string   `json:"familyId,omitempty"`
+	ReferredByFamilyID  string   `json:"referredByFamilyId,omitempty"`
 }
 
 type Family struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Contact    string `json:"contact"`
-	Phone      string `json:"phone"`
-	ParentName string `json:"parentName"`
-	Address    string `json:"address,omitempty"`
-	Notes      string `json:"notes,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Contact      string `json:"contact"`
+	Phone        string `json:"phone"`
+	ParentName   string `json:"parentName"`
+	Address      string `json:"address,omitempty"`
+	Notes        string `json:"notes,omitempty"`
+	ReferralCode string `json:"referralCode,omitempty"`
 }
 
 type Class struct {
@@ -117,6 +119,7 @@ type Invoice struct {
 	SubmittedByParent bool    `json:"submittedByParent"`
 	SiblingIds        string  `json:"siblingIds"`
 	SiblingDiscount   float64 `json:"siblingDiscount"`
+	ReferralCredit    float64 `json:"referralCredit"`
 	DeletedAt         *string `json:"deletedAt,omitempty"`
 }
 
@@ -188,6 +191,25 @@ type Registration struct {
 	Bio               string  `json:"bio"`
 	Schedule          string  `json:"schedule"`
 	ExpectedSalary    string  `json:"expectedSalary"`
+	ReferralCode      string  `json:"referralCode,omitempty"`
+	// EmailVerifiedAt is non-empty when the parent (or teacher applicant)
+	// has clicked the verification link in their welcome email. Drives the
+	// "verified" badge on the admin pending list.
+	EmailVerifiedAt string `json:"emailVerifiedAt,omitempty"`
+}
+
+type ReferralReward struct {
+	ID                string `json:"id"`
+	ReferrerFamilyID  string `json:"referrerFamilyId"`
+	ReferredStudentID string `json:"referredStudentId"`
+	Status            string `json:"status"` // pending | earned | exhausted
+	PaidInvoiceCount  int    `json:"paidInvoiceCount"`
+	CreditsRemaining  int    `json:"creditsRemaining"`
+	MilestoneMetOn    string `json:"milestoneMetOn,omitempty"`
+	CreatedAt         string `json:"createdAt,omitempty"`
+	// Joined display fields (filled by listReferralRewards)
+	ReferrerName     string `json:"referrerName,omitempty"`
+	ReferredName     string `json:"referredName,omitempty"`
 }
 
 type StudentNote struct {
@@ -279,6 +301,16 @@ type ReplacementCredit struct {
 	ClassID   string `json:"classId"`
 	Date      string `json:"date"`
 	CreatedBy string `json:"createdBy"`
+	Category  string `json:"category"` // "class" or "self-study"
+}
+
+type FeedbackReply struct {
+	ID          string `json:"id"`
+	FeedbackID  string `json:"feedbackId"`
+	AuthorEmail string `json:"authorEmail"`
+	AuthorName  string `json:"authorName"`
+	Message     string `json:"message"`
+	CreatedAt   string `json:"createdAt"`
 }
 
 // Snapshot is what GET /api/snapshot returns — identical shape to App.DATA
@@ -300,4 +332,6 @@ type Snapshot struct {
 	Holidays           []Holiday           `json:"holidays"`
 	ReplacementCredits []ReplacementCredit `json:"replacementCredits"`
 	Families           []Family            `json:"families"`
+	FeedbackReplies    []FeedbackReply     `json:"feedbackReplies"`
+	ReferralRewards    []ReferralReward    `json:"referralRewards"`
 }

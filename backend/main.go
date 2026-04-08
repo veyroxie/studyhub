@@ -30,9 +30,26 @@ func maxBodySize(next http.Handler) http.Handler {
 	})
 }
 
+// appEnv returns the current environment ("development", "staging",
+// "production", etc.). Defaults to "development" so local dev never needs
+// the variable set.
+func appEnv() string {
+	if v := os.Getenv("APP_ENV"); v != "" {
+		return v
+	}
+	return "development"
+}
+
 func main() {
-	// Load .env file if present (silently ignored in production where env vars are set directly)
-	_ = godotenv.Load()
+	// Load .env files in order: .env first (legacy / shared defaults), then
+	// .env.${APP_ENV} on top so per-environment overrides win. Both are
+	// silently optional — production typically gets env vars from the
+	// orchestrator (Docker Compose, systemd) instead of files.
+	env := appEnv()
+	_ = godotenv.Load(".env")
+	_ = godotenv.Load(".env." + env)
+	initLogger()
+	logger.Info("starting", "env", env)
 
 	dbDSN := flag.String("db", "postgres://studyhub:studyhub@localhost:5432/studyhub?sslmode=disable", "PostgreSQL connection string")
 	port := flag.String("port", "8080", "HTTP port")
@@ -67,6 +84,8 @@ func main() {
 	db := initDB(*dbDSN)
 	defer db.Close()
 	seedIfEmpty(db)
+	initMailer()
+	startJobs(db)
 
 	hub := newHub()
 	r := chi.NewRouter()
@@ -109,11 +128,16 @@ func main() {
 	})
 
 	// ── Public routes (no auth needed) ───────────────────────────────────────
+	r.Get("/api/health", handleHealth(db))
 	r.With(rateLimitLogin).Post("/api/auth/login", handleLogin(db))
 	r.Post("/api/auth/logout", handleLogout)
 	r.With(rateLimitLogin).Post("/api/register", handleRegister(db))
 	r.With(rateLimitLogin).Post("/api/register-teacher", handleRegisterTeacher(db))
 	r.With(rateLimitLogin).Post("/api/forgot-password", handleForgotPassword(db))
+	r.With(rateLimitLogin).Post("/api/reset-password", handleResetPassword(db))
+	r.With(rateLimitLogin).Post("/api/set-password", handleSetPassword(db))
+	r.Get("/api/verify-email", handleVerifyEmail(db))
+	r.With(rateLimitLogin).Post("/api/resend-verification", handleResendVerification(db))
 	r.Get("/ws", hub.handleWS())
 
 	// ── Authenticated routes ──────────────────────────────────────────────────
@@ -170,6 +194,8 @@ func main() {
 			r.Delete("/{id}", handleDeleteFeedback(db))
 		})
 
+		r.Post("/api/feedback-replies", handleCreateFeedbackReply(db))
+
 		r.Route("/api/subjects", func(r chi.Router) {
 			r.Get("/", handleListSubjects(db))
 			r.Post("/", handleCreateSubject(db))
@@ -213,6 +239,13 @@ func main() {
 			r.Post("/", handleFamilies(db))
 			r.Put("/{id}", handleFamilyByID(db))
 			r.Delete("/{id}", handleFamilyByID(db))
+			r.Get("/{id}/referral", handleFamilyReferral(db))
+		})
+
+		r.Route("/api/referrals", func(r chi.Router) {
+			r.Get("/", handleReferrals(db))
+			r.Post("/{id}/earn", handleReferralEarn(db))
+			r.Post("/{id}/consume", handleReferralConsume(db))
 		})
 
 		r.Route("/api/holidays", func(r chi.Router) {

@@ -881,43 +881,45 @@ func TestReplacementCredits_EarnAndUse(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &stu)
 	stuID := stu["id"].(string)
 
-	// Earn 60 min credit
+	// Earn 4 credits (= 1 hour class absence)
 	w = doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
-		"studentId": stuID, "type": "earned", "minutes": 60, "note": "Absent from Math", "date": "2026-03-20",
+		"studentId": stuID, "type": "earned", "minutes": 4, "category": "class", "note": "Absent from Math", "date": "2026-03-20",
 	})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("earn credit: %d %s", w.Code, w.Body.String())
 	}
 	var credit map[string]any
 	json.Unmarshal(w.Body.Bytes(), &credit)
-	if credit["minutes"].(float64) != 60 {
-		t.Fatalf("expected 60 min, got %v", credit["minutes"])
+	if credit["minutes"].(float64) != 4 {
+		t.Fatalf("expected 4 credits, got %v", credit["minutes"])
 	}
 
-	// Check balance = 60
+	// Check balance = 4 class credits
 	w = doRequest(r, "GET", "/api/replacement-credits/balance?studentId="+stuID, token, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("balance: %d %s", w.Code, w.Body.String())
 	}
 	var bal map[string]any
 	json.Unmarshal(w.Body.Bytes(), &bal)
-	if bal["balance"].(float64) != 60 {
-		t.Fatalf("expected balance 60, got %v", bal["balance"])
+	classBal := bal["class"].(map[string]any)
+	if classBal["balance"].(float64) != 4 {
+		t.Fatalf("expected class balance 4, got %v", classBal["balance"])
 	}
 
-	// Use 15 min
+	// Use 1 credit (= 15 min extension)
 	w = doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
-		"studentId": stuID, "type": "used", "minutes": 15, "note": "Extended English", "date": "2026-03-21",
+		"studentId": stuID, "type": "used", "minutes": 1, "category": "class", "note": "Extended English", "date": "2026-03-21",
 	})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("use credit: %d %s", w.Code, w.Body.String())
 	}
 
-	// Check balance = 45
+	// Check balance = 3 class credits
 	w = doRequest(r, "GET", "/api/replacement-credits/balance?studentId="+stuID, token, nil)
 	json.Unmarshal(w.Body.Bytes(), &bal)
-	if bal["balance"].(float64) != 45 {
-		t.Fatalf("expected balance 45, got %v", bal["balance"])
+	classBal = bal["class"].(map[string]any)
+	if classBal["balance"].(float64) != 3 {
+		t.Fatalf("expected class balance 3, got %v", classBal["balance"])
 	}
 
 	// List credits — should have 2 entries
@@ -947,18 +949,18 @@ func TestReplacementCredits_InsufficientBalance(t *testing.T) {
 
 	// Try to use credits with 0 balance — should fail
 	w = doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
-		"studentId": stuID, "type": "used", "minutes": 30, "date": "2026-03-21",
+		"studentId": stuID, "type": "used", "minutes": 2, "category": "class", "date": "2026-03-21",
 	})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for insufficient balance, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Earn 30, try to use 45 — should fail
+	// Earn 2 credits, try to use 3 — should fail
 	doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
-		"studentId": stuID, "type": "earned", "minutes": 30, "date": "2026-03-20",
+		"studentId": stuID, "type": "earned", "minutes": 2, "category": "class", "date": "2026-03-20",
 	})
 	w = doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
-		"studentId": stuID, "type": "used", "minutes": 45, "date": "2026-03-21",
+		"studentId": stuID, "type": "used", "minutes": 3, "category": "class", "date": "2026-03-21",
 	})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for over-use, got %d: %s", w.Code, w.Body.String())
@@ -972,7 +974,7 @@ func TestReplacementCredits_ParentReadOnly(t *testing.T) {
 
 	// Parent should NOT be able to create credits
 	w := doRequest(r, "POST", "/api/replacement-credits", parentToken, map[string]any{
-		"studentId": "STU_test", "type": "earned", "minutes": 60, "date": "2026-03-20",
+		"studentId": "STU_test", "type": "earned", "minutes": 4, "category": "class", "date": "2026-03-20",
 	})
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for parent creating credit, got %d", w.Code)
@@ -991,7 +993,7 @@ func TestReplacementCredits_InvalidType(t *testing.T) {
 	token := getAdminToken(t, r)
 
 	w := doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
-		"studentId": "STU_test", "type": "bogus", "minutes": 60, "date": "2026-03-20",
+		"studentId": "STU_test", "type": "bogus", "minutes": 4, "category": "class", "date": "2026-03-20",
 	})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for invalid type, got %d", w.Code)
@@ -1040,7 +1042,7 @@ func TestReplacementCredits_Delete(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &stu)
 
 	w = doRequest(r, "POST", "/api/replacement-credits", token, map[string]any{
-		"studentId": stu["id"], "type": "earned", "minutes": 60, "date": "2026-03-20",
+		"studentId": stu["id"], "type": "earned", "minutes": 4, "category": "class", "date": "2026-03-20",
 	})
 	var credit map[string]any
 	json.Unmarshal(w.Body.Bytes(), &credit)
@@ -1056,7 +1058,8 @@ func TestReplacementCredits_Delete(t *testing.T) {
 	w = doRequest(r, "GET", "/api/replacement-credits/balance?studentId="+stu["id"].(string), token, nil)
 	var bal map[string]any
 	json.Unmarshal(w.Body.Bytes(), &bal)
-	if bal["balance"].(float64) != 0 {
-		t.Fatalf("expected 0 after delete, got %v", bal["balance"])
+	classBal := bal["class"].(map[string]any)
+	if classBal["balance"].(float64) != 0 {
+		t.Fatalf("expected 0 after delete, got %v", classBal["balance"])
 	}
 }

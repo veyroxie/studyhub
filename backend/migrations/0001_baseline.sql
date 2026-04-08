@@ -1,0 +1,11 @@
+-- 0001_baseline.sql
+--
+-- Marker migration. Existing production databases were provisioned via the
+-- legacy createSchema() + runMigrations() path in database.go (which is
+-- idempotent and still runs on every boot). This file exists so the
+-- schema_migrations table records "we are up to baseline" — every NEW
+-- schema change after this should be added as 0002_<name>.sql etc., and
+-- runMigrations() in database.go should stop accumulating new ALTERs.
+--
+-- It is intentionally a no-op so it's safe to run against any existing DB.
+SELECT 1;

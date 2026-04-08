@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -77,15 +78,18 @@ func handleLogin(db *DB) http.HandlerFunc {
 		}
 
 		var (
-			id       int
-			hash     string
-			role     string
-			name     string
-			tenantID int
+			id          int
+			hash        string
+			role        string
+			name        string
+			tenantID    int
+			status      string
+			failedCount int
+			lockedUntil sql.NullTime
 		)
 		err := db.QueryRow(
-			`SELECT id, password_hash, role, name, tenant_id FROM users WHERE email = ?`, req.Email,
-		).Scan(&id, &hash, &role, &name, &tenantID)
+			`SELECT id, password_hash, role, name, tenant_id, COALESCE(status,'active'), COALESCE(failed_login_count,0), locked_until FROM users WHERE email = ?`, req.Email,
+		).Scan(&id, &hash, &role, &name, &tenantID, &status, &failedCount, &lockedUntil)
 
 		if err == sql.ErrNoRows {
 			// Use same error as wrong password — never reveal which one was wrong
@@ -97,8 +101,49 @@ func handleLogin(db *DB) http.HandlerFunc {
 			return
 		}
 
+		// ── Account lockout gate ───────────────────────────────────────────
+		// If the account is currently locked, reject before even checking the
+		// password. Use a generic message that includes how many minutes are
+		// left so a confused legitimate user knows when to try again.
+		if lockedUntil.Valid && lockedUntil.Time.After(time.Now()) {
+			minsLeft := int(time.Until(lockedUntil.Time).Minutes()) + 1
+			respondError(w, fmt.Sprintf("account temporarily locked due to too many failed attempts — try again in %d minutes", minsLeft), http.StatusForbidden)
+			return
+		}
+
 		if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)); err != nil {
+			// Wrong password: bump the failure counter and lock if it crosses
+			// the threshold. Done in one statement so concurrent attempts
+			// don't race past each other.
+			newCount := failedCount + 1
+			const maxAttempts = 5
+			const lockDuration = 15 * time.Minute
+			if newCount >= maxAttempts {
+				db.Exec(
+					`UPDATE users SET failed_login_count=?, locked_until=? WHERE id=?`,
+					newCount, time.Now().Add(lockDuration), id,
+				)
+				logFromReq(r).Warn("account locked after failed logins", "email", req.Email, "user_id", id, "attempts", newCount)
+				respondError(w, fmt.Sprintf("account locked after %d failed attempts — try again in %d minutes", maxAttempts, int(lockDuration.Minutes())), http.StatusForbidden)
+				return
+			}
+			db.Exec(`UPDATE users SET failed_login_count=? WHERE id=?`, newCount, id)
 			respondError(w, "invalid credentials", http.StatusUnauthorized)
+			return
+		}
+
+		// Successful password check — reset the failure counter so a parent
+		// who got their password wrong twice doesn't carry that history
+		// forever.
+		if failedCount > 0 || lockedUntil.Valid {
+			db.Exec(`UPDATE users SET failed_login_count=0, locked_until=NULL WHERE id=?`, id)
+		}
+
+		// Block login until the email has been verified. Frontend looks for
+		// the "needs_verification" sentinel in the error message and shows a
+		// "Resend verification email" link.
+		if status == "pending_verification" {
+			respondError(w, "needs_verification: please verify your email — check your inbox for the link we sent", http.StatusForbidden)
 			return
 		}
 

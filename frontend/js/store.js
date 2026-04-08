@@ -38,7 +38,8 @@
     feedback: [], subjects: [], workshops: [], selfStudySessions: [],
     performanceReviews: [], cancelledClasses: [], messages: [], holidays: [],
     replacementCredits: [],
-    families: []
+    families: [],
+    feedbackReplies: []
   };
 
   function loadState() {

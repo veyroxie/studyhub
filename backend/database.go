@@ -23,7 +23,11 @@ func initDB(dsn string) *DB {
 		log.Fatalf("create schema: %v", err)
 	}
 	runMigrations(db)
-	return &DB{db}
+	wrapped := &DB{db}
+	if err := runFileMigrations(wrapped); err != nil {
+		log.Fatalf("file migrations: %v", err)
+	}
+	return wrapped
 }
 
 func createSchema(db *sql.DB) error {
@@ -323,6 +327,40 @@ func createSchema(db *sql.DB) error {
 		created_by  TEXT DEFAULT '',
 		created_at  TIMESTAMPTZ DEFAULT NOW()
 	);
+
+	CREATE TABLE IF NOT EXISTS feedback_replies (
+		id           TEXT PRIMARY KEY,
+		tenant_id    INTEGER NOT NULL DEFAULT 1,
+		feedback_id  TEXT NOT NULL,
+		author_email TEXT NOT NULL,
+		author_name  TEXT DEFAULT '',
+		message      TEXT NOT NULL,
+		created_at   TIMESTAMPTZ DEFAULT NOW()
+	);
+
+	CREATE TABLE IF NOT EXISTS referral_rewards (
+		id                  TEXT PRIMARY KEY,
+		tenant_id           INTEGER NOT NULL DEFAULT 1,
+		referrer_family_id  TEXT NOT NULL,
+		referred_student_id TEXT NOT NULL UNIQUE,
+		status              TEXT NOT NULL DEFAULT 'pending',
+		paid_invoice_count  INTEGER NOT NULL DEFAULT 0,
+		credits_remaining   INTEGER NOT NULL DEFAULT 0,
+		milestone_met_on    TEXT,
+		created_at          TIMESTAMPTZ DEFAULT NOW()
+	);
+
+	CREATE TABLE IF NOT EXISTS email_tokens (
+		token            TEXT PRIMARY KEY,
+		tenant_id        INTEGER NOT NULL DEFAULT 1,
+		email            TEXT NOT NULL,
+		purpose          TEXT NOT NULL,
+		user_id          INTEGER,
+		registration_id  TEXT,
+		expires_at       TIMESTAMPTZ NOT NULL,
+		used_at          TIMESTAMPTZ,
+		created_at       TIMESTAMPTZ DEFAULT NOW()
+	);
 	`)
 	return err
 }
@@ -384,12 +422,70 @@ func runMigrations(db *sql.DB) {
 		`CREATE INDEX IF NOT EXISTS idx_students_family ON students(family_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_families_contact ON families(contact)`,
 		`CREATE INDEX IF NOT EXISTS idx_families_tenant ON families(tenant_id)`,
+
+		// Replacement credits: add category column and convert old minutes to credits
+		`ALTER TABLE replacement_credits ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'class'`,
+		`UPDATE replacement_credits SET minutes = GREATEST(1, minutes / 15) WHERE minutes > 4`,
+
+		// Feedback replies index
+		`CREATE INDEX IF NOT EXISTS idx_feedback_replies_feedback ON feedback_replies(feedback_id)`,
+
+		// Email verification + auth tokens
+		`ALTER TABLE users         ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'`,
+		`ALTER TABLE users         ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ`,
+		`ALTER TABLE users         ADD COLUMN IF NOT EXISTS failed_login_count INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE users         ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ`,
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ`,
+		`CREATE INDEX IF NOT EXISTS idx_email_tokens_email ON email_tokens(email)`,
+		`CREATE INDEX IF NOT EXISTS idx_email_tokens_expires ON email_tokens(expires_at) WHERE used_at IS NULL`,
+
+		// Referral system
+		`ALTER TABLE families      ADD COLUMN IF NOT EXISTS referral_code TEXT DEFAULT ''`,
+		`ALTER TABLE students      ADD COLUMN IF NOT EXISTS referred_by_family_id TEXT DEFAULT ''`,
+		`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS referral_code TEXT DEFAULT ''`,
+		`ALTER TABLE invoices      ADD COLUMN IF NOT EXISTS referral_credit DOUBLE PRECISION DEFAULT 0`,
+		`ALTER TABLE invoices      ADD COLUMN IF NOT EXISTS reminder_sent_on TEXT`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_families_referral_code ON families(referral_code) WHERE referral_code <> ''`,
+		`CREATE INDEX IF NOT EXISTS idx_referral_rewards_referrer ON referral_rewards(referrer_family_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_referral_rewards_student  ON referral_rewards(referred_student_id)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (index/row already exists = OK)
 	}
 
 	migrateStudentsToFamilies(db)
+	backfillFamilyReferralCodes(db)
+}
+
+// backfillFamilyReferralCodes assigns a unique SH-XXXX code to every family
+// that does not already have one. Safe to run repeatedly.
+func backfillFamilyReferralCodes(db *sql.DB) {
+	rows, err := db.Query(`SELECT id FROM families WHERE (referral_code IS NULL OR referral_code = '') AND deleted_at IS NULL`)
+	if err != nil {
+		return
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	if len(ids) == 0 {
+		return
+	}
+	log.Printf("Backfilling referral codes for %d families...", len(ids))
+	for _, id := range ids {
+		// Try a few times in case of code collisions.
+		for attempt := 0; attempt < 5; attempt++ {
+			code := newReferralCode()
+			_, err := db.Exec(`UPDATE families SET referral_code=$1 WHERE id=$2 AND (referral_code IS NULL OR referral_code='')`, code, id)
+			if err == nil {
+				break
+			}
+		}
+	}
 }
 
 func migrateStudentsToFamilies(db *sql.DB) {

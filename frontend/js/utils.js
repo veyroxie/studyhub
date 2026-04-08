@@ -241,6 +241,20 @@
     setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 260);
   }
 
+  /* ── Loading-state helper for async buttons ── */
+  App.Utils.withLoading = function(btn, asyncFn) {
+    if (btn.disabled) return;
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+    btn.textContent = 'Saving...';
+    asyncFn().finally(function() {
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.textContent = originalText;
+    });
+  };
+
   // Close modal on overlay click
   document.addEventListener('DOMContentLoaded', function() {
     // Hide the old toast element if it exists

@@ -4,12 +4,30 @@
   <meta charset="UTF-8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600;9..144,700;9..144,900&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <title>Study Hub — Education Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    // togglePw flips a password input between hidden/visible and swaps the
+    // accompanying eye icon between open and slashed-out variants. Reusable
+    // across the login form, reset page, registration form, etc.
+    function togglePw(btn, inputId) {
+      var input = document.getElementById(inputId);
+      if (!input) return;
+      var hidden = input.type === 'password';
+      input.type = hidden ? 'text' : 'password';
+      btn.setAttribute('aria-label', hidden ? 'Hide password' : 'Show password');
+      var svg = btn.querySelector('svg');
+      if (svg) {
+        svg.innerHTML = hidden
+          ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+          : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+      }
+    }
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="bg-slate-50">
@@ -47,10 +65,17 @@
         </div>
         <div>
           <label style="display:block;font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;font-family:'DM Sans',sans-serif">Password</label>
-          <input id="login-password" type="password" placeholder="Enter your password" required
-            style="width:100%;padding:0.65rem 0.85rem;background:#FAF9F6;border:1px solid #e2e8f0;border-radius:10px;color:#1a1a1a;font-size:0.85rem;outline:none;transition:border 0.2s,box-shadow 0.2s;font-family:'DM Sans',sans-serif"
-            onfocus="this.style.borderColor='#C9A227';this.style.boxShadow='0 0 0 3px rgba(201,162,39,0.1)'"
-            onblur="this.style.borderColor='#e2e8f0';this.style.boxShadow='none'">
+          <div style="position:relative">
+            <input id="login-password" type="password" placeholder="Enter your password" required
+              style="width:100%;padding:0.65rem 2.5rem 0.65rem 0.85rem;background:#FAF9F6;border:1px solid #e2e8f0;border-radius:10px;color:#1a1a1a;font-size:0.85rem;outline:none;transition:border 0.2s,box-shadow 0.2s;font-family:'DM Sans',sans-serif"
+              onfocus="this.style.borderColor='#C9A227';this.style.boxShadow='0 0 0 3px rgba(201,162,39,0.1)'"
+              onblur="this.style.borderColor='#e2e8f0';this.style.boxShadow='none'">
+            <button type="button" aria-label="Show password" onclick="togglePw(this,'login-password')"
+              style="position:absolute;right:0.55rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#94a3b8;padding:0.3rem;display:flex;align-items:center;justify-content:center;border-radius:6px"
+              onmouseover="this.style.color='#64748b';this.style.background='#f1f5f9'" onmouseout="this.style.color='#94a3b8';this.style.background='transparent'">
+              <svg class="pw-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
         </div>
         <button type="submit" id="login-btn"
           style="width:100%;padding:0.7rem;background:linear-gradient(135deg,#C9A227 0%,#b08d20 100%);color:#fff;font-weight:700;font-size:0.85rem;border:none;border-radius:10px;cursor:pointer;transition:opacity 0.15s,transform 0.1s;font-family:'DM Sans',sans-serif;box-shadow:0 2px 8px rgba(201,162,39,0.25)"
@@ -65,6 +90,14 @@
           onmouseover="this.style.color='#a6841d'" onmouseout="this.style.color='#C9A227'">Register</a>
         <a href="#" id="forgot-password-link" style="font-size:0.8rem;color:#94a3b8;text-decoration:none;transition:color 0.15s;font-family:'DM Sans',sans-serif"
           onmouseover="this.style.color='#64748b'" onmouseout="this.style.color='#94a3b8'">Forgot Password?</a>
+      </div>
+
+      <!-- Resend verification email — shown when login fails because the
+           account is still pending email verification. Hidden by default. -->
+      <div id="resend-verify-banner" class="hidden" style="margin-top:1rem;padding:0.85rem 1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;font-size:0.78rem;color:#92400e;line-height:1.5">
+        <div style="font-weight:700;margin-bottom:0.25rem">Email not verified</div>
+        Check your inbox for the verification link we sent. Didn't get it?
+        <a href="#" id="resend-verify-link" style="color:#C9A227;text-decoration:none;font-weight:700;display:inline-block;margin-top:0.4rem">Resend verification email →</a>
       </div>
 
       <!-- Dev quick-login buttons (localhost only) -->
@@ -256,11 +289,11 @@
     </button>
     <button data-page="communication" class="dock-btn" aria-label="Announce">
       <svg class="dock-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-      <span class="dock-label">Announce</span>
+      <span class="dock-label">News</span>
     </button>
     <button data-page="analytics" class="dock-btn dock-admin" aria-label="Analytics">
       <svg class="dock-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-      <span class="dock-label">Analytics</span>
+      <span class="dock-label">Stats</span>
     </button>
   </nav>
 

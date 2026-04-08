@@ -150,6 +150,19 @@
       + '</div>';
   }
 
+  function _renderReplies(feedbackId) {
+    var state = App.Store.get();
+    var replies = (state.feedbackReplies || []).filter(function(r) { return r.feedbackId === feedbackId; });
+    // Sort oldest first so conversation reads top-to-bottom
+    replies.sort(function(a, b) { return (a.createdAt || '').localeCompare(b.createdAt || ''); });
+    return replies.map(function(r) {
+      return '<div style="padding:0.5rem 0.75rem;background:#f8fafc;border-radius:8px;margin-top:0.5rem;border-left:2px solid var(--gold)">'
+        + '<div style="font-size:0.78rem;color:#111">' + App.Utils.esc(r.message) + '</div>'
+        + '<div style="font-size:0.65rem;color:#94a3b8;margin-top:0.25rem">' + App.Utils.esc(r.authorName) + ' · ' + App.Utils.formatDate(r.createdAt) + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
   function _fbCardParent(fb, classes, staff, students) {
     var cls     = classes.find(function(c) { return c.id === fb.classId; }) || {};
     var teacher = staff.find(function(s) { return s.id === fb.teacherId; }) || {};
@@ -171,6 +184,10 @@
         + '</div>';
     }).join('');
 
+    // Replies section
+    var repliesHtml = _renderReplies(fb.id);
+    var replyBtn = '<button onclick="App.Feedback._replyInline(\'' + fb.id + '\',this)" style="font-size:0.72rem;color:var(--gold);background:none;border:none;cursor:pointer;font-weight:600;margin-top:0.5rem">Reply</button>';
+
     return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.06);padding:1.1rem 1.25rem;">'
       // Header row: class name + mood pill
       + '<div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.3rem;">'
@@ -191,6 +208,10 @@
           : '')
       // Child individual note(s)
       + noteBlocks
+      // Replies
+      + repliesHtml
+      // Reply button
+      + replyBtn
       + '</div>';
   }
 
@@ -319,6 +340,9 @@
 
     var moodPill = '<span style="padding:0.15rem 0.55rem;border-radius:20px;font-size:0.7rem;font-weight:700;background:' + ms.bg + ';color:' + ms.color + ';">' + ms.label + '</span>';
 
+    // Replies from parents
+    var repliesHtml = _renderReplies(fb.id);
+
     return '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5">'
       + '<div class="flex items-start justify-between gap-3">'
       + '<div class="flex-1 min-w-0">'
@@ -337,6 +361,7 @@
           ? '<p class="text-sm text-slate-600 mt-1.5 leading-relaxed">' + App.Utils.esc(fb.notes) + '</p>'
           : '')
       + stuNotes
+      + (repliesHtml ? '<div class="mt-3 border-t border-slate-100 pt-3"><p class="text-xs font-semibold text-slate-500 mb-1">Parent Replies</p>' + repliesHtml + '</div>' : '')
       + '</div>'
       + '<div class="flex gap-2 shrink-0">' + editBtn + delBtn + '</div>'
       + '</div>'
@@ -592,6 +617,40 @@
   function _setStaffPage(n) { _feedbackPage = Math.max(0, n); App.Router.refresh(); }
   function _setParentPage(n) { _feedbackParentPage = Math.max(0, n); App.Router.refresh(); }
 
+  // ─── REPLY INLINE ──────────────────────────────────────────────────────────
+
+  function _replyInline(feedbackId, btn) {
+    var container = btn.parentElement;
+    // Don't add twice
+    if (container.querySelector('.reply-form')) return;
+    var form = document.createElement('div');
+    form.className = 'reply-form';
+    form.style.cssText = 'margin-top:0.5rem';
+    form.innerHTML = '<textarea id="reply-text-' + feedbackId + '" rows="2" placeholder="Write a reply..." style="width:100%;padding:0.5rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;resize:none;font-family:inherit;outline:none"></textarea>'
+      + '<div style="display:flex;gap:0.4rem;margin-top:0.35rem">'
+      + '<button onclick="App.Feedback._sendReply(\'' + feedbackId + '\')" style="padding:0.3rem 0.7rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:6px;cursor:pointer">Send</button>'
+      + '<button onclick="this.parentElement.parentElement.remove()" style="padding:0.3rem 0.7rem;font-size:0.75rem;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;cursor:pointer">Cancel</button>'
+      + '</div>';
+    container.appendChild(form);
+    form.querySelector('textarea').focus();
+  }
+
+  function _sendReply(feedbackId) {
+    var textarea = document.getElementById('reply-text-' + feedbackId);
+    if (!textarea || !textarea.value.trim()) { App.Utils.showToast('Please enter a reply', 'warning'); return; }
+    App.Api.post('/api/feedback-replies', {
+      feedbackId: feedbackId,
+      message: textarea.value.trim()
+    }).then(function() {
+      App.Utils.showToast('Reply sent', 'success');
+      return App.Api.refresh();
+    }).then(function() {
+      // refresh already handled
+    }).catch(function(err) {
+      App.Utils.showToast(err.message || 'Failed to send reply', 'error');
+    });
+  }
+
   // ─── EXPORT ─────────────────────────────────────────────────────────────────
 
   function _initMoodRadios() {
@@ -632,6 +691,8 @@
     _setChild:          _setChild,
     _clearFilters:      _clearFilters,
     _setStaffPage:      _setStaffPage,
-    _setParentPage:     _setParentPage
+    _setParentPage:     _setParentPage,
+    _replyInline:       _replyInline,
+    _sendReply:         _sendReply
   };
 })();

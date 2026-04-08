@@ -229,11 +229,11 @@
             + '<div style="width:2.2rem;height:2.2rem;border-radius:10px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:0.85rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + r.name.charAt(0) + '</div>'
             + '<div style="flex:1;min-width:0">'
             +   '<div style="font-size:0.83rem;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(r.name) + '</div>'
-            +   '<div style="font-size:0.7rem;color:#94a3b8">Absent ' + r.earned + 'm · Extended ' + r.used + 'm</div>'
+            +   '<div style="font-size:0.7rem;color:#94a3b8">Earned ' + r.earned + ' · Used ' + r.used + '</div>'
             + '</div>'
             + '<div style="text-align:right;flex-shrink:0">'
             +   '<div style="font-family:var(--serif);font-size:1.2rem;font-weight:700;color:#92400e">' + r.balance + '</div>'
-            +   '<div style="font-size:0.6rem;color:#b08d20;font-weight:600">MIN OWED</div>'
+            +   '<div style="font-size:0.6rem;color:#b08d20;font-weight:600">CR OWED</div>'
             + '</div>'
             + '</div>';
         }).join('')
@@ -288,6 +288,47 @@
       + '</div>'
       + '</div>';
 
+    // ── First-login checklist (show if not dismissed) ────────────────────────
+    var checklistDone = localStorage.getItem('sh_checklist_done');
+    if (!checklistDone) {
+      var checkItems = [
+        { label: 'View your child\'s schedule', page: 'calendar', done: false },
+        { label: 'Check upcoming payments', page: 'billing', done: false },
+        { label: 'See teacher feedback', page: 'feedback', done: false },
+        { label: 'View attendance records', page: 'attendance', done: false }
+      ];
+      var visited = JSON.parse(localStorage.getItem('sh_checklist_visited') || '{}');
+      checkItems.forEach(function(item) { item.done = !!visited[item.page]; });
+      var allDone = checkItems.every(function(item) { return item.done; });
+
+      html += '<div style="background:#fff;border-radius:14px;border:1px solid rgba(201,162,39,0.2);padding:1.25rem 1.5rem;margin-bottom:0.5rem">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
+        +   '<div>'
+        +     '<div style="font-size:0.95rem;font-weight:700;color:#111">Welcome to StudyHub</div>'
+        +     '<div style="font-size:0.78rem;color:#94a3b8">Get started by exploring these sections</div>'
+        +   '</div>'
+        +   '<button onclick="localStorage.setItem(\'sh_checklist_done\',\'1\');App.Router.refresh()" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;text-decoration:underline">Dismiss</button>'
+        + '</div>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">';
+
+      checkItems.forEach(function(item) {
+        html += '<button onclick="var v=JSON.parse(localStorage.getItem(\'sh_checklist_visited\')||\'{}\');v[\'' + item.page + '\']=true;localStorage.setItem(\'sh_checklist_visited\',JSON.stringify(v));App.Router.navigate(\'' + item.page + '\')" '
+          + 'style="display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.85rem;border-radius:10px;border:1px solid ' + (item.done ? '#bbf7d0' : '#e2e8f0') + ';background:' + (item.done ? '#f0fdf4' : '#fff') + ';cursor:pointer;text-align:left;transition:all 0.15s;font-family:inherit" '
+          + 'onmouseover="this.style.borderColor=\'var(--gold)\'" onmouseout="this.style.borderColor=\'' + (item.done ? '#bbf7d0' : '#e2e8f0') + '\'">'
+          + '<span style="width:18px;height:18px;border-radius:50%;border:2px solid ' + (item.done ? '#22c55e' : '#d1d5db') + ';background:' + (item.done ? '#22c55e' : '#fff') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+          + (item.done ? '<svg width="10" height="10" fill="none" stroke="#fff" stroke-width="3" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>' : '')
+          + '</span>'
+          + '<span style="font-size:0.8rem;font-weight:600;color:' + (item.done ? '#15803d' : '#374151') + '">' + item.label + '</span>'
+          + '</button>';
+      });
+
+      html += '</div>';
+      if (allDone) {
+        html += '<div style="margin-top:0.75rem;text-align:center;font-size:0.78rem;color:#15803d;font-weight:600">All done! You\'re all set.</div>';
+      }
+      html += '</div>';
+    }
+
     // ── Alert banner ──────────────────────────────────────────────────────────
     if (overdueInvs.length > 0) {
       html += '<div style="padding:0.85rem 1.1rem;background:#fef2f2;border:1px solid #fecaca;border-left:3px solid #dc2626;border-radius:12px;display:flex;align-items:center;gap:0.75rem">'
@@ -297,6 +338,23 @@
       html += '<div style="padding:0.85rem 1.1rem;background:#fffbeb;border:1px solid #fde68a;border-left:3px solid #d97706;border-radius:12px;display:flex;align-items:center;gap:0.75rem">'
         + '<div style="flex:1;font-size:0.83rem;color:#92400e"><strong>Payment due soon</strong> — ' + dueSoonInvs.length + ' invoice' + (dueSoonInvs.length !== 1 ? 's' : '') + ' due within 7 days.</div>'
         + '<button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#d97706;background:#fff;border:1px solid #fde68a;border-radius:7px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">View</button></div>';
+    }
+
+    // ── Empty state: parent self-served but no children linked yet ─────────
+    // This happens when a parent registers via /register.html and verifies
+    // their email, but admin hasn't approved the registration yet (no
+    // student records exist for this contact email). Show a friendly
+    // placeholder instead of leaving the dashboard blank.
+    if (myStudents.length === 0) {
+      html += '<div style="background:#fff;border-radius:16px;border:1px solid rgba(201,162,39,0.2);padding:2.5rem 2rem;text-align:center;max-width:560px;margin:1rem auto 0">'
+        + '<div style="width:64px;height:64px;border-radius:50%;background:rgba(201,162,39,0.08);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem">'
+        +   '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#C9A227" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>'
+        + '</div>'
+        + '<h2 style="font-family:var(--serif);font-size:1.4rem;font-weight:700;color:#0a0a0a;margin:0 0 0.5rem">Welcome to The Study Hub</h2>'
+        + '<p style="color:#64748b;font-size:0.9rem;line-height:1.55;margin:0 auto;max-width:380px">Your account is active. Our team will link your child\'s profile to your account shortly — usually within a few hours during business days. You\'ll see schedules, billing, and feedback here as soon as that\'s done.</p>'
+        + '<p style="margin:1.25rem 0 0;font-size:0.78rem;color:#94a3b8">Need to follow up? Reach us at <a href="mailto:hello@studyhub.fit" style="color:#C9A227;text-decoration:none;font-weight:600">hello@studyhub.fit</a>.</p>'
+        + '</div>';
+      return html;
     }
 
     // ── Children Cards ────────────────────────────────────────────────────────
@@ -393,6 +451,31 @@
         +   '<div style="flex:1;min-width:0">'
         +     '<div style="font-size:1.05rem;font-weight:700;color:#111;font-family:var(--serif)">' + App.Utils.esc(stu.firstName) + ' ' + App.Utils.esc(stu.lastName) + '</div>'
         +     '<div style="font-size:0.78rem;color:#64748b;margin-top:2px">' + App.Utils.esc(stu.grade || '') + (subjects ? ' · ' + subjects : '') + '</div>'
+        +     (function() {
+                var todayAtt = attendance.find(function(a) {
+                  return a.personId === stu.id && a.date === today && a.personType === 'student';
+                });
+                var hasClassToday = stuClasses.some(function(c) { return c.day === todayDay; });
+                if (!hasClassToday) return '';
+                var todayStatus = todayAtt
+                  ? (todayAtt.status === 'Absent' ? 'absent' : todayAtt.checkIn ? 'present' : 'pending')
+                  : 'none';
+                if (todayStatus === 'present') {
+                  var timeStr = todayAtt.checkIn || '';
+                  var label = timeStr ? 'Checked in at ' + timeStr : 'In class';
+                  return '<div style="font-size:0.72rem;margin-top:3px;display:flex;align-items:center;gap:4px">'
+                    + '<span style="width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>'
+                    + '<span style="color:#15803d;font-weight:600">' + App.Utils.esc(label) + '</span></div>';
+                } else if (todayStatus === 'absent') {
+                  return '<div style="font-size:0.72rem;margin-top:3px;display:flex;align-items:center;gap:4px">'
+                    + '<span style="width:6px;height:6px;border-radius:50%;background:#ef4444;flex-shrink:0"></span>'
+                    + '<span style="color:#dc2626;font-weight:600">Absent today</span></div>';
+                } else {
+                  return '<div style="font-size:0.72rem;margin-top:3px;display:flex;align-items:center;gap:4px">'
+                    + '<span style="width:6px;height:6px;border-radius:50%;background:#f59e0b;flex-shrink:0"></span>'
+                    + '<span style="color:#d97706;font-weight:600">Not checked in yet</span></div>';
+                }
+              })()
         +   '</div>'
         +   '<span style="font-size:0.68rem;font-weight:700;color:' + statusColor + ';background:' + statusBg + ';padding:3px 10px;border-radius:6px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.04em">' + App.Utils.esc(stu.status) + '</span>'
         + '</div>'
@@ -419,8 +502,8 @@
         // Replacement balance
         +   '<div style="background:' + (repBalance > 0 ? '#fffbeb' : '#f8fafc') + ';border-radius:10px;padding:0.65rem 0.7rem;text-align:center">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (repBalance > 0 ? '#92400e' : '#94a3b8') + ';margin-bottom:0.3rem">Replace</div>'
-        +     '<div style="font-family:var(--serif);font-size:1.15rem;font-weight:700;color:' + (repBalance > 0 ? '#92400e' : '#64748b') + '">' + repBalance + 'm</div>'
-        +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (repBalance > 0 ? 'owed' : 'none') + '</div>'
+        +     '<div style="font-family:var(--serif);font-size:1.15rem;font-weight:700;color:' + (repBalance > 0 ? '#92400e' : '#64748b') + '">' + repBalance + 'cr</div>'
+        +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (repBalance > 0 ? 'credits' : 'none') + '</div>'
         +   '</div>'
 
         // Billing
@@ -456,138 +539,142 @@
         + '</div>';
     }
 
-    // ── Quick Actions Row ─────────────────────────────────────────────────────
-    html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem;margin-top:0.25rem">';
-    var qActions = [
-      { label: 'Pay Invoice',     page: 'billing',     icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>' },
-      { label: 'View Schedule',   page: 'calendar',    icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' },
-      { label: 'View Feedback',   page: 'feedback',    icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>' },
-      { label: 'View Attendance', page: 'attendance',  icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>' }
-    ];
-    qActions.forEach(function(qa) {
-      html += '<button onclick="App.Router.navigate(\'' + qa.page + '\')" '
-        + 'style="display:flex;align-items:center;justify-content:center;gap:0.45rem;padding:0.7rem;font-size:0.78rem;font-weight:600;border-radius:10px;cursor:pointer;background:#fff;border:1px solid #e8e4df;color:#374151;transition:all 0.15s" '
-        + 'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
-        + 'onmouseout="this.style.borderColor=\'#e8e4df\';this.style.color=\'#374151\'">'
-        + qa.icon + ' ' + qa.label + '</button>';
-    });
-    html += '</div>';
+    // ── Payments Due ──────────────────────────────────────────────────────────
+    var unpaidInvs = myInvoices.filter(function(i) { return i.status === 'Overdue' || i.status === 'Unpaid'; })
+      .sort(function(a, b) { return a.dueDate.localeCompare(b.dueDate); });
 
-    // ── Recent Activity Timeline ──────────────────────────────────────────────
-    var timeline = [];
+    if (unpaidInvs.length > 0) {
+      html += '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
+        + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Payments Due</div>';
 
-    // Attendance events
-    attendance.filter(function(a) { return myIds.indexOf(a.personId) > -1 && a.personType === 'student'; })
-      .forEach(function(a) {
-        var stu = myStudents.find(function(st) { return st.id === a.personId; });
-        var stuName = stu ? App.Utils.esc(stu.firstName) : a.personId;
-        var cls = classes.find(function(c) { return c.id === a.classId; });
-        var clsName = cls ? App.Utils.esc(cls.name) : '';
-        var timeStr = a.checkOut ? App.Utils.formatTime(a.checkOut) : (a.checkIn ? App.Utils.formatTime(a.checkIn) : '');
-        var action = a.checkOut ? 'checked out of' : 'checked in to';
-        timeline.push({
-          date: a.date,
-          time: a.checkOut || a.checkIn || '00:00',
-          sort: a.date + 'T' + (a.checkOut || a.checkIn || '00:00'),
-          color: '#10b981',
-          icon: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"/></svg>',
-          text: stuName + ' ' + action + ' ' + clsName,
-          sub: App.Utils.formatDate(a.date) + (timeStr ? ' · ' + timeStr : '')
-        });
-      });
-
-    // Invoice payments
-    myInvoices.filter(function(i) { return i.status === 'Paid' && i.paidOn; })
-      .forEach(function(i) {
-        var stu = myStudents.find(function(st) { return st.id === i.studentId; });
+      unpaidInvs.forEach(function(inv) {
+        var stu = myStudents.find(function(st) { return st.id === inv.studentId; });
         var stuName = stu ? App.Utils.esc(stu.firstName) : '';
-        timeline.push({
-          date: i.paidOn,
-          time: '12:00',
-          sort: i.paidOn + 'T12:00',
-          color: '#15803d',
-          icon: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>',
-          text: 'Payment of RM ' + i.amount.toFixed(2) + ' for ' + stuName,
-          sub: App.Utils.formatDate(i.paidOn)
-        });
+        var isOverdue = inv.status === 'Overdue';
+        html += '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0;border-bottom:1px solid #f4f4f2">'
+          + '<div style="flex:1;min-width:0">'
+          +   '<div style="font-size:0.82rem;font-weight:600;color:#111">' + stuName + (inv.description ? ' — ' + App.Utils.esc(inv.description) : '') + '</div>'
+          +   '<div style="font-size:0.68rem;color:#94a3b8;margin-top:2px">Due ' + App.Utils.formatDate(inv.dueDate) + (isOverdue ? ' <span style="color:#dc2626;font-weight:700">OVERDUE</span>' : '') + '</div>'
+          + '</div>'
+          + '<div style="font-size:0.95rem;font-weight:700;color:' + (isOverdue ? '#dc2626' : '#111') + ';white-space:nowrap;font-family:var(--serif)">RM ' + inv.amount.toFixed(2) + '</div>'
+          + '<button onclick="event.stopPropagation();App.Router.navigate(\'billing\')" style="font-size:0.72rem;font-weight:700;color:#0a0a0a;background:var(--gold);border:none;border-radius:7px;padding:0.35rem 0.75rem;cursor:pointer;white-space:nowrap">Pay</button>'
+          + '</div>';
       });
+      html += '</div>';
+    }
 
-    // Announcements
-    (announcements || []).filter(function(a) { return a.status === 'published' || !a.status; })
-      .forEach(function(a) {
-        timeline.push({
-          date: a.createdOn,
-          time: '09:00',
-          sort: a.createdOn + 'T09:00',
-          color: '#2563eb',
-          icon: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>',
-          text: App.Utils.esc(a.title),
-          sub: App.Utils.formatDate(a.createdOn) + ' · ' + (a.type || 'Notice')
-        });
-      });
-
-    // Feedback posted
+    // ── Teacher Notes ───────────────────────────────────────────────────────────
     var allEnrolledIds = [];
     myStudents.forEach(function(st) { (st.enrolledClasses || []).forEach(function(id) { if (allEnrolledIds.indexOf(id) === -1) allEnrolledIds.push(id); }); });
-    feedbacks.filter(function(fb) { return allEnrolledIds.indexOf(fb.classId) > -1; })
-      .forEach(function(fb) {
+
+    var recentFeedbacks = feedbacks.filter(function(fb) { return allEnrolledIds.indexOf(fb.classId) > -1 && (fb.notes || (fb.studentNotes && fb.studentNotes.length)); })
+      .sort(function(a, b) { return b.date.localeCompare(a.date); })
+      .slice(0, 5);
+
+    html += '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
+      + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Teacher Notes</div>';
+
+    if (recentFeedbacks.length === 0) {
+      html += '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1rem 0">No teacher notes yet</p>';
+    } else {
+      recentFeedbacks.forEach(function(fb) {
         var cls = classes.find(function(c) { return c.id === fb.classId; });
         var teacher = staff.find(function(t) { return t.id === fb.teacherId; });
-        timeline.push({
-          date: fb.date,
-          time: '15:00',
-          sort: fb.date + 'T15:00',
-          color: '#8b5cf6',
-          icon: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>',
-          text: 'Feedback for ' + App.Utils.esc(cls ? cls.name : fb.classId),
-          sub: App.Utils.formatDate(fb.date) + ' · ' + App.Utils.esc(teacher ? teacher.name : 'Teacher')
+        var teacherName = teacher ? App.Utils.esc(teacher.name) : 'Teacher';
+        var clsName = cls ? App.Utils.esc(cls.name) : '';
+
+        // Prefer student-specific notes for parent's children, fall back to general notes
+        var noteText = '';
+        myStudents.some(function(st) {
+          var childNote = (fb.studentNotes || []).find(function(sn) { return sn.studentId === st.id && sn.note && sn.note.trim(); });
+          if (childNote) { noteText = childNote.note; return true; }
+          return false;
         });
+        if (!noteText) noteText = fb.notes || '';
+        if (!noteText.trim()) return;
+
+        var preview = noteText.length > 100 ? noteText.slice(0, 100) + '...' : noteText;
+
+        html += '<div style="border-left:3px solid var(--gold);padding:0.6rem 0 0.6rem 0.85rem;margin-bottom:0.6rem">'
+          + '<div style="font-size:0.8rem;color:#44403c;line-height:1.45;font-style:italic">"' + App.Utils.esc(preview) + '"</div>'
+          + '<div style="font-size:0.68rem;color:#94a3b8;margin-top:0.3rem">' + teacherName + ' · ' + clsName + ' · ' + App.Utils.formatDate(fb.date) + '</div>'
+          + '</div>';
       });
+    }
+    html += '<button onclick="App.Router.navigate(\'feedback\')" class="dash-link" style="display:block;margin-top:0.5rem">View all feedback →</button>'
+      + '</div>';
 
-    // Sort newest first, take 8
-    timeline.sort(function(a, b) { return b.sort.localeCompare(a.sort); });
-    timeline = timeline.slice(0, 8);
-
-    html += '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:start">';
-
-    // Timeline card
-    html += card('Recent Activity')
-      + (timeline.length === 0
-        ? '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1.5rem 0">No recent activity</p>'
-        : timeline.map(function(item) {
-            return '<div style="display:flex;align-items:start;gap:0.65rem;padding:0.55rem 0;border-bottom:1px solid #f4f4f2">'
-              + '<div style="width:1.65rem;height:1.65rem;border-radius:8px;background:' + item.color + '12;color:' + item.color + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">' + item.icon + '</div>'
-              + '<div style="flex:1;min-width:0">'
-              +   '<div style="font-size:0.8rem;font-weight:600;color:#111;line-height:1.3">' + item.text + '</div>'
-              +   '<div style="font-size:0.68rem;color:#94a3b8;margin-top:2px">' + item.sub + '</div>'
-              + '</div>'
-              + '</div>';
-          }).join(''))
-      + '</div></div>';
-
-    // ── Announcements (compact) ───────────────────────────────────────────────
+    // ── Announcements (compact, last 3) ─────────────────────────────────────
     var latestAnnounce = (announcements || []).filter(function(a) { return a.status === 'published' || !a.status; })
       .slice().sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); }).slice(0, 3);
 
-    html += card('Announcements', 'communication')
-      + (latestAnnounce.length === 0
-        ? '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1rem 0">No announcements</p>'
-        : latestAnnounce.map(function(a) {
-            var tc = { Notice:'#2563eb', Reminder:'#d97706', Urgent:'#dc2626' };
-            return '<div style="display:flex;align-items:center;gap:0.65rem;padding:0.5rem 0;border-bottom:1px solid #f4f4f2">'
-              + '<span style="width:6px;height:6px;border-radius:50%;background:' + (tc[a.type] || '#2563eb') + ';flex-shrink:0"></span>'
-              + '<div style="flex:1;min-width:0">'
-              +   '<div style="font-size:0.8rem;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(a.title) + '</div>'
-              + '</div>'
-              + '<span style="font-size:0.68rem;color:#94a3b8;flex-shrink:0">' + App.Utils.formatDate(a.createdOn) + '</span>'
-              + '</div>';
-          }).join(''))
-      + '<button onclick="App.Router.navigate(\'communication\')" class="dash-link">View all →</button>'
-      + '</div></div>';
+    html += '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
+      + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Announcements</div>';
 
-    html += '</div>'; // close 2-col grid
+    if (latestAnnounce.length === 0) {
+      html += '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1rem 0">No announcements</p>';
+    } else {
+      latestAnnounce.forEach(function(a) {
+        var tc = { Notice:'#2563eb', Reminder:'#d97706', Urgent:'#dc2626' };
+        html += '<div style="display:flex;align-items:center;gap:0.65rem;padding:0.5rem 0;border-bottom:1px solid #f4f4f2">'
+          + '<span style="width:6px;height:6px;border-radius:50%;background:' + (tc[a.type] || '#2563eb') + ';flex-shrink:0"></span>'
+          + '<div style="flex:1;min-width:0">'
+          +   '<div style="font-size:0.8rem;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(a.title) + '</div>'
+          + '</div>'
+          + '<span style="font-size:0.68rem;color:#94a3b8;flex-shrink:0">' + App.Utils.formatDate(a.createdOn) + '</span>'
+          + '</div>';
+      });
+    }
+    html += '<button onclick="App.Router.navigate(\'communication\')" class="dash-link" style="display:block;margin-top:0.5rem">View all →</button>'
+      + '</div>';
+
+    // ── Refer a friend ──────────────────────────────────────────────────────
+    html += _referAFriendCard(s);
 
     return html;
+  }
+
+  // Builds the "Refer a friend" tile from snapshot data. The tile self-loads
+  // its own referral context (code + earned credits) from the family API on
+  // first render so we don't have to thread it through the snapshot. Falls
+  // back gracefully if the API isn't reachable.
+  function _referAFriendCard(state) {
+    var families = state.families || [];
+    var rewards  = state.referralRewards || [];
+    var myFamily = families.find(function(f) { return f.contact === App.clientParent; });
+    if (!myFamily) return '';
+
+    var myRewards = rewards.filter(function(r) { return r.referrerFamilyId === myFamily.id; });
+    var creditsRemaining = myRewards
+      .filter(function(r) { return r.status === 'earned'; })
+      .reduce(function(a, r) { return a + (r.creditsRemaining || 0); }, 0);
+    var pendingCount = myRewards.filter(function(r) { return r.status === 'pending'; }).length;
+
+    var code = myFamily.referralCode || '';
+    var codeDisplay = code || '<span style="color:#94a3b8;font-size:0.78rem;font-family:var(--sans)">Generating...</span>';
+
+    var copyAttr = code
+      ? 'onclick="event.stopPropagation();navigator.clipboard.writeText(\'' + code + '\').then(function(){App.Utils.showToast(\'Code copied — share it with a friend\',\'success\')})"'
+      : '';
+
+    var creditPill = '';
+    if (creditsRemaining > 0) {
+      creditPill = '<span style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.3rem 0.7rem;background:rgba(201,162,39,0.12);border:1px solid rgba(201,162,39,0.3);border-radius:999px;font-size:0.72rem;font-weight:700;color:#92400e">Active credit · ' + creditsRemaining + ' invoice' + (creditsRemaining !== 1 ? 's' : '') + ' remaining</span>';
+    } else if (pendingCount > 0) {
+      creditPill = '<span style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.3rem 0.7rem;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;font-size:0.72rem;font-weight:700;color:#475569">' + pendingCount + ' referral' + (pendingCount !== 1 ? 's' : '') + ' in progress</span>';
+    }
+
+    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
+      + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Refer a Friend</div>'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">'
+      +   '<div style="flex:1;min-width:200px">'
+      +     '<div style="font-family:var(--serif);font-size:1.6rem;font-weight:700;letter-spacing:0.04em;color:var(--gold);line-height:1">' + codeDisplay + '</div>'
+      +     '<p style="margin:0.5rem 0 0;font-size:0.78rem;color:#64748b;line-height:1.45">Share your code with a friend. When their child stays for 3 months, you get <strong>RM10 off for 3 months</strong>.</p>'
+      +     (creditPill ? '<div style="margin-top:0.65rem">' + creditPill + '</div>' : '')
+      +   '</div>'
+      + (code ? '<button ' + copyAttr + ' style="padding:0.55rem 1.1rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Copy code</button>' : '')
+      + '</div>'
+      + '</div>';
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verifying — The Study Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'DM Sans', sans-serif; background: #FAF9F6; color: #1a1a1a; margin: 0; min-height: 100vh; padding: 2.5rem 1rem; display: flex; align-items: center; justify-content: center; }
+    .card { background: #fff; border-radius: 16px; padding: 2.5rem 1.75rem; border: 1px solid rgba(0,0,0,0.06); box-shadow: 0 4px 24px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03); width: 100%; max-width: 420px; text-align: center; }
+    h1 { font-family: 'Cormorant Garamond', serif; font-size: 1.5rem; font-weight: 700; color: #0a0a0a; margin: 0 0 0.35rem; letter-spacing: -0.02em; }
+    .subtitle { font-size: 0.85rem; color: #64748b; margin: 0 0 0; line-height: 1.5; }
+    .icon-wrap { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; }
+    .icon-wrap.success { background: #f0fdf4; border: 2px solid #bbf7d0; }
+    .icon-wrap.error { background: #fef2f2; border: 2px solid #fecaca; }
+    .icon-wrap.loading { background: #fffbeb; border: 2px solid #fde68a; }
+    .submit-btn { display: inline-block; margin-top: 1.5rem; padding: 0.65rem 1.5rem; border: none; border-radius: 10px; font-weight: 700; font-size: 0.85rem; cursor: pointer; background: linear-gradient(135deg, #C9A227 0%, #b08d20 100%); color: #fff; text-decoration: none; transition: opacity 0.15s; font-family: inherit; box-shadow: 0 2px 8px rgba(201,162,39,0.2); }
+    .submit-btn:hover { opacity: 0.9; }
+    .secondary { display: inline-block; margin-top: 0.85rem; font-size: 0.78rem; color: #C9A227; text-decoration: none; font-weight: 600; }
+    .secondary:hover { text-decoration: underline; }
+    .brand { display: flex; align-items: center; justify-content: center; gap: 0.6rem; margin-bottom: 1.5rem; }
+    .brand-mark { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, #C9A227 0%, #b08d20 100%); display: flex; align-items: center; justify-content: center; color: #fff; font-family: 'Cormorant Garamond', serif; font-weight: 700; font-size: 1.1rem; }
+    .spinner { width: 28px; height: 28px; border: 3px solid #fde68a; border-top-color: #d97706; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="brand-mark">SH</div>
+      <div style="font-family:'Cormorant Garamond',serif;font-size:1rem;font-weight:600;color:#0a0a0a">The Study Hub</div>
+    </div>
+
+    <!-- Loading state shown while we hit the API -->
+    <div id="loading-view">
+      <div class="icon-wrap loading"><div class="spinner"></div></div>
+      <h1>Verifying your email</h1>
+      <p class="subtitle">Just a moment...</p>
+    </div>
+
+    <!-- Success state for parents — auto-redirects to dashboard -->
+    <div id="success-parent-view" class="hidden">
+      <div class="icon-wrap success">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h1>Email verified</h1>
+      <p class="subtitle">You're now signed in. Taking you to your dashboard...</p>
+      <a href="/" class="submit-btn">Go to dashboard now</a>
+    </div>
+
+    <!-- Success state for teachers — no auto-redirect, no login -->
+    <div id="success-teacher-view" class="hidden">
+      <div class="icon-wrap success">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h1>Application confirmed</h1>
+      <p class="subtitle">Thanks! Your teacher application is now in our review queue. We'll email you within 3-5 business days with a decision. If you're approved, you'll get a separate link to set your password and sign in.</p>
+      <a href="/" class="secondary">← Back to login</a>
+    </div>
+
+    <!-- Failure state — bad / expired token -->
+    <div id="error-view" class="hidden">
+      <div class="icon-wrap error">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18L18 6M6 6l12 12"/></svg>
+      </div>
+      <h1>Link expired</h1>
+      <p class="subtitle" id="error-msg">This verification link is invalid or has expired. Please request a new one from the login page.</p>
+      <a href="/" class="submit-btn">Back to login</a>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var token = new URLSearchParams(window.location.search).get('token');
+      var loading = document.getElementById('loading-view');
+      var successParent  = document.getElementById('success-parent-view');
+      var successTeacher = document.getElementById('success-teacher-view');
+      var error    = document.getElementById('error-view');
+      var errorMsg = document.getElementById('error-msg');
+
+      function showError(msg) {
+        loading.classList.add('hidden');
+        if (msg) errorMsg.textContent = msg;
+        error.classList.remove('hidden');
+      }
+
+      if (!token) { showError('No verification token found in the link.'); return; }
+
+      fetch('/api/verify-email?token=' + encodeURIComponent(token), {
+        method: 'GET',
+        credentials: 'include'  // we need the cookie the backend sets for parents
+      }).then(function(res) {
+        return res.json().then(function(payload) {
+          return { ok: res.ok, status: res.status, payload: payload };
+        });
+      }).then(function(r) {
+        if (!r.ok) {
+          showError((r.payload && r.payload.error) || 'Verification failed.');
+          return;
+        }
+        loading.classList.add('hidden');
+        // The backend tells us which flow this was. Teachers stay on this
+        // page (no auto-redirect, no login); parents auto-redirect to the
+        // dashboard since they were just signed in via the cookie.
+        if (r.payload && r.payload.type === 'teacher') {
+          successTeacher.classList.remove('hidden');
+        } else {
+          successParent.classList.remove('hidden');
+          setTimeout(function() { window.location.href = (r.payload && r.payload.redirectTo) || '/'; }, 1500);
+        }
+      }).catch(function(err) {
+        showError('Could not reach the server. Please try again in a moment.');
+        console.error(err);
+      });
+    })();
+  </script>
+</body>
+</html>

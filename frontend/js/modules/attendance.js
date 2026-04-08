@@ -58,7 +58,7 @@
           ? '<button onclick="App.Attendance._markAbsentCredit(\'' + s.id + '\')" style="'
             + 'min-height:36px;width:100%;margin-top:0.35rem;padding:0.35rem 0.75rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;'
             + 'border-radius:10px;font-size:0.75rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
-            + 'title="Mark absent and add 60 min replacement"'
+            + 'title="Mark absent and add 4 credits replacement"'
             + '>Absent + Replacement</button>'
           : '');
     } else if (!checkedOut) {
@@ -308,10 +308,14 @@
             ? '<button onclick="App.Attendance._toggleAllClasses()" style="font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;white-space:nowrap;min-height:48px">'
               + (_showAllClasses ? 'Scheduled only' : 'All classes') + '</button>'
             : '')
+      +     '<button onclick="App.Attendance._markAllPresent()" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer;white-space:nowrap">Mark All Present</button>'
       +   '</div>'
       +   (selectedClass
-          ? '<div style="margin-top:0.5rem;font-size:0.78rem;color:#94a3b8">'
-          +   enrolledStudents.length + ' enrolled  ·  <span style="color:#15803d;font-weight:600">' + presentCount + ' checked in today</span>'
+          ? '<div style="margin-top:0.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem">'
+          +   '<span style="font-size:0.78rem;color:#94a3b8">' + enrolledStudents.length + ' enrolled  ·  <span style="color:#15803d;font-weight:600">' + presentCount + ' checked in today</span></span>'
+          +   '<button onclick="App.Attendance._quickFeedback()" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.35rem 0.75rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer;white-space:nowrap;transition:background 0.15s" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'#fff\'">'
+          +     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>'
+          +     'Quick Note</button>'
           + '</div>'
           : '')
       + '</div>'
@@ -322,7 +326,29 @@
             const rec = attendance.find(function(a) { return a.personId === s.id && a.classId === _attClassId && a.date === _attDate; });
             return _studentRow(s, rec);
           }).join('')
-        + '</div>')
+        + '</div>'
+        + (function() {
+            var allMarked = enrolledStudents.every(function(s) {
+              var rec = todayRecs.find(function(a) { return a.personId === s.id; });
+              return rec && (rec.checkIn || rec.status === 'Absent');
+            });
+            if (allMarked && enrolledStudents.length > 0 && (App.currentRole === 'admin' || App.currentRole === 'teacher')) {
+              return '<div id="post-att-prompt" style="padding:0 1rem 1rem">'
+                + '<div style="margin-top:1rem;padding:1.25rem;background:linear-gradient(135deg,#fef9ec 0%,#fff 70%);border:1px solid #fef3c7;border-radius:14px">'
+                +   '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.65rem">'
+                +     '<svg width="16" height="16" fill="none" stroke="#b08d20" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>'
+                +     '<span style="font-size:0.78rem;font-weight:700;color:#92400e">Attendance complete — add class notes?</span>'
+                +   '</div>'
+                +   '<textarea id="post-att-notes" rows="2" placeholder="How was the class? Any highlights?" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:10px;resize:none;font-family:inherit;outline:none"></textarea>'
+                +   '<div style="display:flex;gap:0.5rem;margin-top:0.5rem">'
+                +     '<button onclick="App.Attendance._savePostAttFeedback()" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save Note</button>'
+                +     '<button onclick="document.getElementById(\'post-att-prompt\').style.display=\'none\'" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Skip</button>'
+                +   '</div>'
+                + '</div>'
+                + '</div>';
+            }
+            return '';
+          })())
       + '</div>';
   }
 
@@ -908,7 +934,12 @@
       +     '</select>'
       +     '<button onclick="App.Attendance._checkAllIn()" style="padding:0.5rem 0.9rem;font-size:0.82rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:9px;cursor:pointer;min-height:48px;white-space:nowrap;transition:opacity 0.15s" onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check All In</button>'
       +   '</div>'
-      +   '<div style="margin-top:0.5rem;font-size:0.78rem;color:#94a3b8">' + enrolledStudents.length + ' enrolled  ·  <span style="color:#15803d;font-weight:600">' + presentCount + ' checked in</span></div>'
+      +   '<div style="margin-top:0.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem">'
+      +     '<span style="font-size:0.78rem;color:#94a3b8">' + enrolledStudents.length + ' enrolled  ·  <span style="color:#15803d;font-weight:600">' + presentCount + ' checked in</span></span>'
+      +     '<button onclick="App.Attendance._quickFeedback()" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.35rem 0.75rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer;white-space:nowrap;transition:background 0.15s" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'#fff\'">'
+      +       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>'
+      +       'Quick Note</button>'
+      +   '</div>'
       + '</div>'
       + (enrolledStudents.length === 0
         ? '<div style="padding:3rem;text-align:center;color:#94a3b8;font-size:0.9rem">No students enrolled in this class</div>'
@@ -967,17 +998,18 @@
       await App.Api.post('/api/attendance', { personId: studentId, personType: 'student', date: _attDate, classId: _attClassId, status: 'Absent' });
     } catch(e) {}
 
-    // Add 60 min replacement credit
+    // Add 4 credits replacement
     try {
       await App.Api.post('/api/replacement-credits', {
         studentId: studentId,
         type: 'earned',
-        minutes: 60,
+        minutes: 4,
+        category: 'class',
         note: 'Absent from ' + clsName + ' on ' + _attDate,
         classId: _attClassId,
         date: _attDate
       });
-      App.Utils.showToast(stuName + ' marked absent — 60 min replacement added', 'info');
+      App.Utils.showToast(stuName + ' marked absent — 4 credits added', 'info');
     } catch(e) {
       App.Utils.showToast(stuName + ' marked absent (replacement failed: ' + e.message + ')', 'warning');
     }
@@ -985,5 +1017,109 @@
     await App.Api.refresh();
   }
 
-  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit };
+  async function _markAllPresent() {
+    var state = App.Store.get();
+    var students = state.students.filter(function(s) { return s.enrolledClasses.indexOf(_attClassId) > -1; });
+    var attendance = state.attendance;
+    var now = App.Utils.nowTime();
+    var count = 0;
+
+    for (var i = 0; i < students.length; i++) {
+      var s = students[i];
+      var existing = attendance.find(function(a) {
+        return a.personId === s.id && a.classId === _attClassId && a.date === _attDate;
+      });
+      // Skip if already checked in or marked absent
+      if (existing && (existing.checkIn || existing.status === 'Absent')) continue;
+
+      try {
+        await App.Api.post('/api/attendance', {
+          personId: s.id,
+          personType: 'student',
+          date: _attDate,
+          classId: _attClassId,
+          checkIn: now,
+          status: 'Present'
+        });
+        count++;
+      } catch(e) {}
+    }
+
+    if (count > 0) {
+      App.Utils.showToast(count + ' student' + (count !== 1 ? 's' : '') + ' checked in', 'success');
+      await App.Api.refresh();
+    } else {
+      App.Utils.showToast('All students already checked in', 'info');
+    }
+  }
+
+  async function _quickFeedback() {
+    var state = App.Store.get();
+    var cls = state.classes.find(function(c) { return c.id === _attClassId; });
+    if (!cls) { App.Utils.showToast('Select a class first', 'warning'); return; }
+
+    var today = _attDate || App.Utils.today();
+
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:380px">'
+      + '<h2 style="font-size:1.1rem;font-weight:700;margin-bottom:0.25rem">Quick Note</h2>'
+      + '<p style="font-size:0.8rem;color:#94a3b8;margin-bottom:1rem">' + App.Utils.esc(cls.name) + ' &middot; ' + App.Utils.formatDate(today) + '</p>'
+      + '<form id="quick-feedback-form">'
+      + '<textarea name="notes" rows="3" required placeholder="How was the class? Any student highlights?" style="width:100%;padding:0.6rem 0.8rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:10px;resize:vertical;font-family:inherit;outline:none" autofocus></textarea>'
+      + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.75rem">'
+      + '<button type="button" onclick="App.Utils.hideModal()" style="padding:0.4rem 0.85rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Cancel</button>'
+      + '<button type="submit" style="padding:0.4rem 0.85rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save</button>'
+      + '</div>'
+      + '</form>'
+      + '</div>'
+    );
+
+    document.getElementById('quick-feedback-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var notes = new FormData(e.target).get('notes');
+      var teacherId = App.currentTeacher || (cls.teacherIds && cls.teacherIds[0]) || '';
+      try {
+        await App.Api.post('/api/feedback', {
+          classId: _attClassId,
+          date: today,
+          teacherId: teacherId,
+          notes: notes,
+          topic: '',
+          mood: '',
+          studentNotes: []
+        });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Note saved', 'success');
+        await App.Api.refresh();
+      } catch(err) {
+        App.Utils.showToast(err.message || 'Failed to save', 'error');
+      }
+    });
+  }
+
+  async function _savePostAttFeedback() {
+    var el = document.getElementById('post-att-notes');
+    if (!el || !el.value.trim()) { App.Utils.showToast('Please enter a note', 'warning'); return; }
+    var state = App.Store.get();
+    var cls = state.classes.find(function(c) { return c.id === _attClassId; });
+    var teacherId = App.currentTeacher || (cls && cls.teacherIds && cls.teacherIds[0]) || '';
+    try {
+      await App.Api.post('/api/feedback', {
+        classId: _attClassId,
+        date: _attDate,
+        teacherId: teacherId,
+        notes: el.value.trim(),
+        topic: '',
+        mood: '',
+        studentNotes: []
+      });
+      App.Utils.showToast('Class note saved', 'success');
+      var prompt = document.getElementById('post-att-prompt');
+      if (prompt) prompt.style.display = 'none';
+    } catch(err) {
+      App.Utils.showToast(err.message || 'Failed to save note', 'error');
+    }
+  }
+
+  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit, _markAllPresent: _markAllPresent, _quickFeedback: _quickFeedback, _savePostAttFeedback: _savePostAttFeedback };
 })();

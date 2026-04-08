@@ -45,8 +45,10 @@
     async _doLogin(email, password) {
       const btn = document.getElementById('login-btn');
       const errEl = document.getElementById('login-error');
+      const resendBanner = document.getElementById('resend-verify-banner');
       if (btn) { btn.textContent = 'Signing in...'; btn.disabled = true; }
       errEl.classList.add('hidden');
+      if (resendBanner) resendBanner.classList.add('hidden');
       try {
         _showLoading('Signing in...');
         const data = await App.Api.login(email, password);
@@ -75,10 +77,34 @@
         if (App.Tutorial) App.Tutorial.autoStart();
       } catch(err) {
         _hideLoading();
-        errEl.textContent = err.message || 'Login failed';
-        errEl.classList.remove('hidden');
+        const msg = err.message || 'Login failed';
+        // Backend signals "email not yet verified" by prefixing the error
+        // with "needs_verification:". We show a friendlier UI in that case
+        // and offer a one-click resend instead of just a generic error.
+        if (msg.indexOf('needs_verification') > -1) {
+          errEl.classList.add('hidden');
+          if (resendBanner) {
+            resendBanner.classList.remove('hidden');
+            // Stash the email so the resend link knows who to send to.
+            resendBanner.dataset.email = email;
+          }
+        } else {
+          errEl.textContent = msg;
+          errEl.classList.remove('hidden');
+        }
       } finally {
         if (btn) { btn.textContent = 'Sign In'; btn.disabled = false; }
+      }
+    },
+    // resendVerification fires the backend resend endpoint and confirms with
+    // a toast. The endpoint is enumeration-safe (always returns 200) so this
+    // never fails on the client.
+    async resendVerification(email) {
+      try {
+        await App.Api.post('/api/resend-verification', { email: email }, { silent: true });
+        App.Utils.showToast('Verification email sent — check your inbox', 'success');
+      } catch(err) {
+        App.Utils.showToast(err.message || 'Could not send verification email', 'error');
       }
     }
   };
@@ -300,6 +326,18 @@
         const email = document.getElementById('login-email').value;
         const password = document.getElementById('login-password').value;
         App.Login._doLogin(email, password);
+      });
+    }
+
+    // Wire resend-verification link inside the "email not verified" banner.
+    var resendLink = document.getElementById('resend-verify-link');
+    if (resendLink) {
+      resendLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        var banner = document.getElementById('resend-verify-banner');
+        var email = (banner && banner.dataset.email) || document.getElementById('login-email').value;
+        if (!email) { App.Utils.showToast('Enter your email above first', 'warning'); return; }
+        App.Login.resendVerification(email);
       });
     }
 

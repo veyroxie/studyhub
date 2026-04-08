@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main, prod]
+  pull_request:
+    branches: [main, prod]
+
+# Cancel in-progress runs for the same branch when a new commit lands —
+# avoids wasting Actions minutes on stale builds.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Go)
+    runs-on: ubuntu-latest
+
+    # Spin up a real Postgres for tests that exercise the DB. The test code
+    # connects via DATABASE_URL.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          # Match the credentials that backend/main_test.go's testDSN() expects
+          # so CI can run the existing test suite without env-var gymnastics.
+          POSTGRES_USER: stratum
+          POSTGRES_PASSWORD: stratum_dev
+          POSTGRES_DB: studyhub_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stratum"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Verify go.mod tidy
+        working-directory: backend
+        run: |
+          go mod download
+          go mod verify
+
+      - name: go vet
+        working-directory: backend
+        run: go vet ./...
+
+      - name: go build
+        working-directory: backend
+        run: go build ./...
+
+      - name: go test
+        working-directory: backend
+        env:
+          # testDSN() looks at TEST_DATABASE_URL (legacy name kept for compat).
+          # APP_ENV=test prevents the verification rate limiter from kicking in.
+          TEST_DATABASE_URL: postgres://stratum:stratum_dev@localhost:5432/studyhub_test?sslmode=disable
+          JWT_SECRET: ci-test-secret-not-for-production
+          APP_ENV: test
+        run: go test ./...
+
+  frontend:
+    name: Frontend (lint)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No bundler — just sanity-check that every JS module parses cleanly.
+      # node --check is much faster than spinning up eslint and catches the
+      # mistakes that actually break production (typos, unbalanced braces).
+      - name: Syntax-check JS modules
+        run: |
+          set -e
+          for f in $(find frontend/js -name '*.js'); do
+            node --check "$f"
+          done
+          echo "All JS files parse cleanly"

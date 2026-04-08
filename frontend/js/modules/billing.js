@@ -175,7 +175,7 @@
                 + '<td class="td text-sm ' + (isNearDue ? 'text-amber-600 font-medium' : 'text-slate-600') + '">'
                 +   App.Utils.formatDate(inv.dueDate) + (isNearDue ? ' <span class="text-xs">(soon)</span>' : '')
                 + '</td>'
-                + '<td class="td text-sm font-semibold text-slate-800 text-right">' + App.Utils.formatCurrency(inv.amount) + (inv.discountPct > 0 ? '<br><span style="font-size:0.7rem;color:#92400e;font-weight:500">' + inv.discountPct + '% early bird</span>' : '') + '</td>'
+                + '<td class="td text-sm font-semibold text-slate-800 text-right">' + App.Utils.formatCurrency(inv.amount) + (inv.discountPct > 0 ? '<br><span style="font-size:0.7rem;color:#92400e;font-weight:500">' + inv.discountPct + '% early bird</span>' : '') + (inv.referralCredit > 0 ? '<br><span style="font-size:0.7rem;color:#92400e;font-weight:500">−RM ' + inv.referralCredit.toFixed(2) + ' referral</span>' : '') + '</td>'
                 + '<td class="td">'
                 +   '<div style="display:flex;align-items:center;gap:4px">'
                 +   App.Utils.statusBadge(inv.status)
@@ -441,6 +441,7 @@
       .then(function() {
         return App.Api.loadSnapshot();
       }).then(function() {
+        _checkReferralMilestoneClient(inv.studentId);
         App.Utils.hideModal(true);
         App.Utils.showToast('Marked paid · ' + method, 'success');
         App.Notifs.refresh();
@@ -451,11 +452,35 @@
           return i.id === invId ? Object.assign({}, i, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method }) : i;
         });
         App.Store.set({ invoices: updated });
+        _checkReferralMilestoneClient(inv.studentId);
         App.Utils.hideModal(true);
         App.Utils.showToast('Marked paid · ' + method, 'success');
         App.Notifs.refresh();
         App.Router.refresh();
       });
+  }
+
+  // _checkReferralMilestoneClient counts paid Monthly invoices for a student
+  // and, if the count just reached 3 and there's a pending referral_rewards row
+  // for them, calls the backend earn endpoint. We do this on the client because
+  // invoices currently live in localStorage — once invoices fully migrate to
+  // the backend, the server-side referralCheckMilestoneOnPay hook will take
+  // over and this client-side check becomes a redundant safety net.
+  function _checkReferralMilestoneClient(studentId) {
+    var state = App.Store.get();
+    var rewards = state.referralRewards || [];
+    var pending = rewards.find(function(r) { return r.referredStudentId === studentId && r.status === 'pending'; });
+    if (!pending) return;
+    var paidCount = (state.invoices || []).filter(function(i) {
+      return i.studentId === studentId && i.type === 'Monthly' && i.status === 'Paid';
+    }).length;
+    if (paidCount < 3) return;
+    App.Api.post('/api/referrals/' + pending.id + '/earn', {})
+      .then(function() {
+        App.Utils.showToast('Referral milestone reached — RM10/month credit earned for referrer', 'success');
+        return App.Api.loadSnapshot();
+      })
+      .catch(function() {});
   }
 
   function _markPaid(invoiceId) {
@@ -887,7 +912,6 @@
         ? (parseFloat(fd.get('discountPct')) || 0) : 0;
       var finalAmount = parseFloat((baseAmount * (1 - discountPct / 100)).toFixed(2));
       var newInvoice = {
-        id: App.Utils.generateId('INV'),
         studentId: fd.get('studentId'),
         description: fd.get('description') + (discountPct > 0 ? ' (' + discountPct + '% early bird)' : ''),
         type: fd.get('type'),
@@ -899,10 +923,15 @@
         createdOn: App.Utils.today(),
         paidOn: null
       };
-      App.Store.set({ invoices: [...st.invoices, newInvoice] });
       App.Utils.hideModal(true);
-      App.Utils.showToast('Invoice created' + (discountPct > 0 ? ' with ' + discountPct + '% early bird discount' : ''), 'success');
-      App.Router.refresh();
+      App.Api.post('/api/invoices', newInvoice).then(function() {
+        return App.Api.loadSnapshot();
+      }).then(function() {
+        App.Utils.showToast('Invoice created' + (discountPct > 0 ? ' with ' + discountPct + '% early bird discount' : ''), 'success');
+        App.Router.refresh();
+      }).catch(function() {
+        // Error already toasted by App.Api wrapper.
+      });
     });
   }
 
@@ -1015,14 +1044,37 @@
     }
 
     var existing = state.invoices;
+
+    // ── Referral credit auto-apply ────────────────────────────────────────
+    // For each family with an 'earned' referral_reward that still has credits
+    // remaining, apply -RM10 to ONE invoice per cycle (oldest reward first)
+    // and remember which reward ID to consume server-side after creation.
+    var rewards = (state.referralRewards || []).slice()
+      .filter(function(r) { return r.status === 'earned' && r.creditsRemaining > 0; })
+      .sort(function(a, b) { return (a.milestoneMetOn || '').localeCompare(b.milestoneMetOn || ''); });
+    var creditByFamily = {}; // familyId -> rewardId (one credit per family per cycle)
+    rewards.forEach(function(r) {
+      if (!creditByFamily[r.referrerFamilyId]) creditByFamily[r.referrerFamilyId] = r.id;
+    });
+    var rewardConsumeQueue = []; // rewardIds to POST consume on after generation
+
     var newInvoices = toCreate.map(function(s, idx) {
+      var fam = (state.families || []).find(function(f) { return f.id === s.familyId; });
+      var rewardId = fam ? creditByFamily[fam.id] : null;
+      var referralCredit = 0;
+      if (rewardId) {
+        referralCredit = 10;
+        rewardConsumeQueue.push(rewardId);
+        delete creditByFamily[fam.id]; // only one invoice per family per cycle
+      }
       return {
         id: App.Utils.generateId('INV'),
         studentId: s.id,
-        description: monthLabel + ' Tuition' + (discountPct > 0 ? ' (' + discountPct + '% early bird)' : ''),
+        description: monthLabel + ' Tuition' + (discountPct > 0 ? ' (' + discountPct + '% early bird)' : '') + (referralCredit > 0 ? ' (RM10 referral credit)' : ''),
         type: 'Monthly',
-        amount: finalAmount,
+        amount: parseFloat((finalAmount - referralCredit).toFixed(2)),
         discountPct: discountPct || undefined,
+        referralCredit: referralCredit || undefined,
         earlyBirdCutoff: earlyBirdCutoff,
         dueDate: dueDate,
         status: 'Unpaid',
@@ -1031,9 +1083,60 @@
       };
     });
 
-    App.Store.set({ invoices: existing.concat(newInvoices) });
+    // Persist each new invoice to the backend so the DB is the source of
+    // truth, not localStorage. This is the fix for the long-standing
+    // localStorage-only inconsistency. We POST sequentially (low volume,
+    // and serial errors are easier to surface) and update the local store
+    // with the server-returned rows so IDs match.
     App.Utils.hideModal(true);
-    App.Utils.showToast('Generated ' + newInvoices.length + ' invoices for ' + monthLabel, 'success');
+    _persistGeneratedInvoices(newInvoices, rewardConsumeQueue, monthLabel);
+  }
+
+  // _persistGeneratedInvoices is the async tail of _doGenerateMonthly. It
+  // POSTs every freshly-built invoice to /api/invoices, fires referral
+  // consume calls in parallel, then reloads the snapshot so all modules
+  // pick up the persisted rows.
+  async function _persistGeneratedInvoices(newInvoices, rewardConsumeQueue, monthLabel) {
+    var savedCount = 0;
+    var failed = [];
+    for (var i = 0; i < newInvoices.length; i++) {
+      var inv = newInvoices[i];
+      try {
+        // Backend assigns its own ID, so we drop our local one to avoid
+        // collisions. Server returns the persisted row.
+        var payload = Object.assign({}, inv);
+        delete payload.id;
+        await App.Api.post('/api/invoices', payload, { silent: true });
+        savedCount++;
+      } catch(err) {
+        console.error('invoice persist failed', inv.studentId, err);
+        failed.push(inv.studentId);
+      }
+    }
+
+    // Referral credit consume calls — fire-and-forget. The backend tolerates
+    // races and the next snapshot reload will reflect any drift.
+    rewardConsumeQueue.forEach(function(rid) {
+      App.Api.post('/api/referrals/' + rid + '/consume', {}, { silent: true }).catch(function() {});
+    });
+
+    // Reload the snapshot so the local store reflects the persisted truth.
+    // Without this we'd be staring at our locally-generated rows that have
+    // no DB representation — exactly the bug we're fixing.
+    try {
+      await App.Api.loadSnapshot();
+    } catch(e) {
+      console.error('snapshot reload after generate failed', e);
+    }
+
+    var creditMsg = rewardConsumeQueue.length > 0
+      ? ' (' + rewardConsumeQueue.length + ' referral credit' + (rewardConsumeQueue.length !== 1 ? 's' : '') + ' applied)'
+      : '';
+    if (failed.length > 0) {
+      App.Utils.showToast('Saved ' + savedCount + '/' + newInvoices.length + ' invoices for ' + monthLabel + ' — ' + failed.length + ' failed (see console)', 'warning', 8000);
+    } else {
+      App.Utils.showToast('Generated ' + savedCount + ' invoices for ' + monthLabel + creditMsg, 'success');
+    }
     App.Router.refresh();
   }
 
@@ -1096,12 +1199,12 @@
     const childNames = children.map(function(c) { return c.firstName; }).join(' + ');
     const desc = description + ' — ' + childNames + (discount > 0 ? ' (' + discount + '% sibling discount)' : '');
 
-    // Create a single combined invoice linked to the first child, with siblings listed in description
+    // Create a single combined invoice linked to the first child, with
+    // siblings listed in the description. Persisted to backend so it shows
+    // up consistently for both the parent and admin views.
     const newInvoice = {
-      id: App.Utils.generateId('INV'),
       studentId: children[0].id,  // primary child
-      siblingIds: children.slice(1).map(function(c) { return c.id; }),
-      parentEmail: email,
+      siblingIds: JSON.stringify(children.slice(1).map(function(c) { return c.id; })),
       description: desc,
       type: 'Monthly',
       amount: totalAmount,
@@ -1112,10 +1215,15 @@
       paidOn: null
     };
 
-    App.Store.set({ invoices: [...state.invoices, newInvoice] });
     App.Utils.hideModal(true);
-    App.Utils.showToast('Sibling invoice created — RM ' + totalAmount.toFixed(2) + ' for ' + childNames, 'success');
-    App.Router.refresh();
+    App.Api.post('/api/invoices', newInvoice).then(function() {
+      return App.Api.loadSnapshot();
+    }).then(function() {
+      App.Utils.showToast('Sibling invoice created — RM ' + totalAmount.toFixed(2) + ' for ' + childNames, 'success');
+      App.Router.refresh();
+    }).catch(function() {
+      // Error already toasted by App.Api wrapper.
+    });
   }
 
   function _field(label, inputHtml) {

@@ -61,42 +61,72 @@
       return data;
     },
 
-    async get(path) {
-      const res = await fetch(BASE + path, OPTS);
-      if (res.status === 401) { this._handle401(); return null; }
-      return res.json();
-    },
-
-    async post(path, body) {
-      const res = await fetch(BASE + path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+    // _request is the single low-level wrapper used by get/post/put/del.
+    // Centralising it means error handling, 401 redirects, response parsing,
+    // and toasting are consistent across every call site. Callers can pass
+    // { silent: true } in opts to suppress automatic error toasts (useful
+    // when the caller wants to display the error inline in a form).
+    async _request(method, path, body, opts) {
+      opts = opts || {};
+      const init = {
+        method: method,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
         credentials: 'include'
-      });
+      };
+      if (body !== undefined && body !== null) init.body = JSON.stringify(body);
+
+      let res;
+      try {
+        res = await fetch(BASE + path, init);
+      } catch (networkErr) {
+        // Network failure (offline, DNS, CORS) — synthesise an error.
+        const err = new Error('Network error — check your connection and try again');
+        err.cause = networkErr;
+        if (!opts.silent) this._toastError(err);
+        throw err;
+      }
+
       if (res.status === 401) { this._handle401(); return null; }
-      if (!res.ok) { const t = await res.text(); throw new Error(t); }
-      return res.status === 204 ? null : res.json();
+      if (res.status === 204) return null;
+
+      // Try to parse JSON; if it isn't JSON, fall back to text.
+      let payload;
+      const ctype = res.headers.get('Content-Type') || '';
+      if (ctype.indexOf('application/json') > -1) {
+        payload = await res.json().catch(() => null);
+      } else {
+        payload = await res.text().catch(() => '');
+      }
+
+      if (!res.ok) {
+        // Backend returns {error, request_id} for failures. Surface a useful
+        // error message and attach the request ID so devs can grep logs.
+        const message = (payload && payload.error) || (typeof payload === 'string' && payload) || ('Request failed (' + res.status + ')');
+        const err = new Error(message);
+        err.status = res.status;
+        err.requestId = (payload && payload.request_id) || res.headers.get('X-Request-Id') || '';
+        if (!opts.silent) this._toastError(err);
+        throw err;
+      }
+      return payload;
     },
 
-    async put(path, body) {
-      const res = await fetch(BASE + path, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        credentials: 'include'
-      });
-      if (res.status === 401) { this._handle401(); return null; }
-      if (!res.ok) { const t = await res.text(); throw new Error(t); }
-      return res.status === 204 ? null : res.json();
+    // _toastError handles the show-a-toast side effect, gracefully degrading
+    // if the toast helper isn't loaded yet (e.g. during early page load).
+    _toastError(err) {
+      try {
+        if (window.App && App.Utils && App.Utils.showToast) {
+          App.Utils.showToast(err.message || 'Something went wrong', 'error');
+        }
+      } catch(e) {}
+      // Always console.error so failures aren't silent in dev tools.
+      console.error('[App.Api]', err.message, err.requestId ? '(request_id=' + err.requestId + ')' : '', err);
     },
 
-    async del(path) {
-      const res = await fetch(BASE + path, { method: 'DELETE', credentials: 'include' });
-      if (res.status === 401) { this._handle401(); return null; }
-      if (!res.ok) { const t = await res.text(); throw new Error(t); }
-      return null;
-    },
+    async get(path, opts)        { return this._request('GET',    path, null, opts); },
+    async post(path, body, opts) { return this._request('POST',   path, body, opts); },
+    async put(path, body, opts)  { return this._request('PUT',    path, body, opts); },
+    async del(path, opts)        { return this._request('DELETE', path, null, opts); },
 
     // After any mutation, reload the snapshot so all modules stay in sync
     async refresh() {

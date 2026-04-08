@@ -135,7 +135,7 @@
                 + '<td class="td"><div class="flex items-center gap-3">'
                 +   '<div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">' + App.Utils.esc(s.firstName.charAt(0)) + App.Utils.esc(s.lastName.charAt(0)) + '</div>'
                 +   '<div><div class="font-medium text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName)
-                +     (_bal > 0 ? ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.65rem;font-weight:700;background:#fffbeb;color:#92400e;border:1px solid #fef3c7;border-radius:999px;vertical-align:middle;margin-left:4px" title="Replacement balance">' + _bal + 'm</span>' : '')
+                +     (_bal > 0 ? ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.65rem;font-weight:700;background:#fffbeb;color:#92400e;border:1px solid #fef3c7;border-radius:999px;vertical-align:middle;margin-left:4px" title="Replacement balance">' + _bal + 'cr</span>' : '')
                 +   '</div><div class="text-xs text-slate-400">' + s.id + '</div></div>'
                 + '</div></td>'
                 + '<td class="td"><div class="flex flex-wrap gap-1">'
@@ -241,9 +241,13 @@
 
     // Replacement credits for this student
     var stuCredits = (replacementCredits || []).filter(function(rc) { return rc.studentId === studentId; });
-    var earnedMin = stuCredits.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
-    var usedMin = stuCredits.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
-    var balanceMin = earnedMin - usedMin;
+    var classCreds = stuCredits.filter(function(rc) { return (rc.category || 'class') === 'class'; });
+    var ssCreds = stuCredits.filter(function(rc) { return rc.category === 'self-study'; });
+    var classBalance = classCreds.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0)
+                     - classCreds.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
+    var ssBalance = ssCreds.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0)
+                  - ssCreds.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
+    var balanceMin = classBalance + ssBalance;
 
     const enrolledClasses = s.enrolledClasses.map(function(cid) {
       return classes.find(function(c) { return c.id === cid; });
@@ -279,6 +283,12 @@
       +   (function() {
             var fam = (App.Store.get().families || []).find(function(x) { return x.id === s.familyId; });
             return fam ? _infoRow('Family', '<a href="#" onclick="event.preventDefault();App.Utils.hideModal(true);App.Students._familyModal(\'' + fam.id + '\')" style="color:var(--gold);font-weight:600;text-decoration:none">' + App.Utils.esc(fam.name) + '</a>') : '';
+          })()
+      +   (function() {
+            if (!s.referredByFamilyId) return '';
+            var refFam = (App.Store.get().families || []).find(function(x) { return x.id === s.referredByFamilyId; });
+            if (!refFam) return _infoRow('Referred By', '<span style="color:#94a3b8">—</span>');
+            return _infoRow('Referred By', '<a href="#" onclick="event.preventDefault();App.Utils.hideModal(true);App.Students._familyModal(\'' + refFam.id + '\')" style="color:var(--gold);font-weight:600;text-decoration:none">' + App.Utils.esc(refFam.name) + '</a>');
           })()
       +   _infoRow('Registered On', App.Utils.formatDate(s.registeredOn))
       +   (s.siblings && s.siblings.length ? _infoRow('Siblings', (function() {
@@ -366,8 +376,8 @@
       +       '<svg width="18" height="18" fill="none" stroke="' + (balanceMin > 0 ? '#b08d20' : '#94a3b8') + '" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/></svg>'
       +     '</div>'
       +     '<div>'
-      +       '<div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Replacement Balance</div>'
-      +       '<div style="font-size:1.15rem;font-weight:700;color:' + (balanceMin > 0 ? '#92400e' : '#64748b') + ';font-family:\'Cormorant Garamond\',serif">' + balanceMin + ' min</div>'
+      +       '<div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Credits</div>'
+      +       '<div style="font-size:0.92rem;font-weight:700;color:' + (balanceMin > 0 ? '#92400e' : '#64748b') + ';font-family:\'Cormorant Garamond\',serif">Class: ' + classBalance + ' | Self-study: ' + ssBalance + '</div>'
       +     '</div>'
       +   '</div>'
       +   ((isAdmin || isTeacher) ? '<div style="display:flex;gap:0.5rem">'
@@ -380,7 +390,8 @@
         : '<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-slate-100">'
           + '<th class="text-left py-2 px-2 text-slate-500 font-medium">Date</th>'
           + '<th class="text-left py-2 px-2 text-slate-500 font-medium">Type</th>'
-          + '<th class="text-right py-2 px-2 text-slate-500 font-medium">Minutes</th>'
+          + '<th class="text-left py-2 px-2 text-slate-500 font-medium">Category</th>'
+          + '<th class="text-right py-2 px-2 text-slate-500 font-medium">Credits</th>'
           + '<th class="text-left py-2 px-2 text-slate-500 font-medium">Note</th>'
           + '<th class="text-left py-2 px-2 text-slate-500 font-medium">Class</th>'
           + ((isAdmin || isTeacher) ? '<th class="text-right py-2 px-2 text-slate-500 font-medium"></th>' : '')
@@ -388,9 +399,12 @@
           + stuCredits.slice().sort(function(a, b) { return b.date < a.date ? -1 : b.date > a.date ? 1 : 0; }).map(function(rc) {
               var cls = rc.classId ? classes.find(function(c) { return c.id === rc.classId; }) : null;
               var typeBg = rc.type === 'earned' ? 'background:#ecfdf5;color:#059669;border:1px solid #a7f3d0' : 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+              var catLabel = (rc.category || 'class') === 'self-study' ? 'Self-study' : 'Class';
+              var catBg = catLabel === 'Self-study' ? 'background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe' : 'background:#faf5ff;color:#7c3aed;border:1px solid #e9d5ff';
               return '<tr class="border-b border-slate-50">'
                 + '<td class="py-2 px-2 text-slate-600">' + App.Utils.formatDate(rc.date) + '</td>'
                 + '<td class="py-2 px-2"><span style="display:inline-block;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:600;border-radius:999px;' + typeBg + '">' + (rc.type === 'earned' ? 'Absent' : 'Extended') + '</span></td>'
+                + '<td class="py-2 px-2"><span style="display:inline-block;padding:0.15rem 0.55rem;font-size:0.7rem;font-weight:600;border-radius:999px;' + catBg + '">' + catLabel + '</span></td>'
                 + '<td class="py-2 px-2 text-right font-medium">' + (rc.type === 'earned' ? '+' : String.fromCharCode(8722)) + rc.minutes + '</td>'
                 + '<td class="py-2 px-2 text-slate-600">' + App.Utils.esc(rc.note || String.fromCharCode(8212)) + '</td>'
                 + '<td class="py-2 px-2 text-slate-500">' + (cls ? App.Utils.esc(cls.name) : String.fromCharCode(8212)) + '</td>'
@@ -587,8 +601,15 @@
   }
 
   function _pendingModal() {
-    const { registrations } = App.Store.get();
-    const pending = (registrations || []).filter(function(r) { return r.status === 'pending'; });
+    const state = App.Store.get();
+    const registrations = state.registrations || [];
+    const families = state.families || [];
+    const pending = registrations.filter(function(r) { return r.status === 'pending'; });
+
+    // Build a set of emails that already have a parent account so the UI
+    // can flag self-served parents (admin only needs to link the child).
+    const parentEmails = {};
+    families.forEach(function(f) { if (f.contact) parentEmails[f.contact.toLowerCase()] = true; });
 
     App.Utils.showModal(
       '<div class="p-6">'
@@ -598,24 +619,50 @@
           ? '<div class="py-8 text-center text-slate-400">No pending registrations</div>'
           : '<div class="space-y-4 max-h-[60vh] overflow-y-auto pr-1">'
           + pending.map(function(reg) {
+              const isTeacher = reg.type === 'teacher';
+              const emailVerified = !!reg.emailVerifiedAt;
+              const parentSelfServed = !isTeacher && parentEmails[(reg.email || '').toLowerCase()];
+              const badges = [];
+              if (emailVerified) {
+                badges.push('<span style="display:inline-flex;align-items:center;gap:0.3rem;padding:0.2rem 0.55rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:999px;font-size:0.68rem;font-weight:700;color:#15803d"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>Email verified</span>');
+              } else {
+                badges.push('<span style="display:inline-flex;align-items:center;gap:0.3rem;padding:0.2rem 0.55rem;background:#fffbeb;border:1px solid #fde68a;border-radius:999px;font-size:0.68rem;font-weight:700;color:#92400e">Awaiting email verification</span>');
+              }
+              if (parentSelfServed) {
+                badges.push('<span style="display:inline-flex;align-items:center;gap:0.3rem;padding:0.2rem 0.55rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:999px;font-size:0.68rem;font-weight:700;color:#1d4ed8">Parent already has account</span>');
+              }
+
+              const approveLabel = parentSelfServed
+                ? 'Link student to parent'
+                : (isTeacher ? 'Approve teacher' : 'Approve & create account');
+
+              const headerName = isTeacher
+                ? App.Utils.esc(reg.parentName || 'Teacher applicant')
+                : (App.Utils.esc(reg.studentFirstName) + ' ' + App.Utils.esc(reg.studentLastName));
+              const subline = isTeacher
+                ? 'Teacher application · ' + App.Utils.esc(reg.email)
+                : 'Parent: ' + App.Utils.esc(reg.parentName) + ' · ' + App.Utils.esc(reg.email);
+
               return '<div class="border border-slate-200 rounded-xl p-4">'
-                + '<div class="flex items-start justify-between gap-3 mb-3">'
+                + '<div class="flex items-start justify-between gap-3 mb-2">'
                 +   '<div>'
-                +     '<div class="font-semibold text-slate-800">' + App.Utils.esc(reg.studentFirstName) + ' ' + App.Utils.esc(reg.studentLastName) + '</div>'
-                +     '<div class="text-xs text-slate-500 mt-0.5">Parent: ' + App.Utils.esc(reg.parentName) + ' · ' + App.Utils.esc(reg.email) + '</div>'
+                +     '<div class="font-semibold text-slate-800">' + headerName + '</div>'
+                +     '<div class="text-xs text-slate-500 mt-0.5">' + subline + '</div>'
                 +   '</div>'
                 +   '<span class="text-xs text-slate-400 shrink-0">' + App.Utils.formatDate(reg.submittedOn) + '</span>'
                 + '</div>'
+                + '<div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.75rem">' + badges.join('') + '</div>'
                 + '<div class="grid grid-cols-2 gap-2 text-xs text-slate-600 mb-3">'
                 + (reg.phone ? '<div><span class="text-slate-400">Phone:</span> ' + App.Utils.esc(reg.phone) + '</div>' : '')
                 + (reg.studentDob ? '<div><span class="text-slate-400">DOB:</span> ' + App.Utils.formatDate(reg.studentDob) + '</div>' : '')
                 + (reg.studentGender ? '<div><span class="text-slate-400">Gender:</span> ' + App.Utils.esc(reg.studentGender) + '</div>' : '')
                 + (reg.classInterest ? '<div class="col-span-2"><span class="text-slate-400">Interested in:</span> ' + App.Utils.esc(reg.classInterest) + '</div>' : '')
+                + (reg.specialization ? '<div class="col-span-2"><span class="text-slate-400">Specialty:</span> ' + App.Utils.esc(reg.specialization) + '</div>' : '')
                 + (reg.emergencyName ? '<div class="col-span-2"><span class="text-slate-400">Emergency:</span> ' + App.Utils.esc(reg.emergencyName) + ' · ' + App.Utils.esc(reg.emergencyPhone) + '</div>' : '')
                 + (reg.notes ? '<div class="col-span-2"><span class="text-slate-400">Notes:</span> ' + App.Utils.esc(reg.notes) + '</div>' : '')
                 + '</div>'
                 + '<div class="flex gap-2">'
-                +   '<button onclick="App.Students._approveReg(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium">Approve</button>'
+                +   '<button onclick="App.Students._approveReg(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium">' + approveLabel + '</button>'
                 +   '<button onclick="App.Students._rejectReg(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100 font-medium border border-red-200">Reject</button>'
                 + '</div>'
                 + '</div>';
@@ -631,7 +678,17 @@
       const result = await App.Api.post('/api/registrations/' + regId + '/approve', {});
       if (result) {
         App.Utils.hideModal(true);
-        App.Utils.showToast('Approved! Temp password: ' + result.tempPassword, 'success', 15000);
+        // Three response shapes from the backend:
+        //   1. parent self-served: no tempPassword, message says "linked"
+        //   2. teacher: no tempPassword, set-password email is sent automatically
+        //   3. legacy admin-driven parent: tempPassword present, must share manually
+        if (result.tempPassword) {
+          App.Utils.showToast('Approved. Temp password: ' + result.tempPassword + ' (share with parent)', 'success', 15000);
+        } else if (result.message) {
+          App.Utils.showToast(result.message, 'success', 8000);
+        } else {
+          App.Utils.showToast('Approved.', 'success');
+        }
         await App.Api.loadSnapshot();
         App.Notifs.refresh();
         App.Router.refresh();
@@ -711,10 +768,11 @@
     App.Utils.showModal(
       '<div class="p-6">'
       + '<h2 class="text-lg font-bold mb-1">Log Absence</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">Record an absence for a missed class (default 60 min). This also marks the student absent in attendance.</p>'
+      + '<p class="text-sm text-slate-500 mb-4">Record an absence for a missed class (default 4 credits). This also marks the student absent in attendance.</p>'
       + '<form id="add-credit-form" class="space-y-4">'
       + _field('Class', '<select name="classId" class="form-input">' + classOpts + '</select>')
-      + _field('Minutes', '<select name="minutes" class="form-input"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60" selected>60 min</option></select>')
+      + _field('Credits', '<select name="minutes" class="form-input"><option value="1">1 credit</option><option value="2">2 credits</option><option value="3">3 credits</option><option value="4" selected>4 credits</option></select>')
+      + _field('Category', '<select name="category" class="form-input"><option value="class" selected>Class</option><option value="self-study">Self-study</option></select>')
       + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Absent from Math 12 Mar">')
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
       + '<div class="flex justify-end gap-2 pt-2">'
@@ -734,12 +792,13 @@
         if (classId) {
           await App.Api.post('/api/attendance', { personId: studentId, personType: 'student', date: date, classId: classId, status: 'Absent' });
         }
-        // Add replacement minutes
+        // Add replacement credits
         var cls = classId ? state.classes.find(function(c) { return c.id === classId; }) : null;
         await App.Api.post('/api/replacement-credits', {
           studentId: studentId,
           type: 'earned',
           minutes: parseInt(fd.get('minutes'), 10),
+          category: fd.get('category') || 'class',
           note: fd.get('note') || (cls ? 'Absent from ' + cls.name + ' on ' + date : ''),
           classId: classId,
           date: date
@@ -766,9 +825,10 @@
     App.Utils.showModal(
       '<div class="p-6">'
       + '<h2 class="text-lg font-bold mb-1">Log Extension</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">Use replacement balance as a class extension (15/30/45/60 min)</p>'
+      + '<p class="text-sm text-slate-500 mb-4">Use replacement credits as a class extension (1-4 credits)</p>'
       + '<form id="use-credit-form" class="space-y-4">'
-      + _field('Minutes', '<select name="minutes" class="form-input"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select>')
+      + _field('Credits', '<select name="minutes" class="form-input"><option value="1">1 credit</option><option value="2">2 credits</option><option value="3">3 credits</option><option value="4">4 credits</option></select>')
+      + _field('Category', '<select name="category" class="form-input"><option value="class" selected>Class</option><option value="self-study">Self-study</option></select>')
       + _field('Class (optional)', '<select name="classId" class="form-input">' + classOpts + '</select>')
       + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Extended English session">')
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
@@ -783,12 +843,13 @@
       e.preventDefault();
       var fd = new FormData(e.target);
       var mins = parseInt(fd.get('minutes'), 10);
-      // Check balance
-      var creds = (App.Store.get().replacementCredits || []).filter(function(rc) { return rc.studentId === studentId; });
+      var cat = fd.get('category') || 'class';
+      // Check balance by category
+      var creds = (App.Store.get().replacementCredits || []).filter(function(rc) { return rc.studentId === studentId && (rc.category || 'class') === cat; });
       var bal = creds.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0)
               - creds.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
       if (mins > bal) {
-        App.Utils.showToast('Insufficient replacement balance (' + bal + ' min available)', 'error');
+        App.Utils.showToast('Insufficient ' + (cat === 'self-study' ? 'self-study' : 'class') + ' credits (' + bal + ' available)', 'error');
         return;
       }
       try {
@@ -796,12 +857,13 @@
           studentId: studentId,
           type: 'used',
           minutes: mins,
+          category: cat,
           classId: fd.get('classId') || '',
           note: fd.get('note') || '',
           date: fd.get('date')
         });
         App.Utils.hideModal(true);
-        App.Utils.showToast('Replacement used (' + mins + ' min)', 'success');
+        App.Utils.showToast(mins + ' ' + (cat === 'self-study' ? 'self-study' : 'class') + ' credit(s) used', 'success');
         await App.Api.refresh();
         _viewModal(studentId);
         _switchTab('replacements');
@@ -932,6 +994,39 @@
     var children = students.filter(function(s) { return s.familyId === familyId; });
     var childIds = children.map(function(s) { return s.id; });
     var familyInvoices = invoices.filter(function(i) { return childIds.indexOf(i.studentId) > -1; });
+
+    // --- Referrals: rewards this family has earned by referring others ---
+    var familyReferralRewards = (state.referralRewards || []).filter(function(r) { return r.referrerFamilyId === familyId; });
+    var referralHtml = '';
+    if (f.referralCode || familyReferralRewards.length > 0) {
+      var earnedTotal = familyReferralRewards
+        .filter(function(r) { return r.status === 'earned'; })
+        .reduce(function(a, r) { return a + (r.creditsRemaining || 0); }, 0);
+      referralHtml = '<div style="margin-top:1rem;padding:1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">'
+        +   '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.05em">Referrals</div>'
+        +   (f.referralCode ? '<button onclick="navigator.clipboard.writeText(\'' + f.referralCode + '\').then(function(){App.Utils.showToast(\'Code copied\',\'success\')})" style="font-size:0.7rem;padding:0.25rem 0.65rem;background:var(--gold);color:#0a0a0a;border:none;border-radius:6px;cursor:pointer;font-weight:700">Copy code</button>' : '')
+        + '</div>'
+        + (f.referralCode ? '<div style="font-family:var(--serif);font-size:1.2rem;font-weight:700;color:var(--gold);letter-spacing:0.04em">' + App.Utils.esc(f.referralCode) + '</div>' : '')
+        + (earnedTotal > 0 ? '<div style="margin-top:0.4rem;font-size:0.72rem;color:#92400e;font-weight:600">Active credit · ' + earnedTotal + ' invoice' + (earnedTotal !== 1 ? 's' : '') + ' remaining</div>' : '')
+        + (familyReferralRewards.length > 0
+            ? '<div style="margin-top:0.6rem;border-top:1px solid #fde68a;padding-top:0.5rem">'
+              + familyReferralRewards.map(function(r) {
+                  var statusColor = r.status === 'earned' ? '#15803d' : r.status === 'exhausted' ? '#94a3b8' : '#d97706';
+                  var statusBg    = r.status === 'earned' ? '#f0fdf4' : r.status === 'exhausted' ? '#f1f5f9' : '#fffbeb';
+                  var progress = r.status === 'pending' ? (r.paidInvoiceCount || 0) + ' / 3 paid' : r.status === 'earned' ? r.creditsRemaining + ' credits left' : 'Used';
+                  return '<div style="display:flex;align-items:center;justify-content:space-between;padding:0.35rem 0;font-size:0.76rem;color:#78350f">'
+                    + '<span>' + App.Utils.esc(r.referredName || r.referredStudentId) + '</span>'
+                    + '<span style="display:inline-flex;align-items:center;gap:0.4rem">'
+                    +   '<span style="font-size:0.7rem;color:#94a3b8">' + progress + '</span>'
+                    +   '<span style="padding:0.15rem 0.55rem;background:' + statusBg + ';color:' + statusColor + ';border-radius:999px;font-size:0.66rem;font-weight:700;text-transform:uppercase">' + r.status + '</span>'
+                    + '</span>'
+                    + '</div>';
+                }).join('')
+              + '</div>'
+            : '<p style="margin:0.5rem 0 0;font-size:0.72rem;color:#92400e">Share this code — when a referred student stays for 3 months, RM10/month off auto-applies for 3 months.</p>')
+        + '</div>';
+    }
     var outstanding = familyInvoices.filter(function(i) { return i.status === 'Unpaid' || i.status === 'Overdue'; }).reduce(function(a, i) { return a + i.amount; }, 0);
     var totalPaid = familyInvoices.filter(function(i) { return i.status === 'Paid'; }).reduce(function(a, i) { return a + i.amount; }, 0);
 
@@ -1017,7 +1112,7 @@
       if (bal > 0) hasAnyBalance = true;
       return '<div style="display:flex;justify-content:space-between;padding:0.3rem 0;font-size:0.78rem;border-bottom:1px solid #f8f8f6">'
         + '<span style="color:#374151">' + App.Utils.esc(s.firstName) + '</span>'
-        + '<span style="font-weight:600;color:' + (bal > 0 ? '#92400e' : '#94a3b8') + '">' + (bal > 0 ? bal + ' min owed' : '0 min') + '</span>'
+        + '<span style="font-weight:600;color:' + (bal > 0 ? '#92400e' : '#94a3b8') + '">' + (bal > 0 ? bal + ' credits' : '0 credits') + '</span>'
         + '</div>';
     }).join('');
 
@@ -1072,6 +1167,7 @@
         + upcomingHtml
         + feedbackHtml
         + replacementHtml
+        + referralHtml
 
         + (f.address ? '<div style="margin-top:1rem;font-size:0.78rem;color:#64748b"><span style="font-weight:600">Address:</span> ' + App.Utils.esc(f.address) + '</div>' : '')
         + (f.notes ? '<div style="margin-top:0.5rem;font-size:0.78rem;color:#64748b"><span style="font-weight:600">Notes:</span> ' + App.Utils.esc(f.notes) + '</div>' : '')
