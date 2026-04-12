@@ -157,6 +157,10 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 		}
 		if c != nil && (c.Role == "admin" || c.Role == "superadmin") {
 			snap.Registrations = listRegistrations(db, c)
+		} else if c != nil && c.Role == "parent" {
+			// Parents see only their own enrollment requests so the dashboard
+			// can show pending enrolments and the "register your child" form.
+			snap.Registrations = listParentEnrollments(db, c)
 		}
 		respond(w, snap)
 	}

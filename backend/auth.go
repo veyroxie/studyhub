@@ -54,9 +54,10 @@ type loginRequest struct {
 
 // loginResponse never contains the token — it goes in an HttpOnly cookie instead
 type loginResponse struct {
-	Role  string `json:"role"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Role    string `json:"role"`
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	StaffID string `json:"staffId,omitempty"`
 }
 
 func handleLogin(db *DB) http.HandlerFunc {
@@ -162,12 +163,18 @@ func handleLogin(db *DB) http.HandlerFunc {
 			Expires:  time.Now().Add(tokenExpiry),
 			HttpOnly: true,                  // JavaScript cannot access this cookie
 			Secure:   secure,                // HTTPS only in production
-			SameSite: http.SameSiteStrictMode,  // Lax allows cookie on top-level navigation (Strict blocks it)
+			SameSite: http.SameSiteLaxMode,  // Lax allows cookie on top-level navigation (Strict blocks it)
 		})
 
-		// Return role/name/email — NOT the token itself
+		// Return role/name/email — NOT the token itself.
+		// For teachers, also look up their staff ID so the frontend can
+		// populate App.currentTeacher and render the teacher dashboard.
+		resp := loginResponse{Role: role, Name: name, Email: req.Email}
+		if role == "teacher" {
+			db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL LIMIT 1`, req.Email).Scan(&resp.StaffID)
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(loginResponse{Role: role, Name: name, Email: req.Email})
+		json.NewEncoder(w).Encode(resp)
 	}
 }
 
@@ -181,20 +188,34 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
 		Secure:   secure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleMe returns the current user's info from their cookie
-func handleMe(w http.ResponseWriter, r *http.Request) {
-	c := claimsFrom(r)
-	if c == nil {
-		respondError(w, "not authenticated", http.StatusUnauthorized)
-		return
+// handleMe returns the current user's info from their cookie.
+// For teachers, also looks up staffId so the frontend can restore
+// App.currentTeacher on page refresh.
+func handleMe(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		if c == nil {
+			respondError(w, "not authenticated", http.StatusUnauthorized)
+			return
+		}
+		// Read the current name from the DB rather than the JWT claim so
+		// profile changes are reflected immediately (the JWT may be stale).
+		var dbName string
+		if err := db.QueryRow(`SELECT COALESCE(name,'') FROM users WHERE email=?`, c.Email).Scan(&dbName); err == nil && dbName != "" {
+			c.Name = dbName
+		}
+		resp := loginResponse{Role: c.Role, Name: c.Name, Email: c.Email}
+		if c.Role == "teacher" {
+			db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL LIMIT 1`, c.Email).Scan(&resp.StaffID)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(loginResponse{Role: c.Role, Name: c.Name, Email: c.Email})
 }
 
 func makeToken(userID, tenantID int, email, role, name string) (string, error) {
@@ -264,7 +285,7 @@ func claimsFrom(r *http.Request) *Claims {
 func requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if c == nil || (c.Role != "admin" && c.Role != "superadmin") {
 			respondError(w, "admin only", http.StatusForbidden)
 			return
 		}
@@ -272,13 +293,3 @@ func requireAdmin(next http.Handler) http.Handler {
 	})
 }
 
-func requireAdminOrTeacher(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c := claimsFrom(r)
-		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
-			respondError(w, "staff only", http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}

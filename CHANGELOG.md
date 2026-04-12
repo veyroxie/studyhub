@@ -8,6 +8,96 @@ dated section when you cut a deploy.
 
 ## [Unreleased]
 
+### Added — Class assignment, PDPA deletion, parent profile, enrollment email
+
+- **Class assignment dropdown on enrollment approval** — when admin approves
+  a child enrollment, the approve modal now shows a multi-select checkbox list
+  of all available classes with capacity indicators. Selected classes are
+  passed in the POST body as `classIds`; student is enrolled immediately and
+  class `enrolled` counts are incremented. Full classes are greyed out.
+- **PDPA admin-only account deletion** — `DELETE /api/families/{id}/pdpa`.
+  Soft-deletes the family, all linked students, and the parent user account.
+  Overwrites PII (name, email, phone, address, medical info) with
+  `[deleted]` so invoices and audit logs remain intact for tax/legal
+  retention. Triple confirmation UI (confirm + confirm + type "delete").
+  Audit log entry: `pdpa_account_deleted`.
+- **Enrollment approved email** — when admin approves an enrollment, the
+  parent receives `renderEnrollmentApprovedEmail` with the child's name and
+  assigned classes (if any). Sent async post-commit.
+- **Parent profile modal** — "My Profile" button on parent dashboard hero.
+  `GET/PUT /api/auth/profile` updates name and phone on user + family +
+  student rows. `POST /api/auth/change-password` requires current password
+  verification before setting a new one. Both audit-logged.
+
+### Fixed — Audit-discovered bugs + UX improvements
+
+#### Critical fixes from codebase audit
+- **Parent invoice query missing `referral_credit` column** — parent users
+  would see zero invoices because Scan read 16 fields but the parent SELECT
+  only had 15 columns. Added `COALESCE(i.referral_credit,0)` to both parent
+  query variants in `handlers_invoices.go`.
+- **`referralRewards` missing from store.js ARRAY_DEFAULTS** — users with
+  stale localStorage would crash on `.filter()` calls. Added
+  `referralRewards: []` and `registrations: []` to the defaults.
+- **`.env.example` was stale** — referenced `DB_PATH=studyhub.db` from the
+  SQLite era. Rewritten with current env vars.
+
+#### UX improvements from user story analysis
+- **Parent snapshot includes their own enrollment requests** — parents now
+  see pending enrolments on their dashboard (was empty because snapshot only
+  populated registrations for admin). New `listParentEnrollments` query.
+- **Referral code validated at enrollment time** — `POST /api/enrollment-
+  requests` checks if the code exists and warns (doesn't block) if invalid
+  or self-referral. Frontend shows warning toast with the explanation.
+- **Admin "Needs Attention" card enhanced** with:
+  - Pending enrolments (separated from teacher apps and legacy regs)
+  - Pending teacher applications (separate count)
+  - Payments awaiting verification (`Pending Verification` status)
+  - Orphan parents (families with no active students linked)
+- **Teacher empty-state dashboard** — teachers with zero assigned classes
+  see a friendly "No classes assigned yet — your admin will set up your
+  schedule shortly" placeholder instead of a blank dashboard.
+- **Payment confirmation email to parent** — when a parent clicks "I've
+  Paid", the backend sends `renderPaymentReceivedEmail` confirming the
+  amount, description, and payment method. Sent async in a goroutine so it
+  doesn't delay the response. Stops the "did you get my payment?" WhatsApp
+  messages.
+
+### Changed — Registration flow split: parent account vs child enrolment
+
+The public `/register.html` form no longer collects student info. The two
+flows are now cleanly separated:
+
+**Parent signup (public, self-serve):**
+- Parent enters name, email, phone, password on `/register.html`
+- Backend creates `users` row (pending_verification) + `families` row (with
+  referral code) — no `registrations` row needed
+- Parent verifies email → account activated → lands on dashboard
+
+**Child enrolment (in-app, parent-initiated):**
+- From the parent dashboard, parent fills in child details (name, DOB,
+  gender, school, grade, subjects, referral code, notes) via an inline form
+- `POST /api/enrollment-requests` creates a `registrations` row with
+  `type='enrollment'`, automatically email-verified (parent already verified)
+- Admin sees it in the pending queue with a purple "Child enrolment" badge
+- Admin clicks "Enrol student" → student created, linked to parent's family,
+  referral code validated
+
+**Admin pending list updated:**
+- Now shows all three types: enrollment requests (purple badge), teacher
+  applications, and legacy student registrations
+- Enrollment requests are auto-verified (no amber "awaiting" badge) since
+  the parent account is already active
+- Approve button label adapts: "Enrol student" / "Approve teacher" /
+  "Link student to parent" / "Approve & create account"
+
+**Backwards compat:**
+- Existing `type='student'` pending registrations from the old combined flow
+  are still visible and approvable via the legacy path
+- `handleRegistrationApprove` now handles three types: `enrollment` (just
+  create student + link), `teacher` (create staff + user + send set-password
+  email), `student` (legacy combined flow)
+
 ### Added — Security hardening + background jobs + sanitization
 
 #### Security

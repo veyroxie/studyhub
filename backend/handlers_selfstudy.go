@@ -18,7 +18,9 @@ func parentStudentIDs(db *DB, email string) map[string]bool {
 	ids := map[string]bool{}
 	for rows.Next() {
 		var id string
-		rows.Scan(&id)
+		if err := rows.Scan(&id); err != nil {
+			continue
+		}
 		ids[id] = true
 	}
 	return ids
@@ -34,7 +36,9 @@ func listSelfStudy(db *DB, c *Claims) []SelfStudySession {
 	out := []SelfStudySession{}
 	for rows.Next() {
 		var s SelfStudySession
-		rows.Scan(&s.ID, &s.StudentID, &s.Date, &s.StartTime, &s.EndTime, &s.DurationMin, &s.Notes)
+		if err := rows.Scan(&s.ID, &s.StudentID, &s.Date, &s.StartTime, &s.EndTime, &s.DurationMin, &s.Notes); err != nil {
+			continue
+		}
 		out = append(out, s)
 	}
 	return out
@@ -76,7 +80,9 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 			out := []SelfStudySession{}
 			for rows.Next() {
 				var s SelfStudySession
-				rows.Scan(&s.ID, &s.StudentID, &s.Date, &s.StartTime, &s.EndTime, &s.DurationMin, &s.Notes)
+				if err := rows.Scan(&s.ID, &s.StudentID, &s.Date, &s.StartTime, &s.EndTime, &s.DurationMin, &s.Notes); err != nil {
+					continue
+				}
 				out = append(out, s)
 			}
 			respond(w, out)
@@ -98,7 +104,9 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 			out := []SelfStudySession{}
 			for rows.Next() {
 				var s SelfStudySession
-				rows.Scan(&s.ID, &s.StudentID, &s.Date, &s.StartTime, &s.EndTime, &s.DurationMin, &s.Notes)
+				if err := rows.Scan(&s.ID, &s.StudentID, &s.Date, &s.StartTime, &s.EndTime, &s.DurationMin, &s.Notes); err != nil {
+					continue
+				}
 				out = append(out, s)
 			}
 			respond(w, out)
@@ -121,7 +129,9 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 		out := []SelfStudySession{}
 		for rows.Next() {
 			var s SelfStudySession
-			rows.Scan(&s.ID, &s.StudentID, &s.Date, &s.StartTime, &s.EndTime, &s.DurationMin, &s.Notes)
+			if err := rows.Scan(&s.ID, &s.StudentID, &s.Date, &s.StartTime, &s.EndTime, &s.DurationMin, &s.Notes); err != nil {
+				continue
+			}
 			out = append(out, s)
 		}
 		respond(w, PaginatedResponse{Data: out, Total: total, Limit: p.Limit, Offset: p.Offset})

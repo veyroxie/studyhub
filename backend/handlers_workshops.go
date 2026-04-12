@@ -20,7 +20,9 @@ func listWorkshops(db *DB, c *Claims) []Workshop {
 	for rows.Next() {
 		var ws Workshop
 		var tids string
-		rows.Scan(&ws.ID, &ws.Name, &ws.Description, &ws.Date, &ws.Time, &ws.EndTime, &ws.Classroom, &ws.Capacity, &ws.Enrolled, &ws.Fee, &tids, &ws.Status)
+		if err := rows.Scan(&ws.ID, &ws.Name, &ws.Description, &ws.Date, &ws.Time, &ws.EndTime, &ws.Classroom, &ws.Capacity, &ws.Enrolled, &ws.Fee, &tids, &ws.Status); err != nil {
+			continue
+		}
 		ws.TeacherIDs = parseArr(tids)
 		out = append(out, ws)
 	}

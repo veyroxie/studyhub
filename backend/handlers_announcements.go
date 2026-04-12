@@ -21,7 +21,9 @@ func listAnnouncements(db *DB, c *Claims) []Announcement {
 	for rows.Next() {
 		var a Announcement
 		var status, archiveOn sql.NullString
-		rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn)
+		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn); err != nil {
+			continue
+		}
 		a.Status = nullStr(status)
 		if a.Status == "" {
 			a.Status = "published"
@@ -45,7 +47,9 @@ func listAnnouncementsPaged(db *DB, c *Claims, p Pagination) ([]Announcement, in
 	for rows.Next() {
 		var a Announcement
 		var status, archiveOn sql.NullString
-		rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn)
+		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn); err != nil {
+			continue
+		}
 		a.Status = nullStr(status)
 		if a.Status == "" {
 			a.Status = "published"
@@ -95,8 +99,11 @@ func handleAnnouncements(db *DB) http.HandlerFunc {
 				a.Status = "published"
 			}
 			tid := tenantID(c)
-			db.Exec(`INSERT INTO announcements(id,tenant_id,title,message,audience,type,created_on,created_by,status,archive_on) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-				a.ID, tid, a.Title, a.Message, a.Audience, a.Type, a.CreatedOn, a.CreatedBy, a.Status, a.ArchiveOn)
+			if _, err := db.Exec(`INSERT INTO announcements(id,tenant_id,title,message,audience,type,created_on,created_by,status,archive_on) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+				a.ID, tid, a.Title, a.Message, a.Audience, a.Type, a.CreatedOn, a.CreatedBy, a.Status, a.ArchiveOn); err != nil {
+				respondError(w, "could not create announcement", 500)
+				return
+			}
 			respond(w, a)
 		}
 	}
@@ -135,8 +142,11 @@ func handleAnnouncementUpdate(db *DB) http.HandlerFunc {
 			return
 		}
 		tid := tenantID(c)
-		db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=? WHERE id=? AND (tenant_id=? OR ?=0)`,
-			a.Title, a.Message, a.Type, a.ArchiveOn, id, tid, tid)
+		if _, err := db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+			a.Title, a.Message, a.Type, a.ArchiveOn, id, tid, tid); err != nil {
+			respondError(w, "could not update announcement", 500)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

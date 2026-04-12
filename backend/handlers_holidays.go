@@ -21,7 +21,9 @@ func listHolidays(db *DB, c *Claims) []Holiday {
 	for rows.Next() {
 		var h Holiday
 		var endDate, notes, createdBy sql.NullString
-		rows.Scan(&h.ID, &h.Name, &h.Date, &endDate, &h.Type, &notes, &createdBy)
+		if err := rows.Scan(&h.ID, &h.Name, &h.Date, &endDate, &h.Type, &notes, &createdBy); err != nil {
+			continue
+		}
 		h.EndDate = nullStr(endDate)
 		h.Notes = nullStr(notes)
 		h.CreatedBy = nullStr(createdBy)

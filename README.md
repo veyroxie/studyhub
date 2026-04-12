@@ -106,15 +106,23 @@ There are two migration paths, both run on every startup:
 ## Deploy
 
 The user pushes to the `prod` branch from their own terminal. The droplet has
-a checkout of the same branch. Deploy is:
+a checkout of the same branch at **`/root/studyhub`** (i.e. `~/studyhub`
+when SSH'd in as root). Deploy is:
 
 ```bash
 ssh root@167.99.64.149
-cd /opt/studyhub
-git pull
-docker compose build api
-docker compose up -d api
+cd ~/studyhub && git pull && docker compose build api && docker compose up -d api
 ```
+
+Smoke-test after deploy:
+
+```bash
+curl -s http://localhost:8080/api/health
+docker logs --tail 50 studyhub-api-1
+```
+
+Health should return `{"ok":true,"db":"ok",...}`. Logs should show the
+structured JSON output and the `background jobs starting` line.
 
 Caddy handles HTTPS via Let's Encrypt automatically.
 

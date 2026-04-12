@@ -6,38 +6,73 @@
   <title>Reset password — The Study Hub</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600;9..144,700;9..144,900&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --gold: #C9A227; --gold-deep: #8a6a14; --gold-dim: rgba(201,162,39,0.12);
+      --ink: #1a1612; --ink-soft: #3a342c; --ink-mute: #6b6258;
+      --paper: #F7F4EC; --paper-warm: #EFE9DB; --paper-card: #FDFBF5;
+      --rule: #E5DECB;
+      --display: 'Fraunces', 'Cormorant Garamond', Georgia, serif;
+      --sans: 'Instrument Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
     * { box-sizing: border-box; }
-    body { font-family: 'DM Sans', sans-serif; background: #FAF9F6; color: #1a1a1a; margin: 0; min-height: 100vh; padding: 2.5rem 1rem; display: flex; align-items: center; justify-content: center; }
-    .card { background: #fff; border-radius: 16px; padding: 2.25rem 1.75rem; border: 1px solid rgba(0,0,0,0.06); box-shadow: 0 4px 24px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03); width: 100%; max-width: 420px; }
-    h1 { font-family: 'Cormorant Garamond', serif; font-size: 1.5rem; font-weight: 700; color: #0a0a0a; margin: 0 0 0.25rem; letter-spacing: -0.02em; }
-    .subtitle { font-size: 0.85rem; color: #64748b; margin: 0 0 1.5rem; }
-    label { display: block; font-size: 0.75rem; font-weight: 600; color: #64748b; margin-bottom: 0.35rem; text-transform: uppercase; letter-spacing: 0.04em; }
-    .input { width: 100%; padding: 0.65rem 0.85rem; background: #FAF9F6; border: 1px solid #e2e8f0; border-radius: 10px; color: #1a1a1a; font-size: 0.9rem; outline: none; transition: border 0.2s, box-shadow 0.2s; font-family: inherit; }
-    .input:focus { border-color: #C9A227; box-shadow: 0 0 0 3px rgba(201,162,39,0.1); }
+    body { font-family: var(--sans); background: var(--paper); color: var(--ink); margin: 0; min-height: 100vh; padding: 2.5rem 1rem; display: flex; align-items: center; justify-content: center; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.1  0 0 0 0 0.08  0 0 0 0 0.05  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      opacity: 0.06; mix-blend-mode: multiply;
+    }
+    body::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background: radial-gradient(800px 400px at 15% -8%, rgba(201,162,39,0.07), transparent 55%), radial-gradient(600px 350px at 95% 10%, rgba(138,106,20,0.04), transparent 60%);
+    }
+    .card {
+      background: var(--paper-card); border-radius: 4px; padding: 2.25rem 2rem; border: 1px solid var(--rule);
+      box-shadow: 0 1px 0 rgba(26,22,18,0.02), 0 16px 48px -24px rgba(26,22,18,0.18);
+      width: 100%; max-width: 420px; position: relative; z-index: 1;
+      animation: fadeUp 0.5s cubic-bezier(0.22,0.61,0.36,1) backwards;
+    }
+    .card::before {
+      content: ''; position: absolute; top: 10px; left: 10px;
+      width: 14px; height: 14px; border-top: 1.5px solid var(--gold); border-left: 1.5px solid var(--gold);
+      pointer-events: none; opacity: 0.5;
+    }
+    .card::after {
+      content: ''; position: absolute; bottom: 10px; right: 10px;
+      width: 14px; height: 14px; border-bottom: 1.5px solid var(--gold); border-right: 1.5px solid var(--gold);
+      pointer-events: none; opacity: 0.5;
+    }
+    h1 { font-family: var(--display); font-size: 1.5rem; font-weight: 400; color: var(--ink); margin: 0 0 0.3rem; letter-spacing: -0.025em; }
+    .subtitle { font-size: 0.85rem; color: var(--ink-mute); margin: 0 0 1.5rem; line-height: 1.5; }
+    label { display: block; font-size: 0.65rem; font-weight: 700; color: var(--ink-mute); margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.14em; font-family: var(--sans); }
+    .input { width: 100%; padding: 0.7rem 0.9rem; background: var(--paper-card); border: 1px solid var(--rule); border-radius: 4px; color: var(--ink); font-size: 0.88rem; outline: none; transition: border 0.2s, box-shadow 0.2s, background 0.2s; font-family: inherit; }
+    .input:hover { border-color: #d3c9ad; }
+    .input:focus { border-color: var(--gold); background: #fff; box-shadow: 0 0 0 3px rgba(201,162,39,0.12); }
     .pw-wrap { position: relative; }
     .pw-input { padding-right: 2.5rem; }
-    .pw-toggle { position: absolute; right: 0.55rem; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #94a3b8; padding: 0.3rem; display: flex; align-items: center; justify-content: center; border-radius: 6px; transition: color 0.15s, background 0.15s; }
-    .pw-toggle:hover { color: #64748b; background: #f1f5f9; }
-    .submit-btn { width: 100%; padding: 0.75rem; border: none; border-radius: 10px; font-weight: 700; font-size: 0.88rem; cursor: pointer; background: linear-gradient(135deg, #C9A227 0%, #b08d20 100%); color: #fff; transition: opacity 0.15s; font-family: inherit; box-shadow: 0 2px 8px rgba(201,162,39,0.2); margin-top: 1rem; }
-    .submit-btn:hover { opacity: 0.9; }
-    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .msg { padding: 0.6rem 0.85rem; border-radius: 10px; font-size: 0.8rem; margin-bottom: 1rem; }
+    .pw-toggle { position: absolute; right: 0.55rem; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--ink-mute); padding: 0.3rem; display: flex; align-items: center; justify-content: center; border-radius: 4px; transition: color 0.15s, background 0.15s; }
+    .pw-toggle:hover { color: var(--ink); background: rgba(201,162,39,0.08); }
+    .submit-btn { width: 100%; padding: 0.8rem; border: none; border-radius: 4px; font-weight: 700; font-size: 0.76rem; cursor: pointer; background: var(--ink); color: var(--gold); transition: opacity 0.15s; font-family: inherit; text-transform: uppercase; letter-spacing: 0.12em; box-shadow: 0 4px 16px rgba(26,22,18,0.18); margin-top: 1.15rem; }
+    .submit-btn:hover { opacity: 0.88; }
+    .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .msg { padding: 0.7rem 1rem; border-radius: 4px; font-size: 0.82rem; margin-bottom: 1rem; }
     .msg.error { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
     .msg.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
     .hidden { display: none; }
-    .brand { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.25rem; }
-    .brand-mark { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, #C9A227 0%, #b08d20 100%); display: flex; align-items: center; justify-content: center; color: #fff; font-family: 'Cormorant Garamond', serif; font-weight: 700; font-size: 1.1rem; }
-    .login-link { display: block; text-align: center; margin-top: 1.25rem; font-size: 0.78rem; color: #C9A227; text-decoration: none; font-weight: 600; }
-    .login-link:hover { text-decoration: underline; }
+    .brand { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; }
+    .brand-mark { width: 28px; height: 1.5px; background: var(--gold); opacity: 0.6; }
+    .brand-name { font-family: var(--display); font-size: 1rem; font-weight: 400; color: var(--ink); letter-spacing: -0.02em; }
+    .login-link { display: block; text-align: center; margin-top: 1.5rem; font-size: 0.74rem; color: var(--gold-deep); text-decoration: none; font-weight: 600; border-bottom: 1px solid rgba(201,162,39,0.25); display: inline-block; }
+    .login-link:hover { color: var(--gold); }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="brand">
-      <div class="brand-mark">SH</div>
-      <div style="font-family:'Cormorant Garamond',serif;font-size:1rem;font-weight:600;color:#0a0a0a">The Study Hub</div>
+      <div class="brand-mark"></div>
+      <div class="brand-name">The Study Hub</div>
     </div>
 
     <div id="form-view">
@@ -67,26 +102,21 @@
     </div>
 
     <div id="success-view" class="hidden" style="text-align:center">
-      <div style="width:48px;height:48px;border-radius:50%;background:#f0fdf4;border:2px solid #bbf7d0;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>
-      </div>
+      <div style="width:40px;height:1.5px;background:var(--gold);margin:0 auto 1.25rem;opacity:0.6"></div>
       <h1>Password updated</h1>
       <p class="subtitle">You can now log in with your new password.</p>
       <a href="/" class="submit-btn" style="text-decoration:none;display:block;margin-top:1.25rem;text-align:center">Go to login</a>
     </div>
 
     <div id="invalid-view" class="hidden" style="text-align:center">
-      <div style="width:48px;height:48px;border-radius:50%;background:#fef2f2;border:2px solid #fecaca;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="3"><path d="M6 18L18 6M6 6l12 12"/></svg>
-      </div>
+      <div style="width:40px;height:1.5px;background:#dc2626;margin:0 auto 1.25rem;opacity:0.4"></div>
       <h1>Link expired</h1>
       <p class="subtitle">This reset link is invalid or has expired. Please request a new one from the login page.</p>
-      <a href="/" class="login-link">← Back to login</a>
+      <div style="text-align:center"><a href="/" class="login-link">Back to login</a></div>
     </div>
   </div>
 
   <script>
-    // Toggle password visibility — same helper used on the login page.
     function togglePw(btn, inputId) {
       var input = document.getElementById(inputId);
       if (!input) return;
@@ -137,7 +167,6 @@
         });
         if (!res.ok) {
           var msg = await res.text();
-          // 400 from invalid token → show the dedicated invalid view
           if (res.status === 400 && msg.toLowerCase().indexOf('invalid') > -1) {
             document.getElementById('form-view').classList.add('hidden');
             document.getElementById('invalid-view').classList.remove('hidden');

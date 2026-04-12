@@ -36,9 +36,11 @@ func listReferralRewards(db *DB, c *Claims) []ReferralReward {
 	out := []ReferralReward{}
 	for rows.Next() {
 		var rr ReferralReward
-		rows.Scan(&rr.ID, &rr.ReferrerFamilyID, &rr.ReferredStudentID, &rr.Status,
+		if err := rows.Scan(&rr.ID, &rr.ReferrerFamilyID, &rr.ReferredStudentID, &rr.Status,
 			&rr.PaidInvoiceCount, &rr.CreditsRemaining, &rr.MilestoneMetOn, &rr.CreatedAt,
-			&rr.ReferrerName, &rr.ReferredName)
+			&rr.ReferrerName, &rr.ReferredName); err != nil {
+			continue
+		}
 		out = append(out, rr)
 	}
 	return out
@@ -111,25 +113,24 @@ func handleReferralConsume(db *DB) http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		tid := tenantID(c)
 
-		var status string
-		var remaining int
-		if err := db.QueryRow(`SELECT status, credits_remaining FROM referral_rewards WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid).Scan(&status, &remaining); err != nil {
-			respondError(w, "referral not found", 404)
-			return
-		}
-		if status != "earned" || remaining <= 0 {
-			respondError(w, "no credits available", 400)
-			return
-		}
-		newRemaining := remaining - 1
-		newStatus := "earned"
-		if newRemaining == 0 {
-			newStatus = "exhausted"
-		}
-		if _, err := db.Exec(`UPDATE referral_rewards SET credits_remaining=?, status=? WHERE id=?`, newRemaining, newStatus, id); err != nil {
+		// Atomic decrement — a single UPDATE that both validates and mutates
+		// in one statement, preventing the TOCTOU race where two concurrent
+		// requests could both read remaining=1 and both decrement to 0.
+		res, err := db.Exec(`UPDATE referral_rewards SET credits_remaining = credits_remaining - 1,
+			status = CASE WHEN credits_remaining - 1 <= 0 THEN 'exhausted' ELSE 'earned' END
+			WHERE id=? AND (tenant_id=? OR ?=0) AND status='earned' AND credits_remaining > 0`, id, tid, tid)
+		if err != nil {
 			respondError(w, "could not consume credit", 500)
 			return
 		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			respondError(w, "no credits available", 400)
+			return
+		}
+		// Read back the new state for the response.
+		var newStatus string
+		var newRemaining int
+		db.QueryRow(`SELECT status, credits_remaining FROM referral_rewards WHERE id=?`, id).Scan(&newStatus, &newRemaining)
 		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 			c.Email, "referral_credit_applied", "referral", id, "remaining="+itoa(newRemaining))
 		respond(w, map[string]any{"status": newStatus, "creditsRemaining": newRemaining})
@@ -173,8 +174,10 @@ func handleFamilyReferral(db *DB) http.HandlerFunc {
 			defer rows.Close()
 			for rows.Next() {
 				var rr ReferralReward
-				rows.Scan(&rr.ID, &rr.ReferrerFamilyID, &rr.ReferredStudentID, &rr.Status,
-					&rr.PaidInvoiceCount, &rr.CreditsRemaining, &rr.MilestoneMetOn, &rr.ReferredName)
+				if err := rows.Scan(&rr.ID, &rr.ReferrerFamilyID, &rr.ReferredStudentID, &rr.Status,
+					&rr.PaidInvoiceCount, &rr.CreditsRemaining, &rr.MilestoneMetOn, &rr.ReferredName); err != nil {
+					continue
+				}
 				rewards = append(rewards, rr)
 			}
 		}

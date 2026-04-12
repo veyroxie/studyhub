@@ -17,7 +17,9 @@ func listCancelledClasses(db *DB, c *Claims) []CancelledClass {
 	out := []CancelledClass{}
 	for rows.Next() {
 		var cc CancelledClass
-		rows.Scan(&cc.ID, &cc.ClassID, &cc.Date, &cc.Reason, &cc.CancelledBy, &cc.CreatedOn)
+		if err := rows.Scan(&cc.ID, &cc.ClassID, &cc.Date, &cc.Reason, &cc.CancelledBy, &cc.CreatedOn); err != nil {
+			continue
+		}
 		out = append(out, cc)
 	}
 	return out

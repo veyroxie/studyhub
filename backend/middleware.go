@@ -173,7 +173,3 @@ type ctxKey string
 
 const reqIDKey ctxKey = "requestId"
 
-func getRequestID(r *http.Request) string {
-	id, _ := r.Context().Value(reqIDKey).(string)
-	return id
-}

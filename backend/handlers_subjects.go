@@ -19,7 +19,9 @@ func listSubjects(db *DB, c *Claims) []Subject {
 	out := []Subject{}
 	for rows.Next() {
 		var s Subject
-		rows.Scan(&s.ID, &s.Name, &s.Category, &s.Level, &s.Description, &s.MonthlyFee, &s.Color)
+		if err := rows.Scan(&s.ID, &s.Name, &s.Category, &s.Level, &s.Description, &s.MonthlyFee, &s.Color); err != nil {
+			continue
+		}
 		out = append(out, s)
 	}
 	return out

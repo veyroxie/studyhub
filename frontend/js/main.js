@@ -349,7 +349,7 @@
         App.Utils.showModal(
           '<div class="p-6" style="min-width:340px">'
           + '<h2 style="font-size:1.15rem;font-weight:700;color:#fff;margin-bottom:0.25rem">Forgot Password</h2>'
-          + '<p style="font-size:0.82rem;color:#94a3b8;margin-bottom:1.25rem">Enter your account email to receive a temporary password.</p>'
+          + '<p style="font-size:0.82rem;color:#94a3b8;margin-bottom:1.25rem">Enter your email and we\'ll send a reset link.</p>'
           + '<form id="forgot-pw-form" class="space-y-4">'
           + '<div><label style="display:block;font-size:0.82rem;font-weight:600;color:#cbd5e1;margin-bottom:0.35rem">Email</label>'
           + '<input name="email" type="email" required placeholder="your@email.com" class="form-input" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:10px"></div>'
@@ -364,17 +364,12 @@
           ev.preventDefault();
           var fd = new FormData(ev.target);
           var email = fd.get('email');
-          App.Api.post('/api/forgot-password', { email: email }).then(function(result) {
+          App.Api.post('/api/forgot-password', { email: email }, { silent: true }).then(function() {
             App.Utils.hideModal(true);
-            var tempPw = (result && result.tempPassword) || (result && result.temp_password) || '';
-            if (tempPw) {
-              App.Utils.showToast('Temporary password: ' + tempPw + ' — use it to log in now.', 'info', 15000);
-            } else {
-              App.Utils.showToast('A temporary password has been generated. Contact admin.', 'info', 15000);
-            }
-          }).catch(function(err) {
+            App.Utils.showToast('If an account exists for that email, a password reset link has been sent. Check your inbox.', 'success', 10000);
+          }).catch(function() {
             App.Utils.hideModal(true);
-            App.Utils.showToast(err.message || 'Could not reset password. Please contact admin.', 'error');
+            App.Utils.showToast('If an account exists for that email, a password reset link has been sent. Check your inbox.', 'success', 10000);
           });
         });
       });

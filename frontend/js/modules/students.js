@@ -57,7 +57,7 @@
     displayStudents.forEach(function(s) { if (counts[s.status] !== undefined) counts[s.status]++; });
 
     const { registrations } = App.Store.get();
-    const pendingRegs = (registrations || []).filter(function(r) { return r.status === 'pending' && r.type !== 'teacher'; });
+    const pendingRegs = (registrations || []).filter(function(r) { return r.status === 'pending'; });
 
     var paged = filtered.slice(_studentPage * _PAGE_SIZE, (_studentPage + 1) * _PAGE_SIZE);
 
@@ -620,28 +620,35 @@
           : '<div class="space-y-4 max-h-[60vh] overflow-y-auto pr-1">'
           + pending.map(function(reg) {
               const isTeacher = reg.type === 'teacher';
+              const isEnrollment = reg.type === 'enrollment';
               const emailVerified = !!reg.emailVerifiedAt;
-              const parentSelfServed = !isTeacher && parentEmails[(reg.email || '').toLowerCase()];
+              const parentSelfServed = (isEnrollment || (!isTeacher && parentEmails[(reg.email || '').toLowerCase()]));
               const badges = [];
+
+              // Type badge for enrollment requests
+              if (isEnrollment) {
+                badges.push('<span style="display:inline-flex;align-items:center;gap:0.3rem;padding:0.2rem 0.55rem;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:999px;font-size:0.68rem;font-weight:700;color:#7c3aed">Child enrolment</span>');
+              }
+
               if (emailVerified) {
                 badges.push('<span style="display:inline-flex;align-items:center;gap:0.3rem;padding:0.2rem 0.55rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:999px;font-size:0.68rem;font-weight:700;color:#15803d"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>Email verified</span>');
-              } else {
+              } else if (!isEnrollment) {
                 badges.push('<span style="display:inline-flex;align-items:center;gap:0.3rem;padding:0.2rem 0.55rem;background:#fffbeb;border:1px solid #fde68a;border-radius:999px;font-size:0.68rem;font-weight:700;color:#92400e">Awaiting email verification</span>');
               }
-              if (parentSelfServed) {
+              if (parentSelfServed && !isEnrollment) {
                 badges.push('<span style="display:inline-flex;align-items:center;gap:0.3rem;padding:0.2rem 0.55rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:999px;font-size:0.68rem;font-weight:700;color:#1d4ed8">Parent already has account</span>');
               }
 
-              const approveLabel = parentSelfServed
-                ? 'Link student to parent'
-                : (isTeacher ? 'Approve teacher' : 'Approve & create account');
+              const approveLabel = isEnrollment
+                ? 'Enrol student'
+                : (parentSelfServed ? 'Link student to parent' : (isTeacher ? 'Approve teacher' : 'Approve & create account'));
 
               const headerName = isTeacher
                 ? App.Utils.esc(reg.parentName || 'Teacher applicant')
-                : (App.Utils.esc(reg.studentFirstName) + ' ' + App.Utils.esc(reg.studentLastName));
+                : (App.Utils.esc(reg.studentFirstName || '') + ' ' + App.Utils.esc(reg.studentLastName || '')).trim() || 'Student';
               const subline = isTeacher
                 ? 'Teacher application · ' + App.Utils.esc(reg.email)
-                : 'Parent: ' + App.Utils.esc(reg.parentName) + ' · ' + App.Utils.esc(reg.email);
+                : (isEnrollment ? 'Parent: ' + App.Utils.esc(reg.parentName) + ' (existing account)' : 'Parent: ' + App.Utils.esc(reg.parentName) + ' · ' + App.Utils.esc(reg.email));
 
               return '<div class="border border-slate-200 rounded-xl p-4">'
                 + '<div class="flex items-start justify-between gap-3 mb-2">'
@@ -661,6 +668,22 @@
                 + (reg.emergencyName ? '<div class="col-span-2"><span class="text-slate-400">Emergency:</span> ' + App.Utils.esc(reg.emergencyName) + ' · ' + App.Utils.esc(reg.emergencyPhone) + '</div>' : '')
                 + (reg.notes ? '<div class="col-span-2"><span class="text-slate-400">Notes:</span> ' + App.Utils.esc(reg.notes) + '</div>' : '')
                 + '</div>'
+                // Class assignment picker for enrollment requests
+                + (isEnrollment ? (function() {
+                    var allClasses = state.classes || [];
+                    if (allClasses.length === 0) return '';
+                    return '<div style="margin-bottom:0.75rem">'
+                      + '<div style="font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.4rem">Assign classes (optional)</div>'
+                      + '<div style="max-height:120px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:0.4rem">'
+                      + allClasses.map(function(cls) {
+                          var full = cls.enrolled >= cls.capacity;
+                          return '<label style="display:flex;align-items:center;gap:0.4rem;padding:0.25rem 0.35rem;font-size:0.78rem;cursor:' + (full ? 'not-allowed' : 'pointer') + ';opacity:' + (full ? '0.5' : '1') + '">'
+                            + '<input type="checkbox" class="enroll-class-cb" data-reg="' + reg.id + '" value="' + cls.id + '"' + (full ? ' disabled' : '') + ' style="width:14px;height:14px;accent-color:var(--gold);cursor:inherit">'
+                            + '<span>' + App.Utils.esc(cls.name) + ' <span style="color:#94a3b8;font-size:0.7rem">' + App.Utils.esc(cls.day) + ' ' + App.Utils.formatTime(cls.time) + (full ? ' (FULL)' : ' (' + cls.enrolled + '/' + cls.capacity + ')') + '</span></span>'
+                            + '</label>';
+                        }).join('')
+                      + '</div></div>';
+                  })() : '')
                 + '<div class="flex gap-2">'
                 +   '<button onclick="App.Students._approveReg(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium">' + approveLabel + '</button>'
                 +   '<button onclick="App.Students._rejectReg(\'' + reg.id + '\')" class="flex-1 py-1.5 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100 font-medium border border-red-200">Reject</button>'
@@ -675,7 +698,10 @@
 
   async function _approveReg(regId) {
     try {
-      const result = await App.Api.post('/api/registrations/' + regId + '/approve', {});
+      // Collect any checked class checkboxes for this registration.
+      var classIds = Array.from(document.querySelectorAll('.enroll-class-cb[data-reg="' + regId + '"]:checked'))
+        .map(function(cb) { return cb.value; });
+      const result = await App.Api.post('/api/registrations/' + regId + '/approve', { classIds: classIds });
       if (result) {
         App.Utils.hideModal(true);
         // Three response shapes from the backend:
@@ -1172,10 +1198,12 @@
         + (f.address ? '<div style="margin-top:1rem;font-size:0.78rem;color:#64748b"><span style="font-weight:600">Address:</span> ' + App.Utils.esc(f.address) + '</div>' : '')
         + (f.notes ? '<div style="margin-top:0.5rem;font-size:0.78rem;color:#64748b"><span style="font-weight:600">Notes:</span> ' + App.Utils.esc(f.notes) + '</div>' : '')
 
-        + '<div style="margin-top:1.25rem;display:flex;justify-content:flex-end;gap:0.5rem">'
+        + '<div style="margin-top:1.25rem;display:flex;justify-content:space-between;align-items:center">'
+        + (isAdmin ? '<button onclick="App.Students._pdpaDelete(\'' + familyId + '\')" style="padding:0.4rem 0.85rem;font-size:0.72rem;border:1px solid #fecaca;border-radius:8px;background:#fff;color:#dc2626;cursor:pointer" title="PDPA: permanently anonymise this family\'s data">Delete account</button>' : '<div></div>')
+        + '<div style="display:flex;gap:0.5rem">'
         + (isAdmin ? '<button onclick="App.Utils.hideModal(true);App.Students._addModal(\'' + familyId + '\')" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Child</button>' : '')
         + '<button onclick="App.Utils.hideModal()" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Close</button>'
-        + '</div>'
+        + '</div></div>'
         + '</div>'
     );
   }
@@ -1289,6 +1317,26 @@
     _searchFamilies: _searchFamilies,
     _familyModal: _familyModal,
     _addFamilyModal: _addFamilyModal,
-    _editFamilyModal: _editFamilyModal
+    _editFamilyModal: _editFamilyModal,
+    _pdpaDelete: _pdpaDelete
   };
+
+  async function _pdpaDelete(familyId) {
+    if (!confirm('PDPA Account Deletion\n\nThis will permanently anonymise all personal data for this family, their children, and their parent account. Invoices will be retained for tax purposes but contact details will be redacted.\n\nThis cannot be undone. Continue?')) return;
+    if (!confirm('Are you absolutely sure? Type "delete" in the next prompt to confirm.')) return;
+    var confirmText = prompt('Type "delete" to confirm account deletion:');
+    if (confirmText !== 'delete') {
+      App.Utils.showToast('Deletion cancelled', 'info');
+      return;
+    }
+    try {
+      await App.Api.del('/api/families/' + familyId + '/pdpa');
+      App.Utils.hideModal(true);
+      App.Utils.showToast('Account deleted and data anonymised', 'success');
+      await App.Api.loadSnapshot();
+      App.Router.refresh();
+    } catch(err) {
+      // Error already toasted by App.Api
+    }
+  }
 })();

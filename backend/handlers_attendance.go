@@ -25,7 +25,9 @@ func listAttendance(db *DB, c *Claims) []Attendance {
 	for rows.Next() {
 		var a Attendance
 		var classID, checkIn, checkOut sql.NullString
-		rows.Scan(&a.ID, &a.PersonID, &a.PersonType, &a.Date, &classID, &checkIn, &checkOut, &a.Status)
+		if err := rows.Scan(&a.ID, &a.PersonID, &a.PersonType, &a.Date, &classID, &checkIn, &checkOut, &a.Status); err != nil {
+			continue
+		}
 		if classID.Valid {
 			a.ClassID = &classID.String
 		}
@@ -60,7 +62,9 @@ func listAttendancePaged(db *DB, c *Claims, p Pagination) ([]Attendance, int) {
 	for rows.Next() {
 		var a Attendance
 		var classID, checkIn, checkOut sql.NullString
-		rows.Scan(&a.ID, &a.PersonID, &a.PersonType, &a.Date, &classID, &checkIn, &checkOut, &a.Status)
+		if err := rows.Scan(&a.ID, &a.PersonID, &a.PersonType, &a.Date, &classID, &checkIn, &checkOut, &a.Status); err != nil {
+			continue
+		}
 		if classID.Valid {
 			a.ClassID = &classID.String
 		}
@@ -123,11 +127,17 @@ func handleAttendance(db *DB, hub *WSHub) http.HandlerFunc {
 
 			if existingID != "" {
 				a.ID = existingID
-				db.Exec(`UPDATE attendance SET check_in=?,check_out=?,status=? WHERE id=?`, checkIn, checkOut, a.Status, existingID)
+				if _, err := db.Exec(`UPDATE attendance SET check_in=?,check_out=?,status=? WHERE id=?`, checkIn, checkOut, a.Status, existingID); err != nil {
+					respondError(w, "could not update attendance", 500)
+					return
+				}
 			} else {
 				tid := tenantID(c)
-				db.Exec(`INSERT INTO attendance(id,tenant_id,person_id,person_type,date,class_id,check_in,check_out,status) VALUES(?,?,?,?,?,?,?,?,?)`,
-					a.ID, tid, a.PersonID, a.PersonType, a.Date, classID, checkIn, checkOut, a.Status)
+				if _, err := db.Exec(`INSERT INTO attendance(id,tenant_id,person_id,person_type,date,class_id,check_in,check_out,status) VALUES(?,?,?,?,?,?,?,?,?)`,
+					a.ID, tid, a.PersonID, a.PersonType, a.Date, classID, checkIn, checkOut, a.Status); err != nil {
+					respondError(w, "could not create attendance", 500)
+					return
+				}
 			}
 
 			// Broadcast check-in/out event to WebSocket clients

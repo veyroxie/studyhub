@@ -488,13 +488,21 @@
   }
 
   function _markUnpaid(invoiceId) {
-    const state = App.Store.get();
-    App.Store.set({ invoices: state.invoices.map(function(inv) {
-      return inv.id === invoiceId ? Object.assign({}, inv, { status: 'Unpaid', paidOn: null, paymentMethod: null, submittedByParent: false }) : inv;
-    })});
     App.Utils.hideModal(true);
-    App.Utils.showToast('Invoice marked as unpaid', 'info');
-    App.Router.refresh();
+    App.Api.put('/api/invoices/' + invoiceId + '/pay', { status: 'Unpaid' })
+      .then(function() { return App.Api.loadSnapshot(); })
+      .then(function() {
+        App.Utils.showToast('Invoice marked as unpaid', 'info');
+        App.Router.refresh();
+      }).catch(function() {
+        // Fallback local
+        var state = App.Store.get();
+        App.Store.set({ invoices: state.invoices.map(function(inv) {
+          return inv.id === invoiceId ? Object.assign({}, inv, { status: 'Unpaid', paidOn: null, paymentMethod: null, submittedByParent: false }) : inv;
+        })});
+        App.Utils.showToast('Invoice marked as unpaid (offline)', 'warning');
+        App.Router.refresh();
+      });
   }
 
   function _parentSubmitPaid(invId) {
@@ -643,23 +651,28 @@
   }
 
   function _parentConfirmSubmit(invId, method) {
-    const state = App.Store.get();
-    const earlyBird = new Date().getDate() <= 7;
-    App.Store.set({ invoices: state.invoices.map(function(inv) {
-      if (inv.id !== invId) return inv;
-      const patch = { status: 'Pending Verification', paidOn: App.Utils.today(), paymentMethod: method, submittedByParent: true };
-      if (earlyBird && !inv.earlyBirdApplied) {
-        const discounted = parseFloat((inv.amount * 0.9).toFixed(2));
-        patch.amount = discounted;
-        patch.earlyBirdApplied = true;
-        patch.earlyBirdDiscount = parseFloat((inv.amount * 0.1).toFixed(2));
-      }
-      return Object.assign({}, inv, patch);
-    })});
     App.Utils.hideModal(true);
-    App.Utils.showToast(earlyBird ? 'Payment submitted with 10% early bird discount!' : 'Payment submitted — admin will verify shortly', 'success');
-    App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
-    App.Router.refresh();
+    // Call the backend so the payment submission actually persists.
+    // Send status="Pending Verification" so admin knows the parent claims
+    // they've paid but it hasn't been confirmed yet.
+    App.Api.put('/api/invoices/' + invId + '/pay', {
+      status: 'Pending Verification',
+      paymentMethod: method
+    }).then(function() {
+      return App.Api.loadSnapshot();
+    }).then(function() {
+      App.Utils.showToast('Payment submitted — admin will verify shortly', 'success');
+      App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
+      App.Router.refresh();
+    }).catch(function() {
+      // Fallback: update locally so the UI isn't stuck
+      var state = App.Store.get();
+      App.Store.set({ invoices: state.invoices.map(function(inv) {
+        return inv.id === invId ? Object.assign({}, inv, { status: 'Pending Verification', paidOn: App.Utils.today(), paymentMethod: method, submittedByParent: true }) : inv;
+      })});
+      App.Utils.showToast('Payment submitted (offline — will sync later)', 'warning');
+      App.Router.refresh();
+    });
   }
 
   function _verifyPaid(invId) {

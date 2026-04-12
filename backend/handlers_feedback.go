@@ -20,7 +20,9 @@ func listFeedback(db *DB, c *Claims) []Feedback {
 	for rows.Next() {
 		var f Feedback
 		var sn string
-		rows.Scan(&f.ID, &f.ClassID, &f.Date, &f.TeacherID, &f.Topic, &f.Mood, &f.Notes, &sn)
+		if err := rows.Scan(&f.ID, &f.ClassID, &f.Date, &f.TeacherID, &f.Topic, &f.Mood, &f.Notes, &sn); err != nil {
+			continue
+		}
 		if sn != "" {
 			json.Unmarshal([]byte(sn), &f.StudentNotes)
 		}
@@ -42,7 +44,9 @@ func parentClassIDs(db *DB, email string) map[string]bool {
 	ids := map[string]bool{}
 	for rows.Next() {
 		var raw string
-		rows.Scan(&raw)
+		if err := rows.Scan(&raw); err != nil {
+			continue
+		}
 		var arr []string
 		json.Unmarshal([]byte(raw), &arr)
 		for _, id := range arr {
@@ -104,7 +108,9 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 			for rows.Next() {
 				var f Feedback
 				var sn string
-				rows.Scan(&f.ID, &f.ClassID, &f.Date, &f.TeacherID, &f.Topic, &f.Mood, &f.Notes, &sn)
+				if err := rows.Scan(&f.ID, &f.ClassID, &f.Date, &f.TeacherID, &f.Topic, &f.Mood, &f.Notes, &sn); err != nil {
+					continue
+				}
 				if sn != "" {
 					json.Unmarshal([]byte(sn), &f.StudentNotes)
 				}
@@ -152,7 +158,9 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 			for rows.Next() {
 				var f Feedback
 				var sn string
-				rows.Scan(&f.ID, &f.ClassID, &f.Date, &f.TeacherID, &f.Topic, &f.Mood, &f.Notes, &sn)
+				if err := rows.Scan(&f.ID, &f.ClassID, &f.Date, &f.TeacherID, &f.Topic, &f.Mood, &f.Notes, &sn); err != nil {
+					continue
+				}
 				if sn != "" {
 					json.Unmarshal([]byte(sn), &f.StudentNotes)
 				}
@@ -176,7 +184,9 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 		for rows.Next() {
 			var f Feedback
 			var sn string
-			rows.Scan(&f.ID, &f.ClassID, &f.Date, &f.TeacherID, &f.Topic, &f.Mood, &f.Notes, &sn)
+			if err := rows.Scan(&f.ID, &f.ClassID, &f.Date, &f.TeacherID, &f.Topic, &f.Mood, &f.Notes, &sn); err != nil {
+				continue
+			}
 			if sn != "" {
 				json.Unmarshal([]byte(sn), &f.StudentNotes)
 			}
@@ -295,7 +305,9 @@ func listFeedbackReplies(db *DB, c *Claims) []FeedbackReply {
 	out := []FeedbackReply{}
 	for rows.Next() {
 		var r FeedbackReply
-		rows.Scan(&r.ID, &r.FeedbackID, &r.AuthorEmail, &r.AuthorName, &r.Message, &r.CreatedAt)
+		if err := rows.Scan(&r.ID, &r.FeedbackID, &r.AuthorEmail, &r.AuthorName, &r.Message, &r.CreatedAt); err != nil {
+			continue
+		}
 		out = append(out, r)
 	}
 	return out

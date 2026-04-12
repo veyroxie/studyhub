@@ -144,7 +144,7 @@ func handleSetPassword(db *DB) http.HandlerFunc {
 			Expires:  time.Now().Add(tokenExpiry),
 			HttpOnly: true,
 			Secure:   secure,
-			SameSite: http.SameSiteStrictMode,
+			SameSite: http.SameSiteLaxMode,
 		})
 
 		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,

@@ -40,6 +40,15 @@ func runFileMigrations(db *DB) error {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
 
+	// Acquire a PostgreSQL advisory lock so two instances starting
+	// simultaneously don't race on the same migration. The lock is
+	// session-scoped and released when the connection returns to the pool.
+	// Key 20260411 is arbitrary — just needs to be unique across the app.
+	if _, err := db.Exec(`SELECT pg_advisory_lock(20260411)`); err != nil {
+		return fmt.Errorf("advisory lock: %w", err)
+	}
+	defer db.Exec(`SELECT pg_advisory_unlock(20260411)`)
+
 	entries, err := migrationFiles.ReadDir("migrations")
 	if err != nil {
 		// No migrations folder yet — that's fine.

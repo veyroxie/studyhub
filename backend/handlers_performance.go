@@ -19,7 +19,9 @@ func listPerformanceReviews(db *DB, c *Claims) []PerformanceReview {
 	out := []PerformanceReview{}
 	for rows.Next() {
 		var p PerformanceReview
-		rows.Scan(&p.ID, &p.StaffID, &p.ReviewerEmail, &p.Date, &p.Rating, &p.ParentRating, &p.Notes)
+		if err := rows.Scan(&p.ID, &p.StaffID, &p.ReviewerEmail, &p.Date, &p.Rating, &p.ParentRating, &p.Notes); err != nil {
+			continue
+		}
 		out = append(out, p)
 	}
 	return out
@@ -46,7 +48,9 @@ func handleListPerformanceReviews(db *DB) http.HandlerFunc {
 			out := []PerformanceReview{}
 			for rows.Next() {
 				var pr PerformanceReview
-				rows.Scan(&pr.ID, &pr.StaffID, &pr.ReviewerEmail, &pr.Date, &pr.Rating, &pr.ParentRating, &pr.Notes)
+				if err := rows.Scan(&pr.ID, &pr.StaffID, &pr.ReviewerEmail, &pr.Date, &pr.Rating, &pr.ParentRating, &pr.Notes); err != nil {
+					continue
+				}
 				out = append(out, pr)
 			}
 			respond(w, out)
@@ -71,7 +75,9 @@ func handleListPerformanceReviews(db *DB) http.HandlerFunc {
 		out := []PerformanceReview{}
 		for rows.Next() {
 			var pr PerformanceReview
-			rows.Scan(&pr.ID, &pr.StaffID, &pr.ReviewerEmail, &pr.Date, &pr.Rating, &pr.ParentRating, &pr.Notes)
+			if err := rows.Scan(&pr.ID, &pr.StaffID, &pr.ReviewerEmail, &pr.Date, &pr.Rating, &pr.ParentRating, &pr.Notes); err != nil {
+				continue
+			}
 			out = append(out, pr)
 		}
 		respond(w, PaginatedResponse{Data: out, Total: total, Limit: pg.Limit, Offset: pg.Offset})

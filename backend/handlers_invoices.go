@@ -16,7 +16,7 @@ func listInvoices(db *DB, c *Claims) []Invoice {
 	var err error
 	tid := tenantID(c)
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on,COALESCE(i.payment_proof,''),COALESCE(i.payment_method,''),COALESCE(i.discount_pct,0),COALESCE(i.submitted_by_parent,false),COALESCE(i.sibling_ids,''),COALESCE(i.sibling_discount,0) FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND i.deleted_at IS NULL AND (i.tenant_id=? OR ?=0) ORDER BY i.created_on DESC`, c.Email, tid, tid)
+		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on,COALESCE(i.payment_proof,''),COALESCE(i.payment_method,''),COALESCE(i.discount_pct,0),COALESCE(i.submitted_by_parent,false),COALESCE(i.sibling_ids,''),COALESCE(i.sibling_discount,0),COALESCE(i.referral_credit,0) FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND i.deleted_at IS NULL AND (i.tenant_id=? OR ?=0) ORDER BY i.created_on DESC`, c.Email, tid, tid)
 	} else {
 		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on,COALESCE(payment_proof,''),COALESCE(payment_method,''),COALESCE(discount_pct,0),COALESCE(submitted_by_parent,false),COALESCE(sibling_ids,''),COALESCE(sibling_discount,0),COALESCE(referral_credit,0) FROM invoices WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0) ORDER BY created_on DESC`, tid, tid)
 	}
@@ -28,7 +28,9 @@ func listInvoices(db *DB, c *Claims) []Invoice {
 	for rows.Next() {
 		var inv Invoice
 		var paidOn sql.NullString
-		rows.Scan(&inv.ID, &inv.StudentID, &inv.Description, &inv.Type, &inv.Amount, &inv.DueDate, &inv.Status, &inv.CreatedOn, &paidOn, &inv.PaymentProof, &inv.PaymentMethod, &inv.DiscountPct, &inv.SubmittedByParent, &inv.SiblingIds, &inv.SiblingDiscount, &inv.ReferralCredit)
+		if err := rows.Scan(&inv.ID, &inv.StudentID, &inv.Description, &inv.Type, &inv.Amount, &inv.DueDate, &inv.Status, &inv.CreatedOn, &paidOn, &inv.PaymentProof, &inv.PaymentMethod, &inv.DiscountPct, &inv.SubmittedByParent, &inv.SiblingIds, &inv.SiblingDiscount, &inv.ReferralCredit); err != nil {
+			continue
+		}
 		if paidOn.Valid {
 			inv.PaidOn = &paidOn.String
 		}
@@ -44,7 +46,7 @@ func listInvoicesPaged(db *DB, c *Claims, p Pagination) ([]Invoice, int) {
 	var err error
 	if c != nil && c.Role == "parent" {
 		db.QueryRow(`SELECT COUNT(*) FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND i.deleted_at IS NULL AND (i.tenant_id=? OR ?=0)`, c.Email, tid, tid).Scan(&total)
-		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on,COALESCE(i.payment_proof,''),COALESCE(i.payment_method,''),COALESCE(i.discount_pct,0),COALESCE(i.submitted_by_parent,false),COALESCE(i.sibling_ids,''),COALESCE(i.sibling_discount,0) FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND i.deleted_at IS NULL AND (i.tenant_id=? OR ?=0) ORDER BY i.created_on DESC LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
+		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on,COALESCE(i.payment_proof,''),COALESCE(i.payment_method,''),COALESCE(i.discount_pct,0),COALESCE(i.submitted_by_parent,false),COALESCE(i.sibling_ids,''),COALESCE(i.sibling_discount,0),COALESCE(i.referral_credit,0) FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND i.deleted_at IS NULL AND (i.tenant_id=? OR ?=0) ORDER BY i.created_on DESC LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
 	} else {
 		db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0)`, tid, tid).Scan(&total)
 		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on,COALESCE(payment_proof,''),COALESCE(payment_method,''),COALESCE(discount_pct,0),COALESCE(submitted_by_parent,false),COALESCE(sibling_ids,''),COALESCE(sibling_discount,0),COALESCE(referral_credit,0) FROM invoices WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0) ORDER BY created_on DESC LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
@@ -57,7 +59,9 @@ func listInvoicesPaged(db *DB, c *Claims, p Pagination) ([]Invoice, int) {
 	for rows.Next() {
 		var inv Invoice
 		var paidOn sql.NullString
-		rows.Scan(&inv.ID, &inv.StudentID, &inv.Description, &inv.Type, &inv.Amount, &inv.DueDate, &inv.Status, &inv.CreatedOn, &paidOn, &inv.PaymentProof, &inv.PaymentMethod, &inv.DiscountPct, &inv.SubmittedByParent, &inv.SiblingIds, &inv.SiblingDiscount, &inv.ReferralCredit)
+		if err := rows.Scan(&inv.ID, &inv.StudentID, &inv.Description, &inv.Type, &inv.Amount, &inv.DueDate, &inv.Status, &inv.CreatedOn, &paidOn, &inv.PaymentProof, &inv.PaymentMethod, &inv.DiscountPct, &inv.SubmittedByParent, &inv.SiblingIds, &inv.SiblingDiscount, &inv.ReferralCredit); err != nil {
+			continue
+		}
 		if paidOn.Valid {
 			inv.PaidOn = &paidOn.String
 		}
@@ -104,8 +108,26 @@ func handleInvoices(db *DB) http.HandlerFunc {
 			}
 			inv.Status = "Unpaid"
 			tid := tenantID(c)
-			db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount, inv.ReferralCredit)
+
+			// Server-side referral credit validation: if the client claims a
+			// referral credit, verify the student's family actually has an
+			// earned reward with remaining credits. Silently zero the credit
+			// if not — don't block the invoice creation.
+			if inv.ReferralCredit > 0 {
+				var famID string
+				db.QueryRow(`SELECT family_id FROM students WHERE id=?`, inv.StudentID).Scan(&famID)
+				var earned int
+				db.QueryRow(`SELECT COUNT(*) FROM referral_rewards WHERE referrer_family_id=? AND status='earned' AND credits_remaining > 0`, famID).Scan(&earned)
+				if earned == 0 {
+					inv.ReferralCredit = 0
+				}
+			}
+
+			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount, inv.ReferralCredit); err != nil {
+				respondError(w, "could not create invoice", 500)
+				return
+			}
 			respond(w, inv)
 		}
 	}
@@ -159,6 +181,22 @@ func handleInvoicePay(db *DB) http.HandlerFunc {
 		if newStatus == "Paid" {
 			referralCheckMilestoneOnPay(db, studentID)
 		}
+
+		// Send a payment-received confirmation email to the parent when THEY
+		// submit payment (not when admin marks it paid from the admin panel).
+		// This closes the "did you get my money?" feedback loop.
+		if c != nil && c.Role == "parent" {
+			var description string
+			db.QueryRow(`SELECT description FROM invoices WHERE id=?`, id).Scan(&description)
+			go func() {
+				if err := mailer.Send(c.Email, "Payment received — "+description, renderPaymentReceivedEmail(
+					c.Name, description, fmt.Sprintf("%.2f", amount), body.PaymentMethod,
+				)); err != nil {
+					logger.Error("payment confirmation email failed", "err", err, "email", c.Email, "invoice_id", id)
+				}
+			}()
+		}
+
 		respond(w, map[string]string{"status": newStatus, "paidOn": t})
 	}
 }

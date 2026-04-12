@@ -144,7 +144,10 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(jwtMiddleware)
 
-		r.Get("/api/auth/me", handleMe)
+		r.Get("/api/auth/me", handleMe(db))
+		r.Get("/api/auth/profile", handleProfile(db))
+		r.Put("/api/auth/profile", handleProfile(db))
+		r.Post("/api/auth/change-password", handleChangePassword(db))
 		r.Get("/api/snapshot", handleSnapshot(db))
 
 		r.Route("/api/students", func(r chi.Router) {
@@ -234,11 +237,14 @@ func main() {
 			r.Get("/balance", handleReplacementBalance(db))
 		})
 
+		r.Post("/api/enrollment-requests", handleEnrollmentRequest(db))
+
 		r.Route("/api/families", func(r chi.Router) {
 			r.Get("/", handleFamilies(db))
 			r.Post("/", handleFamilies(db))
 			r.Put("/{id}", handleFamilyByID(db))
 			r.Delete("/{id}", handleFamilyByID(db))
+			r.Delete("/{id}/pdpa", handleFamilyPDPADelete(db))
 			r.Get("/{id}/referral", handleFamilyReferral(db))
 		})
 

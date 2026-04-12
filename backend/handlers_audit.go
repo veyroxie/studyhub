@@ -27,7 +27,9 @@ func handleAuditLogs(db *DB) http.HandlerFunc {
 			out := []LogEntry{}
 			for rows.Next() {
 				var e LogEntry
-				rows.Scan(&e.ID, &e.ActorEmail, &e.Action, &e.EntityType, &e.EntityID, &e.Detail, &e.CreatedAt)
+				if err := rows.Scan(&e.ID, &e.ActorEmail, &e.Action, &e.EntityType, &e.EntityID, &e.Detail, &e.CreatedAt); err != nil {
+					continue
+				}
 				out = append(out, e)
 			}
 			respond(w, out)
@@ -45,7 +47,9 @@ func handleAuditLogs(db *DB) http.HandlerFunc {
 		out := []LogEntry{}
 		for rows.Next() {
 			var e LogEntry
-			rows.Scan(&e.ID, &e.ActorEmail, &e.Action, &e.EntityType, &e.EntityID, &e.Detail, &e.CreatedAt)
+			if err := rows.Scan(&e.ID, &e.ActorEmail, &e.Action, &e.EntityType, &e.EntityID, &e.Detail, &e.CreatedAt); err != nil {
+				continue
+			}
 			out = append(out, e)
 		}
 		respond(w, PaginatedResponse{Data: out, Total: total, Limit: p.Limit, Offset: p.Offset})

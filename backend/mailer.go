@@ -218,6 +218,52 @@ func renderTeacherWelcomeEmail(name, setPasswordURL string) string {
 		emailLayoutClose
 }
 
+// renderEnrollmentApprovedEmail is sent when admin approves a child enrollment
+// request. It tells the parent the outcome and optionally lists assigned classes.
+func renderEnrollmentApprovedEmail(parentName, studentName, classListHTML string) string {
+	greeting := "Hi"
+	if strings.TrimSpace(parentName) != "" {
+		greeting = "Hi " + safeName(parentName)
+	}
+	classSection := ""
+	if classListHTML != "" {
+		classSection = `<p style="margin:16px 0 8px;font-weight:600;color:#0a0a0a">Assigned classes:</p>` + classListHTML
+	}
+	return emailLayoutOpen +
+		`<p style="margin:0 0 16px;font-size:16px;color:#0a0a0a">` + greeting + `,</p>
+<p style="margin:0 0 16px">Great news — <strong>` + safeName(studentName) + `</strong> has been enrolled at The Study Hub.</p>` +
+		classSection +
+		`<p style="margin:16px 0 0;font-size:13px;color:#64748b">Log in to your parent portal to see the full schedule, billing, and teacher feedback. If anything looks off, just reply to this email.</p>` +
+		emailLayoutClose
+}
+
+// renderPaymentReceivedEmail confirms to the parent that their "I've Paid"
+// submission was received and is now awaiting admin verification. This closes
+// the feedback loop so parents stop WhatsApping "did you get my payment?".
+func renderPaymentReceivedEmail(parentName, description, amountRM, method string) string {
+	greeting := "Hi"
+	if strings.TrimSpace(parentName) != "" {
+		greeting = "Hi " + safeName(parentName)
+	}
+	return emailLayoutOpen +
+		`<p style="margin:0 0 16px;font-size:16px;color:#0a0a0a">` + greeting + `,</p>
+<p style="margin:0 0 16px">We've received your payment submission. Here are the details:</p>
+<table cellpadding="0" cellspacing="0" style="margin:18px 0;background:#fafaf8;border:1px solid #f0eee8;border-radius:10px;width:100%">
+<tr><td style="padding:14px 18px;font-size:13px;color:#64748b">
+  <div style="margin-bottom:6px"><strong style="color:#0a0a0a">` + html.EscapeString(description) + `</strong></div>
+  <div>Amount: <strong style="color:#0a0a0a">RM ` + html.EscapeString(amountRM) + `</strong></div>` +
+		func() string {
+			if method != "" {
+				return `<div>Method: ` + html.EscapeString(method) + `</div>`
+			}
+			return ""
+		}() + `
+</td></tr>
+</table>
+<p style="margin:0;font-size:13px;color:#64748b">Our team will verify your payment within 1-2 business days. You'll see the status update to "Paid" on your billing page once it's confirmed. No further action needed from you.</p>` +
+		emailLayoutClose
+}
+
 // renderInvoiceReminderEmail is sent automatically by the background job
 // when an unpaid invoice goes overdue. The deduplication logic in the job
 // itself prevents the same invoice from generating reminders more often

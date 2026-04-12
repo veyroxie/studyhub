@@ -20,7 +20,9 @@ func listPayroll(db *DB, c *Claims) []Payroll {
 	for rows.Next() {
 		var p Payroll
 		var paidOn sql.NullString
-		rows.Scan(&p.ID, &p.StaffID, &p.Month, &p.BaseSalary, &p.Bonus, &p.Deductions, &p.Total, &p.Status, &paidOn)
+		if err := rows.Scan(&p.ID, &p.StaffID, &p.Month, &p.BaseSalary, &p.Bonus, &p.Deductions, &p.Total, &p.Status, &paidOn); err != nil {
+			continue
+		}
 		if paidOn.Valid {
 			p.PaidOn = &paidOn.String
 		}

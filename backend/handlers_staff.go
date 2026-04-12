@@ -22,7 +22,9 @@ func listStaff(db *DB, c *Claims) []Staff {
 		var s Staff
 		var spec, nric, eName, ePhone, empType sql.NullString
 		var hourlyRate sql.NullFloat64
-		rows.Scan(&s.ID, &s.Name, &s.FullName, &s.Role, &s.Email, &s.Phone, &s.Salary, &s.JoinDate, &s.Status, &spec, &nric, &eName, &ePhone, &empType, &hourlyRate)
+		if err := rows.Scan(&s.ID, &s.Name, &s.FullName, &s.Role, &s.Email, &s.Phone, &s.Salary, &s.JoinDate, &s.Status, &spec, &nric, &eName, &ePhone, &empType, &hourlyRate); err != nil {
+			continue
+		}
 		s.Specialization = nullStr(spec)
 		s.NRIC = nullStr(nric)
 		s.EmergencyName = nullStr(eName)
@@ -71,8 +73,11 @@ func handleStaff(db *DB) http.HandlerFunc {
 				s.EmploymentType = "Full-time"
 			}
 			tid := tenantID(c)
-			db.Exec(`INSERT INTO staff(id,tenant_id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type,hourly_rate) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				s.ID, tid, s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate)
+			if _, err := db.Exec(`INSERT INTO staff(id,tenant_id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type,hourly_rate) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				s.ID, tid, s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate); err != nil {
+				respondError(w, "could not create staff", 500)
+				return
+			}
 			respond(w, s)
 		}
 	}
@@ -98,8 +103,11 @@ func handleStaffByID(db *DB) http.HandlerFunc {
 				s.EmploymentType = "Full-time"
 			}
 			tid := tenantID(c)
-			db.Exec(`UPDATE staff SET name=?,full_name=?,role=?,email=?,phone=?,salary=?,join_date=?,status=?,specialization=?,nric=?,emergency_name=?,emergency_phone=?,employment_type=?,hourly_rate=? WHERE id=? AND (tenant_id=? OR ?=0)`,
-				s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate, id, tid, tid)
+			if _, err := db.Exec(`UPDATE staff SET name=?,full_name=?,role=?,email=?,phone=?,salary=?,join_date=?,status=?,specialization=?,nric=?,emergency_name=?,emergency_phone=?,employment_type=?,hourly_rate=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+				s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate, id, tid, tid); err != nil {
+				respondError(w, "could not update staff", 500)
+				return
+			}
 			if c != nil {
 				db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
 					c.Email, "staff_updated", "staff", id, s.Name)

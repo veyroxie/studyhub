@@ -20,7 +20,9 @@ func listClasses(db *DB, c *Claims) []Class {
 	for rows.Next() {
 		var c Class
 		var tids string
-		rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color, &c.Category)
+		if err := rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color, &c.Category); err != nil {
+			continue
+		}
 		c.TeacherIDs = parseArr(tids)
 		out = append(out, c)
 	}
@@ -62,7 +64,9 @@ func handleClasses(db *DB) http.HandlerFunc {
 			// Two intervals [s1,e1) and [s2,e2) overlap when s1<e2 AND s2<e1
 			for _, tid2 := range c.TeacherIDs {
 				var cnt int
-				db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<?  AND end_time>? AND teacher_ids LIKE '%'||?||'%' AND deleted_at IS NULL`,
+				// Use exact JSON substring match with double-quote delimiters
+				// so "stf_1" doesn't false-match "stf_10" or "stf_100".
+				db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`,
 					c.Day, c.ID, c.Time, c.EndTime, tid2).Scan(&cnt)
 				if cnt > 0 {
 					respondError(w, "Conflict: teacher "+tid2+" is already booked at this time", http.StatusConflict)
@@ -83,8 +87,11 @@ func handleClasses(db *DB) http.HandlerFunc {
 				c.Category = "Academic"
 			}
 			tid := tenantID(cl)
-			db.Exec(`INSERT INTO classes(id,tenant_id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-				c.ID, tid, c.Name, jsonArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color, c.Category)
+			if _, err := db.Exec(`INSERT INTO classes(id,tenant_id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+				c.ID, tid, c.Name, jsonArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color, c.Category); err != nil {
+				respondError(w, "could not create class", 500)
+				return
+			}
 			respond(w, c)
 		}
 	}
@@ -110,7 +117,7 @@ func handleClassByID(db *DB) http.HandlerFunc {
 			// Clash detection (same as create)
 			for _, tid2 := range cl.TeacherIDs {
 				var cnt int
-				db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%'||?||'%' AND deleted_at IS NULL`,
+				db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`,
 					cl.Day, cl.ID, cl.Time, cl.EndTime, tid2).Scan(&cnt)
 				if cnt > 0 {
 					respondError(w, "Conflict: teacher "+tid2+" is already booked at this time", http.StatusConflict)

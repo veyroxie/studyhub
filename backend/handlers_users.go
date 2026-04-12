@@ -34,7 +34,9 @@ func handleUsers(db *DB) http.HandlerFunc {
 			out := []userRow{}
 			for rows.Next() {
 				var u userRow
-				rows.Scan(&u.ID, &u.Email, &u.Role, &u.Name)
+				if err := rows.Scan(&u.ID, &u.Email, &u.Role, &u.Name); err != nil {
+					continue
+				}
 				out = append(out, u)
 			}
 			respond(w, out)

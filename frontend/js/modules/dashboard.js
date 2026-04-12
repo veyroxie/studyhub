@@ -285,6 +285,10 @@
       +     '<h1 style="font-family:var(--serif);font-size:1.7rem;font-weight:700;letter-spacing:-0.04em;color:#1a1a1a;line-height:1.2;margin:0">Good ' + _tod + (childNames ? ', ' + childNames + '\'s family' : '') + '</h1>'
       +     '<p style="font-size:0.82rem;color:#64748b;margin:4px 0 0">' + myStudents.length + ' child' + (myStudents.length !== 1 ? 'ren' : '') + ' enrolled</p>'
       +   '</div>'
+      +   '<button onclick="App.Dashboard._profileModal()" title="Edit profile" style="padding:0.45rem 0.9rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:0.4rem;transition:all 0.15s" onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'#374151\'" onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#64748b\'">'
+      +     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
+      +     'My Profile'
+      +   '</button>'
       + '</div>'
       + '</div>';
 
@@ -340,20 +344,85 @@
         + '<button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#d97706;background:#fff;border:1px solid #fde68a;border-radius:7px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">View</button></div>';
     }
 
-    // ── Empty state: parent self-served but no children linked yet ─────────
-    // This happens when a parent registers via /register.html and verifies
-    // their email, but admin hasn't approved the registration yet (no
-    // student records exist for this contact email). Show a friendly
-    // placeholder instead of leaving the dashboard blank.
+    // ── No children: check for pending enrollments, show register-your-child form ──
+    // This kicks in when a parent self-registered and verified their email
+    // but hasn't enrolled any children yet, OR has pending enrollments that
+    // admin hasn't approved.
     if (myStudents.length === 0) {
-      html += '<div style="background:#fff;border-radius:16px;border:1px solid rgba(201,162,39,0.2);padding:2.5rem 2rem;text-align:center;max-width:560px;margin:1rem auto 0">'
-        + '<div style="width:64px;height:64px;border-radius:50%;background:rgba(201,162,39,0.08);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem">'
-        +   '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#C9A227" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>'
-        + '</div>'
-        + '<h2 style="font-family:var(--serif);font-size:1.4rem;font-weight:700;color:#0a0a0a;margin:0 0 0.5rem">Welcome to The Study Hub</h2>'
-        + '<p style="color:#64748b;font-size:0.9rem;line-height:1.55;margin:0 auto;max-width:380px">Your account is active. Our team will link your child\'s profile to your account shortly — usually within a few hours during business days. You\'ll see schedules, billing, and feedback here as soon as that\'s done.</p>'
-        + '<p style="margin:1.25rem 0 0;font-size:0.78rem;color:#94a3b8">Need to follow up? Reach us at <a href="mailto:hello@studyhub.fit" style="color:#C9A227;text-decoration:none;font-weight:600">hello@studyhub.fit</a>.</p>'
+      // Check if the parent already has pending enrollment requests.
+      var pendingEnrollments = (s.registrations || []).filter(function(r) {
+        return r.type === 'enrollment' && r.status === 'pending' && r.email === App.clientParent;
+      });
+
+      html += '<div style="background:#fff;border-radius:16px;border:1px solid rgba(201,162,39,0.2);padding:2.5rem 2rem;max-width:560px;margin:1rem auto 0">'
+        + '<div style="text-align:center;margin-bottom:1.5rem">'
+        +   '<div style="width:56px;height:56px;border-radius:50%;background:rgba(201,162,39,0.08);display:flex;align-items:center;justify-content:center;margin:0 auto 1rem">'
+        +     '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#C9A227" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>'
+        +   '</div>'
+        +   '<h2 style="font-family:var(--serif);font-size:1.35rem;font-weight:700;color:#0a0a0a;margin:0 0 0.35rem">Register your child</h2>'
+        +   '<p style="color:#64748b;font-size:0.85rem;line-height:1.5;margin:0 auto;max-width:380px">Fill in your child\'s details below. Once our team reviews and approves, you\'ll see their schedule, billing, and feedback here.</p>'
         + '</div>';
+
+      // Show pending enrollment requests if any.
+      if (pendingEnrollments.length > 0) {
+        html += '<div style="margin-bottom:1.5rem;padding:0.85rem 1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:10px">'
+          + '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.35rem">Pending enrolments</div>';
+        pendingEnrollments.forEach(function(r) {
+          html += '<div style="font-size:0.82rem;color:#92400e;padding:0.25rem 0">' + App.Utils.esc(r.studentFirstName || '') + ' ' + App.Utils.esc(r.studentLastName || '') + ' <span style="font-size:0.7rem;color:#94a3b8">— submitted ' + App.Utils.formatDate(r.submittedOn) + '</span></div>';
+        });
+        html += '</div>';
+      }
+
+      // Enrollment form
+      html += '<form id="enroll-child-form" style="display:flex;flex-direction:column;gap:0.85rem">'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">First Name *</label><input name="studentFirstName" required style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px rgba(201,162,39,0.1)\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Last Name</label><input name="studentLastName" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px rgba(201,162,39,0.1)\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
+        + '</div>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Date of Birth</label><input name="studentDob" type="date" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Gender</label><select name="studentGender" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><option>Male</option><option>Female</option></select></div>'
+        + '</div>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">School</label><input name="schoolName" placeholder="e.g. SK Taman Melawati" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Year / Grade</label><select name="yearGrade" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><optgroup label="Primary"><option>Standard 1</option><option>Standard 2</option><option>Standard 3</option><option>Standard 4</option><option>Standard 5</option><option>Standard 6</option></optgroup><optgroup label="Secondary"><option>Form 1</option><option>Form 2</option><option>Form 3</option><option>Form 4</option><option>Form 5</option></optgroup><optgroup label="Pre-school"><option>Pre-school (4-5)</option><option>Pre-school (5-6)</option></optgroup></select></div>'
+        + '</div>'
+        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Subjects Interested In</label><input name="subjectInterest" placeholder="e.g. Mathematics, English, Science" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
+        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Notes <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#94a3b8">- optional</span></label><textarea name="notes" rows="2" placeholder="Learning needs, allergies, or anything we should know" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit;resize:vertical"></textarea></div>'
+        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Referral Code <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#94a3b8">- optional</span></label><input name="referralCode" placeholder="SH-XXXX" maxlength="10" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit;text-transform:uppercase;letter-spacing:0.05em"><p style="margin:0.3rem 0 0;font-size:0.7rem;color:#94a3b8">Got a code from a friend? Their family gets RM10/month off when your child stays for 3 months.</p></div>'
+        + '<button type="submit" id="enroll-submit-btn" style="width:100%;padding:0.7rem;background:var(--gold,#C9A227);color:#0a0a0a;font-weight:700;font-size:0.82rem;border:none;border-radius:8px;cursor:pointer;transition:opacity 0.15s;font-family:inherit">Submit enrolment request</button>'
+        + '</form>'
+        + '</div>';
+
+      // Wire the form after render
+      setTimeout(function() {
+        var form = document.getElementById('enroll-child-form');
+        if (!form) return;
+        form.addEventListener('submit', async function(e) {
+          e.preventDefault();
+          var btn = document.getElementById('enroll-submit-btn');
+          btn.disabled = true;
+          btn.textContent = 'Submitting...';
+          var fd = new FormData(e.target);
+          var body = {};
+          fd.forEach(function(v, k) { body[k] = v; });
+          body.referralCode = (body.referralCode || '').trim().toUpperCase();
+          try {
+            var result = await App.Api.post('/api/enrollment-requests', body);
+            if (result && result.codeWarning) {
+              App.Utils.showToast(result.codeWarning, 'warning', 10000);
+            } else {
+              App.Utils.showToast(result && result.message || 'Enrolment request submitted.', 'success');
+            }
+            await App.Api.loadSnapshot();
+            App.Router.refresh();
+          } catch(err) {
+            btn.disabled = false;
+            btn.textContent = 'Submit enrolment request';
+          }
+        });
+      }, 0);
+
       return html;
     }
 
@@ -714,11 +783,36 @@
 
   function _attnItems(pendingRegs, overdueInvs, dueSoonInvs, newStudents, students, attendance, staff, classes, today, todayDay, now, invoices) {
     var DOTS = { error:'#ef4444', warning:'#f59e0b', info:'#3b82f6' };
+    var state = App.Store.get();
+    var registrations = state.registrations || [];
+    var families = state.families || [];
     var attn = [];
-    if (pendingRegs > 0)       attn.push({ sev:'info',    title: pendingRegs + ' pending reg' + (pendingRegs!==1?'s':''),    page:'students'   });
+
+    // Break down pending registrations by type for clearer action items.
+    var pendingEnrollments = registrations.filter(function(r) { return r.status === 'pending' && r.type === 'enrollment'; }).length;
+    var pendingTeachers = registrations.filter(function(r) { return r.status === 'pending' && r.type === 'teacher'; }).length;
+    var pendingOther = pendingRegs - pendingEnrollments - pendingTeachers;
+
+    if (pendingEnrollments > 0) attn.push({ sev:'info', title: pendingEnrollments + ' child enrolment' + (pendingEnrollments!==1?'s':'') + ' to review', page:'students' });
+    if (pendingTeachers > 0)    attn.push({ sev:'info', title: pendingTeachers + ' teacher application' + (pendingTeachers!==1?'s':''), page:'students' });
+    if (pendingOther > 0)       attn.push({ sev:'info', title: pendingOther + ' pending registration' + (pendingOther!==1?'s':''), page:'students' });
+
+    // Payments awaiting verification (parent submitted "I've Paid" but admin
+    // hasn't confirmed yet).
+    var awaitingVerification = (invoices || []).filter(function(i) { return i.status === 'Pending Verification'; });
+    if (awaitingVerification.length > 0) attn.push({ sev:'warning', title: awaitingVerification.length + ' payment' + (awaitingVerification.length!==1?'s':'') + ' awaiting verification', page:'billing' });
+
     if (overdueInvs.length > 0) attn.push({ sev:'error',  title: overdueInvs.length + ' overdue invoice' + (overdueInvs.length!==1?'s':''), page:'billing' });
     if (dueSoonInvs.length > 0) attn.push({ sev:'warning',title: dueSoonInvs.length + ' payment' + (dueSoonInvs.length!==1?'s':'') + ' due this week', page:'billing' });
     if (newStudents > 0)        attn.push({ sev:'info',   title: newStudents + ' new student' + (newStudents!==1?'s':'') + ' to activate', page:'students' });
+
+    // Orphan parents: families with no active/new students linked. These are
+    // parents who self-registered but either haven't submitted an enrollment
+    // request yet or whose enrollment was never approved.
+    var studentFamilyIds = {};
+    (students || []).forEach(function(s) { if (s.familyId && (s.status === 'Active' || s.status === 'New')) studentFamilyIds[s.familyId] = true; });
+    var orphanFamilies = families.filter(function(f) { return !studentFamilyIds[f.id]; });
+    if (orphanFamilies.length > 0) attn.push({ sev:'info', title: orphanFamilies.length + ' parent' + (orphanFamilies.length!==1?'s':'') + ' without children linked', sub: 'May need follow-up', page:'students' });
 
     // Churn risk: Active students with no Present record in last 14 days
     if (students && attendance) {
@@ -946,6 +1040,24 @@
     var myRec    = attendance.find(function(a) { return a.personId === tid && a.personType === 'staff' && a.date === today; });
 
     var _tod = _timeOfDay();
+
+    // ── Empty state: teacher with no assigned classes ───────────────────
+    if (myClasses.length === 0) {
+      return '<div class="dash-hero" style="margin-bottom:1.25rem">'
+        + '<div style="position:relative;z-index:1">'
+        +   '<p style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--gold);margin:0 0 6px">' + _dateFull() + '</p>'
+        +   '<p style="font-family:var(--serif);font-size:1.3rem;font-weight:700;color:#1a1a1a;margin:0">Good ' + _tod + ', ' + App.Utils.esc(teacher.name || 'Teacher') + '</p>'
+        + '</div></div>'
+        + '<div style="background:#fff;border-radius:16px;border:1px solid rgba(201,162,39,0.2);padding:2.5rem 2rem;text-align:center;max-width:500px;margin:0 auto">'
+        +   '<div style="width:56px;height:56px;border-radius:50%;background:rgba(201,162,39,0.08);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem">'
+        +     '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#C9A227" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
+        +   '</div>'
+        +   '<h2 style="font-family:var(--serif);font-size:1.3rem;font-weight:700;color:#0a0a0a;margin:0 0 0.5rem">No classes assigned yet</h2>'
+        +   '<p style="color:#64748b;font-size:0.88rem;line-height:1.5;margin:0 auto;max-width:340px">Your administrator will assign your teaching schedule shortly. Once that\'s done, you\'ll see your classes, student list, and attendance tools here.</p>'
+        +   '<p style="margin:1.25rem 0 0;font-size:0.78rem;color:#94a3b8">Questions? Reach out to your admin directly.</p>'
+        + '</div>';
+    }
+
     return '<div>'
       // Greeting
       + '<div class="dash-hero" style="margin-bottom:1.25rem">'
@@ -1068,5 +1180,65 @@
     return new Date().toLocaleDateString('en-MY', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
   }
 
-  App.Dashboard = { render: render, _setView: _setDashView };
+  // ── Profile modal (parent self-service) ──────────────────────────────────
+  async function _profileModal() {
+    var profile;
+    try {
+      profile = await App.Api.get('/api/auth/profile');
+    } catch(e) { return; }
+    if (!profile) return;
+
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:380px">'
+      + '<h2 style="font-size:1.15rem;font-weight:700;color:#111;margin:0 0 0.25rem">My Profile</h2>'
+      + '<p style="font-size:0.78rem;color:#94a3b8;margin:0 0 1.25rem">' + App.Utils.esc(profile.email) + '</p>'
+
+      + '<form id="profile-form" style="display:flex;flex-direction:column;gap:0.85rem">'
+      + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Name</label>'
+      +   '<input name="name" value="' + App.Utils.esc(profile.name || '') + '" class="form-input" required></div>'
+      + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Phone</label>'
+      +   '<input name="phone" value="' + App.Utils.esc(profile.phone || '') + '" class="form-input"></div>'
+      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save changes</button>'
+      + '</form>'
+
+      + '<div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid #f1f5f9">'
+      + '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.75rem">Change password</h3>'
+      + '<form id="change-pw-form" style="display:flex;flex-direction:column;gap:0.75rem">'
+      + '<input name="currentPassword" type="password" placeholder="Current password" class="form-input" required>'
+      + '<input name="newPassword" type="password" placeholder="New password (min 8 chars)" class="form-input" required minlength="8">'
+      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.8rem;font-weight:600;background:#fff;color:#374151;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer">Update password</button>'
+      + '</form>'
+      + '</div>'
+
+      + '<div style="margin-top:1rem;text-align:right">'
+      + '<button onclick="App.Utils.hideModal()" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Close</button>'
+      + '</div>'
+      + '</div>'
+    );
+
+    document.getElementById('profile-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      try {
+        await App.Api.put('/api/auth/profile', { name: fd.get('name'), phone: fd.get('phone') });
+        App.Utils.showToast('Profile updated', 'success');
+        await App.Api.loadSnapshot();
+      } catch(err) {}
+    });
+
+    document.getElementById('change-pw-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      try {
+        await App.Api.post('/api/auth/change-password', {
+          currentPassword: fd.get('currentPassword'),
+          newPassword: fd.get('newPassword')
+        });
+        App.Utils.showToast('Password changed', 'success');
+        e.target.reset();
+      } catch(err) {}
+    });
+  }
+
+  App.Dashboard = { render: render, _setView: _setDashView, _profileModal: _profileModal };
 })();

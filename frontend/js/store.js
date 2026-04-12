@@ -39,7 +39,9 @@
     performanceReviews: [], cancelledClasses: [], messages: [], holidays: [],
     replacementCredits: [],
     families: [],
-    feedbackReplies: []
+    feedbackReplies: [],
+    referralRewards: [],
+    registrations: []
   };
 
   function loadState() {

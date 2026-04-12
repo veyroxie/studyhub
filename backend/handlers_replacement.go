@@ -27,7 +27,9 @@ func listReplacementCredits(db *DB, c *Claims) []ReplacementCredit {
 	out := []ReplacementCredit{}
 	for rows.Next() {
 		var rc ReplacementCredit
-		rows.Scan(&rc.ID, &rc.StudentID, &rc.Type, &rc.Minutes, &rc.Note, &rc.ClassID, &rc.Date, &rc.CreatedBy, &rc.Category)
+		if err := rows.Scan(&rc.ID, &rc.StudentID, &rc.Type, &rc.Minutes, &rc.Note, &rc.ClassID, &rc.Date, &rc.CreatedBy, &rc.Category); err != nil {
+			continue
+		}
 		out = append(out, rc)
 	}
 	return out
@@ -58,7 +60,9 @@ func handleListReplacementCredits(db *DB) http.HandlerFunc {
 		out := []ReplacementCredit{}
 		for rows.Next() {
 			var rc ReplacementCredit
-			rows.Scan(&rc.ID, &rc.StudentID, &rc.Type, &rc.Minutes, &rc.Note, &rc.ClassID, &rc.Date, &rc.CreatedBy, &rc.Category)
+			if err := rows.Scan(&rc.ID, &rc.StudentID, &rc.Type, &rc.Minutes, &rc.Note, &rc.ClassID, &rc.Date, &rc.CreatedBy, &rc.Category); err != nil {
+				continue
+			}
 			out = append(out, rc)
 		}
 		respond(w, out)

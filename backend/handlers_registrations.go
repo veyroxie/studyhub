@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 
@@ -13,9 +14,14 @@ import (
 
 // ── Registrations ─────────────────────────────────────────────────────────────
 
-func listRegistrations(db *DB, c *Claims) []Registration {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status,COALESCE(type,'student'),COALESCE(specialization,''),COALESCE(nric,''),COALESCE(display_name,''),COALESCE(employment_type,'Full-time'),COALESCE(experience,''),COALESCE(qualifications,''),COALESCE(bio,''),COALESCE(schedule,''),COALESCE(expected_salary,''),COALESCE(referral_code,''),COALESCE(email_verified_at::text,'') FROM registrations WHERE status='pending' AND (tenant_id=? OR ?=0) ORDER BY submitted_on DESC`, tid, tid)
+// listParentEnrollments returns enrollment requests submitted by the given
+// parent. Used by the snapshot to populate the parent dashboard's pending
+// enrolments section.
+func listParentEnrollments(db *DB, c *Claims) []Registration {
+	if c == nil {
+		return []Registration{}
+	}
+	rows, err := db.Query(`SELECT id,parent_name,email,COALESCE(student_first_name,''),COALESCE(student_last_name,''),submitted_on,status,COALESCE(type,'enrollment') FROM registrations WHERE email=? AND type='enrollment' ORDER BY submitted_on DESC`, c.Email)
 	if err != nil {
 		return []Registration{}
 	}
@@ -23,12 +29,32 @@ func listRegistrations(db *DB, c *Claims) []Registration {
 	out := []Registration{}
 	for rows.Next() {
 		var reg Registration
-		rows.Scan(&reg.ID, &reg.ParentName, &reg.Email, &reg.Phone, &reg.EmergencyName, &reg.EmergencyPhone,
+		if err := rows.Scan(&reg.ID, &reg.ParentName, &reg.Email, &reg.StudentFirstName, &reg.StudentLastName, &reg.SubmittedOn, &reg.Status, &reg.Type); err != nil {
+			continue
+		}
+		out = append(out, reg)
+	}
+	return out
+}
+
+func listRegistrations(db *DB, c *Claims) []Registration {
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id,parent_name,email,phone,COALESCE(emergency_name,''),COALESCE(emergency_phone,''),COALESCE(student_first_name,''),COALESCE(student_last_name,''),COALESCE(student_dob,''),COALESCE(student_gender,''),COALESCE(gender,''),COALESCE(school_name,''),COALESCE(year_grade,''),COALESCE(class_type_interest,''),COALESCE(subject_interest,''),COALESCE(school_fees,0),COALESCE(registration_date,''),COALESCE(workshop_interest,''),COALESCE(class_interest,''),COALESCE(notes,''),submitted_on,status,COALESCE(type,'student'),COALESCE(specialization,''),COALESCE(nric,''),COALESCE(display_name,''),COALESCE(employment_type,'Full-time'),COALESCE(experience,''),COALESCE(qualifications,''),COALESCE(bio,''),COALESCE(schedule,''),COALESCE(expected_salary,''),COALESCE(referral_code,''),COALESCE(email_verified_at::text,'') FROM registrations WHERE status='pending' AND (tenant_id=? OR ?=0) ORDER BY submitted_on DESC`, tid, tid)
+	if err != nil {
+		return []Registration{}
+	}
+	defer rows.Close()
+	out := []Registration{}
+	for rows.Next() {
+		var reg Registration
+		if err := rows.Scan(&reg.ID, &reg.ParentName, &reg.Email, &reg.Phone, &reg.EmergencyName, &reg.EmergencyPhone,
 			&reg.StudentFirstName, &reg.StudentLastName, &reg.StudentDOB, &reg.StudentGender,
 			&reg.Gender, &reg.SchoolName, &reg.YearGrade, &reg.ClassTypeInterest, &reg.SubjectInterest,
 			&reg.SchoolFees, &reg.RegistrationDate, &reg.WorkshopInterest,
 			&reg.ClassInterest, &reg.Notes, &reg.SubmittedOn, &reg.Status, &reg.Type,
-			&reg.Specialization, &reg.NRIC, &reg.DisplayName, &reg.EmploymentType, &reg.Experience, &reg.Qualifications, &reg.Bio, &reg.Schedule, &reg.ExpectedSalary, &reg.ReferralCode, &reg.EmailVerifiedAt)
+			&reg.Specialization, &reg.NRIC, &reg.DisplayName, &reg.EmploymentType, &reg.Experience, &reg.Qualifications, &reg.Bio, &reg.Schedule, &reg.ExpectedSalary, &reg.ReferralCode, &reg.EmailVerifiedAt); err != nil {
+			continue
+		}
 		out = append(out, reg)
 	}
 	return out
@@ -51,20 +77,22 @@ func listRegistrations(db *DB, c *Claims) []Registration {
 func handleRegister(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Registration
-			Password string `json:"password"`
+			ParentName     string `json:"parentName"`
+			Email          string `json:"email"`
+			Password       string `json:"password"`
+			Phone          string `json:"phone"`
+			EmergencyName  string `json:"emergencyName"`
+			EmergencyPhone string `json:"emergencyPhone"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			respondError(w, "bad request", 400)
 			return
 		}
-		reg := body.Registration
-
-		if reg.ParentName == "" || reg.Email == "" || reg.StudentFirstName == "" {
-			respondError(w, "parent name, email and student first name are required", 400)
+		if body.ParentName == "" || body.Email == "" {
+			respondError(w, "name and email are required", 400)
 			return
 		}
-		if !validateEmail(reg.Email) {
+		if !validateEmail(body.Email) {
 			respondError(w, "invalid email address", 400)
 			return
 		}
@@ -73,10 +101,8 @@ func handleRegister(db *DB) http.HandlerFunc {
 			return
 		}
 
-		email := strings.ToLower(strings.TrimSpace(reg.Email))
+		email := strings.ToLower(strings.TrimSpace(body.Email))
 
-		// Reject if a user already exists. Don't reveal *why* in too much
-		// detail — just point them to the right next action.
 		var existingID int
 		_ = db.QueryRow(`SELECT id FROM users WHERE email=?`, email).Scan(&existingID)
 		if existingID > 0 {
@@ -90,11 +116,6 @@ func handleRegister(db *DB) http.HandlerFunc {
 			return
 		}
 
-		reg.ID = generateID("REG")
-		reg.SubmittedOn = today()
-		reg.Status = "pending"
-		reg.Type = "student"
-
 		tx, err := db.BeginTx(r.Context())
 		if err != nil {
 			respondError(w, "server error", 500)
@@ -102,55 +123,52 @@ func handleRegister(db *DB) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		// Create the registration row first so we have the ID for the token.
-		if _, err := tx.Exec(`INSERT INTO registrations(id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status,type,referral_code) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			reg.ID, reg.ParentName, email, reg.Phone, reg.EmergencyName, reg.EmergencyPhone,
-			reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
-			reg.Gender, reg.SchoolName, reg.YearGrade, reg.ClassTypeInterest, reg.SubjectInterest,
-			reg.SchoolFees, reg.RegistrationDate, reg.WorkshopInterest,
-			reg.ClassInterest, reg.Notes, reg.SubmittedOn, reg.Status, reg.Type,
-			strings.ToUpper(strings.TrimSpace(reg.ReferralCode))); err != nil {
-			respondError(w, "could not save registration", 500)
-			return
-		}
-
-		// Create the parent user in pending_verification state. The login handler
-		// rejects this status until the email is verified.
+		// Create the parent user in pending_verification state.
 		var userID int64
 		if err := tx.QueryRow(`INSERT INTO users(tenant_id,email,password_hash,role,name,status) VALUES(?,?,?,?,?,?) RETURNING id`,
-			1, email, hash, "parent", reg.ParentName, "pending_verification").Scan(&userID); err != nil {
+			1, email, hash, "parent", body.ParentName, "pending_verification").Scan(&userID); err != nil {
 			respondError(w, "could not create account", 500)
 			return
 		}
+
+		// Create the family so the parent has a referral code immediately
+		// and enrollment requests can link to it.
+		famID := generateID("FAM")
+		familyName := body.ParentName + " Family"
+		if body.ParentName == "" {
+			familyName = email
+		}
+		emergencyNote := ""
+		if body.EmergencyName != "" {
+			emergencyNote = "Emergency: " + body.EmergencyName
+			if body.EmergencyPhone != "" {
+				emergencyNote += " · " + body.EmergencyPhone
+			}
+		}
+		tx.Exec(`INSERT INTO families(id,tenant_id,name,contact,phone,parent_name,referral_code,notes) VALUES(?,?,?,?,?,?,?,?)`,
+			famID, 1, familyName, email, body.Phone, body.ParentName, newReferralCode(), emergencyNote)
 
 		if err := tx.Commit(); err != nil {
 			respondError(w, "server error", 500)
 			return
 		}
 
-		// Token + email happen outside the transaction so a transient SES /
-		// Resend hiccup doesn't roll back the user record. Worst case the user
-		// re-requests the link via "Resend verification email".
-		regID := reg.ID
-		token, terr := createEmailToken(db, email, tokenPurposeVerifyParent, &userID, &regID, verifyTokenTTL)
+		// Token + email happen outside the transaction.
+		token, terr := createEmailToken(db, email, tokenPurposeVerifyParent, &userID, nil, verifyTokenTTL)
 		if terr != nil {
-			// Account exists, just no email sent. Surface a useful error so
-			// the parent can retry rather than getting a silent broken state.
 			respondError(w, "account created but verification email failed — please use the resend link", 500)
 			return
 		}
 		verifyURL := appURL() + "/verify.html?token=" + token
-		if err := mailer.Send(email, "Verify your Study Hub account", renderVerifyParentEmail(reg.ParentName, verifyURL)); err != nil {
-			// Same fallback — don't 500 because email is the only failed step.
+		if err := mailer.Send(email, "Verify your Study Hub account", renderVerifyParentEmail(body.ParentName, verifyURL)); err != nil {
 			logFromReq(r).Error("parent verify mail send failed", "err", err, "email", email)
 		}
 
 		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			email, "parent_self_registered", "user", fmt.Sprintf("%d", userID), "registration_id="+reg.ID)
+			email, "parent_self_registered", "user", fmt.Sprintf("%d", userID), "family_id="+famID)
 
 		w.WriteHeader(http.StatusCreated)
 		respond(w, map[string]string{
-			"id":      reg.ID,
 			"status":  "pending_verification",
 			"message": "Account created. Check your email for a verification link.",
 		})
@@ -162,6 +180,13 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		id := chi.URLParam(r, "id")
+
+		// Optional body: admin can pass classIds to assign during approval.
+		var approveBody struct {
+			ClassIds []string `json:"classIds"`
+		}
+		json.NewDecoder(r.Body).Decode(&approveBody)
+
 		var reg Registration
 		err := db.QueryRow(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes,COALESCE(type,'student'),COALESCE(specialization,''),COALESCE(nric,''),COALESCE(display_name,''),COALESCE(employment_type,'Full-time'),COALESCE(experience,''),COALESCE(qualifications,''),COALESCE(expected_salary,''),COALESCE(referral_code,'') FROM registrations WHERE id=?`, id).
 			Scan(&reg.ID, &reg.ParentName, &reg.Email, &reg.Phone, &reg.EmergencyName, &reg.EmergencyPhone,
@@ -208,7 +233,80 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 			pendingTeacherUserID int64
 		)
 
-		if reg.Type == "teacher" {
+		if reg.Type == "enrollment" {
+			// Enrollment request: the parent already has a user + family.
+			// We only need to create the student and link to the family.
+			parentEmail := strings.ToLower(strings.TrimSpace(reg.Email))
+			var famID string
+			tx.QueryRow(`SELECT id FROM families WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, parentEmail, tid, tid).Scan(&famID)
+
+			stuID := generateID("STU")
+			// If admin picked classes during approval, enrol immediately.
+			enrolledJSON := "[]"
+			if len(approveBody.ClassIds) > 0 {
+				b, _ := json.Marshal(approveBody.ClassIds)
+				enrolledJSON = string(b)
+			}
+			if _, err := tx.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,family_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
+				stuID, tid, reg.StudentFirstName, reg.StudentLastName, reg.StudentDOB, reg.StudentGender,
+				reg.ParentName, parentEmail, "", "The Study Hub", "New", today(), enrolledJSON, "[]", reg.Notes, famID); err != nil {
+				respondError(w, "could not create student record", 500)
+				return
+			}
+			// Increment enrolled count on each assigned class.
+			for _, cid := range approveBody.ClassIds {
+				tx.Exec(`UPDATE classes SET enrolled=enrolled+1 WHERE id=? AND (tenant_id=? OR ?=0)`, cid, tid, tid)
+			}
+
+			// Referral validation (same pattern as the old combined flow).
+			code := strings.ToUpper(strings.TrimSpace(reg.ReferralCode))
+			if code != "" && famID != "" {
+				var referrerFamID string
+				tx.QueryRow(`SELECT id FROM families WHERE referral_code=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, code, tid, tid).Scan(&referrerFamID)
+				if referrerFamID != "" && referrerFamID != famID {
+					if _, err := tx.Exec(`INSERT INTO referral_rewards(id,tenant_id,referrer_family_id,referred_student_id,status) VALUES(?,?,?,?,'pending') ON CONFLICT(referred_student_id) DO NOTHING`,
+						generateID("REF"), tid, referrerFamID, stuID); err == nil {
+						tx.Exec(`UPDATE students SET referred_by_family_id=? WHERE id=?`, referrerFamID, stuID)
+						tx.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
+							c.Email, "referral_validated", "student", stuID, "code="+code+" referrer="+referrerFamID)
+					}
+				}
+			}
+
+			responseData = map[string]string{
+				"studentId": stuID,
+				"type":      "enrollment",
+				"message":   "Student enrolled and linked to parent's family.",
+			}
+
+			// Build class list HTML for the approval email.
+			var classListHTML string
+			if len(approveBody.ClassIds) > 0 {
+				classListHTML = `<ul style="margin:0;padding:0 0 0 18px;font-size:13px;color:#374151">`
+				for _, cid := range approveBody.ClassIds {
+					var cname, cday, ctime string
+					db.QueryRow(`SELECT name, day, time FROM classes WHERE id=?`, cid).Scan(&cname, &cday, &ctime)
+					if cname != "" {
+						classListHTML += `<li style="margin-bottom:4px">` + html.EscapeString(cname) + ` — ` + html.EscapeString(cday) + ` ` + html.EscapeString(ctime) + `</li>`
+					}
+				}
+				classListHTML += `</ul>`
+			}
+
+			// Defer enrollment-approved email until after commit.
+			enrollEmail := strings.ToLower(strings.TrimSpace(reg.Email))
+			enrollParentName := reg.ParentName
+			enrollStudentName := reg.StudentFirstName + " " + reg.StudentLastName
+			enrollClassHTML := classListHTML
+			defer func() {
+				go func() {
+					if err := mailer.Send(enrollEmail, safeName(enrollStudentName)+" has been enrolled at The Study Hub",
+						renderEnrollmentApprovedEmail(enrollParentName, enrollStudentName, enrollClassHTML)); err != nil {
+						logger.Error("enrollment approved email failed", "err", err, "email", enrollEmail)
+					}
+				}()
+			}()
+		} else if reg.Type == "teacher" {
 			// Teacher approval: create staff + user records, then email a
 			// "set your password" link instead of the legacy temp password.
 			// The user account exists but is unusable until the link is
@@ -388,6 +486,94 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 	}
 }
 
+// POST /api/enrollment-requests — authenticated parent.
+// Creates a registration row with type='enrollment' for a child the parent
+// wants to enrol. Admin reviews and approves (handleRegistrationApprove
+// handles this case by creating just the student record + linking to the
+// existing family, since the parent user already exists).
+func handleEnrollmentRequest(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		if c == nil || c.Role != "parent" {
+			respondError(w, "parents only", 403)
+			return
+		}
+
+		var req struct {
+			StudentFirstName  string `json:"studentFirstName"`
+			StudentLastName   string `json:"studentLastName"`
+			StudentDOB        string `json:"studentDob"`
+			StudentGender     string `json:"studentGender"`
+			SchoolName        string `json:"schoolName"`
+			YearGrade         string `json:"yearGrade"`
+			SubjectInterest   string `json:"subjectInterest"`
+			ClassTypeInterest string `json:"classTypeInterest"`
+			WorkshopInterest  string `json:"workshopInterest"`
+			Notes             string `json:"notes"`
+			ReferralCode      string `json:"referralCode"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, "bad request", 400)
+			return
+		}
+		if req.StudentFirstName == "" {
+			respondError(w, "student first name is required", 400)
+			return
+		}
+
+		// Look up the parent's family so we know which family to link the
+		// student to when admin approves.
+		var famID string
+		db.QueryRow(`SELECT id FROM families WHERE contact=? AND deleted_at IS NULL`, c.Email).Scan(&famID)
+
+		id := generateID("REG")
+		tid := tenantID(c)
+		_, err := db.Exec(`INSERT INTO registrations(id,tenant_id,parent_name,email,phone,student_first_name,student_last_name,student_dob,student_gender,school_name,year_grade,class_type_interest,subject_interest,workshop_interest,notes,submitted_on,status,type,referral_code,email_verified_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
+			id, tid, c.Name, c.Email, "", // phone not needed — it's on the family
+			req.StudentFirstName, req.StudentLastName, req.StudentDOB, req.StudentGender,
+			req.SchoolName, req.YearGrade, req.ClassTypeInterest, req.SubjectInterest,
+			req.WorkshopInterest, req.Notes, today(), "pending", "enrollment",
+			strings.ToUpper(strings.TrimSpace(req.ReferralCode)))
+		if err != nil {
+			respondError(w, "could not save enrollment request", 500)
+			return
+		}
+
+		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
+			c.Email, "enrollment_requested", "registration", id, req.StudentFirstName+" "+req.StudentLastName)
+
+		// Validate referral code at submission time. We DON'T block the
+		// enrollment if the code is invalid — we just include a warning so
+		// the parent knows to double-check before admin processes it.
+		codeWarning := ""
+		code := strings.ToUpper(strings.TrimSpace(req.ReferralCode))
+		if code != "" {
+			var referrerFamID string
+			db.QueryRow(`SELECT id FROM families WHERE referral_code=? AND deleted_at IS NULL`, code).Scan(&referrerFamID)
+			if referrerFamID == "" {
+				codeWarning = "The referral code '" + code + "' was not found. Your enrolment has been submitted anyway — please double-check the code with your friend."
+			} else if referrerFamID == famID {
+				codeWarning = "You can't use your own referral code. The enrolment has been submitted without a referral."
+				// Clear the invalid self-referral from the row.
+				db.Exec(`UPDATE registrations SET referral_code='' WHERE id=?`, id)
+			}
+		}
+
+		msg := "Enrolment request submitted. Our team will review it shortly."
+		if codeWarning != "" {
+			msg = codeWarning
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		respond(w, map[string]any{
+			"id":          id,
+			"status":      "pending",
+			"message":     msg,
+			"codeWarning": codeWarning,
+		})
+	}
+}
+
 // DELETE /api/registrations/{id} — admin only (reject)
 func handleRegistrationReject(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -444,8 +630,8 @@ func handleRegisterTeacher(db *DB) http.HandlerFunc {
 
 		id := generateID("REG")
 		email := strings.ToLower(strings.TrimSpace(reg.Email))
-		_, err := db.Exec(`INSERT INTO registrations(id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status,type,specialization,nric,display_name,employment_type,experience,qualifications,bio,schedule,expected_salary) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			id, reg.FullName, email, reg.Phone, reg.EmergencyName, reg.EmergencyPhone,
+		_, err := db.Exec(`INSERT INTO registrations(id,tenant_id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,gender,school_name,year_grade,class_type_interest,subject_interest,school_fees,registration_date,workshop_interest,class_interest,notes,submitted_on,status,type,specialization,nric,display_name,employment_type,experience,qualifications,bio,schedule,expected_salary) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			id, 1, reg.FullName, email, reg.Phone, reg.EmergencyName, reg.EmergencyPhone,
 			reg.FullName, "", "", "", "", "", "", "", "", 0, "", "",
 			"", reg.Bio, today(), "pending", "teacher",
 			reg.Specialty, reg.NRIC, reg.DisplayName, reg.EmploymentType, reg.Experience, reg.Qualifications, reg.Bio, reg.Schedule, reg.ExpectedSalary)

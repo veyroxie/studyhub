@@ -38,7 +38,9 @@ func listStudents(db *DB, c *Claims) []Student {
 		var s Student
 		var ec, sib string
 		var e2name, e2phone sql.NullString
-		rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID)
+		if err := rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID); err != nil {
+			continue
+		}
 		s.EnrolledClasses = parseArr(ec)
 		s.Siblings = parseArr(sib)
 		s.Emergency2Name = nullStr(e2name)
@@ -69,7 +71,9 @@ func listStudentsPaged(db *DB, c *Claims, p Pagination) ([]Student, int) {
 		var s Student
 		var ec, sib string
 		var e2name, e2phone sql.NullString
-		rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID)
+		if err := rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID); err != nil {
+			continue
+		}
 		s.EnrolledClasses = parseArr(ec)
 		s.Siblings = parseArr(sib)
 		s.Emergency2Name = nullStr(e2name)

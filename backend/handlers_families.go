@@ -26,7 +26,9 @@ func listFamilies(db *DB, c *Claims) []Family {
 	out := []Family{}
 	for rows.Next() {
 		var f Family
-		rows.Scan(&f.ID, &f.Name, &f.Contact, &f.Phone, &f.ParentName, &f.Address, &f.Notes, &f.ReferralCode)
+		if err := rows.Scan(&f.ID, &f.Name, &f.Contact, &f.Phone, &f.ParentName, &f.Address, &f.Notes, &f.ReferralCode); err != nil {
+			continue
+		}
 		out = append(out, f)
 	}
 	return out
@@ -70,6 +72,59 @@ func handleFamilies(db *DB) http.HandlerFunc {
 			w.WriteHeader(http.StatusCreated)
 			respond(w, f)
 		}
+	}
+}
+
+// handleFamilyPDPADelete is the admin-only PDPA account deletion endpoint.
+// Soft-deletes the family, parent user, and all linked students. PII is
+// overwritten with "[deleted]" so invoices / audit logs can be retained
+// without containing personal data.
+//
+// DELETE /api/families/{id}/pdpa
+func handleFamilyPDPADelete(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		if c == nil || c.Role != "admin" {
+			respondError(w, "admin only", 403)
+			return
+		}
+		famID := chi.URLParam(r, "id")
+		tid := tenantID(c)
+
+		var contact string
+		if err := db.QueryRow(`SELECT contact FROM families WHERE id=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, famID, tid, tid).Scan(&contact); err != nil {
+			respondError(w, "family not found", 404)
+			return
+		}
+
+		tx, err := db.BeginTx(r.Context())
+		if err != nil {
+			respondError(w, "server error", 500)
+			return
+		}
+		defer tx.Rollback()
+
+		// Anonymise + soft-delete family.
+		tx.Exec(`UPDATE families SET deleted_at=NOW(), name='[deleted]', contact='deleted-'||id||'@redacted', phone='', parent_name='[deleted]', address='', notes='' WHERE id=?`, famID)
+
+		// Anonymise + soft-delete all students in this family.
+		tx.Exec(`UPDATE students SET deleted_at=NOW(), first_name='[deleted]', last_name='[deleted]', parent_name='[deleted]', contact='deleted-'||id||'@redacted', phone='', notes='', medical_info='', allergies='', emergency2_name='', emergency2_phone='' WHERE family_id=? AND deleted_at IS NULL`, famID)
+
+		// Delete the parent user account.
+		if contact != "" {
+			tx.Exec(`UPDATE users SET password_hash='DELETED', email='deleted-'||id||'@redacted', name='[deleted]', status='deleted' WHERE email=?`, contact)
+		}
+
+		if err := tx.Commit(); err != nil {
+			respondError(w, "server error", 500)
+			return
+		}
+
+		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
+			c.Email, "pdpa_account_deleted", "family", famID, "contact="+contact)
+		logger.Info("PDPA account deleted", "family_id", famID, "contact", contact, "admin", c.Email)
+
+		respond(w, map[string]string{"message": "Account and associated data have been anonymised."})
 	}
 }
 
