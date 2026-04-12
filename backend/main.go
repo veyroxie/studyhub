@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -75,10 +76,18 @@ func main() {
 		log.Fatal("JWT_SECRET must be at least 16 characters")
 	}
 
-	// CORS allowed origins — use env var in production (e.g. https://yourdomain.com)
-	allowedOrigins := []string{"http://localhost:8080", "http://127.0.0.1:8080"}
+	// CORS allowed origins. In production the Go server serves both the
+	// frontend and API on the same origin, so the same-origin check in the
+	// CSRF middleware handles most cases. This list is a fallback for
+	// explicit cross-origin requests (e.g. local dev with separate frontend).
+	allowedOrigins := []string{
+		"http://localhost:8080",
+		"http://127.0.0.1:8080",
+		"https://studyhub.fit",
+		"http://studyhub.fit",
+	}
 	if v := os.Getenv("ALLOWED_ORIGIN"); v != "" {
-		allowedOrigins = []string{v}
+		allowedOrigins = append(allowedOrigins, v)
 	}
 
 	db := initDB(*dbDSN)
@@ -104,13 +113,21 @@ func main() {
 	r.Use(rateLimitAPI)
 	r.Use(maxBodySize)
 
-	// Origin validation for state-changing requests (extra CSRF protection)
+	// Origin validation for state-changing requests (extra CSRF protection).
+	// Same-origin requests (frontend served by this same Go server) are
+	// always allowed — the check only blocks cross-origin POST/PUT/DELETE
+	// from domains we don't recognise.
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" {
 				origin := r.Header.Get("Origin")
 				if origin != "" {
 					ok := false
+					// Allow same-origin: if the Origin header's host matches
+					// the request's Host header, it's our own frontend.
+					if strings.Contains(origin, r.Host) {
+						ok = true
+					}
 					for _, ao := range allowedOrigins {
 						if origin == ao {
 							ok = true
