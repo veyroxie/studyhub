@@ -66,8 +66,11 @@ func handleClasses(db *DB) http.HandlerFunc {
 				var cnt int
 				// Use exact JSON substring match with double-quote delimiters
 				// so "stf_1" doesn't false-match "stf_10" or "stf_100".
-				db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`,
-					c.Day, c.ID, c.Time, c.EndTime, tid2).Scan(&cnt)
+				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`,
+					c.Day, c.ID, c.Time, c.EndTime, tid2).Scan(&cnt); err != nil {
+					respondError(w, "server error checking class conflicts", 500)
+					return
+				}
 				if cnt > 0 {
 					respondError(w, "Conflict: teacher "+tid2+" is already booked at this time", http.StatusConflict)
 					return
@@ -75,8 +78,11 @@ func handleClasses(db *DB) http.HandlerFunc {
 			}
 			if c.Classroom != "" {
 				var cnt int
-				db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`,
-					c.Day, c.Classroom, c.ID, c.Time, c.EndTime).Scan(&cnt)
+				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`,
+					c.Day, c.Classroom, c.ID, c.Time, c.EndTime).Scan(&cnt); err != nil {
+					respondError(w, "server error checking class conflicts", 500)
+					return
+				}
 				if cnt > 0 {
 					respondError(w, "Conflict: "+c.Classroom+" is already booked at this time", http.StatusConflict)
 					return
@@ -117,8 +123,11 @@ func handleClassByID(db *DB) http.HandlerFunc {
 			// Clash detection (same as create)
 			for _, tid2 := range cl.TeacherIDs {
 				var cnt int
-				db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`,
-					cl.Day, cl.ID, cl.Time, cl.EndTime, tid2).Scan(&cnt)
+				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`,
+					cl.Day, cl.ID, cl.Time, cl.EndTime, tid2).Scan(&cnt); err != nil {
+					respondError(w, "server error checking class conflicts", 500)
+					return
+				}
 				if cnt > 0 {
 					respondError(w, "Conflict: teacher "+tid2+" is already booked at this time", http.StatusConflict)
 					return
@@ -126,8 +135,11 @@ func handleClassByID(db *DB) http.HandlerFunc {
 			}
 			if cl.Classroom != "" {
 				var cnt int
-				db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`,
-					cl.Day, cl.Classroom, cl.ID, cl.Time, cl.EndTime).Scan(&cnt)
+				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`,
+					cl.Day, cl.Classroom, cl.ID, cl.Time, cl.EndTime).Scan(&cnt); err != nil {
+					respondError(w, "server error checking class conflicts", 500)
+					return
+				}
 				if cnt > 0 {
 					respondError(w, "Conflict: "+cl.Classroom+" is already booked at this time", http.StatusConflict)
 					return
@@ -138,8 +150,7 @@ func handleClassByID(db *DB) http.HandlerFunc {
 			db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,enrolled=?,color=?,category=? WHERE id=? AND (tenant_id=? OR ?=0)`,
 				cl.Name, jsonArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Enrolled, cl.Color, cl.Category, id, tid, tid)
 			if c != nil {
-				db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-					c.Email, "class_updated", "class", id, cl.Name)
+				logAudit(db, c.Email, "class_updated", "class", id, cl.Name)
 			}
 			respond(w, cl)
 
@@ -151,8 +162,7 @@ func handleClassByID(db *DB) http.HandlerFunc {
 			tid := tenantID(c)
 			db.Exec(`UPDATE classes SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
 			if c != nil {
-				db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-					c.Email, "class_deleted", "class", id, "soft deleted")
+				logAudit(db, c.Email, "class_deleted", "class", id, "soft deleted")
 			}
 			w.WriteHeader(http.StatusNoContent)
 		}

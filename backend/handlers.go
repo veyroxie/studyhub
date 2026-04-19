@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -47,6 +48,43 @@ func validationError(checks ...string) string {
 
 // validAmount returns true if amount is a positive number.
 func validAmount(a float64) bool { return a > 0 }
+
+// execer is satisfied by both *DB and *Tx, allowing logAudit to work
+// inside or outside a transaction.
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+// logAudit inserts an audit_logs row and logs any error via slog.
+// This replaces all bare db.Exec audit inserts — a failed audit write
+// should never crash the request, but it must never be silently swallowed.
+func logAudit(db execer, actorEmail, action, entityType, entityID, detail string) {
+	if _, err := db.Exec(
+		`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
+		actorEmail, action, entityType, entityID, detail,
+	); err != nil {
+		logger.Error("audit log write failed", "err", err, "action", action, "entity_type", entityType, "entity_id", entityID)
+	}
+}
+
+// listPendingUsers returns users with status=pending_verification.
+// Admin-only — included in the snapshot for dashboard attention items.
+func listPendingUsers(db *DB) []PendingUser {
+	rows, err := db.Query(`SELECT id, email, name, role FROM users WHERE status='pending_verification' ORDER BY id DESC`)
+	if err != nil {
+		return []PendingUser{}
+	}
+	defer rows.Close()
+	out := []PendingUser{}
+	for rows.Next() {
+		var u PendingUser
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role); err != nil {
+			continue
+		}
+		out = append(out, u)
+	}
+	return out
+}
 
 // ── Pagination ───────────────────────────────────────────────────────────────
 
@@ -157,6 +195,7 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 		}
 		if c != nil && (c.Role == "admin" || c.Role == "superadmin") {
 			snap.Registrations = listRegistrations(db, c)
+			snap.PendingUsers = listPendingUsers(db)
 		} else if c != nil && c.Role == "parent" {
 			// Parents see only their own enrollment requests so the dashboard
 			// can show pending enrolments and the "register your child" form.

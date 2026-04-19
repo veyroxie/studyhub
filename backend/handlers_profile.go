@@ -44,14 +44,22 @@ func handleProfile(db *DB) http.HandlerFunc {
 				return
 			}
 			// Update user row
-			db.Exec(`UPDATE users SET name=? WHERE email=?`, body.Name, c.Email)
+			if _, err := db.Exec(`UPDATE users SET name=? WHERE email=?`, body.Name, c.Email); err != nil {
+				respondError(w, "could not update profile", 500)
+				return
+			}
 			// Update family row (phone + parent_name)
-			db.Exec(`UPDATE families SET parent_name=?, phone=? WHERE contact=? AND deleted_at IS NULL`, body.Name, body.Phone, c.Email)
+			if _, err := db.Exec(`UPDATE families SET parent_name=?, phone=? WHERE contact=? AND deleted_at IS NULL`, body.Name, body.Phone, c.Email); err != nil {
+				respondError(w, "could not update profile", 500)
+				return
+			}
 			// Update students linked to this parent
-			db.Exec(`UPDATE students SET parent_name=?, phone=? WHERE contact=? AND deleted_at IS NULL`, body.Name, body.Phone, c.Email)
+			if _, err := db.Exec(`UPDATE students SET parent_name=?, phone=? WHERE contact=? AND deleted_at IS NULL`, body.Name, body.Phone, c.Email); err != nil {
+				respondError(w, "could not update profile", 500)
+				return
+			}
 
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "profile_updated", "user", c.Email, body.Name)
+			logAudit(db, c.Email, "profile_updated", "user", c.Email, body.Name)
 
 			// Reissue the JWT so the new name is reflected in the cookie
 			// immediately (no need to re-login). Read tenant_id from the
@@ -121,8 +129,7 @@ func handleChangePassword(db *DB) http.HandlerFunc {
 			return
 		}
 
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "password_changed", "user", c.Email, "")
+		logAudit(db, c.Email, "password_changed", "user", c.Email, "")
 
 		respond(w, map[string]string{"message": "Password changed."})
 	}

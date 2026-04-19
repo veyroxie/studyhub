@@ -65,8 +65,7 @@ func handleForgotPassword(db *DB) http.HandlerFunc {
 			l.Info("password reset email sent")
 		}
 
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			req.Email, "password_reset_requested", "user", fmt.Sprintf("%d", userID), "reset email queued")
+		logAudit(db, req.Email, "password_reset_requested", "user", fmt.Sprintf("%d", userID), "reset email queued")
 
 		respond(w, genericResponse)
 	}
@@ -147,8 +146,7 @@ func handleSetPassword(db *DB) http.HandlerFunc {
 			SameSite: http.SameSiteLaxMode,
 		})
 
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			t.Email, "password_set", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
+		logAudit(db, t.Email, "password_set", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
 
 		respond(w, map[string]any{
 			"message":    "Password set. You're now signed in.",
@@ -200,8 +198,7 @@ func handleResetPassword(db *DB) http.HandlerFunc {
 			respondError(w, "could not update password", 500)
 			return
 		}
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			t.Email, "password_reset_completed", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
+		logAudit(db, t.Email, "password_reset_completed", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
 
 		respond(w, map[string]string{"message": "Password updated. You can now log in with your new password."})
 	}

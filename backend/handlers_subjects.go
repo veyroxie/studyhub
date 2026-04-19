@@ -61,8 +61,7 @@ func handleCreateSubject(db *DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "subject_created", "subject", s.ID, s.Name)
+			logAudit(db, c.Email, "subject_created", "subject", s.ID, s.Name)
 		}
 		w.WriteHeader(http.StatusCreated)
 		respond(w, s)
@@ -95,8 +94,7 @@ func handleUpdateSubject(db *DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "subject_updated", "subject", id, s.Name)
+			logAudit(db, c.Email, "subject_updated", "subject", id, s.Name)
 		}
 		respond(w, s)
 	}
@@ -111,10 +109,12 @@ func handleDeleteSubject(db *DB) http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		tid := tenantID(c)
-		db.Exec(`UPDATE subjects SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
+		if _, err := db.Exec(`UPDATE subjects SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+			respondError(w, "could not delete subject", 500)
+			return
+		}
 		if c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "subject_deleted", "subject", id, "soft deleted")
+			logAudit(db, c.Email, "subject_deleted", "subject", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

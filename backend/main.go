@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"flag"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -50,7 +49,7 @@ func main() {
 	_ = godotenv.Load(".env")
 	_ = godotenv.Load(".env." + env)
 	initLogger()
-	logger.Info("starting", "env", env)
+	logger.Info("starting", "env", env, "version", buildVersion)
 
 	dbDSN := flag.String("db", "postgres://studyhub:studyhub@localhost:5432/studyhub?sslmode=disable", "PostgreSQL connection string")
 	port := flag.String("port", "8080", "HTTP port")
@@ -70,10 +69,11 @@ func main() {
 		b := make([]byte, 32)
 		rand.Read(b)
 		jwtSecret = b
-		log.Printf("WARNING: JWT_SECRET not set — using random secret (sessions won't survive restarts)")
+		logger.Warn("JWT_SECRET not set — using random secret (sessions won't survive restarts)")
 	}
 	if len(jwtSecret) < 16 {
-		log.Fatal("JWT_SECRET must be at least 16 characters")
+		logger.Error("JWT_SECRET must be at least 16 characters")
+		os.Exit(1)
 	}
 
 	// CORS allowed origins. In production the Go server serves both the
@@ -123,9 +123,15 @@ func main() {
 				origin := r.Header.Get("Origin")
 				if origin != "" {
 					ok := false
-					// Allow same-origin: if the Origin header's host matches
-					// the request's Host header, it's our own frontend.
-					if strings.Contains(origin, r.Host) {
+					// Allow same-origin: check Origin against Host and
+					// X-Forwarded-Host (set by Caddy/nginx reverse proxy).
+					// Behind a proxy, r.Host is "localhost:8080" but the
+					// real origin is "https://studyhub.fit".
+					host := r.Host
+					if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
+						host = fwd
+					}
+					if strings.Contains(origin, host) {
 						ok = true
 					}
 					for _, ao := range allowedOrigins {
@@ -288,6 +294,8 @@ func main() {
 			r.Get("/api/users", handleUsers(db))
 			r.Post("/api/users", handleUsers(db))
 			r.Delete("/api/users/{id}", handleUserDelete(db))
+			r.Post("/api/users/{id}/verify", handleUserVerify(db))
+			r.Post("/api/users/{id}/resend-verification", handleUserResendVerification(db))
 			r.Post("/api/registrations/{id}/approve", handleRegistrationApprove(db))
 			r.Delete("/api/registrations/{id}", handleRegistrationReject(db))
 			r.Get("/api/audit-logs", handleAuditLogs(db))
@@ -304,8 +312,7 @@ func main() {
 	fs := http.FileServer(http.Dir(frontendDir))
 	r.Handle("/*", fs)
 
-	log.Printf("StudyHub running on http://localhost:%s", *port)
-	log.Printf("Database: PostgreSQL")
+	logger.Info("server ready", "addr", ":"+*port, "db", "postgresql")
 	server := &http.Server{
 		Addr:         ":" + *port,
 		Handler:      r,
@@ -316,19 +323,21 @@ func main() {
 	// Graceful shutdown
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal(err)
+			logger.Error("listen failed", "err", err)
+			os.Exit(1)
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down...")
+	logger.Info("shutting down")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatal("Server forced to shutdown:", err)
+		logger.Error("forced shutdown", "err", err)
+		os.Exit(1)
 	}
-	log.Println("Server stopped")
+	logger.Info("server stopped")
 }

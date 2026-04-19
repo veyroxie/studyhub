@@ -167,8 +167,7 @@ func handleStudent(db *DB) http.HandlerFunc {
 				respondError(w, "could not update student", 500)
 				return
 			}
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "student_updated", "student", id, s.FirstName+" "+s.LastName)
+			logAudit(db, c.Email, "student_updated", "student", id, s.FirstName+" "+s.LastName)
 			respond(w, s)
 		case http.MethodDelete:
 			tid := tenantID(c)
@@ -176,8 +175,7 @@ func handleStudent(db *DB) http.HandlerFunc {
 				respondError(w, "could not delete student", 500)
 				return
 			}
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "student_deleted", "student", id, "soft deleted")
+			logAudit(db, c.Email, "student_deleted", "student", id, "soft deleted")
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}

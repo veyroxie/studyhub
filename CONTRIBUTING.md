@@ -72,8 +72,15 @@ This is a one-developer project, so "contributing" mostly means "future-you in
 
 ### Git
 
-- Commit message style: short imperative, no scope prefix. Examples:
-  `add referral discount system`, `fix billing tab not refreshing after edit`.
+- **Conventional commit format:** `<type>(<scope>): <summary>`
+  - Types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `perf`
+  - Scope: the domain area (`billing`, `auth`, `students`, `calendar`, etc.)
+  - Examples:
+    - `feat(billing): add early bird discount auto-detection`
+    - `fix(invoices): parent query missing referral_credit column`
+    - `chore(docker): add .dockerignore and optimize build flags`
+    - `docs: update CHANGELOG with enrollment flow changes`
+  - Keep the summary line under 72 characters, imperative mood.
 - Push branch is `prod`. Main is the long-running default but `prod` is what
   the droplet pulls.
 - One commit per logical change. Don't squash unrelated work into one commit.

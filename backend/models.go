@@ -334,4 +334,14 @@ type Snapshot struct {
 	Families           []Family            `json:"families"`
 	FeedbackReplies    []FeedbackReply     `json:"feedbackReplies"`
 	ReferralRewards    []ReferralReward    `json:"referralRewards"`
+	PendingUsers       []PendingUser       `json:"pendingUsers,omitempty"`
+}
+
+// PendingUser is a minimal projection of users with status=pending_verification,
+// included in the admin snapshot so the dashboard can show action items.
+type PendingUser struct {
+	ID    int    `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+	Role  string `json:"role"`
 }

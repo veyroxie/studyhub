@@ -183,7 +183,7 @@
         ws.onclose = function() {
           setTimeout(function() { App.Api.connectWS(); }, 5000);
         };
-      } catch(e) {}
+      } catch(e) { console.error('WebSocket connect failed', e); }
     }
   };
 })();

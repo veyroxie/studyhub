@@ -316,7 +316,7 @@
           App.Utils.showToast('📱 ' + msg, data.type === 'CHECK_IN' ? 'info' : 'success');
         }
       };
-    } catch(e) {}
+    } catch(e) { console.error('BroadcastChannel init failed', e); }
 
     // Wire login form
     const loginForm = document.getElementById('login-form');

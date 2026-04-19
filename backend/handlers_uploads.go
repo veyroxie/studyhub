@@ -98,12 +98,14 @@ func handleUploadProof(db *DB) http.HandlerFunc {
 		// Update invoice record
 		proofPath := "uploads/" + filename
 		tid := tenantID(c)
-		db.Exec(`UPDATE invoices SET payment_proof=? WHERE id=? AND (tenant_id=? OR ?=0)`, proofPath, invoiceID, tid, tid)
+		if _, err := db.Exec(`UPDATE invoices SET payment_proof=? WHERE id=? AND (tenant_id=? OR ?=0)`, proofPath, invoiceID, tid, tid); err != nil {
+			respondError(w, "could not update invoice", 500)
+			return
+		}
 
 		// Audit log
 		if c := claimsFrom(r); c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "proof_uploaded", "invoice", invoiceID, proofPath)
+			logAudit(db, c.Email, "proof_uploaded", "invoice", invoiceID, proofPath)
 		}
 
 		respond(w, map[string]string{"path": proofPath})

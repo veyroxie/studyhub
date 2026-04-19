@@ -92,8 +92,7 @@ func handleReferralEarn(db *DB) http.HandlerFunc {
 			respondError(w, "could not mark earned", 500)
 			return
 		}
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "referral_milestone_met", "referral", id, "student="+studentID)
+		logAudit(db, c.Email, "referral_milestone_met", "referral", id, "student="+studentID)
 		respond(w, map[string]string{"status": "earned"})
 	}
 }
@@ -131,8 +130,7 @@ func handleReferralConsume(db *DB) http.HandlerFunc {
 		var newStatus string
 		var newRemaining int
 		db.QueryRow(`SELECT status, credits_remaining FROM referral_rewards WHERE id=?`, id).Scan(&newStatus, &newRemaining)
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "referral_credit_applied", "referral", id, "remaining="+itoa(newRemaining))
+		logAudit(db, c.Email, "referral_credit_applied", "referral", id, "remaining="+itoa(newRemaining))
 		respond(w, map[string]any{"status": newStatus, "creditsRemaining": newRemaining})
 	}
 }
@@ -237,11 +235,14 @@ func referralCheckMilestoneOnPay(db *DB, studentID string) {
 	var paid int
 	db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE student_id=? AND type='Monthly' AND status='Paid' AND deleted_at IS NULL`, studentID).Scan(&paid)
 	if paid < 3 {
-		db.Exec(`UPDATE referral_rewards SET paid_invoice_count=? WHERE id=?`, paid, rrID)
+		if _, err := db.Exec(`UPDATE referral_rewards SET paid_invoice_count=? WHERE id=?`, paid, rrID); err != nil {
+			logger.Error("failed to update referral paid_invoice_count", "err", err, "referral_reward_id", rrID)
+		}
 		return
 	}
-	db.Exec(`UPDATE referral_rewards SET status='earned', credits_remaining=3, paid_invoice_count=?, milestone_met_on=? WHERE id=?`, paid, today(), rrID)
-	db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-		"system", "referral_milestone_met", "referral", rrID, "student="+studentID)
+	if _, err := db.Exec(`UPDATE referral_rewards SET status='earned', credits_remaining=3, paid_invoice_count=?, milestone_met_on=? WHERE id=?`, paid, today(), rrID); err != nil {
+		logger.Error("failed to update referral milestone", "err", err, "referral_reward_id", rrID)
+	}
+	logAudit(db, "system", "referral_milestone_met", "referral", rrID, "student="+studentID)
 }
 

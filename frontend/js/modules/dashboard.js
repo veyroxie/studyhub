@@ -855,13 +855,20 @@
     });
     if (longOverdue.length > 0) attn.push({ sev:'error', title: longOverdue.length + ' invoice' + (longOverdue.length!==1?'s':'') + ' overdue 7+ days', sub: 'Requires immediate follow-up', page:'billing' });
 
+    // Pending verification accounts (from snapshot pendingUsers)
+    var pendingUsers = state.pendingUsers || [];
+    if (pendingUsers.length > 0) attn.push({ sev:'warning', title: pendingUsers.length + ' account' + (pendingUsers.length!==1?'s':'') + ' awaiting email verification', sub: 'Click to verify or resend', action: '_pendingUsersModal' });
+
     var items = attn;
 
     if (items.length === 0) {
       return '<div style="padding:1.5rem 0;text-align:center"><div style="font-size:1.3rem;margin-bottom:4px">✓</div><p style="font-size:0.82rem;color:#94a3b8;margin:0">All clear</p></div>';
     }
     return items.map(function(item) {
-      return '<div onclick="App.Router.navigate(\'' + item.page + '\')" style="display:flex;align-items:center;gap:0.65rem;padding:0.6rem 0.5rem;margin:0 -0.5rem;border-radius:8px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid #f4f4f2" onmouseover="this.style.background=\'#fafaf8\'" onmouseout="this.style.background=\'transparent\'">'
+      var clickAction = item.action
+        ? 'App.Dashboard.' + item.action + '()'
+        : 'App.Router.navigate(\'' + item.page + '\')';
+      return '<div onclick="' + clickAction + '" style="display:flex;align-items:center;gap:0.65rem;padding:0.6rem 0.5rem;margin:0 -0.5rem;border-radius:8px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid #f4f4f2" onmouseover="this.style.background=\'#fafaf8\'" onmouseout="this.style.background=\'transparent\'">'
         + '<span style="width:7px;height:7px;border-radius:50%;background:' + (DOTS[item.sev]||DOTS.info) + ';flex-shrink:0"></span>'
         + '<div style="flex:1;min-width:0">'
         +   '<div style="font-size:0.81rem;font-weight:600;color:#111">' + item.title + '</div>'
@@ -1240,5 +1247,52 @@
     });
   }
 
-  App.Dashboard = { render: render, _setView: _setDashView, _profileModal: _profileModal };
+  // ── Pending Users Modal ────────────────────────────────────────────────────
+  function _pendingUsersModal() {
+    var users = (App.Store.get().pendingUsers || []);
+    var rows = users.length === 0
+      ? '<div class="py-8 text-center text-slate-400">No pending accounts</div>'
+      : users.map(function(u) {
+          return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 0;border-bottom:1px solid #f4f4f2">'
+            + '<div style="flex:1;min-width:0">'
+            +   '<div style="font-size:0.85rem;font-weight:600;color:#111">' + App.Utils.esc(u.name || u.email) + '</div>'
+            +   '<div style="font-size:0.75rem;color:#94a3b8">' + App.Utils.esc(u.email) + ' · ' + App.Utils.esc(u.role) + '</div>'
+            + '</div>'
+            + '<button onclick="App.Dashboard._verifyUser(' + u.id + ')" style="padding:0.35rem 0.7rem;font-size:0.72rem;font-weight:600;border:1px solid #10b981;border-radius:6px;background:#f0fdf4;color:#059669;cursor:pointer">Verify</button>'
+            + '<button onclick="App.Dashboard._resendVerification(' + u.id + ')" style="padding:0.35rem 0.7rem;font-size:0.72rem;font-weight:600;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;cursor:pointer">Resend</button>'
+            + '</div>';
+        }).join('');
+
+    App.Utils.showModal(
+      '<div style="max-width:480px">'
+      + '<h2 class="text-lg font-bold mb-1">Pending Verification Accounts</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">These users registered but haven\'t verified their email yet.</p>'
+      + rows
+      + '</div>'
+    );
+  }
+
+  async function _verifyUser(id) {
+    var res = await App.Api.post('/api/users/' + id + '/verify');
+    if (res && !res.error) {
+      App.Utils.showToast('Account activated', 'success');
+      App.Utils.hideModal(true);
+    }
+  }
+
+  async function _resendVerification(id) {
+    var res = await App.Api.post('/api/users/' + id + '/resend-verification');
+    if (res && !res.error) {
+      App.Utils.showToast('Verification email sent', 'success');
+    }
+  }
+
+  App.Dashboard = {
+    render: render,
+    _setView: _setDashView,
+    _profileModal: _profileModal,
+    _pendingUsersModal: _pendingUsersModal,
+    _verifyUser: _verifyUser,
+    _resendVerification: _resendVerification
+  };
 })();

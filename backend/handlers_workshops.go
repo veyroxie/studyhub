@@ -66,8 +66,7 @@ func handleCreateWorkshop(db *DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "workshop_created", "workshop", ws.ID, ws.Name)
+			logAudit(db, c.Email, "workshop_created", "workshop", ws.ID, ws.Name)
 		}
 		w.WriteHeader(http.StatusCreated)
 		respond(w, ws)
@@ -100,8 +99,7 @@ func handleUpdateWorkshop(db *DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "workshop_updated", "workshop", id, ws.Name)
+			logAudit(db, c.Email, "workshop_updated", "workshop", id, ws.Name)
 		}
 		respond(w, ws)
 	}
@@ -116,10 +114,12 @@ func handleDeleteWorkshop(db *DB) http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		tid := tenantID(c)
-		db.Exec(`UPDATE workshops SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
+		if _, err := db.Exec(`UPDATE workshops SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+			respondError(w, "could not delete workshop", 500)
+			return
+		}
 		if c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "workshop_deleted", "workshop", id, "soft deleted")
+			logAudit(db, c.Email, "workshop_deleted", "workshop", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

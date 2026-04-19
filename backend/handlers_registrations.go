@@ -145,8 +145,11 @@ func handleRegister(db *DB) http.HandlerFunc {
 				emergencyNote += " · " + body.EmergencyPhone
 			}
 		}
-		tx.Exec(`INSERT INTO families(id,tenant_id,name,contact,phone,parent_name,referral_code,notes) VALUES(?,?,?,?,?,?,?,?)`,
-			famID, 1, familyName, email, body.Phone, body.ParentName, newReferralCode(), emergencyNote)
+		if _, err := tx.Exec(`INSERT INTO families(id,tenant_id,name,contact,phone,parent_name,referral_code,notes) VALUES(?,?,?,?,?,?,?,?)`,
+			famID, 1, familyName, email, body.Phone, body.ParentName, newReferralCode(), emergencyNote); err != nil {
+			respondError(w, "could not create family", 500)
+			return
+		}
 
 		if err := tx.Commit(); err != nil {
 			respondError(w, "server error", 500)
@@ -164,8 +167,7 @@ func handleRegister(db *DB) http.HandlerFunc {
 			logFromReq(r).Error("parent verify mail send failed", "err", err, "email", email)
 		}
 
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			email, "parent_self_registered", "user", fmt.Sprintf("%d", userID), "family_id="+famID)
+		logAudit(db, email, "parent_self_registered", "user", fmt.Sprintf("%d", userID), "family_id="+famID)
 
 		w.WriteHeader(http.StatusCreated)
 		respond(w, map[string]string{
@@ -185,7 +187,10 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 		var approveBody struct {
 			ClassIds []string `json:"classIds"`
 		}
-		json.NewDecoder(r.Body).Decode(&approveBody)
+		if err := json.NewDecoder(r.Body).Decode(&approveBody); err != nil && err.Error() != "EOF" {
+			respondError(w, "bad request body", http.StatusBadRequest)
+			return
+		}
 
 		var reg Registration
 		err := db.QueryRow(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes,COALESCE(type,'student'),COALESCE(specialization,''),COALESCE(nric,''),COALESCE(display_name,''),COALESCE(employment_type,'Full-time'),COALESCE(experience,''),COALESCE(qualifications,''),COALESCE(expected_salary,''),COALESCE(referral_code,'') FROM registrations WHERE id=?`, id).
@@ -239,6 +244,17 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 			parentEmail := strings.ToLower(strings.TrimSpace(reg.Email))
 			var famID string
 			tx.QueryRow(`SELECT id FROM families WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, parentEmail, tid, tid).Scan(&famID)
+			if famID == "" {
+				// Parent has no family record (e.g. admin-created account).
+				// Create one so the student is linked and visible to the parent.
+				famID = generateID("FAM")
+				familyName := reg.ParentName + " Family"
+				if reg.ParentName == "" {
+					familyName = parentEmail
+				}
+				tx.Exec(`INSERT INTO families(id,tenant_id,name,contact,phone,parent_name,referral_code) VALUES(?,?,?,?,?,?,?)`,
+					famID, tid, familyName, parentEmail, reg.Phone, reg.ParentName, newReferralCode())
+			}
 
 			stuID := generateID("STU")
 			// If admin picked classes during approval, enrol immediately.
@@ -267,8 +283,7 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 					if _, err := tx.Exec(`INSERT INTO referral_rewards(id,tenant_id,referrer_family_id,referred_student_id,status) VALUES(?,?,?,?,'pending') ON CONFLICT(referred_student_id) DO NOTHING`,
 						generateID("REF"), tid, referrerFamID, stuID); err == nil {
 						tx.Exec(`UPDATE students SET referred_by_family_id=? WHERE id=?`, referrerFamID, stuID)
-						tx.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-							c.Email, "referral_validated", "student", stuID, "code="+code+" referrer="+referrerFamID)
+						logAudit(tx, c.Email, "referral_validated", "student", stuID, "code="+code+" referrer="+referrerFamID)
 					}
 				}
 			}
@@ -421,16 +436,14 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 					if _, err := tx.Exec(`INSERT INTO referral_rewards(id,tenant_id,referrer_family_id,referred_student_id,status) VALUES(?,?,?,?,'pending') ON CONFLICT(referred_student_id) DO NOTHING`,
 						generateID("REF"), tid, referrerFamID, stuID); err == nil {
 						tx.Exec(`UPDATE students SET referred_by_family_id=? WHERE id=?`, referrerFamID, stuID)
-						tx.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-							c.Email, "referral_validated", "student", stuID, "code="+code+" referrer="+referrerFamID)
+						logAudit(tx, c.Email, "referral_validated", "student", stuID, "code="+code+" referrer="+referrerFamID)
 					}
 				} else {
 					reason := "code_not_found"
 					if referrerFamID == famID {
 						reason = "self_referral"
 					}
-					tx.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-						c.Email, "referral_rejected", "student", stuID, "code="+code+" reason="+reason)
+					logAudit(tx, c.Email, "referral_rejected", "student", stuID, "code="+code+" reason="+reason)
 				}
 			}
 
@@ -478,8 +491,7 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 					l.Info("teacher approved, set-password email sent")
 				}
 			}
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "teacher_approved", "user", fmt.Sprintf("%d", pendingTeacherUserID), pendingTeacherEmail)
+			logAudit(db, c.Email, "teacher_approved", "user", fmt.Sprintf("%d", pendingTeacherUserID), pendingTeacherEmail)
 		}
 
 		respond(w, responseData)
@@ -539,8 +551,7 @@ func handleEnrollmentRequest(db *DB) http.HandlerFunc {
 			return
 		}
 
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "enrollment_requested", "registration", id, req.StudentFirstName+" "+req.StudentLastName)
+		logAudit(db, c.Email, "enrollment_requested", "registration", id, req.StudentFirstName+" "+req.StudentLastName)
 
 		// Validate referral code at submission time. We DON'T block the
 		// enrollment if the code is invalid — we just include a warning so
@@ -555,7 +566,9 @@ func handleEnrollmentRequest(db *DB) http.HandlerFunc {
 			} else if referrerFamID == famID {
 				codeWarning = "You can't use your own referral code. The enrolment has been submitted without a referral."
 				// Clear the invalid self-referral from the row.
-				db.Exec(`UPDATE registrations SET referral_code='' WHERE id=?`, id)
+				if _, err := db.Exec(`UPDATE registrations SET referral_code='' WHERE id=?`, id); err != nil {
+					logFromReq(r).Error("failed to clear self-referral code", "err", err, "registration_id", id)
+				}
 			}
 		}
 
@@ -584,8 +597,7 @@ func handleRegistrationReject(db *DB) http.HandlerFunc {
 			return
 		}
 		if c := claimsFrom(r); c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "registration_rejected", "registration", id, "")
+			logAudit(db, c.Email, "registration_rejected", "registration", id, "")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -656,8 +668,7 @@ func handleRegisterTeacher(db *DB) http.HandlerFunc {
 			l.Error("teacher register token create failed", "err", terr)
 		}
 
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			email, "teacher_self_registered", "registration", id, reg.FullName)
+		logAudit(db, email, "teacher_self_registered", "registration", id, reg.FullName)
 
 		w.WriteHeader(http.StatusCreated)
 		respond(w, map[string]string{

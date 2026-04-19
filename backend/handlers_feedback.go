@@ -230,8 +230,7 @@ func handleCreateFeedback(db *DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "feedback_created", "feedback", f.ID, "class="+f.ClassID)
+			logAudit(db, c.Email, "feedback_created", "feedback", f.ID, "class="+f.ClassID)
 		}
 		w.WriteHeader(http.StatusCreated)
 		respond(w, f)
@@ -268,8 +267,7 @@ func handleUpdateFeedback(db *DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "feedback_updated", "feedback", id, "")
+			logAudit(db, c.Email, "feedback_updated", "feedback", id, "")
 		}
 		respond(w, f)
 	}
@@ -284,10 +282,12 @@ func handleDeleteFeedback(db *DB) http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		tid := tenantID(c)
-		db.Exec(`UPDATE feedback SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
+		if _, err := db.Exec(`UPDATE feedback SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+			respondError(w, "could not delete feedback", 500)
+			return
+		}
 		if c := claimsFrom(r); c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "feedback_deleted", "feedback", id, "soft deleted")
+			logAudit(db, c.Email, "feedback_deleted", "feedback", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

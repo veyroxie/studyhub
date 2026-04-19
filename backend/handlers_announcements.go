@@ -122,8 +122,7 @@ func handleAnnouncementDelete(db *DB) http.HandlerFunc {
 			respondError(w, "could not delete announcement", 500)
 			return
 		}
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "announcement_deleted", "announcement", id, "deleted")
+		logAudit(db, c.Email, "announcement_deleted", "announcement", id, "deleted")
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -162,14 +161,19 @@ func handleAnnouncementApprove(db *DB) http.HandlerFunc {
 		var body struct {
 			Status string `json:"status"`
 		}
-		json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err.Error() != "EOF" {
+			respondError(w, "bad request body", http.StatusBadRequest)
+			return
+		}
 		if body.Status == "" {
 			body.Status = "published"
 		}
 		tid := tenantID(c)
-		db.Exec(`UPDATE announcements SET status=? WHERE id=? AND (tenant_id=? OR ?=0)`, body.Status, id, tid, tid)
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "announcement_"+body.Status, "announcement", id, "status changed to "+body.Status)
+		if _, err := db.Exec(`UPDATE announcements SET status=? WHERE id=? AND (tenant_id=? OR ?=0)`, body.Status, id, tid, tid); err != nil {
+			respondError(w, "could not update announcement", 500)
+			return
+		}
+		logAudit(db, c.Email, "announcement_"+body.Status, "announcement", id, "status changed to "+body.Status)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

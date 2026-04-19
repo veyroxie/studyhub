@@ -52,6 +52,8 @@ jobs:
         run: |
           go mod download
           go mod verify
+          go mod tidy
+          git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum not tidy — run 'go mod tidy' and commit" && exit 1)
 
       - name: go vet
         working-directory: backend
@@ -94,3 +96,24 @@ jobs:
             node --check "$f"
           done
           echo "All JS files parse cleanly"
+
+  # ── CHANGELOG check (PRs only) ──────────────────────────────────────────────
+  # Reminds you to update CHANGELOG.md on every PR. Keeps the log honest.
+  changelog:
+    name: CHANGELOG updated
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check CHANGELOG.md was modified
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^CHANGELOG.md$'; then
+            echo "CHANGELOG.md updated"
+          else
+            echo "::warning::CHANGELOG.md was not updated in this PR. If the change is user-visible, please add an entry."
+          fi

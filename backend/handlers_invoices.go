@@ -111,15 +111,17 @@ func handleInvoices(db *DB) http.HandlerFunc {
 
 			// Server-side referral credit validation: if the client claims a
 			// referral credit, verify the student's family actually has an
-			// earned reward with remaining credits. Silently zero the credit
-			// if not — don't block the invoice creation.
+			// earned reward with remaining credits. Zero the credit only when
+			// the family genuinely has no rewards — not on transient DB errors.
 			if inv.ReferralCredit > 0 {
 				var famID string
-				db.QueryRow(`SELECT family_id FROM students WHERE id=?`, inv.StudentID).Scan(&famID)
-				var earned int
-				db.QueryRow(`SELECT COUNT(*) FROM referral_rewards WHERE referrer_family_id=? AND status='earned' AND credits_remaining > 0`, famID).Scan(&earned)
-				if earned == 0 {
+				if err := db.QueryRow(`SELECT family_id FROM students WHERE id=?`, inv.StudentID).Scan(&famID); err != nil || famID == "" {
 					inv.ReferralCredit = 0
+				} else {
+					var earned int
+					if err := db.QueryRow(`SELECT COUNT(*) FROM referral_rewards WHERE referrer_family_id=? AND status='earned' AND credits_remaining > 0`, famID).Scan(&earned); err == nil && earned == 0 {
+						inv.ReferralCredit = 0
+					}
 				}
 			}
 
@@ -147,19 +149,26 @@ func handleInvoicePay(db *DB) http.HandlerFunc {
 		}
 		if c != nil && c.Role == "parent" {
 			var ownerEmail string
-			db.QueryRow(`SELECT contact FROM students WHERE id=?`, studentID).Scan(&ownerEmail)
+			if err := db.QueryRow(`SELECT contact FROM students WHERE id=?`, studentID).Scan(&ownerEmail); err != nil {
+				logFromReq(r).Error("failed to look up student contact for invoice ownership", "err", err, "student_id", studentID)
+			}
 			if ownerEmail != c.Email {
 				respondError(w, "not your invoice", 403)
 				return
 			}
 		}
 
-		// Decode optional body (status override, payment method)
+		// Decode optional body (status override, payment method).
+		// Body may be empty for simple mark-paid — only error on
+		// genuinely malformed JSON, not EOF.
 		var body struct {
 			Status        string `json:"status"`
 			PaymentMethod string `json:"paymentMethod"`
 		}
-		json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err.Error() != "EOF" {
+			respondError(w, "bad request body", http.StatusBadRequest)
+			return
+		}
 		newStatus := "Paid"
 		if body.Status != "" {
 			newStatus = body.Status
@@ -173,8 +182,7 @@ func handleInvoicePay(db *DB) http.HandlerFunc {
 		}
 		if c != nil {
 			detail := fmt.Sprintf(`{"studentId":"%s","amount":%.2f,"paidOn":"%s","method":"%s"}`, studentID, amount, t, body.PaymentMethod)
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "invoice_paid", "invoice", id, detail)
+			logAudit(db, c.Email, "invoice_paid", "invoice", id, detail)
 		}
 		// Referral milestone: re-evaluate the referred student's progress.
 		// Only relevant for Monthly invoices, but the helper checks itself.
@@ -187,7 +195,9 @@ func handleInvoicePay(db *DB) http.HandlerFunc {
 		// This closes the "did you get my money?" feedback loop.
 		if c != nil && c.Role == "parent" {
 			var description string
-			db.QueryRow(`SELECT description FROM invoices WHERE id=?`, id).Scan(&description)
+			if err := db.QueryRow(`SELECT description FROM invoices WHERE id=?`, id).Scan(&description); err != nil {
+				description = "Invoice " + id
+			}
 			go func() {
 				if err := mailer.Send(c.Email, "Payment received — "+description, renderPaymentReceivedEmail(
 					c.Name, description, fmt.Sprintf("%.2f", amount), body.PaymentMethod,

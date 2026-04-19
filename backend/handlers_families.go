@@ -67,8 +67,7 @@ func handleFamilies(db *DB) http.HandlerFunc {
 				respondError(w, "server error", 500)
 				return
 			}
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "family_created", "family", f.ID, f.Name)
+			logAudit(db, c.Email, "family_created", "family", f.ID, f.Name)
 			w.WriteHeader(http.StatusCreated)
 			respond(w, f)
 		}
@@ -120,8 +119,7 @@ func handleFamilyPDPADelete(db *DB) http.HandlerFunc {
 			return
 		}
 
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "pdpa_account_deleted", "family", famID, "contact="+contact)
+		logAudit(db, c.Email, "pdpa_account_deleted", "family", famID, "contact="+contact)
 		logger.Info("PDPA account deleted", "family_id", famID, "contact", contact, "admin", c.Email)
 
 		respond(w, map[string]string{"message": "Account and associated data have been anonymised."})
@@ -150,16 +148,14 @@ func handleFamilyByID(db *DB) http.HandlerFunc {
 				respondError(w, "could not update family", 500)
 				return
 			}
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "family_updated", "family", id, f.Name)
+			logAudit(db, c.Email, "family_updated", "family", id, f.Name)
 			respond(w, f)
 		case http.MethodDelete:
 			if _, err := db.Exec(`UPDATE families SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
 				respondError(w, "could not delete family", 500)
 				return
 			}
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "family_deleted", "family", id, "soft deleted")
+			logAudit(db, c.Email, "family_deleted", "family", id, "soft deleted")
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}

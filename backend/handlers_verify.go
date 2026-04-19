@@ -44,8 +44,7 @@ func handleVerifyEmail(db *DB) http.HandlerFunc {
 
 		// ── Teacher branch: confirm only, no login ─────────────────────────
 		if t.Purpose == tokenPurposeVerifyTeacher {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				t.Email, "teacher_email_verified", "registration", nullStrFromPtr(&t.RegistrationID), "")
+			logAudit(db, t.Email, "teacher_email_verified", "registration", nullStrFromPtr(&t.RegistrationID), "")
 			respond(w, map[string]any{
 				"type":       "teacher",
 				"message":    "Email confirmed. Your application is now in our review queue — we'll be in touch within 3-5 business days.",
@@ -89,8 +88,7 @@ func handleVerifyEmail(db *DB) http.HandlerFunc {
 			SameSite: http.SameSiteLaxMode,
 		})
 
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			email, "email_verified", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
+		logAudit(db, email, "email_verified", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
 
 		respond(w, map[string]any{
 			"type":       "parent",
@@ -172,8 +170,7 @@ func handleResendVerification(db *DB) http.HandlerFunc {
 			} else {
 				l.Info("verification resent")
 			}
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				req.Email, "verification_resent", "user", fmt.Sprintf("%d", userID), "parent")
+			logAudit(db, req.Email, "verification_resent", "user", fmt.Sprintf("%d", userID), "parent")
 			respond(w, generic)
 			return
 		}
@@ -199,8 +196,7 @@ func handleResendVerification(db *DB) http.HandlerFunc {
 			} else {
 				l.Info("teacher verification resent")
 			}
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				req.Email, "verification_resent", "registration", regID, "teacher")
+			logAudit(db, req.Email, "verification_resent", "registration", regID, "teacher")
 			respond(w, generic)
 			return
 		}

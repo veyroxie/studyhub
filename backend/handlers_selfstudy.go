@@ -165,8 +165,7 @@ func handleCreateSelfStudy(db *DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "self_study_created", "self_study", s.ID, "student="+s.StudentID)
+			logAudit(db, c.Email, "self_study_created", "self_study", s.ID, "student="+s.StudentID)
 		}
 		w.WriteHeader(http.StatusCreated)
 		respond(w, s)
@@ -182,10 +181,12 @@ func handleDeleteSelfStudy(db *DB) http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		tid := tenantID(c)
-		db.Exec(`UPDATE self_study_sessions SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
+		if _, err := db.Exec(`UPDATE self_study_sessions SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+			respondError(w, "could not delete session", 500)
+			return
+		}
 		if c := claimsFrom(r); c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "self_study_deleted", "self_study", id, "soft deleted")
+			logAudit(db, c.Email, "self_study_deleted", "self_study", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

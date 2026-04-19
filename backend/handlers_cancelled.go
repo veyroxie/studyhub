@@ -65,8 +65,7 @@ func handleCreateCancelledClass(db *DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "class_cancelled", "cancelled_class", cc.ID, "class="+cc.ClassID+" date="+cc.Date)
+			logAudit(db, c.Email, "class_cancelled", "cancelled_class", cc.ID, "class="+cc.ClassID+" date="+cc.Date)
 		}
 		w.WriteHeader(http.StatusCreated)
 		respond(w, cc)

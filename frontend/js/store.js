@@ -41,7 +41,8 @@
     families: [],
     feedbackReplies: [],
     referralRewards: [],
-    registrations: []
+    registrations: [],
+    pendingUsers: []
   };
 
   function loadState() {

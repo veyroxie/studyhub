@@ -9,7 +9,7 @@
     try { _readIds = JSON.parse(sessionStorage.getItem(_SS_KEY) || '{}'); } catch(e) { _readIds = {}; }
   }
   function _saveRead() {
-    try { sessionStorage.setItem(_SS_KEY, JSON.stringify(_readIds)); } catch(e) {}
+    try { sessionStorage.setItem(_SS_KEY, JSON.stringify(_readIds)); } catch(e) { console.error('notifs save failed', e); }
   }
   _loadRead();
 

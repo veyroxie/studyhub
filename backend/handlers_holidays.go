@@ -74,8 +74,7 @@ func handleCreateHoliday(db *DB) http.HandlerFunc {
 			respondError(w, "server error", 500)
 			return
 		}
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "holiday_created", "holiday", h.ID, h.Name+" on "+h.Date)
+		logAudit(db, c.Email, "holiday_created", "holiday", h.ID, h.Name+" on "+h.Date)
 		w.WriteHeader(http.StatusCreated)
 		respond(w, h)
 	}
@@ -109,8 +108,7 @@ func handleUpdateHoliday(db *DB) http.HandlerFunc {
 			respondError(w, "holiday not found", 404)
 			return
 		}
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "holiday_updated", "holiday", id, h.Name)
+		logAudit(db, c.Email, "holiday_updated", "holiday", id, h.Name)
 		respond(w, h)
 	}
 }
@@ -125,8 +123,7 @@ func handleDeleteHoliday(db *DB) http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		tid := tenantID(c)
 		db.Exec(`UPDATE holidays SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "holiday_deleted", "holiday", id, "soft deleted")
+		logAudit(db, c.Email, "holiday_deleted", "holiday", id, "soft deleted")
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

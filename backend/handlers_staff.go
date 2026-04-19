@@ -109,8 +109,7 @@ func handleStaffByID(db *DB) http.HandlerFunc {
 				return
 			}
 			if c != nil {
-				db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-					c.Email, "staff_updated", "staff", id, s.Name)
+				logAudit(db, c.Email, "staff_updated", "staff", id, s.Name)
 			}
 			respond(w, s)
 
@@ -120,10 +119,12 @@ func handleStaffByID(db *DB) http.HandlerFunc {
 				return
 			}
 			tid := tenantID(c)
-			db.Exec(`UPDATE staff SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
+			if _, err := db.Exec(`UPDATE staff SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+				respondError(w, "could not delete staff", 500)
+				return
+			}
 			if c != nil {
-				db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-					c.Email, "staff_deleted", "staff", id, "soft deleted")
+				logAudit(db, c.Email, "staff_deleted", "staff", id, "soft deleted")
 			}
 			w.WriteHeader(http.StatusNoContent)
 		}

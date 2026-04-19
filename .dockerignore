@@ -1,0 +1,43 @@
+# Version control
+.git
+.gitignore
+
+# Documentation (not needed in image)
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE
+notes.txt
+
+# CI/CD
+.github/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python dev artifacts (analytics has its own Dockerfile)
+__pycache__/
+*.pyc
+services/analytics/.venv/
+services/analytics/venv/
+
+# Go test artifacts
+backend/*_test.go
+backend/testdata/
+
+# Docker-in-Docker
+docker-compose*.yml
+
+# Backups (mounted as volume, not baked in)
+backups/
+
+# Claude / AI
+.claude/

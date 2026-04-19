@@ -117,8 +117,7 @@ func handleCreatePerformanceReview(db *DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "performance_review_created", "performance_review", p.ID, "staff="+p.StaffID)
+			logAudit(db, c.Email, "performance_review_created", "performance_review", p.ID, "staff="+p.StaffID)
 		}
 		w.WriteHeader(http.StatusCreated)
 		respond(w, p)
@@ -136,8 +135,7 @@ func handleDeletePerformanceReview(db *DB) http.HandlerFunc {
 		tid := tenantID(c)
 		db.Exec(`UPDATE performance_reviews SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
 		if c := claimsFrom(r); c != nil {
-			db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-				c.Email, "performance_review_deleted", "performance_review", id, "soft deleted")
+			logAudit(db, c.Email, "performance_review_deleted", "performance_review", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

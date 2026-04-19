@@ -120,15 +120,19 @@ func handleLogin(db *DB) http.HandlerFunc {
 			const maxAttempts = 5
 			const lockDuration = 15 * time.Minute
 			if newCount >= maxAttempts {
-				db.Exec(
+				if _, err := db.Exec(
 					`UPDATE users SET failed_login_count=?, locked_until=? WHERE id=?`,
 					newCount, time.Now().Add(lockDuration), id,
-				)
+				); err != nil {
+					logFromReq(r).Error("failed to lock account", "err", err, "user_id", id)
+				}
 				logFromReq(r).Warn("account locked after failed logins", "email", req.Email, "user_id", id, "attempts", newCount)
 				respondError(w, fmt.Sprintf("account locked after %d failed attempts — try again in %d minutes", maxAttempts, int(lockDuration.Minutes())), http.StatusForbidden)
 				return
 			}
-			db.Exec(`UPDATE users SET failed_login_count=? WHERE id=?`, newCount, id)
+			if _, err := db.Exec(`UPDATE users SET failed_login_count=? WHERE id=?`, newCount, id); err != nil {
+				logFromReq(r).Error("failed to update login failure count", "err", err, "user_id", id)
+			}
 			respondError(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
@@ -137,7 +141,9 @@ func handleLogin(db *DB) http.HandlerFunc {
 		// who got their password wrong twice doesn't carry that history
 		// forever.
 		if failedCount > 0 || lockedUntil.Valid {
-			db.Exec(`UPDATE users SET failed_login_count=0, locked_until=NULL WHERE id=?`, id)
+			if _, err := db.Exec(`UPDATE users SET failed_login_count=0, locked_until=NULL WHERE id=?`, id); err != nil {
+				logFromReq(r).Error("failed to reset login failure count", "err", err, "user_id", id)
+			}
 		}
 
 		// Block login until the email has been verified. Frontend looks for

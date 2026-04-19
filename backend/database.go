@@ -504,7 +504,10 @@ func migrateStudentsToFamilies(db *sql.DB) {
 
 	for rows.Next() {
 		var contact, parentName, phone string
-		rows.Scan(&contact, &parentName, &phone)
+		if err := rows.Scan(&contact, &parentName, &phone); err != nil {
+			logger.Error("failed to scan family migration row", "err", err)
+			continue
+		}
 
 		var existingID string
 		db.QueryRow(`SELECT id FROM families WHERE contact = $1`, contact).Scan(&existingID)

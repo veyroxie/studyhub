@@ -8,6 +8,30 @@ dated section when you cut a deploy.
 
 ## [Unreleased]
 
+### Changed — Production hardening (greenre standard audit)
+
+- **`.dockerignore` added** — excludes `.git/`, docs, tests, IDE files from
+  Docker build context. Faster builds, smaller layer cache, no history leak.
+- **Dockerfile optimized** — Go binary now built with `-trimpath -s -w` flags
+  (strips debug symbols + paths). Binary ~30% smaller, no local path info in
+  stack traces.
+- **Build-time version embedding** — `docker compose build` now accepts a
+  `VERSION` build arg (via `ldflags -X main.buildVersion`). Surfaces in
+  `/api/health` response and startup log. Defaults to `dev` for local builds.
+- **All startup logging unified to slog** — replaced `log.Printf` / `log.Fatal`
+  calls in `main()` with structured `logger.Info` / `logger.Warn` /
+  `logger.Error`. Every line from boot to shutdown is now structured JSON in
+  production (greppable, ships to log aggregators).
+- **`docker-compose.yml` env gaps filled** — added `APP_ENV` (defaults to
+  `production`), `RESEND_API_KEY`, `EMAIL_FROM`, `APP_URL` to the `api`
+  service. Container no longer silently runs in dev mode.
+- **PR template** — `.github/pull_request_template.md` with Summary, Key
+  Changes, and Test Plan sections.
+- **CI pipeline improved** — `go mod tidy` drift detection (fails if go.mod/
+  go.sum are stale), CHANGELOG update reminder on PRs.
+- **Conventional commit format** — CONTRIBUTING.md now specifies
+  `<type>(<scope>): <summary>` format with examples.
+
 ### Added — Class assignment, PDPA deletion, parent profile, enrollment email
 
 - **Class assignment dropdown on enrollment approval** — when admin approves

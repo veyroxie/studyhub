@@ -5,7 +5,11 @@ WORKDIR /app
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ .
-RUN CGO_ENABLED=0 GOOS=linux go build -o studyhub .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -trimpath \
+    -ldflags="-s -w -X main.buildVersion=${VERSION}" \
+    -o studyhub .
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates postgresql16-client bash s3cmd && \

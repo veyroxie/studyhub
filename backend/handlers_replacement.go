@@ -116,7 +116,10 @@ func handleCreateReplacementCredit(db *DB) http.HandlerFunc {
 			defer tx.Rollback()
 
 			var earned, used int
-			tx.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND category=? AND (tenant_id=? OR ?=0)`, rc.StudentID, rc.Category, tid, tid).Scan(&earned, &used)
+			if err := tx.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND category=? AND (tenant_id=? OR ?=0)`, rc.StudentID, rc.Category, tid, tid).Scan(&earned, &used); err != nil {
+				respondError(w, "server error", 500)
+				return
+			}
 			balance := earned - used
 			if rc.Minutes > balance {
 				catLabel := "class"
@@ -145,8 +148,7 @@ func handleCreateReplacementCredit(db *DB) http.HandlerFunc {
 				return
 			}
 		}
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "replacement_credit_"+rc.Type, "replacement_credit", rc.ID, fmt.Sprintf("student=%s credits=%d category=%s", rc.StudentID, rc.Minutes, rc.Category))
+		logAudit(db, c.Email, "replacement_credit_"+rc.Type, "replacement_credit", rc.ID, fmt.Sprintf("student=%s credits=%d category=%s", rc.StudentID, rc.Minutes, rc.Category))
 		w.WriteHeader(http.StatusCreated)
 		respond(w, rc)
 	}
@@ -161,9 +163,11 @@ func handleDeleteReplacementCredit(db *DB) http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		tid := tenantID(c)
-		db.Exec(`DELETE FROM replacement_credits WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
-		db.Exec(`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-			c.Email, "replacement_credit_deleted", "replacement_credit", id, "deleted")
+		if _, err := db.Exec(`DELETE FROM replacement_credits WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+			respondError(w, "could not delete replacement credit", 500)
+			return
+		}
+		logAudit(db, c.Email, "replacement_credit_deleted", "replacement_credit", id, "deleted")
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -185,8 +189,14 @@ func handleReplacementBalance(db *DB) http.HandlerFunc {
 		}
 		tid := tenantID(c)
 		var classEarned, classUsed, ssEarned, ssUsed int
-		db.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND COALESCE(category,'class')='class' AND (tenant_id=? OR ?=0)`, studentID, tid, tid).Scan(&classEarned, &classUsed)
-		db.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND category='self-study' AND (tenant_id=? OR ?=0)`, studentID, tid, tid).Scan(&ssEarned, &ssUsed)
+		if err := db.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND COALESCE(category,'class')='class' AND (tenant_id=? OR ?=0)`, studentID, tid, tid).Scan(&classEarned, &classUsed); err != nil {
+			respondError(w, "server error", 500)
+			return
+		}
+		if err := db.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND category='self-study' AND (tenant_id=? OR ?=0)`, studentID, tid, tid).Scan(&ssEarned, &ssUsed); err != nil {
+			respondError(w, "server error", 500)
+			return
+		}
 		respond(w, map[string]any{
 			"class":     map[string]int{"earned": classEarned, "used": classUsed, "balance": classEarned - classUsed},
 			"selfStudy": map[string]int{"earned": ssEarned, "used": ssUsed, "balance": ssEarned - ssUsed},

@@ -136,5 +136,7 @@ func consumeEmailTokenAny(db *DB, token string, purposes ...string) (*emailToken
 // one — protects against an attacker reusing a leaked link after the user
 // requested a new one.
 func invalidateOldTokens(db *DB, email, purpose string) {
-	db.Exec(`UPDATE email_tokens SET used_at=NOW() WHERE email=? AND purpose=? AND used_at IS NULL`, email, purpose)
+	if _, err := db.Exec(`UPDATE email_tokens SET used_at=NOW() WHERE email=? AND purpose=? AND used_at IS NULL`, email, purpose); err != nil {
+		logger.Error("failed to invalidate old email tokens", "err", err, "email", email, "purpose", purpose)
+	}
 }
