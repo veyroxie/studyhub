@@ -589,8 +589,9 @@
 
   // ─── DELETE ─────────────────────────────────────────────────────────────────
 
-  function _delete(fbId) {
-    if (!confirm('Delete this feedback entry?')) return;
+  async function _delete(fbId) {
+    var ok = await App.Utils.showConfirm({ title: 'Delete feedback', message: 'Delete this feedback entry?', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     var existing = App.Store.get().feedback || [];
     App.Api.del('/api/feedback/' + fbId).then(function() {
       App.Store.set({ feedback: existing.filter(function(f) { return f.id !== fbId; }) });

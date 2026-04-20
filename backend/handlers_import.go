@@ -333,6 +333,79 @@ func parseSkolyDate(s string) string {
 	return year + "-" + month + "-" + day
 }
 
+// handleClearSeedData removes the seed/test data that was inserted by seedIfEmpty().
+// Only deletes records with the known seed IDs (STU001-STU012, c1-c8, INV*, etc.)
+// so real imported data is untouched.
+//
+// POST /api/admin/clear-seed
+func handleClearSeedData(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		l := logFromReq(r)
+
+		seedStudentIDs := []string{"STU001", "STU002", "STU003", "STU004", "STU005", "STU006", "STU007", "STU008", "STU009", "STU010", "STU011", "STU012"}
+		seedClassIDs := []string{"c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8"}
+		seedInvoiceIDs := []string{"INV001", "INV005", "INV006", "INV007", "INV012", "INV016", "INV017", "INV022", "INV026", "INV030"}
+		seedAttIDs := []string{"ATT013", "ATT014", "ATT015", "ATT016", "ATT017", "ATT018", "ATT019", "ATT020", "ATT021", "ATT022", "ATT023", "ATT024", "ATT025", "ATT026", "ATT027", "ATT028", "ATT029"}
+		seedFeedbackIDs := []string{"FB001", "FB002", "FB003", "FB004", "FB005"}
+		seedAnnIDs := []string{"ANN001", "ANN002", "ANN004"}
+		seedPayrollIDs := []string{"PAY001", "PAY002", "PAY003", "PAY004", "PAY009", "PAY010", "PAY011", "PAY012"}
+		seedSubjectIDs := []string{"sub1", "sub2", "sub3", "sub4", "sub5"}
+		seedWorkshopIDs := []string{"ws1", "ws2", "ws3"}
+		// Seed parent emails (these have test users + families)
+		seedParentEmails := []string{
+			"seeduser27@example.com", "seeduser10@example.com", "seeduser13@example.com",
+			"seeduser2@example.com", "seeduser32@example.com", "seeduser20@example.com",
+			"seeduser7@example.com", "seeduser35@example.com", "jihopark@korea.com",
+			"seeduser17@example.com", "seeduser6@example.com",
+		}
+
+		deleted := map[string]int{}
+
+		deleteByIDs := func(table string, ids []string) {
+			for _, id := range ids {
+				res, err := db.Exec(`DELETE FROM `+table+` WHERE id=?`, id)
+				if err != nil {
+					l.Error("clear-seed: delete failed", "table", table, "id", id, "err", err)
+					continue
+				}
+				if n, _ := res.RowsAffected(); n > 0 {
+					deleted[table] += int(n)
+				}
+			}
+		}
+
+		deleteByIDs("students", seedStudentIDs)
+		deleteByIDs("invoices", seedInvoiceIDs)
+		deleteByIDs("attendance", seedAttIDs)
+		deleteByIDs("feedback", seedFeedbackIDs)
+		deleteByIDs("announcements", seedAnnIDs)
+		deleteByIDs("payroll", seedPayrollIDs)
+		deleteByIDs("subjects", seedSubjectIDs)
+		deleteByIDs("workshops", seedWorkshopIDs)
+		deleteByIDs("classes", seedClassIDs)
+
+		// Delete seed parent users + families (but not admin/teacher users)
+		for _, email := range seedParentEmails {
+			res, _ := db.Exec(`DELETE FROM users WHERE email=? AND role='parent'`, email)
+			if n, _ := res.RowsAffected(); n > 0 {
+				deleted["users"] += int(n)
+			}
+			res, _ = db.Exec(`DELETE FROM families WHERE contact=?`, email)
+			if n, _ := res.RowsAffected(); n > 0 {
+				deleted["families"] += int(n)
+			}
+		}
+
+		logAudit(db, c.Email, "seed_data_cleared", "system", "clear-seed", fmt.Sprintf("%v", deleted))
+
+		respond(w, map[string]any{
+			"message": "Seed data cleared",
+			"deleted": deleted,
+		})
+	}
+}
+
 // skoolyData returns the hardcoded student data extracted from Skooly screenshots.
 func skoolyData() []skoolyStudent {
 	return []skoolyStudent{

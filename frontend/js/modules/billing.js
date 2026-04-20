@@ -742,8 +742,9 @@
     App.Router.refresh();
   }
 
-  function _deleteInvoice(invoiceId) {
-    if (!confirm('Delete this invoice? This cannot be undone.')) return;
+  async function _deleteInvoice(invoiceId) {
+    var ok = await App.Utils.showConfirm({ title: 'Delete invoice', message: 'This cannot be undone.', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     const state = App.Store.get();
     App.Store.set({ invoices: state.invoices.filter(function(inv) { return inv.id !== invoiceId; }) });
     App.Utils.showToast('Invoice deleted', 'info');

@@ -725,7 +725,8 @@
   }
 
   async function _rejectReg(regId) {
-    if (!confirm('Reject this registration?')) return;
+    var ok = await App.Utils.showConfirm({ title: 'Reject registration', message: 'This registration will be removed from the pending list.', confirmLabel: 'Reject', danger: true });
+    if (!ok) return;
     await App.Api.del('/api/registrations/' + regId);
     await App.Api.loadSnapshot();
     App.Notifs.refresh();
@@ -900,7 +901,8 @@
   }
 
   async function _deleteCredit(creditId, studentId) {
-    if (!confirm('Delete this replacement entry?')) return;
+    var ok = await App.Utils.showConfirm({ title: 'Delete replacement entry', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     try {
       await App.Api.del('/api/replacement-credits/' + creditId);
       App.Utils.showToast('Replacement entry deleted', 'info');
@@ -1322,21 +1324,18 @@
   };
 
   async function _pdpaDelete(familyId) {
-    if (!confirm('PDPA Account Deletion\n\nThis will permanently anonymise all personal data for this family, their children, and their parent account. Invoices will be retained for tax purposes but contact details will be redacted.\n\nThis cannot be undone. Continue?')) return;
-    if (!confirm('Are you absolutely sure? Type "delete" in the next prompt to confirm.')) return;
-    var confirmText = prompt('Type "delete" to confirm account deletion:');
-    if (confirmText !== 'delete') {
-      App.Utils.showToast('Deletion cancelled', 'info');
-      return;
-    }
+    var ok = await App.Utils.showConfirm({
+      title: 'Delete account (PDPA)',
+      message: 'This will permanently anonymise all personal data for this family, their children, and the parent account. Invoices kept for tax purposes but contact details will be redacted.<br><br><strong>This cannot be undone.</strong>',
+      confirmLabel: 'Delete permanently',
+      danger: true
+    });
+    if (!ok) return;
     try {
       await App.Api.del('/api/families/' + familyId + '/pdpa');
-      App.Utils.hideModal(true);
       App.Utils.showToast('Account deleted and data anonymised', 'success');
       await App.Api.loadSnapshot();
       App.Router.refresh();
-    } catch(err) {
-      // Error already toasted by App.Api
-    }
+    } catch(err) {}
   }
 })();

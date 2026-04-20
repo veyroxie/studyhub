@@ -903,8 +903,9 @@
     });
   }
 
-  function _deleteSubject(subId) {
-    if (!confirm('Delete this subject? Classes linked to it will not be removed.')) return;
+  async function _deleteSubject(subId) {
+    var ok = await App.Utils.showConfirm({ title: 'Delete subject', message: 'Classes linked to it will not be removed.', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     const state = App.Store.get();
     App.Api.del('/api/subjects/' + subId).then(function() {
       App.Store.set({ subjects: (state.subjects || []).filter(function(s) { return s.id !== subId; }) });
@@ -1061,8 +1062,9 @@
     });
   }
 
-  function _deleteClass(classId) {
-    if (!confirm('Delete this class? This cannot be undone.')) return;
+  async function _deleteClass(classId) {
+    var ok = await App.Utils.showConfirm({ title: 'Delete class', message: 'This cannot be undone.', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     var state = App.Store.get();
     App.Api.del('/api/classes/' + classId).then(function() {
       App.Store.set({ classes: state.classes.filter(function(c) { return c.id !== classId; }) });
@@ -1075,8 +1077,9 @@
     });
   }
 
-  function _deleteWorkshop(wsId) {
-    if (!confirm('Delete this workshop?')) return;
+  async function _deleteWorkshop(wsId) {
+    var ok = await App.Utils.showConfirm({ title: 'Delete workshop', message: 'Delete this workshop?', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     const state = App.Store.get();
     App.Api.del('/api/workshops/' + wsId).then(function() {
       App.Store.set({ workshops: (state.workshops || []).filter(function(w) { return w.id !== wsId; }) });
@@ -1189,8 +1192,9 @@
     });
   }
 
-  function _deleteHoliday(holId) {
-    if (!confirm('Delete this holiday/closure?')) return;
+  async function _deleteHoliday(holId) {
+    var ok = await App.Utils.showConfirm({ title: 'Delete holiday', message: 'Delete this holiday/closure?', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     App.Api.del('/api/holidays/' + holId).then(function() {
       App.Store.set({ holidays: (App.Store.get().holidays || []).filter(function(h) { return h.id !== holId; }) });
       App.Utils.showToast('Holiday deleted', 'info');

@@ -647,7 +647,8 @@
   }
 
   async function _rejectTeacher(regId) {
-    if (!confirm('Reject this application?')) return;
+    var ok = await App.Utils.showConfirm({ title: 'Reject application', message: 'This teacher application will be removed.', confirmLabel: 'Reject', danger: true });
+    if (!ok) return;
     try {
       await App.Api.del('/api/registrations/' + regId);
       await App.Api.loadSnapshot();

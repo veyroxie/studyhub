@@ -255,6 +255,53 @@
     });
   };
 
+  // ── Confirm Dialog (replaces browser confirm()) ─────────────────────────────
+  // Usage: App.Utils.showConfirm({ title, message, confirmLabel, danger }).then(ok => { if (ok) ... })
+  App.Utils.showConfirm = function(opts) {
+    opts = opts || {};
+    var title = opts.title || 'Are you sure?';
+    var message = opts.message || '';
+    var confirmLabel = opts.confirmLabel || 'Confirm';
+    var danger = opts.danger || false;
+
+    return new Promise(function(resolve) {
+      var id = 'confirm-' + Date.now();
+      var btnColor = danger
+        ? 'background:#ef4444;color:#fff;border:none'
+        : 'background:var(--gold, #C9A227);color:#0a0a0a;border:none';
+
+      var html = '<div style="padding:1.75rem">'
+        + '<div style="display:flex;align-items:flex-start;gap:0.85rem">'
+        +   (danger
+              ? '<div style="width:2.5rem;height:2.5rem;border-radius:50%;background:#fef2f2;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg></div>'
+              : '<div style="width:2.5rem;height:2.5rem;border-radius:50%;background:#fffbeb;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" fill="none" stroke="#C9A227" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg></div>')
+        +   '<div style="flex:1;min-width:0">'
+        +     '<h3 style="margin:0 0 0.35rem;font-size:1.05rem;font-weight:700;color:#111">' + App.Utils.esc(title) + '</h3>'
+        +     (message ? '<p style="margin:0;font-size:0.85rem;color:#64748b;line-height:1.5">' + message + '</p>' : '')
+        +   '</div>'
+        + '</div>'
+        + '<div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:1.5rem">'
+        +   '<button id="' + id + '-cancel" style="padding:0.5rem 1.1rem;font-size:0.82rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;cursor:pointer">Cancel</button>'
+        +   '<button id="' + id + '-ok" style="padding:0.5rem 1.1rem;font-size:0.82rem;font-weight:600;border-radius:8px;cursor:pointer;' + btnColor + '">' + App.Utils.esc(confirmLabel) + '</button>'
+        + '</div>'
+        + '</div>';
+
+      App.Utils.showModal(html);
+
+      // Prevent dirty-change warning on cancel
+      _modalDirty = false;
+
+      document.getElementById(id + '-cancel').addEventListener('click', function() {
+        App.Utils.hideModal(true);
+        resolve(false);
+      });
+      document.getElementById(id + '-ok').addEventListener('click', function() {
+        App.Utils.hideModal(true);
+        resolve(true);
+      });
+    });
+  };
+
   // Close modal on overlay click
   document.addEventListener('DOMContentLoaded', function() {
     // Hide the old toast element if it exists

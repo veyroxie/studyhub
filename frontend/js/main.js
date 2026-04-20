@@ -239,8 +239,9 @@
     input.click();
   }
 
-  function resetData() {
-    if (!confirm('Reset all data to defaults? This cannot be undone.')) return;
+  async function resetData() {
+    var ok = await App.Utils.showConfirm({ title: 'Reset all data', message: 'This will clear all data and restore defaults. This cannot be undone.', confirmLabel: 'Reset', danger: true });
+    if (!ok) return;
     App.Store.reset();
     App.Utils.showToast('Data reset to defaults', 'info');
     App.Router.refresh();

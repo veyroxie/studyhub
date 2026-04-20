@@ -297,6 +297,7 @@ func main() {
 			r.Post("/api/users/{id}/verify", handleUserVerify(db))
 			r.Post("/api/users/{id}/resend-verification", handleUserResendVerification(db))
 			r.Post("/api/admin/import", handleImport(db))
+			r.Post("/api/admin/clear-seed", handleClearSeedData(db))
 			r.Post("/api/registrations/{id}/approve", handleRegistrationApprove(db))
 			r.Delete("/api/registrations/{id}", handleRegistrationReject(db))
 			r.Get("/api/audit-logs", handleAuditLogs(db))

@@ -162,8 +162,9 @@
     App.Router.refresh();
   }
 
-  function _delete(annId) {
-    if (!confirm('Delete this announcement?')) return;
+  async function _delete(annId) {
+    var ok = await App.Utils.showConfirm({ title: 'Delete announcement', message: 'Delete this announcement?', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     App.Api.del('/api/announcements/' + annId).then(function() {
       return App.Api.loadSnapshot();
     }).then(function() {
@@ -185,8 +186,9 @@
     });
   }
 
-  function _reject(annId) {
-    if (!confirm('Reject and delete this announcement draft?')) return;
+  async function _reject(annId) {
+    var ok = await App.Utils.showConfirm({ title: 'Reject announcement', message: 'This draft will be deleted.', confirmLabel: 'Reject', danger: true });
+    if (!ok) return;
     App.Api.del('/api/announcements/' + annId).then(function() {
       return App.Api.loadSnapshot();
     }).then(function() {
