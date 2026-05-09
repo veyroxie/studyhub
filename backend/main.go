@@ -95,6 +95,7 @@ func main() {
 	seedIfEmpty(db)
 	initMailer()
 	startJobs(db)
+	startCron(db)
 
 	hub := newHub()
 	r := chi.NewRouter()
@@ -178,6 +179,7 @@ func main() {
 			r.Post("/", handleStudents(db))
 			r.Put("/{id}", handleStudent(db))
 			r.Delete("/{id}", handleStudent(db))
+			r.Post("/{id}/subscription", handleStudentSubscription(db))
 		})
 
 		r.Route("/api/classes", func(r chi.Router) {
@@ -199,6 +201,9 @@ func main() {
 			r.Post("/", handleInvoices(db))
 			r.Put("/{id}/pay", handleInvoicePay(db))
 		})
+
+		// Manual trigger for the monthly invoice cron — admin-only.
+		r.Post("/api/admin/cron/run-monthly-invoices", handleRunMonthlyCron(db))
 
 		r.Route("/api/announcements", func(r chi.Router) {
 			r.Get("/", handleAnnouncements(db))

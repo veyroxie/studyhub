@@ -455,6 +455,19 @@ func runMigrations(db *sql.DB) {
 		`CREATE INDEX IF NOT EXISTS idx_feedback_replies_tenant   ON feedback_replies(tenant_id, feedback_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_feedback_tenant_date      ON feedback(tenant_id, date DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_invoices_tenant_student   ON invoices(tenant_id, student_id)`,
+
+		// Subscription billing — per-student package + pause/resume state
+		`ALTER TABLE students ADD COLUMN IF NOT EXISTS package_amount NUMERIC DEFAULT 0`,
+		`ALTER TABLE students ADD COLUMN IF NOT EXISTS package_self_study_hours INTEGER DEFAULT 4`,
+		`ALTER TABLE students ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'active'`,
+		`ALTER TABLE students ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ`,
+		`ALTER TABLE students ADD COLUMN IF NOT EXISTS resumed_at TIMESTAMPTZ`,
+
+		// Reference number for non-cash payments (mandatory for bank transfer / QR pay)
+		`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS reference_no TEXT DEFAULT ''`,
+
+		// Referral discount: 3 months × RM10 per family that registered with a code
+		`ALTER TABLE families ADD COLUMN IF NOT EXISTS referral_credits_remaining INTEGER DEFAULT 0`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (index/row already exists = OK)

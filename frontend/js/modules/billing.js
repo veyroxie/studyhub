@@ -325,6 +325,8 @@
       + '</div>'
       // Admin proof upload area
       + '<div id="admin-proof-upload-area" style="display:none">'
+      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.4rem">Reference number <span style="color:#dc2626">*required</span></p>'
+      +   '<input type="text" id="admin-payment-ref" placeholder="e.g. bank slip / QR txn ID" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;margin-bottom:1rem">'
       +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#94a3b8;font-weight:400">(optional)</span></p>'
       +   '<div style="border:2px dashed #e2e8f0;border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'admin-proof-file\').click()">'
       +     '<input type="file" id="admin-proof-file" accept="image/*,.pdf" style="display:none" onchange="App.Billing._previewAdminProof(this)">'
@@ -396,6 +398,14 @@
   }
 
   function _adminSubmitWithProof(invId, method) {
+    var refInput = document.getElementById('admin-payment-ref');
+    var refNo = refInput ? refInput.value.trim() : '';
+    if (!refNo) {
+      App.Utils.showToast('Reference number is required for ' + method, 'error');
+      if (refInput) refInput.focus();
+      return;
+    }
+
     var fileInput = document.getElementById('admin-proof-file');
     var hasFile = fileInput && fileInput.files && fileInput.files[0];
 
@@ -421,23 +431,25 @@
         App.Store.set({ invoices: state.invoices.map(function(i) {
           return i.id === invId ? Object.assign({}, i, { paymentProof: data.path }) : i;
         })});
-        _confirmPaid(invId, method);
+        _confirmPaid(invId, method, refNo);
       })
       .catch(function() {
         if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Confirm Payment'; }
         App.Utils.showToast('Receipt upload failed — marking paid without receipt', 'warning');
-        _confirmPaid(invId, method);
+        _confirmPaid(invId, method, refNo);
       });
     } else {
-      _confirmPaid(invId, method);
+      _confirmPaid(invId, method, refNo);
     }
   }
 
-  function _confirmPaid(invId, method) {
+  function _confirmPaid(invId, method, refNo) {
     var { invoices } = App.Store.get();
     var inv = invoices.find(function(i) { return i.id === invId; });
     if (!inv) return;
-    App.Api.put('/api/invoices/' + invId + '/pay', { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method })
+    var payload = { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method };
+    if (refNo) payload.referenceNo = refNo;
+    App.Api.put('/api/invoices/' + invId + '/pay', payload)
       .then(function() {
         return App.Api.loadSnapshot();
       }).then(function() {
@@ -537,6 +549,8 @@
       + '</div>'
       // Proof upload area (hidden initially)
       + '<div id="proof-upload-area" style="display:none">'
+      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.4rem">Reference number <span style="color:#dc2626">*required</span></p>'
+      +   '<input type="text" id="parent-payment-ref" placeholder="bank slip or transaction ID" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;margin-bottom:1rem">'
       +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#94a3b8;font-weight:400">(optional)</span></p>'
       +   '<div id="proof-drop-zone" style="border:2px dashed #e2e8f0;border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'proof-file\').click()">'
       +     '<input type="file" id="proof-file" accept="image/*,.pdf" style="display:none" onchange="App.Billing._previewProof(this)">'
@@ -611,6 +625,14 @@
   }
 
   function _parentSubmitWithProof(invId, method) {
+    var refInput = document.getElementById('parent-payment-ref');
+    var refNo = refInput ? refInput.value.trim() : '';
+    if (!refNo) {
+      App.Utils.showToast('Reference number is required for ' + method, 'error');
+      if (refInput) refInput.focus();
+      return;
+    }
+
     var fileInput = document.getElementById('proof-file');
     var hasFile = fileInput && fileInput.files && fileInput.files[0];
 
@@ -637,28 +659,30 @@
         App.Store.set({ invoices: state.invoices.map(function(i) {
           return i.id === invId ? Object.assign({}, i, { paymentProof: data.path }) : i;
         })});
-        _parentConfirmSubmit(invId, method);
+        _parentConfirmSubmit(invId, method, refNo);
       })
       .catch(function(err) {
         if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Payment'; }
         App.Utils.showToast('Receipt upload failed — submitting without receipt', 'warning');
-        _parentConfirmSubmit(invId, method);
+        _parentConfirmSubmit(invId, method, refNo);
       });
     } else {
       // No file — submit anyway
-      _parentConfirmSubmit(invId, method);
+      _parentConfirmSubmit(invId, method, refNo);
     }
   }
 
-  function _parentConfirmSubmit(invId, method) {
+  function _parentConfirmSubmit(invId, method, refNo) {
     App.Utils.hideModal(true);
     // Call the backend so the payment submission actually persists.
     // Send status="Pending Verification" so admin knows the parent claims
     // they've paid but it hasn't been confirmed yet.
-    App.Api.put('/api/invoices/' + invId + '/pay', {
+    var payload = {
       status: 'Pending Verification',
       paymentMethod: method
-    }).then(function() {
+    };
+    if (refNo) payload.referenceNo = refNo;
+    App.Api.put('/api/invoices/' + invId + '/pay', payload).then(function() {
       return App.Api.loadSnapshot();
     }).then(function() {
       App.Utils.showToast('Payment submitted — admin will verify shortly', 'success');

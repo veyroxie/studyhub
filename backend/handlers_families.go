@@ -15,9 +15,9 @@ func listFamilies(db *DB, c *Claims) []Family {
 	var rows *sql.Rows
 	var err error
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,'') FROM families WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY name`, c.Email, tid, tid)
+		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,''),COALESCE(referral_credits_remaining,0) FROM families WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY name`, c.Email, tid, tid)
 	} else {
-		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,'') FROM families WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY name`, tid, tid)
+		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,''),COALESCE(referral_credits_remaining,0) FROM families WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY name`, tid, tid)
 	}
 	if err != nil {
 		return []Family{}
@@ -26,7 +26,7 @@ func listFamilies(db *DB, c *Claims) []Family {
 	out := []Family{}
 	for rows.Next() {
 		var f Family
-		if err := rows.Scan(&f.ID, &f.Name, &f.Contact, &f.Phone, &f.ParentName, &f.Address, &f.Notes, &f.ReferralCode); err != nil {
+		if err := rows.Scan(&f.ID, &f.Name, &f.Contact, &f.Phone, &f.ParentName, &f.Address, &f.Notes, &f.ReferralCode, &f.ReferralCreditsRemaining); err != nil {
 			continue
 		}
 		out = append(out, f)

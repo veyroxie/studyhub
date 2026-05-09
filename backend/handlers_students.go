@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -25,9 +26,9 @@ func listStudents(db *DB, c *Claims) []Student {
 	var err error
 	tid := tenantID(c)
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,'') FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, c.Email, tid, tid)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, c.Email, tid, tid)
 	} else {
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,'') FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, tid, tid)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, tid, tid)
 	}
 	if err != nil {
 		return []Student{}
@@ -37,14 +38,20 @@ func listStudents(db *DB, c *Claims) []Student {
 	for rows.Next() {
 		var s Student
 		var ec, sib string
-		var e2name, e2phone sql.NullString
-		if err := rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID); err != nil {
+		var e2name, e2phone, pausedAt, resumedAt sql.NullString
+		if err := rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID, &s.PackageAmount, &s.PackageSelfStudyHours, &s.SubscriptionStatus, &pausedAt, &resumedAt); err != nil {
 			continue
 		}
 		s.EnrolledClasses = parseArr(ec)
 		s.Siblings = parseArr(sib)
 		s.Emergency2Name = nullStr(e2name)
 		s.Emergency2Phone = nullStr(e2phone)
+		if pausedAt.Valid {
+			s.PausedAt = &pausedAt.String
+		}
+		if resumedAt.Valid {
+			s.ResumedAt = &resumedAt.String
+		}
 		out = append(out, s)
 	}
 	return out
@@ -57,10 +64,10 @@ func listStudentsPaged(db *DB, c *Claims, p Pagination) ([]Student, int) {
 	var err error
 	if c != nil && c.Role == "parent" {
 		db.QueryRow(`SELECT COUNT(*) FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, c.Email, tid, tid).Scan(&total)
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,'') FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
 	} else {
 		db.QueryRow(`SELECT COUNT(*) FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL`, tid, tid).Scan(&total)
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,'') FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
 	}
 	if err != nil {
 		return []Student{}, total
@@ -70,14 +77,20 @@ func listStudentsPaged(db *DB, c *Claims, p Pagination) ([]Student, int) {
 	for rows.Next() {
 		var s Student
 		var ec, sib string
-		var e2name, e2phone sql.NullString
-		if err := rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID); err != nil {
+		var e2name, e2phone, pausedAt, resumedAt sql.NullString
+		if err := rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID, &s.PackageAmount, &s.PackageSelfStudyHours, &s.SubscriptionStatus, &pausedAt, &resumedAt); err != nil {
 			continue
 		}
 		s.EnrolledClasses = parseArr(ec)
 		s.Siblings = parseArr(sib)
 		s.Emergency2Name = nullStr(e2name)
 		s.Emergency2Phone = nullStr(e2phone)
+		if pausedAt.Valid {
+			s.PausedAt = &pausedAt.String
+		}
+		if resumedAt.Valid {
+			s.ResumedAt = &resumedAt.String
+		}
 		out = append(out, s)
 	}
 	return out, total
@@ -134,8 +147,14 @@ func handleStudents(db *DB) http.HandlerFunc {
 				}
 				s.FamilyID = famID
 			}
-			_, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,medical_info,allergies,family_id,referred_by_family_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.ReferredByFamilyID)
+			if s.SubscriptionStatus == "" {
+				s.SubscriptionStatus = "active"
+			}
+			if s.PackageSelfStudyHours == 0 {
+				s.PackageSelfStudyHours = 4
+			}
+			_, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,medical_info,allergies,family_id,referred_by_family_id,package_amount,package_self_study_hours,subscription_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.ReferredByFamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.SubscriptionStatus)
 			if err != nil {
 				respondError(w, "server error", 500)
 				return
@@ -162,8 +181,8 @@ func handleStudent(db *DB) http.HandlerFunc {
 			}
 			s.ID = id
 			tid := tenantID(c)
-			if _, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,siblings=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=? WHERE id=? AND (tenant_id=? OR ?=0)`,
-				s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, id, tid, tid); err != nil {
+			if _, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,siblings=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=? WHERE id=? AND (tenant_id=? OR ?=0)`,
+				s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, id, tid, tid); err != nil {
 				respondError(w, "could not update student", 500)
 				return
 			}
@@ -178,5 +197,54 @@ func handleStudent(db *DB) http.HandlerFunc {
 			logAudit(db, c.Email, "student_deleted", "student", id, "soft deleted")
 			w.WriteHeader(http.StatusNoContent)
 		}
+	}
+}
+
+// handleStudentSubscription pauses, resumes, or freezes a student's monthly
+// subscription. Pausing skips them in the monthly invoice cron and hides them
+// from rosters; resuming restores them; freeze is a separate flag with the
+// same effect that's surfaced differently in reports.
+func handleStudentSubscription(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		if c == nil || c.Role != "admin" {
+			respondError(w, "admin only", 403)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var body struct {
+			Action string `json:"action"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondError(w, "bad body", 400)
+			return
+		}
+		var newStatus string
+		switch body.Action {
+		case "pause":
+			newStatus = "paused"
+		case "freeze":
+			newStatus = "frozen"
+		case "resume":
+			newStatus = "active"
+		default:
+			respondError(w, "action must be pause, freeze, or resume", 400)
+			return
+		}
+		tid := tenantID(c)
+		now := time.Now().UTC().Format(time.RFC3339)
+		if newStatus == "active" {
+			if _, err := db.Exec(`UPDATE students SET subscription_status=?, resumed_at=? WHERE id=? AND (tenant_id=? OR ?=0)`, newStatus, now, id, tid, tid); err != nil {
+				respondError(w, "could not update subscription", 500)
+				return
+			}
+		} else {
+			if _, err := db.Exec(`UPDATE students SET subscription_status=?, paused_at=? WHERE id=? AND (tenant_id=? OR ?=0)`, newStatus, now, id, tid, tid); err != nil {
+				respondError(w, "could not update subscription", 500)
+				return
+			}
+		}
+		logAudit(db, c.Email, "subscription_"+body.Action, "student", id, newStatus)
+		respond(w, map[string]string{"subscriptionStatus": newStatus})
 	}
 }

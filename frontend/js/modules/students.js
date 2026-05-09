@@ -133,12 +133,17 @@
               var _rc = (replacementCredits || []).filter(function(rc) { return rc.studentId === s.id; });
               var _bal = _rc.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0)
                       - _rc.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
+              var rowSubStatus = s.subscriptionStatus || 'active';
+              var rowSubChip = '';
+              if (rowSubStatus === 'paused') rowSubChip = ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.6rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;vertical-align:middle;margin-left:4px">Paused</span>';
+              else if (rowSubStatus === 'frozen') rowSubChip = ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.6rem;font-weight:700;background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe;border-radius:999px;vertical-align:middle;margin-left:4px">Frozen</span>';
               return '<tr onclick="App.Students._viewModal(\'' + s.id + '\')" class="hover:bg-slate-50 transition-colors cursor-pointer">'
                 + (isAdmin ? '<td class="td" style="width:36px" onclick="event.stopPropagation()"><input type="checkbox" class="stu-cb" data-id="' + s.id + '" onchange="App.Students._toggleSelect(\'' + s.id + '\',this.checked)" style="cursor:pointer"' + (_selected[s.id] ? ' checked' : '') + '></td>' : '')
                 + '<td class="td"><div class="flex items-center gap-3">'
                 +   '<div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">' + App.Utils.esc(s.firstName.charAt(0)) + App.Utils.esc(s.lastName.charAt(0)) + '</div>'
                 +   '<div><div class="font-medium text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName)
                 +     (_bal > 0 ? ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.65rem;font-weight:700;background:#fffbeb;color:#92400e;border:1px solid #fef3c7;border-radius:999px;vertical-align:middle;margin-left:4px" title="Replacement balance">' + _bal + 'cr</span>' : '')
+                +     rowSubChip
                 +   '</div><div class="text-xs text-slate-400">' + s.id + '</div></div>'
                 + '</div></td>'
                 + '<td class="td"><div class="flex flex-wrap gap-1">'
@@ -243,6 +248,31 @@
 
   let _searchTimer = null;
   let _focusSearchAfterRender = false;
+  async function _subscriptionAction(studentId, action) {
+    var label = { pause:'pause', resume:'resume', freeze:'freeze' }[action] || action;
+    var ok = await App.Utils.showConfirm({
+      title: label.charAt(0).toUpperCase() + label.slice(1) + ' subscription',
+      message: action === 'resume'
+        ? 'Resume monthly invoicing and re-include this student in class rosters?'
+        : 'Stop monthly invoice generation. The student will be hidden from class rosters until resumed.',
+      confirmLabel: label.charAt(0).toUpperCase() + label.slice(1),
+      danger: action !== 'resume'
+    });
+    if (!ok) return;
+    try {
+      var res = await App.Api.post('/api/students/' + studentId + '/subscription', { action: action });
+      var state = App.Store.get();
+      App.Store.set({ students: state.students.map(function(s) {
+        return s.id === studentId ? Object.assign({}, s, { subscriptionStatus: res.subscriptionStatus }) : s;
+      }) });
+      App.Utils.showToast('Subscription ' + label + 'd', 'success');
+      App.Router.refresh();
+      _viewModal(studentId);
+    } catch (err) {
+      App.Utils.showToast(err.message || 'Could not update subscription', 'error');
+    }
+  }
+
   function _onSearch(val) {
     _search = val;
     _studentPage = 0;
@@ -278,12 +308,20 @@
     const studentInvoices = invoices.filter(function(inv) { return inv.studentId === studentId; });
     const totalPaid = studentInvoices.filter(function(i) { return i.status === 'Paid'; }).reduce(function(s, i) { return s + i.amount; }, 0);
 
+    var subStatus = s.subscriptionStatus || 'active';
+    var subChip = '';
+    if (subStatus === 'paused') {
+      subChip = '<span style="display:inline-block;padding:0.15rem 0.55rem;font-size:0.65rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;margin-left:6px">Paused</span>';
+    } else if (subStatus === 'frozen') {
+      subChip = '<span style="display:inline-block;padding:0.15rem 0.55rem;font-size:0.65rem;font-weight:700;background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe;border-radius:999px;margin-left:6px">Frozen</span>';
+    }
+
     App.Utils.showModal(
       '<div class="p-6">'
       + '<div class="flex items-center gap-4 mb-6">'
       +   '<div class="w-16 h-16 rounded-2xl bg-blue-100 text-blue-700 font-bold text-2xl flex items-center justify-center">' + App.Utils.esc(s.firstName.charAt(0)) + App.Utils.esc(s.lastName.charAt(0)) + '</div>'
       +   '<div>'
-      +     '<h2 class="text-xl font-bold text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName) + '</h2>'
+      +     '<h2 class="text-xl font-bold text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName) + subChip + '</h2>'
       +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.statusBadge(s.status) + '<span class="text-xs text-slate-400">' + s.id + '</span></div>'
       +   '</div>'
       + '</div>'
@@ -335,6 +373,27 @@
           + '</div>'
         : '<div style="font-size:0.83rem;color:#a1a1aa">No health information recorded</div>')
       +   '</div>'
+      +   (isAdmin ? (function() {
+            var pkgAmt = s.packageAmount || 0;
+            var pkgHrs = (s.packageSelfStudyHours == null) ? 4 : s.packageSelfStudyHours;
+            var paused = subStatus !== 'active';
+            return '<div style="margin-top:1rem;padding:1rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px">'
+              + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.65rem">'
+              +   '<div style="font-size:0.72rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.05em">Subscription</div>'
+              +   '<span style="font-size:0.7rem;font-weight:700;color:' + (paused ? '#92400e' : '#15803d') + '">' + (paused ? subStatus.toUpperCase() : 'ACTIVE') + '</span>'
+              + '</div>'
+              + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.83rem;color:#374151;margin-bottom:0.85rem">'
+              +   '<div>Package: <strong>RM ' + pkgAmt.toFixed(2) + '/mo</strong></div>'
+              +   '<div>Self-study included: <strong>' + pkgHrs + ' hrs</strong></div>'
+              + '</div>'
+              + '<div style="display:flex;gap:0.5rem">'
+              + (paused
+                  ? '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'resume\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:8px;cursor:pointer">Resume</button>'
+                  : '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'pause\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;cursor:pointer">Pause</button>'
+                  + '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'freeze\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe;border-radius:8px;cursor:pointer">Freeze</button>')
+              + '</div>'
+              + '</div>';
+          })() : '')
       +   (App.currentRole === 'teacher'
         ? '<div style="margin-top:1rem;padding:1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px">'
           + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">Quick Note</div>'
@@ -473,6 +532,10 @@
       + '</select></div>'
       + _multiClassField(s.enrolledClasses, state.classes)
       + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="' + (s.packageAmount || 0) + '">')
+      + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="' + (s.packageSelfStudyHours == null ? 4 : s.packageSelfStudyHours) + '">')
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-4">'
       + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" value="' + App.Utils.esc(s.emergency2Name||'') + '" placeholder="e.g. Uncle David">')
       + _field('Emergency Contact Phone', '<input name="emergency2Phone" class="form-input" value="' + App.Utils.esc(s.emergency2Phone||'') + '" placeholder="60123456789">')
       + '</div>'
@@ -516,7 +579,9 @@
         emergency2Name: fd.get('emergency2Name') || '',
         emergency2Phone: fd.get('emergency2Phone') || '',
         medicalInfo: fd.get('medicalInfo') || '',
-        allergies: fd.get('allergies') || ''
+        allergies: fd.get('allergies') || '',
+        packageAmount: parseFloat(fd.get('packageAmount')) || 0,
+        packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4
       });
 
       App.Store.set({ students: st.students.map(function(x) { return x.id === studentId ? updated : x; }), classes: newClasses2 });
@@ -548,6 +613,10 @@
       + _field('Phone (with country code)', '<input name="phone" class="form-input" placeholder="60123456789">')
       + '</div>'
       + _multiClassField([], classes)
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="0" placeholder="e.g. 380">')
+      + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="4">')
+      + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" placeholder="e.g. Uncle David">')
       + _field('Emergency Contact Phone', '<input name="emergency2Phone" class="form-input" placeholder="60123456789">')
@@ -591,7 +660,10 @@
         emergency2Name: fd.get('emergency2Name') || '',
         emergency2Phone: fd.get('emergency2Phone') || '',
         medicalInfo: fd.get('medicalInfo') || '',
-        allergies: fd.get('allergies') || ''
+        allergies: fd.get('allergies') || '',
+        packageAmount: parseFloat(fd.get('packageAmount')) || 0,
+        packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4,
+        subscriptionStatus: 'active'
       };
       const newClasses = state.classes.map(function(c) {
         return selectedClasses.indexOf(c.id) > -1 ? Object.assign({}, c, { enrolled: c.enrolled + 1 }) : c;
@@ -1336,6 +1408,7 @@
     _onFilter: _onFilter,
     _viewModal: _viewModal,
     _editModal: _editModal,
+    _subscriptionAction: _subscriptionAction,
     _switchTab: _switchTab,
     _addModal: _addModal,
     _pendingModal: _pendingModal,

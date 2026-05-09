@@ -58,17 +58,24 @@ type Student struct {
 	Allergies           string   `json:"allergies,omitempty"`
 	FamilyID            string   `json:"familyId,omitempty"`
 	ReferredByFamilyID  string   `json:"referredByFamilyId,omitempty"`
+
+	PackageAmount         float64 `json:"packageAmount"`
+	PackageSelfStudyHours int     `json:"packageSelfStudyHours"`
+	SubscriptionStatus    string  `json:"subscriptionStatus"`
+	PausedAt              *string `json:"pausedAt,omitempty"`
+	ResumedAt             *string `json:"resumedAt,omitempty"`
 }
 
 type Family struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Contact      string `json:"contact"`
-	Phone        string `json:"phone"`
-	ParentName   string `json:"parentName"`
-	Address      string `json:"address,omitempty"`
-	Notes        string `json:"notes,omitempty"`
-	ReferralCode string `json:"referralCode,omitempty"`
+	ID                       string `json:"id"`
+	Name                     string `json:"name"`
+	Contact                  string `json:"contact"`
+	Phone                    string `json:"phone"`
+	ParentName               string `json:"parentName"`
+	Address                  string `json:"address,omitempty"`
+	Notes                    string `json:"notes,omitempty"`
+	ReferralCode             string `json:"referralCode,omitempty"`
+	ReferralCreditsRemaining int    `json:"referralCreditsRemaining"`
 }
 
 type Class struct {
@@ -120,6 +127,7 @@ type Invoice struct {
 	SiblingIds        string  `json:"siblingIds"`
 	SiblingDiscount   float64 `json:"siblingDiscount"`
 	ReferralCredit    float64 `json:"referralCredit"`
+	ReferenceNo       string  `json:"referenceNo"`
 	DeletedAt         *string `json:"deletedAt,omitempty"`
 }
 
