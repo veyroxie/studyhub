@@ -58,8 +58,13 @@
           ? '<button onclick="App.Attendance._markAbsentCredit(\'' + s.id + '\')" style="'
             + 'min-height:36px;width:100%;margin-top:0.35rem;padding:0.35rem 0.75rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;'
             + 'border-radius:10px;font-size:0.75rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
-            + 'title="Mark absent and add 4 credits replacement"'
+            + 'title="Parent informed at least 3 hours before class"'
             + '>Absent + Replacement</button>'
+            + '<button onclick="App.Attendance._markAbsentNoCredit(\'' + s.id + '\')" style="'
+            + 'min-height:32px;width:100%;margin-top:0.3rem;padding:0.3rem 0.75rem;background:#fff;color:#64748b;border:1px solid #e2e8f0;'
+            + 'border-radius:10px;font-size:0.72rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
+            + 'title="Late notice (less than 3 hours) — no credit issued"'
+            + '>Absent (no credit)</button>'
           : '');
     } else if (!checkedOut) {
       actionBtn = '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" style="'
@@ -976,6 +981,35 @@
     App.Router.refresh();
   }
 
+  async function _markAbsentNoCredit(studentId) {
+    var lockKey = 'noc|' + studentId + '|' + _attClassId + '|' + _attDate;
+    if (_absenceLock[lockKey]) return;
+    _absenceLock[lockKey] = true;
+    setTimeout(function() { delete _absenceLock[lockKey]; }, 1500);
+
+    var state = App.Store.get();
+    var stu = state.students.find(function(s) { return s.id === studentId; });
+    var stuName = stu ? stu.firstName + ' ' + stu.lastName : studentId;
+
+    var newAtt = state.attendance.slice();
+    var existing = newAtt.findIndex(function(a) { return a.personId === studentId && a.classId === _attClassId && a.date === _attDate; });
+    if (existing > -1) {
+      newAtt[existing] = Object.assign({}, newAtt[existing], { status: 'Absent', checkIn: null, checkOut: null });
+    } else {
+      newAtt.push({ id: App.Utils.generateId('ATT'), personId: studentId, personType: 'student', date: _attDate, classId: _attClassId, checkIn: null, checkOut: null, status: 'Absent' });
+    }
+    App.Store.set({ attendance: newAtt });
+
+    try {
+      await App.Api.post('/api/attendance', { personId: studentId, personType: 'student', date: _attDate, classId: _attClassId, status: 'Absent' });
+      App.Utils.showToast(stuName + ' marked absent (no credit — late notice)', 'info');
+    } catch(e) {
+      App.Utils.showToast(stuName + ' marked absent — sync failed: ' + e.message, 'warning');
+    }
+
+    App.Router.refresh();
+  }
+
   var _absenceLock = {};
   async function _markAbsentCredit(studentId) {
     var lockKey = studentId + '|' + _attClassId + '|' + _attDate;
@@ -1127,5 +1161,5 @@
     }
   }
 
-  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit, _markAllPresent: _markAllPresent, _quickFeedback: _quickFeedback, _savePostAttFeedback: _savePostAttFeedback };
+  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit, _markAbsentNoCredit: _markAbsentNoCredit, _markAllPresent: _markAllPresent, _quickFeedback: _quickFeedback, _savePostAttFeedback: _savePostAttFeedback };
 })();

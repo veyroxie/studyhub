@@ -116,12 +116,17 @@
 
       + notifBanner
 
-      + '<div class="grid grid-cols-4 gap-4 mb-6">'
-      + _statCard(isClient ? 'Total Billed' : 'Total Revenue', App.Utils.formatCurrency(totalRevenue), 'text-slate-700', 'bg-slate-50')
-      + _statCard(isClient ? 'Paid' : 'Collected', App.Utils.formatCurrency(collected), 'text-emerald-600', 'bg-emerald-50')
-      + _statCard('Pending', App.Utils.formatCurrency(pending), 'text-amber-600', 'bg-amber-50')
-      + _statCard('Overdue', App.Utils.formatCurrency(overdue), 'text-red-600', 'bg-red-50')
-      + '</div>'
+      + (isClient
+        ? '<div class="grid grid-cols-2 gap-4 mb-6">'
+          + _statCard('Pending', App.Utils.formatCurrency(pending), 'text-amber-600', 'bg-amber-50')
+          + _statCard('Overdue', App.Utils.formatCurrency(overdue), 'text-red-600', 'bg-red-50')
+          + '</div>'
+        : '<div class="grid grid-cols-4 gap-4 mb-6">'
+          + _statCard('Total Revenue', App.Utils.formatCurrency(totalRevenue), 'text-slate-700', 'bg-slate-50')
+          + _statCard('Collected', App.Utils.formatCurrency(collected), 'text-emerald-600', 'bg-emerald-50')
+          + _statCard('Pending', App.Utils.formatCurrency(pending), 'text-amber-600', 'bg-amber-50')
+          + _statCard('Overdue', App.Utils.formatCurrency(overdue), 'text-red-600', 'bg-red-50')
+          + '</div>')
 
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">'
       +   '<div class="p-4 border-b border-slate-100 flex items-center gap-2 flex-wrap">'

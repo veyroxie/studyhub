@@ -155,11 +155,18 @@
               const name = stu ? stu.firstName + ' ' + stu.lastName : data.personId;
               const time = data.checkIn || data.checkOut || '';
 
-              // For parents: only show toast for their own children
+              // For parents: only show toast for their own children, and
+              // only when the family is up to date on Monthly invoices.
+              // The same gate applies to progress reports + receipts so
+              // the unpaid-invoice consequence is consistent everywhere.
               const isParent = App.currentRole === 'client';
               const isMyChild = isParent && stu && stu.contact === App.clientParent;
 
-              if (!isParent || isMyChild) {
+              const hasUnpaidMonthly = isParent && (state.invoices || []).some(function(i) {
+                return i.type === 'Monthly' && (i.status === 'Unpaid' || i.status === 'Overdue');
+              });
+
+              if (!isParent || (isMyChild && !hasUnpaidMonthly)) {
                 if (data.type === 'CHECK_IN') {
                   App.Utils.showToast(name + ' checked in at ' + App.Utils.formatTime(time), 'info');
                 } else {

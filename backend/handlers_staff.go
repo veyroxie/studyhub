@@ -33,8 +33,11 @@ func listStaff(db *DB, c *Claims) []Staff {
 		if hourlyRate.Valid {
 			s.HourlyRate = hourlyRate.Float64
 		}
-		if c != nil && c.Role == "parent" {
-			s.Salary = 0 // hide salary from parents
+		// Hide salary, hourly rate and NRIC from anyone who isn't admin or
+		// superadmin. Teachers should not see each other's pay or ID; the
+		// snapshot is shared so the cleanup happens at this projection.
+		if c != nil && c.Role != "admin" && c.Role != "superadmin" {
+			s.Salary = 0
 			s.HourlyRate = 0
 			s.NRIC = ""
 		}

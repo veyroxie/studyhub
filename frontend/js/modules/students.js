@@ -336,30 +336,30 @@
       +   '<div class="grid grid-cols-2 gap-3 text-sm">'
       +   _infoRow('Date of Birth', App.Utils.formatDate(s.dob))
       +   _infoRow('Gender', App.Utils.esc(s.gender))
-      +   _infoRow('Parent / Guardian', App.Utils.esc(s.parentName))
-      +   _infoRow('Email', App.Utils.esc(s.contact))
-      +   _infoRow('Phone', App.Utils.esc(s.phone))
+      +   (isTeacher ? '' : _infoRow('Parent / Guardian', App.Utils.esc(s.parentName)))
+      +   (isTeacher ? '' : _infoRow('Email', App.Utils.esc(s.contact)))
+      +   (isTeacher ? '' : _infoRow('Phone', App.Utils.esc(s.phone)))
       +   _infoRow('Branch', App.Utils.esc(s.branch))
-      +   (function() {
+      +   (isTeacher ? '' : (function() {
             var fam = (App.Store.get().families || []).find(function(x) { return x.id === s.familyId; });
             return fam ? _infoRow('Family', '<a href="#" onclick="event.preventDefault();App.Utils.hideModal(true);App.Students._familyModal(\'' + fam.id + '\')" style="color:var(--gold);font-weight:600;text-decoration:none">' + App.Utils.esc(fam.name) + '</a>') : '';
-          })()
-      +   (function() {
+          })())
+      +   (isTeacher ? '' : (function() {
             if (!s.referredByFamilyId) return '';
             var refFam = (App.Store.get().families || []).find(function(x) { return x.id === s.referredByFamilyId; });
             if (!refFam) return _infoRow('Referred By', '<span style="color:#94a3b8">—</span>');
             return _infoRow('Referred By', '<a href="#" onclick="event.preventDefault();App.Utils.hideModal(true);App.Students._familyModal(\'' + refFam.id + '\')" style="color:var(--gold);font-weight:600;text-decoration:none">' + App.Utils.esc(refFam.name) + '</a>');
-          })()
+          })())
       +   _infoRow('Registered On', App.Utils.formatDate(s.registeredOn))
-      +   (s.siblings && s.siblings.length ? _infoRow('Siblings', (function() {
+      +   (!isTeacher && s.siblings && s.siblings.length ? _infoRow('Siblings', (function() {
             var allStudents = App.Store.get().students;
             return s.siblings.map(function(sibId) {
               var sib = allStudents.find(function(x) { return x.id === sibId; });
               return sib ? App.Utils.esc(sib.firstName + ' ' + sib.lastName) : sibId;
             }).join(', ');
           })()) : '')
-      +   (s.emergency2Name ? _infoRow('Emergency Contact', App.Utils.esc(s.emergency2Name) + (s.emergency2Phone ? ' · ' + App.Utils.esc(s.emergency2Phone) : '')) : '')
-      +   (s.notes ? _infoRow('Notes', '<div style="white-space:pre-wrap">' + App.Utils.esc(s.notes) + '</div>') : '')
+      +   (!isTeacher && s.emergency2Name ? _infoRow('Emergency Contact', App.Utils.esc(s.emergency2Name) + (s.emergency2Phone ? ' · ' + App.Utils.esc(s.emergency2Phone) : '')) : '')
+      +   (!isTeacher && s.notes ? _infoRow('Notes', '<div style="white-space:pre-wrap">' + App.Utils.esc(s.notes) + '</div>') : '')
       +   '</div>'
       +   '<div style="margin-top:1rem;padding:1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px">'
       +     '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.65rem">'
@@ -955,8 +955,27 @@
     var today = App.Utils.today ? App.Utils.today() : new Date().toISOString().slice(0, 10);
     var state = App.Store.get();
     var stuClasses = (state.students.find(function(x) { return x.id === studentId; }) || {}).enrolledClasses || [];
+
+    // Filter the extension class picker to levels the student is already
+    // enrolled in. Level is parsed from the "Level N" pattern in class
+    // names; if the student has no recognised level, we fall back to all
+    // classes so admin can still pick something.
+    var enrolledLevels = {};
+    stuClasses.forEach(function(cid) {
+      var c = state.classes.find(function(x) { return x.id === cid; });
+      if (!c) return;
+      var m = (c.name || '').match(/level\s*(\d+)/i);
+      if (m) enrolledLevels[m[1]] = true;
+    });
+    var hasLevels = Object.keys(enrolledLevels).length > 0;
+    var allowed = state.classes.filter(function(c) {
+      if (!hasLevels) return true;
+      var m = (c.name || '').match(/level\s*(\d+)/i);
+      return m && enrolledLevels[m[1]];
+    });
+
     var classOpts = '<option value="">-- none --</option>'
-      + state.classes.map(function(c) {
+      + allowed.map(function(c) {
           return '<option value="' + c.id + '">' + App.Utils.esc(c.name) + '</option>';
         }).join('');
     App.Utils.showModal(
