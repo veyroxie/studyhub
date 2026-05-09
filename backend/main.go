@@ -204,8 +204,9 @@ func main() {
 			r.Get("/{id}/receipt.pdf", handleInvoicePDF(db, true))
 		})
 
-		// Manual trigger for the monthly invoice cron — admin-only.
+		// Manual trigger for the monthly invoice + payroll cron — admin-only.
 		r.Post("/api/admin/cron/run-monthly-invoices", handleRunMonthlyCron(db))
+		r.Post("/api/admin/cron/regenerate-payroll", handleRegeneratePayroll(db))
 
 		r.Route("/api/announcements", func(r chi.Router) {
 			r.Get("/", handleAnnouncements(db))

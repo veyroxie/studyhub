@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"net/http"
 	"time"
 )
@@ -49,6 +50,14 @@ func runMonthlyInvoiceCycle(db *DB) {
 	if created > 0 {
 		logger.Info("monthly invoice cron created invoices", "count", created, "month", now.Format("2006-01"))
 	}
+	payrolls := generateMonthlyPayroll(db, now)
+	if payrolls > 0 {
+		logger.Info("monthly payroll cron created rows", "count", payrolls, "month", previousMonth(now).Format("2006-01"))
+	}
+}
+
+func previousMonth(now time.Time) time.Time {
+	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).AddDate(0, -1, 0)
 }
 
 // generateMonthlyInvoices is the core of the monthly subscription cycle.
@@ -144,8 +153,173 @@ func handleRunMonthlyCron(db *DB) http.HandlerFunc {
 			respondError(w, "admin only", 403)
 			return
 		}
-		count := generateMonthlyInvoices(db, time.Now())
+		invoices := generateMonthlyInvoices(db, time.Now())
+		payrolls := generateMonthlyPayroll(db, time.Now())
 		logAudit(db, c.Email, "monthly_cron_manual_run", "system", "", "")
+		respond(w, map[string]int{"invoices": invoices, "payrolls": payrolls})
+	}
+}
+
+// generateMonthlyPayroll builds payroll rows for the previous month for
+// every active staff member. Idempotent — skips a (staff_id, month) row
+// that already exists. Full-time staff get a flat base_salary row; part-
+// time staff get a row built from their teacher check-in records (hours
+// worked × hourly_rate). Returns the number of rows created. Status is
+// always Pending so admin reviews/confirms via the existing UI.
+func generateMonthlyPayroll(db *DB, now time.Time) int {
+	prev := previousMonth(now)
+	monthLabel := prev.Format("2006-01")
+	monthStart := prev.Format("2006-01-02")
+	monthEnd := time.Date(prev.Year(), prev.Month()+1, 1, 0, 0, 0, 0, prev.Location()).AddDate(0, 0, -1).Format("2006-01-02")
+
+	rows, err := db.Query(`
+		SELECT id, tenant_id, COALESCE(employment_type,'Full-time'),
+		       COALESCE(salary,0), COALESCE(hourly_rate,0)
+		FROM staff
+		WHERE deleted_at IS NULL AND COALESCE(status,'Active') = 'Active'
+	`)
+	if err != nil {
+		logger.Error("monthly payroll cron query failed", "err", err)
+		return 0
+	}
+	defer rows.Close()
+
+	type staffRow struct {
+		id, tenantID, employmentType string
+		salary, hourlyRate           float64
+	}
+	var staff []staffRow
+	for rows.Next() {
+		var s staffRow
+		if err := rows.Scan(&s.id, &s.tenantID, &s.employmentType, &s.salary, &s.hourlyRate); err != nil {
+			continue
+		}
+		staff = append(staff, s)
+	}
+
+	created := 0
+	for _, s := range staff {
+		var existing int
+		db.QueryRow(`SELECT COUNT(*) FROM payroll WHERE staff_id=? AND month=?`, s.id, monthLabel).Scan(&existing)
+		if existing > 0 {
+			continue
+		}
+
+		var total float64
+		switch s.employmentType {
+		case "Part-time":
+			if s.hourlyRate <= 0 {
+				continue
+			}
+			hours := teacherHoursWorked(db, s.id, monthStart, monthEnd)
+			if hours <= 0 {
+				continue
+			}
+			total = hours * s.hourlyRate
+		default: // Full-time
+			if s.salary <= 0 {
+				continue
+			}
+			total = s.salary
+		}
+
+		id := generateID("PAY")
+		_, err := db.Exec(`
+			INSERT INTO payroll(id,tenant_id,staff_id,month,base_salary,bonus,deductions,total,status,paid_on)
+			VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			id, s.tenantID, s.id, monthLabel, total, 0.0, 0.0, total, "Pending", nil,
+		)
+		if err != nil {
+			logger.Error("could not insert payroll row", "err", err, "staff_id", s.id)
+			continue
+		}
+		created++
+	}
+	return created
+}
+
+// teacherHoursWorked sums hours from teacher attendance check-in rows in
+// the [start, end] window. Falls back to the scheduled class duration
+// (end_time − time) when check_out is missing — covers the case where a
+// teacher checked in but never tapped checkout.
+func teacherHoursWorked(db *DB, staffID, start, end string) float64 {
+	rows, err := db.Query(`
+		SELECT a.check_in, a.check_out, c.time, c.end_time
+		FROM attendance a
+		LEFT JOIN classes c ON c.id = a.class_id
+		WHERE a.person_id = ? AND a.person_type = 'teacher'
+		  AND a.check_in IS NOT NULL AND a.check_in <> ''
+		  AND a.date BETWEEN ? AND ?
+	`, staffID, start, end)
+	if err != nil {
+		return 0
+	}
+	defer rows.Close()
+	total := 0.0
+	for rows.Next() {
+		var checkIn, checkOut, classTime, classEnd sql.NullString
+		if err := rows.Scan(&checkIn, &checkOut, &classTime, &classEnd); err != nil {
+			continue
+		}
+		if checkOut.Valid && checkOut.String != "" {
+			h := hoursBetween(checkIn.String, checkOut.String)
+			if h > 0 {
+				total += h
+				continue
+			}
+		}
+		if classTime.Valid && classEnd.Valid {
+			h := hoursBetween(classTime.String, classEnd.String)
+			if h > 0 {
+				total += h
+			}
+		}
+	}
+	return total
+}
+
+// hoursBetween parses two HH:MM strings and returns the elapsed hours.
+// Tolerates zero-padding and silently returns 0 on bad input rather
+// than crashing the cron.
+func hoursBetween(start, end string) float64 {
+	s, errS := time.Parse("15:04", start)
+	e, errE := time.Parse("15:04", end)
+	if errS != nil || errE != nil {
+		return 0
+	}
+	d := e.Sub(s).Hours()
+	if d <= 0 {
+		return 0
+	}
+	return d
+}
+
+// handleRegeneratePayroll lets admin re-run payroll for a specific month
+// when a teacher checks in late or a staff record changes after the
+// cron has already fired.
+func handleRegeneratePayroll(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		if c == nil || c.Role != "admin" {
+			respondError(w, "admin only", 403)
+			return
+		}
+		monthArg := r.URL.Query().Get("month")
+		var target time.Time
+		if monthArg == "" {
+			target = time.Now()
+		} else {
+			t, err := time.Parse("2006-01", monthArg)
+			if err != nil {
+				respondError(w, "month must be YYYY-MM", 400)
+				return
+			}
+			// generateMonthlyPayroll uses previousMonth(now), so pass the
+			// next month to compute payroll for the requested month.
+			target = t.AddDate(0, 1, 0)
+		}
+		count := generateMonthlyPayroll(db, target)
+		logAudit(db, c.Email, "payroll_regenerated", "system", monthArg, "")
 		respond(w, map[string]int{"created": count})
 	}
 }

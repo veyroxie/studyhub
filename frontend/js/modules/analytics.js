@@ -3,7 +3,8 @@
 
   let _filterStudent = '';  // '' = all students
   let _filterTeacher = '';  // '' = all staff
-  let _filterCategory = ''; // '' = all, or 'Academic', 'Non-academic', 'Workshop'
+  let _filterCategory = ''; // '' = all, or 'Academic', 'Workshop'
+  let _attMode = 'student'; // 'student' | 'level'
   let _filterMonths = 6;    // number of months to show
   let _filterView = 'overview'; // 'overview' | 'financial' | 'bystudents' | 'byteachers' | 'bysubject'
 
@@ -39,7 +40,7 @@
       // Category filter
       + '<select onchange="App.Analytics._setCategory(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#374151">'
       +   '<option value="">All Categories</option>'
-      +   ['Academic','Non-academic','Workshop'].map(function(c) { return '<option value="' + c + '"' + (_filterCategory === c ? ' selected' : '') + '>' + c + '</option>'; }).join('')
+      +   ['Academic','Workshop'].map(function(c) { return '<option value="' + c + '"' + (_filterCategory === c ? ' selected' : '') + '>' + c + '</option>'; }).join('')
       + '</select>'
       // Month range filter
       + '<select onchange="App.Analytics._setMonths(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#374151">'
@@ -121,7 +122,16 @@
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5"><h3 class="font-semibold text-slate-700 mb-4">Enrollment Trend</h3><canvas id="chart-enrollment" height="200"></canvas></div>'
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5"><h3 class="font-semibold text-slate-700 mb-4">Class Fill Rate</h3><canvas id="chart-fillrate" height="200"></canvas></div>'
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5"><h3 class="font-semibold text-slate-700 mb-4">Revenue Collection</h3><canvas id="chart-revenue" height="200"></canvas></div>'
-      + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5"><h3 class="font-semibold text-slate-700 mb-4">Student Attendance Rate</h3><canvas id="chart-attendance" height="200"></canvas></div>'
+      + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5">'
+      +   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">'
+      +     '<h3 class="font-semibold text-slate-700">Attendance Rate</h3>'
+      +     '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:7px;padding:2px">'
+      +       '<button onclick="App.Analytics._setAttendanceMode(\'student\')" style="padding:0.25rem 0.65rem;font-size:0.7rem;font-weight:600;border:none;border-radius:5px;cursor:pointer;background:' + (_attMode==='student'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_attMode==='student'?'#0a0a0a':'#94a3b8') + '">Per student</button>'
+      +       '<button onclick="App.Analytics._setAttendanceMode(\'level\')" style="padding:0.25rem 0.65rem;font-size:0.7rem;font-weight:600;border:none;border-radius:5px;cursor:pointer;background:' + (_attMode==='level'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_attMode==='level'?'#0a0a0a':'#94a3b8') + '">By level</button>'
+      +     '</div>'
+      +   '</div>'
+      +   '<canvas id="chart-attendance" height="200"></canvas>'
+      + '</div>'
       + '</div>';
 
     setTimeout(function() {
@@ -187,12 +197,18 @@
 
   function _buildRevenueChart(invoices) {
     const m = _months(_filterMonths);
-    const paid = m.keys.map(function(key) {
-      return invoices.filter(function(i) { return i.status === 'Paid' && i.paidOn && i.paidOn.slice(0, 7) === key; }).reduce(function(s, i) { return s + i.amount; }, 0);
-    });
-    const pending = m.keys.map(function(key) {
-      return invoices.filter(function(i) { return i.status !== 'Paid' && i.createdOn && i.createdOn.slice(0, 7) === key; }).reduce(function(s, i) { return s + i.amount; }, 0);
-    });
+    function _sumByMonth(filterFn, dateField) {
+      return m.keys.map(function(key) {
+        return invoices
+          .filter(filterFn)
+          .filter(function(i) { return i[dateField] && i[dateField].slice(0, 7) === key; })
+          .reduce(function(s, i) { return s + i.amount; }, 0);
+      });
+    }
+    const paid     = _sumByMonth(function(i) { return i.status === 'Paid'; }, 'paidOn');
+    const pendVer  = _sumByMonth(function(i) { return i.status === 'Pending Verification'; }, 'createdOn');
+    const unpaid   = _sumByMonth(function(i) { return i.status === 'Unpaid'; }, 'createdOn');
+    const overdue  = _sumByMonth(function(i) { return i.status === 'Overdue'; }, 'createdOn');
     const ctx = document.getElementById('chart-revenue');
     if (!ctx) return;
     _charts.revenue = new Chart(ctx.getContext('2d'), {
@@ -200,11 +216,20 @@
       data: {
         labels: m.labels,
         datasets: [
-          { label: 'Collected', data: paid, backgroundColor: '#10b981', borderRadius: 4 },
-          { label: 'Pending', data: pending, backgroundColor: '#fbbf24', borderRadius: 4 }
+          { label: 'Collected',            data: paid,    backgroundColor: '#10b981', borderRadius: 4, stack: 'rev' },
+          { label: 'Pending verification', data: pendVer, backgroundColor: '#a78bfa', borderRadius: 4, stack: 'rev' },
+          { label: 'Unpaid',               data: unpaid,  backgroundColor: '#fbbf24', borderRadius: 4, stack: 'rev' },
+          { label: 'Overdue',              data: overdue, backgroundColor: '#ef4444', borderRadius: 4, stack: 'rev' }
         ]
       },
-      options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: false, grid: { display: false } }, y: { grid: { color: '#f1f5f9' }, ticks: { callback: function(v) { return 'RM' + v; } } } } }
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'top' } },
+        scales: {
+          x: { stacked: true, grid: { display: false } },
+          y: { stacked: true, grid: { color: '#f1f5f9' }, ticks: { callback: function(v) { return 'RM' + v; } } }
+        }
+      }
     });
   }
 
@@ -212,35 +237,80 @@
     const ctx = document.getElementById('chart-attendance');
     if (!ctx) return;
 
-    // Show ALL active students — even those with zero records (shows 0%)
     const activeStudents = students.filter(function(s) { return s.status === 'Active' || s.status === 'New'; });
-    const stuRecords = activeStudents.map(function(s) {
-      const records = attendance.filter(function(a) { return a.personId === s.id && a.personType === 'student'; });
-      const present = records.filter(function(a) { return a.status === 'Present' || a.status === 'Late'; }).length;
-      const pct = records.length > 0 ? Math.round((present / records.length) * 100) : 0;
-      return { name: s.firstName, pct: pct, count: records.length };
-    });
 
-    const sorted = stuRecords.sort(function(a, b) { return b.pct - a.pct; });
-    const bgColors = sorted.map(function(r) {
-      if (r.count === 0) return '#e2e8f0'; // slate-200 — no data yet
+    function _attRate(personIds) {
+      var records = attendance.filter(function(a) {
+        return a.personType === 'student' && personIds.indexOf(a.personId) > -1;
+      });
+      if (records.length === 0) return { pct: 0, count: 0 };
+      var present = records.filter(function(a) { return a.status === 'Present' || a.status === 'Late'; }).length;
+      return { pct: Math.round(present / records.length * 100), count: records.length };
+    }
+
+    function _colorFor(r) {
+      if (r.count === 0) return '#e2e8f0';
       return r.pct >= 80 ? '#10b981' : r.pct >= 60 ? '#f59e0b' : '#ef4444';
-    });
+    }
+
+    var labels, data, colors, tooltipFn;
+
+    if (_attMode === 'level') {
+      // Derive student level from "Level N" pattern in any enrolled class
+      // name. Falls back to "Other" when nothing matches.
+      var classes = App.Store.get().classes || [];
+      var levelOf = {};
+      activeStudents.forEach(function(s) {
+        var max = 0;
+        (s.enrolledClasses || []).forEach(function(cid) {
+          var c = classes.find(function(x) { return x.id === cid; });
+          if (!c) return;
+          var match = (c.name || '').match(/level\s*(\d+)/i);
+          if (match) max = Math.max(max, parseInt(match[1], 10));
+        });
+        levelOf[s.id] = max > 0 ? max : null;
+      });
+
+      var groups = [1, 2, 3, 4, 5, 6, null];
+      var rows = groups.map(function(lvl) {
+        var ids = activeStudents.filter(function(s) { return levelOf[s.id] === lvl; }).map(function(s) { return s.id; });
+        var stats = _attRate(ids);
+        return { label: lvl == null ? 'Other' : 'Level ' + lvl, students: ids.length, pct: stats.pct, count: stats.count };
+      }).filter(function(r) { return r.students > 0; });
+
+      labels = rows.map(function(r) { return r.label; });
+      data   = rows.map(function(r) { return r.pct; });
+      colors = rows.map(_colorFor);
+      tooltipFn = function(ctxRow) {
+        var r = rows[ctxRow.dataIndex];
+        return r.students + ' student' + (r.students !== 1 ? 's' : '') + ' · ' + r.count + ' record' + (r.count !== 1 ? 's' : '');
+      };
+    } else {
+      var stuRecords = activeStudents.map(function(s) {
+        var stats = _attRate([s.id]);
+        return { name: s.firstName, pct: stats.pct, count: stats.count };
+      });
+      var sorted = stuRecords.sort(function(a, b) { return b.pct - a.pct; });
+      labels = sorted.map(function(r) { return r.name; });
+      data   = sorted.map(function(r) { return r.pct; });
+      colors = sorted.map(_colorFor);
+      tooltipFn = function(ctxRow) {
+        var r = sorted[ctxRow.dataIndex];
+        return r.count === 0 ? 'No records yet' : r.count + ' session(s) recorded';
+      };
+    }
 
     _charts.attendance = new Chart(ctx.getContext('2d'), {
       type: 'bar',
       data: {
-        labels: sorted.map(function(r) { return r.name; }),
-        datasets: [{ label: 'Attendance %', data: sorted.map(function(r) { return r.pct; }), backgroundColor: bgColors, borderRadius: 6 }]
+        labels: labels,
+        datasets: [{ label: 'Attendance %', data: data, backgroundColor: colors, borderRadius: 6 }]
       },
       options: {
         responsive: true,
         plugins: {
           legend: { display: false },
-          tooltip: { callbacks: { afterLabel: function(ctx) {
-            const r = sorted[ctx.dataIndex];
-            return r.count === 0 ? 'No records yet' : r.count + ' session(s) recorded';
-          }}}
+          tooltip: { callbacks: { afterLabel: tooltipFn } }
         },
         scales: {
           y: { beginAtZero: true, max: 100, ticks: { callback: function(v) { return v + '%'; } }, grid: { color: '#f1f5f9' } },
@@ -343,7 +413,7 @@
   function _buildTeachersChart(staff, classes, attendance) {
     var teachers = staff.filter(function(s) { return s.role && s.role.toLowerCase().indexOf('teacher') > -1; });
     if (!teachers.length) teachers = staff;
-    var names = teachers.map(function(t) { return (t.fullName || t.name).split(' ')[0]; });
+    var names = teachers.map(function(t) { return t.fullName || t.name || ('Teacher ' + (t.id || '').slice(-3)); });
     var classCounts = teachers.map(function(t) { return classes.filter(function(c) { return c.teacherIds && c.teacherIds.indexOf(t.id) > -1; }).length; });
     var stuCounts = teachers.map(function(t) {
       return classes.filter(function(c) { return c.teacherIds && c.teacherIds.indexOf(t.id) > -1; }).reduce(function(acc, c) { return acc + (c.enrolled || 0); }, 0);
@@ -355,7 +425,7 @@
   }
 
   function _bySubjectHTML(classes, invoices) {
-    var cats = ['Academic', 'Non-academic', 'Workshop'];
+    var cats = ['Academic', 'Workshop'];
     var catData = cats.map(function(cat) {
       var catClasses = classes.filter(function(c) { return (c.category || 'Academic') === cat; });
       var enrolled = catClasses.reduce(function(acc, c) { return acc + (c.enrolled || 0); }, 0);
@@ -375,7 +445,7 @@
     }).join('');
 
     var summaryCards = catData.map(function(d) {
-      var colors = { Academic: '#3b82f6', 'Non-academic': '#8b5cf6', Workshop: '#f59e0b' };
+      var colors = { Academic: '#3b82f6', Workshop: '#f59e0b' };
       var col = colors[d.cat] || '#64748b';
       return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1rem 1.2rem">'
         + '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem"><div style="width:10px;height:10px;border-radius:2px;background:' + col + '"></div><span style="font-size:0.8rem;font-weight:700;color:#374151">' + d.cat + '</span></div>'
@@ -384,7 +454,7 @@
         + '</div>';
     }).join('');
 
-    return '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem;margin-bottom:1.25rem">' + summaryCards + '</div>'
+    return '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem;margin-bottom:1.25rem">' + summaryCards + '</div>'
       + '<div style="display:grid;grid-template-columns:1fr 2fr;gap:1rem;margin-bottom:1.25rem">'
       + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem"><h3 style="font-weight:600;font-size:0.9rem;color:#374151;margin:0 0 1rem">Enrollment by Category</h3><canvas id="chart-subj-pie" height="220"></canvas></div>'
       + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden"><div style="padding:0.85rem 1rem;border-bottom:1px solid #f4f4f2"><span style="font-weight:700;font-size:0.85rem">All Classes</span></div><table style="width:100%"><thead><tr style="background:#f8fafc"><th style="text-align:left;padding:0.6rem 1rem;font-size:0.72rem;font-weight:600;color:#94a3b8">Class</th><th style="text-align:left;padding:0.6rem 1rem;font-size:0.72rem;font-weight:600;color:#94a3b8">Category</th><th style="text-align:left;padding:0.6rem 1rem;font-size:0.72rem;font-weight:600;color:#94a3b8">Enrolled</th><th style="text-align:left;padding:0.6rem 1rem;font-size:0.72rem;font-weight:600;color:#94a3b8">Fill Rate</th></tr></thead><tbody>' + classRows + '</tbody></table></div>'
@@ -394,13 +464,13 @@
   function _buildSubjectChart(classes) {
     var ctx = document.getElementById('chart-subj-pie');
     if (!ctx) return;
-    var cats = ['Academic', 'Non-academic', 'Workshop'];
+    var cats = ['Academic', 'Workshop'];
     var data = cats.map(function(cat) {
       return classes.filter(function(c) { return (c.category || 'Academic') === cat; }).reduce(function(acc, c) { return acc + (c.enrolled || 0); }, 0);
     });
     _charts.subjPie = new Chart(ctx.getContext('2d'), {
       type: 'doughnut',
-      data: { labels: cats, datasets: [{ data: data, backgroundColor: ['#3b82f6', '#8b5cf6', '#f59e0b'], borderWidth: 0 }] },
+      data: { labels: cats, datasets: [{ data: data, backgroundColor: ['#3b82f6', '#f59e0b'], borderWidth: 0 }] },
       options: { responsive: true, plugins: { legend: { position: 'bottom' } }, cutout: '60%' }
     });
   }
@@ -490,6 +560,11 @@
   function _setCategory(v) { _filterCategory = v; App.Router.refresh(); }
   function _setMonths(v)   { _filterMonths = parseInt(v) || 6; App.Router.refresh(); }
   function _clearFilters() { _filterStudent = ''; _filterTeacher = ''; _filterCategory = ''; _filterMonths = 6; App.Router.refresh(); }
+  function _setAttendanceMode(m) {
+    _attMode = m;
+    if (_charts.attendance) { _charts.attendance.destroy(); delete _charts.attendance; }
+    App.Router.refresh();
+  }
 
   App.Analytics = {
     render: render,
@@ -498,6 +573,7 @@
     _setTeacher: _setTeacher,
     _setCategory: _setCategory,
     _setMonths: _setMonths,
-    _clearFilters: _clearFilters
+    _clearFilters: _clearFilters,
+    _setAttendanceMode: _setAttendanceMode
   };
 })();
