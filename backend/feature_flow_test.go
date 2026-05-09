@@ -35,8 +35,8 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *DB, func()) {
 	seedIfEmpty(db)
 
 	t.Setenv("RESEND_API_KEY", "")
-	initMailer()
 	initLogger()
+	initMailer()
 
 	hub := newHub()
 	r := chi.NewRouter()

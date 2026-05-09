@@ -33,8 +33,8 @@ func setupEmailTestApp(t *testing.T) (*chi.Mux, *DB, func()) {
 
 	// Force dev-mode mailer so tests don't try to hit Resend.
 	t.Setenv("RESEND_API_KEY", "")
-	initMailer()
 	initLogger()
+	initMailer()
 
 	r := chi.NewRouter()
 	r.Use(cors.Handler(cors.Options{

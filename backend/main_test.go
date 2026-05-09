@@ -41,6 +41,8 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 
 	seedIfEmpty(db)
 
+	initLogger()
+
 	hub := newHub()
 	r := chi.NewRouter()
 	r.Use(cors.Handler(cors.Options{AllowedOrigins: []string{"*"}, AllowedMethods: []string{"GET", "POST", "PUT", "DELETE"}, AllowedHeaders: []string{"Authorization", "Content-Type"}}))
