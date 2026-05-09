@@ -976,7 +976,13 @@
     App.Router.refresh();
   }
 
+  var _absenceLock = {};
   async function _markAbsentCredit(studentId) {
+    var lockKey = studentId + '|' + _attClassId + '|' + _attDate;
+    if (_absenceLock[lockKey]) return;
+    _absenceLock[lockKey] = true;
+    setTimeout(function() { delete _absenceLock[lockKey]; }, 1500);
+
     var state = App.Store.get();
     var stu = state.students.find(function(s) { return s.id === studentId; });
     var stuName = stu ? stu.firstName + ' ' + stu.lastName : studentId;
@@ -1014,7 +1020,7 @@
       App.Utils.showToast(stuName + ' marked absent (replacement failed: ' + e.message + ')', 'warning');
     }
 
-    await App.Api.refresh();
+    App.Router.refresh();
   }
 
   async function _markAllPresent() {

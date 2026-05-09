@@ -448,6 +448,13 @@ func runMigrations(db *sql.DB) {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_families_referral_code ON families(referral_code) WHERE referral_code <> ''`,
 		`CREATE INDEX IF NOT EXISTS idx_referral_rewards_referrer ON referral_rewards(referrer_family_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_referral_rewards_student  ON referral_rewards(referred_student_id)`,
+
+		// Performance indexes for hot-path queries (snapshot, attendance lookups, feedback fan-out)
+		`CREATE INDEX IF NOT EXISTS idx_attendance_tenant_date    ON attendance(tenant_id, date DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_attendance_person_date    ON attendance(person_id, date DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_feedback_replies_tenant   ON feedback_replies(tenant_id, feedback_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_feedback_tenant_date      ON feedback(tenant_id, date DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_invoices_tenant_student   ON invoices(tenant_id, student_id)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (index/row already exists = OK)

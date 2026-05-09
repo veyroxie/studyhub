@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -149,57 +150,66 @@ func newReferralCode() string {
 func handleSnapshot(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
+		isAdmin := c != nil && (c.Role == "admin" || c.Role == "superadmin")
 		isParent := c != nil && c.Role != "admin" && c.Role != "superadmin" && c.Role != "teacher"
 
-		feedback := listFeedback(db, c)
-		selfStudy := listSelfStudy(db, c)
-		perfReviews := listPerformanceReviews(db, c)
+		var snap Snapshot
+		var wg sync.WaitGroup
 
-		// Parents: filter to their children's data only
-		if isParent {
+		run := func(fn func()) {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				fn()
+			}()
+		}
+
+		run(func() { snap.Students = listStudents(db, c) })
+		run(func() { snap.Classes = listClasses(db, c) })
+		run(func() { snap.Staff = listStaff(db, c) })
+		run(func() { snap.Invoices = listInvoices(db, c) })
+		run(func() { snap.Announcements = listAnnouncements(db, c) })
+		run(func() { snap.Attendance = listAttendance(db, c) })
+		run(func() { snap.Payroll = listPayroll(db, c) })
+		run(func() { snap.Feedback = listFeedback(db, c) })
+		run(func() { snap.Subjects = listSubjects(db, c) })
+		run(func() { snap.Workshops = listWorkshops(db, c) })
+		run(func() { snap.SelfStudySessions = listSelfStudy(db, c) })
+		run(func() { snap.PerformanceReviews = listPerformanceReviews(db, c) })
+		run(func() { snap.CancelledClasses = listCancelledClasses(db, c) })
+		run(func() { snap.Holidays = listHolidays(db, c) })
+		run(func() { snap.ReplacementCredits = listReplacementCredits(db, c) })
+		run(func() { snap.Families = listFamilies(db, c) })
+		run(func() { snap.FeedbackReplies = listFeedbackReplies(db, c) })
+		run(func() { snap.ReferralRewards = listReferralRewards(db, c) })
+		if isAdmin {
+			run(func() { snap.Registrations = listRegistrations(db, c) })
+			run(func() { snap.PendingUsers = listPendingUsers(db) })
+		} else if c != nil && c.Role == "parent" {
+			// Parents see only their own enrollment requests so the dashboard
+			// can show pending enrolments and the "register your child" form.
+			run(func() { snap.Registrations = listParentEnrollments(db, c) })
+		}
+
+		wg.Wait()
+
+		// Parents: filter to their children's data only (post-load so the heavy
+		// queries above can run in parallel).
+		if isParent && c != nil {
 			classIDs := parentClassIDs(db, c.Email)
-			feedback = filterFeedbackForParent(feedback, classIDs)
+			snap.Feedback = filterFeedbackForParent(snap.Feedback, classIDs)
 
 			stuIDs := parentStudentIDs(db, c.Email)
 			filtered := []SelfStudySession{}
-			for _, s := range selfStudy {
+			for _, s := range snap.SelfStudySessions {
 				if stuIDs[s.StudentID] {
 					filtered = append(filtered, s)
 				}
 			}
-			selfStudy = filtered
+			snap.SelfStudySessions = filtered
 
 			// Hide internal performance reviews from parents
-			perfReviews = []PerformanceReview{}
-		}
-
-		snap := Snapshot{
-			Students:           listStudents(db, c),
-			Classes:            listClasses(db, c),
-			Staff:              listStaff(db, c),
-			Invoices:           listInvoices(db, c),
-			Announcements:      listAnnouncements(db, c),
-			Attendance:         listAttendance(db, c),
-			Payroll:            listPayroll(db, c),
-			Feedback:           feedback,
-			Subjects:           listSubjects(db, c),
-			Workshops:          listWorkshops(db, c),
-			SelfStudySessions:  selfStudy,
-			PerformanceReviews: perfReviews,
-			CancelledClasses:   listCancelledClasses(db, c),
-			Holidays:           listHolidays(db, c),
-			ReplacementCredits: listReplacementCredits(db, c),
-			Families:           listFamilies(db, c),
-			FeedbackReplies:    listFeedbackReplies(db, c),
-			ReferralRewards:    listReferralRewards(db, c),
-		}
-		if c != nil && (c.Role == "admin" || c.Role == "superadmin") {
-			snap.Registrations = listRegistrations(db, c)
-			snap.PendingUsers = listPendingUsers(db)
-		} else if c != nil && c.Role == "parent" {
-			// Parents see only their own enrollment requests so the dashboard
-			// can show pending enrolments and the "register your child" form.
-			snap.Registrations = listParentEnrollments(db, c)
+			snap.PerformanceReviews = []PerformanceReview{}
 		}
 		respond(w, snap)
 	}

@@ -153,6 +153,18 @@
       +   '</div>'
       +   _paginationControls(_studentPage, filtered.length, 'App.Students._setPage')
       + '</div>';
+
+    if (_focusSearchAfterRender) {
+      _focusSearchAfterRender = false;
+      setTimeout(function() {
+        var input = document.getElementById('student-search');
+        if (input) {
+          input.focus();
+          var len = input.value.length;
+          try { input.setSelectionRange(len, len); } catch(e) {}
+        }
+      }, 0);
+    }
   }
 
   function _bulkBar() {
@@ -227,7 +239,15 @@
     _bulkDeselect();
   }
 
-  function _onSearch(val) { _search = val; _studentPage = 0; App.Router.refresh(); }
+  let _searchTimer = null;
+  let _focusSearchAfterRender = false;
+  function _onSearch(val) {
+    _search = val;
+    _studentPage = 0;
+    _focusSearchAfterRender = true;
+    if (_searchTimer) clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(function() { App.Router.refresh(); }, 250);
+  }
   function _onFilter(val) { _statusFilter = val; _studentPage = 0; App.Router.refresh(); }
   function _clearFilters() { _search = ''; _statusFilter = 'All'; _studentPage = 0; App.Router.refresh(); }
   function _setStudentPage(n) { _studentPage = Math.max(0, n); App.Router.refresh(); }

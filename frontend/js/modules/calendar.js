@@ -140,7 +140,7 @@
       + '</div>';
 
     const filterBar = '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;flex-wrap:wrap">'
-      + '<input type="search" placeholder="Search class..." value="' + App.Utils.esc(_filterSearch) + '" oninput="App.Calendar._setSearch(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;width:180px;background:#fff">'
+      + '<input id="cal-search" type="search" placeholder="Search class..." value="' + App.Utils.esc(_filterSearch) + '" oninput="App.Calendar._setSearch(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;width:180px;background:#fff">'
       + (!isTeacher
         ? '<select onchange="App.Calendar._setTeacher(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;cursor:pointer">'
           + '<option value="">All Tutors</option>'
@@ -630,7 +630,22 @@
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
   }
 
-  function _setSearch(val) { _filterSearch = val; App.Router.refresh(); }
+  let _searchTimer = null;
+  function _setSearch(val) {
+    _filterSearch = val;
+    if (_searchTimer) clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(function() {
+      App.Router.refresh();
+      setTimeout(function() {
+        var input = document.getElementById('cal-search');
+        if (input) {
+          input.focus();
+          var len = input.value.length;
+          try { input.setSelectionRange(len, len); } catch(e) {}
+        }
+      }, 0);
+    }, 250);
+  }
   function _setTeacher(val) { _filterTeacher = val; App.Router.refresh(); }
   function _clearFilters() { _filterTeacher = ''; _filterSearch = ''; App.Router.refresh(); }
 
@@ -1066,14 +1081,15 @@
     var ok = await App.Utils.showConfirm({ title: 'Delete class', message: 'This cannot be undone.', confirmLabel: 'Delete', danger: true });
     if (!ok) return;
     var state = App.Store.get();
+    var original = state.classes;
+    App.Store.set({ classes: original.filter(function(c) { return c.id !== classId; }) });
+    App.Router.refresh();
     App.Api.del('/api/classes/' + classId).then(function() {
-      App.Store.set({ classes: state.classes.filter(function(c) { return c.id !== classId; }) });
       App.Utils.showToast('Class deleted', 'info');
+    }).catch(function(err) {
+      App.Store.set({ classes: original });
       App.Router.refresh();
-    }).catch(function() {
-      App.Store.set({ classes: state.classes.filter(function(c) { return c.id !== classId; }) });
-      App.Utils.showToast('Deleted locally (offline)', 'warning');
-      App.Router.refresh();
+      App.Utils.showToast('Delete failed — restored. ' + (err && err.message ? err.message : ''), 'error');
     });
   }
 
@@ -1081,14 +1097,15 @@
     var ok = await App.Utils.showConfirm({ title: 'Delete workshop', message: 'Delete this workshop?', confirmLabel: 'Delete', danger: true });
     if (!ok) return;
     const state = App.Store.get();
+    var original = state.workshops || [];
+    App.Store.set({ workshops: original.filter(function(w) { return w.id !== wsId; }) });
+    App.Router.refresh();
     App.Api.del('/api/workshops/' + wsId).then(function() {
-      App.Store.set({ workshops: (state.workshops || []).filter(function(w) { return w.id !== wsId; }) });
       App.Utils.showToast('Workshop deleted', 'info');
-      App.Router.refresh();
     }).catch(function(err) {
-      App.Store.set({ workshops: (state.workshops || []).filter(function(w) { return w.id !== wsId; }) });
-      App.Utils.showToast('Deleted locally (offline)', 'warning');
+      App.Store.set({ workshops: original });
       App.Router.refresh();
+      App.Utils.showToast('Delete failed — restored. ' + (err && err.message ? err.message : ''), 'error');
     });
   }
 
@@ -1195,14 +1212,15 @@
   async function _deleteHoliday(holId) {
     var ok = await App.Utils.showConfirm({ title: 'Delete holiday', message: 'Delete this holiday/closure?', confirmLabel: 'Delete', danger: true });
     if (!ok) return;
+    var original = App.Store.get().holidays || [];
+    App.Store.set({ holidays: original.filter(function(h) { return h.id !== holId; }) });
+    App.Router.refresh();
     App.Api.del('/api/holidays/' + holId).then(function() {
-      App.Store.set({ holidays: (App.Store.get().holidays || []).filter(function(h) { return h.id !== holId; }) });
       App.Utils.showToast('Holiday deleted', 'info');
+    }).catch(function(err) {
+      App.Store.set({ holidays: original });
       App.Router.refresh();
-    }).catch(function() {
-      App.Store.set({ holidays: (App.Store.get().holidays || []).filter(function(h) { return h.id !== holId; }) });
-      App.Utils.showToast('Deleted locally (offline)', 'warning');
-      App.Router.refresh();
+      App.Utils.showToast('Delete failed — restored. ' + (err && err.message ? err.message : ''), 'error');
     });
   }
 
