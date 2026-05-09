@@ -321,6 +321,25 @@ type FeedbackReply struct {
 	CreatedAt   string `json:"createdAt"`
 }
 
+// ProgressReport is a termly per-student progress note that replaces the
+// per-class feedback flow. Reports can be drafts (admin/teacher only) or
+// published (visible to parents whose latest invoice is paid).
+type ProgressReport struct {
+	ID               string `json:"id"`
+	StudentID        string `json:"studentId"`
+	Term             string `json:"term"`
+	TeacherID        string `json:"teacherId"`
+	Subject          string `json:"subject"`
+	Grade            string `json:"grade"`
+	Strengths        string `json:"strengths"`
+	AreasToImprove   string `json:"areasToImprove"`
+	TeacherComment   string `json:"teacherComment"`
+	NextTermFocus    string `json:"nextTermFocus"`
+	Published        bool   `json:"published"`
+	CreatedAt        string `json:"createdAt"`
+	UpdatedAt        string `json:"updatedAt"`
+}
+
 // Snapshot is what GET /api/snapshot returns — identical shape to App.DATA
 type Snapshot struct {
 	Students           []Student           `json:"students"`
@@ -343,6 +362,7 @@ type Snapshot struct {
 	FeedbackReplies    []FeedbackReply     `json:"feedbackReplies"`
 	ReferralRewards    []ReferralReward    `json:"referralRewards"`
 	PendingUsers       []PendingUser       `json:"pendingUsers,omitempty"`
+	ProgressReports    []ProgressReport    `json:"progressReports"`
 }
 
 // PendingUser is a minimal projection of users with status=pending_verification,

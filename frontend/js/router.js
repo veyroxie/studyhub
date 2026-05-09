@@ -9,7 +9,7 @@
     billing:       'Bills & Payments',
     staff:         'Staff',
     attendance:    'Attendance',
-    feedback:      'Classroom Feedback',
+    progress:      'Progress Reports',
     analytics:     'Analytics'
   };
 

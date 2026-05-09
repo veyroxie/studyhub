@@ -150,7 +150,7 @@
       analytics:  !isAdmin,
       students:   isClient,
       attendance: false,
-      feedback:   false
+      progress:   false
     };
     Object.keys(pageHidden).forEach(function(page) {
       const btn = document.querySelector('.nav-btn[data-page="' + page + '"]');
@@ -263,7 +263,7 @@
     App.Router.register('billing',       App.Billing);
     App.Router.register('staff',         App.Staff);
     App.Router.register('attendance',    App.Attendance);
-    App.Router.register('feedback',      App.Feedback);
+    App.Router.register('progress',      App.Progress);
     App.Router.register('analytics',     App.Analytics);
 
     // Init router (sets up nav button click handlers)

@@ -314,7 +314,7 @@
       var checkItems = [
         { label: 'View your child\'s schedule', page: 'calendar', done: false },
         { label: 'Check upcoming payments', page: 'billing', done: false },
-        { label: 'See teacher feedback', page: 'feedback', done: false },
+        { label: 'See progress reports', page: 'progress', done: false },
         { label: 'View attendance records', page: 'attendance', done: false }
       ];
       var visited = JSON.parse(localStorage.getItem('sh_checklist_visited') || '{}');

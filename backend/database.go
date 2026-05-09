@@ -468,6 +468,28 @@ func runMigrations(db *sql.DB) {
 
 		// Referral discount: 3 months × RM10 per family that registered with a code
 		`ALTER TABLE families ADD COLUMN IF NOT EXISTS referral_credits_remaining INTEGER DEFAULT 0`,
+
+		// Termly progress reports — replace per-class feedback in the UI but
+		// keep the feedback table untouched for legacy data.
+		`CREATE TABLE IF NOT EXISTS progress_reports (
+			id                 TEXT PRIMARY KEY,
+			tenant_id          INTEGER NOT NULL DEFAULT 1,
+			student_id         TEXT NOT NULL,
+			term               TEXT NOT NULL,
+			teacher_id         TEXT,
+			subject            TEXT,
+			grade              TEXT,
+			strengths          TEXT,
+			areas_to_improve   TEXT,
+			teacher_comment    TEXT,
+			next_term_focus    TEXT,
+			published          BOOLEAN DEFAULT FALSE,
+			created_at         TIMESTAMPTZ DEFAULT NOW(),
+			updated_at         TIMESTAMPTZ DEFAULT NOW(),
+			deleted_at         TIMESTAMPTZ
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_progress_reports_student_term ON progress_reports(student_id, term)`,
+		`CREATE INDEX IF NOT EXISTS idx_progress_reports_tenant ON progress_reports(tenant_id)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (index/row already exists = OK)

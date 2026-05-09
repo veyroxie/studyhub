@@ -229,6 +229,14 @@ func main() {
 
 		r.Post("/api/feedback-replies", handleCreateFeedbackReply(db))
 
+		r.Route("/api/progress-reports", func(r chi.Router) {
+			r.Get("/", handleProgressReports(db))
+			r.Post("/", handleProgressReports(db))
+			r.Put("/{id}", handleProgressReportByID(db))
+			r.Delete("/{id}", handleProgressReportByID(db))
+			r.Get("/{id}/pdf", handleProgressReportPDF(db))
+		})
+
 		r.Route("/api/workshops", func(r chi.Router) {
 			r.Get("/", handleListWorkshops(db))
 			r.Post("/", handleCreateWorkshop(db))
