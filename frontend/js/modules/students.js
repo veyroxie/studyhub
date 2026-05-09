@@ -85,18 +85,20 @@
       return;
     }
 
-    container.innerHTML += '<div class="grid grid-cols-5 gap-4 mb-6">'
-      + ['Total','Active','Inactive','New','Waitlisted'].map(function(k) {
-          const colors = { Total:'text-blue-600', Active:'text-emerald-600', Inactive:'text-red-500', New:'text-blue-500', Waitlisted:'text-amber-500' };
-          var filterVal = (k === 'Total') ? 'All' : k;
-          var isActive = (filterVal === _statusFilter);
-          var activeStyle = isActive ? 'border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-dim, rgba(201,162,39,0.18));' : '';
-          return '<div onclick="App.Students._onFilter(\'' + filterVal + '\')" class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-center cursor-pointer hover:border-slate-200 transition-colors" style="' + activeStyle + '">'
-            + '<div class="text-3xl font-bold ' + (colors[k]||'text-slate-700') + '">' + counts[k] + '</div>'
-            + '<div class="text-xs text-slate-500 mt-1">' + k + '</div>'
-            + '</div>';
+    container.innerHTML += (isTeacher
+      ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-3 mb-6 text-sm text-slate-600 inline-block"><span class="font-semibold text-slate-800">' + displayStudents.length + '</span> of your students</div>'
+      : '<div class="grid grid-cols-5 gap-4 mb-6">'
+        + ['Total','Active','Inactive','New','Waitlisted'].map(function(k) {
+            const colors = { Total:'text-blue-600', Active:'text-emerald-600', Inactive:'text-red-500', New:'text-blue-500', Waitlisted:'text-amber-500' };
+            var filterVal = (k === 'Total') ? 'All' : k;
+            var isActive = (filterVal === _statusFilter);
+            var activeStyle = isActive ? 'border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-dim, rgba(201,162,39,0.18));' : '';
+            return '<div onclick="App.Students._onFilter(\'' + filterVal + '\')" class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-center cursor-pointer hover:border-slate-200 transition-colors" style="' + activeStyle + '">'
+              + '<div class="text-3xl font-bold ' + (colors[k]||'text-slate-700') + '">' + counts[k] + '</div>'
+              + '<div class="text-xs text-slate-500 mt-1">' + k + '</div>'
+              + '</div>';
         }).join('')
-      + '</div>'
+        + '</div>')
 
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">'
       +   '<div class="p-4 border-b border-slate-100 flex items-center gap-3 flex-wrap">'

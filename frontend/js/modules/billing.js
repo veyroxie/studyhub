@@ -336,7 +336,7 @@
       + '<div id="admin-proof-upload-area" style="display:none">'
       +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.4rem">Reference number <span style="color:#dc2626">*required</span></p>'
       +   '<input type="text" id="admin-payment-ref" placeholder="e.g. bank slip / QR txn ID" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;margin-bottom:1rem">'
-      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#94a3b8;font-weight:400">(optional)</span></p>'
+      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#dc2626">*required</span></p>'
       +   '<div style="border:2px dashed #e2e8f0;border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'admin-proof-file\').click()">'
       +     '<input type="file" id="admin-proof-file" accept="image/*,.pdf" style="display:none" onchange="App.Billing._previewAdminProof(this)">'
       +     '<div id="admin-proof-preview" style="margin-bottom:0.5rem"></div>'
@@ -417,6 +417,10 @@
 
     var fileInput = document.getElementById('admin-proof-file');
     var hasFile = fileInput && fileInput.files && fileInput.files[0];
+    if (!hasFile) {
+      App.Utils.showToast('Receipt upload is required for ' + method, 'error');
+      return;
+    }
 
     if (hasFile) {
       var submitBtn = document.getElementById('admin-proof-submit-btn');
@@ -560,7 +564,7 @@
       + '<div id="proof-upload-area" style="display:none">'
       +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.4rem">Reference number <span style="color:#dc2626">*required</span></p>'
       +   '<input type="text" id="parent-payment-ref" placeholder="bank slip or transaction ID" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;margin-bottom:1rem">'
-      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#94a3b8;font-weight:400">(optional)</span></p>'
+      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#dc2626">*required</span></p>'
       +   '<div id="proof-drop-zone" style="border:2px dashed #e2e8f0;border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'proof-file\').click()">'
       +     '<input type="file" id="proof-file" accept="image/*,.pdf" style="display:none" onchange="App.Billing._previewProof(this)">'
       +     '<div id="proof-preview" style="margin-bottom:0.5rem"></div>'
@@ -644,6 +648,10 @@
 
     var fileInput = document.getElementById('proof-file');
     var hasFile = fileInput && fileInput.files && fileInput.files[0];
+    if (!hasFile) {
+      App.Utils.showToast('Receipt upload is required for ' + method, 'error');
+      return;
+    }
 
     if (hasFile) {
       var submitBtn = document.getElementById('proof-submit-btn');
