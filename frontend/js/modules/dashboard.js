@@ -274,11 +274,27 @@
       var d = new Date(i.dueDate); return d >= now && d <= in7;
     });
 
+    // Payment gate — surface a banner whenever the family has an unpaid or
+    // overdue Monthly invoice. Progress reports, attendance notifications
+    // and receipts are gated behind this elsewhere in the app.
+    var unpaidMonthly = myInvoices.filter(function(i) {
+      return i.type === 'Monthly' && (i.status === 'Unpaid' || i.status === 'Overdue');
+    });
+    var paymentGateBanner = unpaidMonthly.length > 0
+      ? '<div style="background:#fef3c7;border:1px solid #fde68a;border-left:4px solid #d97706;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:flex-start;gap:0.85rem">'
+        + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#92400e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+        + '<div>'
+        +   '<div style="font-size:0.92rem;font-weight:700;color:#92400e;margin-bottom:2px">You have ' + unpaidMonthly.length + ' unpaid invoice' + (unpaidMonthly.length !== 1 ? 's' : '') + '</div>'
+        +   '<div style="font-size:0.82rem;color:#78350f;line-height:1.45">Progress reports, attendance notifications and receipts are paused until payment is verified. <a href="#" onclick="event.preventDefault();App.Router.navigate(\'billing\')" style="color:#92400e;font-weight:700;text-decoration:underline">Pay now</a>.</div>'
+        + '</div>'
+        + '</div>'
+      : '';
+
     var childNames = myStudents.map(function(st) { return App.Utils.esc(st.firstName); }).join(' &amp; ');
     var _tod = _timeOfDay();
 
     // ── Hero ──────────────────────────────────────────────────────────────────
-    var html = '<div class="dash-hero">'
+    var html = paymentGateBanner + '<div class="dash-hero">'
       + '<div style="display:flex;align-items:start;justify-content:space-between;gap:1rem;flex-wrap:wrap;position:relative;z-index:1">'
       +   '<div>'
       +     '<p style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--gold);margin:0 0 6px">' + _dateFull() + '</p>'

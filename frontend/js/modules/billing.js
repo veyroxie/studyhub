@@ -195,15 +195,19 @@
                           ? '<button onclick="App.Billing._markUnpaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Mark Unpaid</button>'
                           : '<button onclick="App.Billing._markPaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Mark as Paid</button>')
                   +     '<button onclick="App.Billing._editModal(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Edit</button>'
+                  +     '<a href="/api/invoices/' + inv.id + '/pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download invoice</a>'
+                  +     (inv.status === 'Paid' ? '<a href="/api/invoices/' + inv.id + '/receipt.pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download receipt</a>' : '')
                   +     '<div class="my-1 border-t border-slate-100"></div>'
                   +     '<button onclick="App.Billing._deleteInvoice(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-red-50 text-red-600">Delete</button>'
                   +   '</div>'
                   + '</div>'
                   + '</td>'
                   : isClient && (inv.status === 'Unpaid' || inv.status === 'Overdue')
-                  ? '<td class="td"><button onclick="App.Billing._parentSubmitPaid(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer;white-space:nowrap">I\'ve Paid</button></td>'
+                  ? '<td class="td"><div style="display:flex;gap:0.5rem;align-items:center;justify-content:flex-end;flex-wrap:wrap"><a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="font-size:0.7rem;color:#475569;text-decoration:underline">Invoice PDF</a><button onclick="App.Billing._parentSubmitPaid(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer;white-space:nowrap">I\'ve Paid</button></div></td>'
                   : isClient && inv.status === 'Pending Verification'
                   ? '<td class="td"><span style="font-size:0.72rem;color:#7c3aed;font-weight:600">Awaiting confirmation</span></td>'
+                  : isClient && inv.status === 'Paid'
+                  ? '<td class="td" style="text-align:right"><a href="/api/invoices/' + inv.id + '/receipt.pdf" target="_blank" style="font-size:0.72rem;color:#15803d;font-weight:600;text-decoration:underline">Receipt PDF</a></td>'
                   : '<td></td>')
                 + '</tr>';
             }).join(''))

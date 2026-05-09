@@ -200,6 +200,8 @@ func main() {
 			r.Get("/", handleInvoices(db))
 			r.Post("/", handleInvoices(db))
 			r.Put("/{id}/pay", handleInvoicePay(db))
+			r.Get("/{id}/pdf", handleInvoicePDF(db, false))
+			r.Get("/{id}/receipt.pdf", handleInvoicePDF(db, true))
 		})
 
 		// Manual trigger for the monthly invoice cron — admin-only.
