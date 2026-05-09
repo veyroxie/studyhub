@@ -101,11 +101,14 @@
     const avgFill = viewClasses.reduce(function(s, c) { return s + (c.enrolled / c.capacity); }, 0) / (viewClasses.length || 1);
     const fullClasses = viewClasses.filter(function(c) { return c.enrolled >= c.capacity; }).length;
 
-    const viewToggle = '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px">'
+    // Parents only see Week view; force it before rendering the toggle.
+    if (isClient && _view !== 'week') _view = 'week';
+
+    const viewToggle = isClient ? '' : '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px">'
       + '<button onclick="App.Calendar._setView(\'week\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='week'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='week'?'#0a0a0a':'#94a3b8') + '">Week</button>'
       + '<button onclick="App.Calendar._setView(\'month\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='month'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='month'?'#0a0a0a':'#94a3b8') + '">Month</button>'
       + '<button onclick="App.Calendar._setView(\'timetable\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='timetable'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='timetable'?'#0a0a0a':'#94a3b8') + '">Timetable</button>'
-      + (isAdmin && !isClient ? '<button onclick="App.Calendar._setView(\'programs\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='programs'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='programs'?'#0a0a0a':'#94a3b8') + '">Programs</button>' : '')
+      + (isAdmin ? '<button onclick="App.Calendar._setView(\'programs\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='programs'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='programs'?'#0a0a0a':'#94a3b8') + '">Programs</button>' : '')
       + '</div>';
 
     const headerHtml = ''
@@ -132,14 +135,14 @@
         ? '<div class="mb-4 px-4 py-2 bg-purple-50 border border-purple-100 rounded-xl text-sm text-purple-700">Showing your assigned classes only</div>'
         : '')
 
-      + '<div class="grid grid-cols-4 gap-4 mb-6">'
-      + _statCard('Total Classes', totalClasses, 'text-blue-600')
-      + _statCard('Full Classes', fullClasses, 'text-red-500')
-      + _statCard('Avg Fill Rate', Math.round(avgFill * 100) + '%', 'text-emerald-600')
-      + _statCard('Active Staff', staff.length, 'text-purple-600')
-      + '</div>';
+      + (isClient ? '' : '<div class="grid grid-cols-4 gap-4 mb-6">'
+        + _statCard('Total Classes', totalClasses, 'text-blue-600')
+        + _statCard('Full Classes', fullClasses, 'text-red-500')
+        + _statCard('Avg Fill Rate', Math.round(avgFill * 100) + '%', 'text-emerald-600')
+        + _statCard('Active Staff', staff.length, 'text-purple-600')
+        + '</div>');
 
-    const filterBar = '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;flex-wrap:wrap">'
+    const filterBar = isClient ? '' : '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;flex-wrap:wrap">'
       + '<input id="cal-search" type="search" placeholder="Search class..." value="' + App.Utils.esc(_filterSearch) + '" oninput="App.Calendar._setSearch(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;width:180px;background:#fff">'
       + (!isTeacher
         ? '<select onchange="App.Calendar._setTeacher(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;cursor:pointer">'
@@ -272,12 +275,17 @@
           + (cellHol ? _holidayBadge(cellHol) : '')
           + dayCls.slice(0, 3).map(function(c) {
               var colors = App.Utils.colorClasses(c.color);
+              var allStudents = (App.Store.get().students || []);
+              var enrolled = allStudents.filter(function(st) { return (st.enrolledClasses || []).indexOf(c.id) > -1; });
               var monthChildTags = '';
               if (App.currentRole === 'client' && App.clientParent) {
-                var monthKids = students.filter(function(st) { return st.contact === App.clientParent && (st.enrolledClasses || []).indexOf(c.id) > -1; });
+                var monthKids = enrolled.filter(function(st) { return st.contact === App.clientParent; });
                 if (monthKids.length > 0) monthChildTags = ' <span style="font-size:0.55rem;font-weight:700;color:#92400e">(' + monthKids.map(function(st){return App.Utils.esc(st.firstName);}).join(', ') + ')</span>';
               }
-              return '<div style="font-size:0.65rem;font-weight:600;border-radius:4px;padding:1px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" class="' + colors.pill + '">' + App.Utils.formatTime(c.time) + ' ' + App.Utils.esc(c.name) + monthChildTags + '</div>';
+              var tipNames = enrolled.map(function(st) { return st.firstName + ' ' + (st.lastName || '').charAt(0); }).join(', ');
+              var tipText = c.name + ' · ' + App.Utils.formatTime(c.time)
+                + (enrolled.length > 0 ? ' — ' + enrolled.length + ' enrolled: ' + tipNames : ' — no students enrolled');
+              return '<div onclick="App.Calendar._classModal(\'' + c.id + '\')" title="' + App.Utils.esc(tipText) + '" style="font-size:0.65rem;font-weight:600;border-radius:4px;padding:1px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer" class="' + colors.pill + '">' + App.Utils.formatTime(c.time) + ' ' + App.Utils.esc(c.name) + monthChildTags + '</div>';
             }).join('')
           + (dayCls.length > 3 ? '<div style="font-size:0.63rem;color:#94a3b8">+' + (dayCls.length - 3) + ' more</div>' : '')
           + '</td>';
@@ -736,39 +744,11 @@
     return '<div style="overflow-x:auto">' + header + body + '</div>';
   }
 
-  // ── Programs View (Subjects + Workshops) ──────────────────────────────────────
+  // ── Programs View (Workshops + Holidays) ──────────────────────────────────────
   function _renderProgramsView(classes, students, staff) {
     const state = App.Store.get();
-    const subjects = state.subjects || [];
     const workshops = state.workshops || [];
     const isAdmin = App.currentRole === 'admin';
-
-    const colorDot = { green:'#10b981', teal:'#0d9488', blue:'#3b82f6', purple:'#8b5cf6', orange:'#f59e0b' };
-
-    // Subjects section
-    const subjectCards = subjects.map(function(sub) {
-      const subClasses = classes.filter(function(c) { return c.subjectId === sub.id || c.name === sub.name; });
-      const enrolled = subClasses.reduce(function(a, c) { return a + c.enrolled; }, 0);
-      const dot = colorDot[sub.color] || '#94a3b8';
-      return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);padding:1.1rem 1.2rem;display:flex;flex-direction:column;gap:0.6rem">'
-        + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.5rem">'
-        +   '<div style="display:flex;align-items:center;gap:0.5rem">'
-        +     '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + dot + ';flex-shrink:0"></span>'
-        +     '<span style="font-size:0.88rem;font-weight:700;color:#111">' + App.Utils.esc(sub.name) + '</span>'
-        +   '</div>'
-        +   (isAdmin ? '<button onclick="App.Calendar._deleteSubject(\'' + sub.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0;line-height:1" title="Delete">&#10005;</button>' : '')
-        + '</div>'
-        + '<div style="display:flex;gap:0.4rem;flex-wrap:wrap">'
-        +   App.Utils.badge(sub.category, sub.category === 'Academic' ? 'blue' : 'purple')
-        +   '<span style="font-size:0.68rem;font-weight:600;color:#64748b;background:#f8fafc;padding:2px 8px;border-radius:5px;border:1px solid #e2e8f0">' + App.Utils.esc(sub.level) + '</span>'
-        + '</div>'
-        + '<p style="font-size:0.75rem;color:#64748b;margin:0;line-height:1.4">' + App.Utils.esc(sub.description) + '</p>'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.2rem;padding-top:0.6rem;border-top:1px solid #f4f4f2">'
-        +   '<span style="font-size:0.72rem;color:#94a3b8">' + subClasses.length + ' class' + (subClasses.length !== 1 ? 'es' : '') + ' · ' + enrolled + ' enrolled</span>'
-        +   '<span style="font-size:0.82rem;font-weight:700;color:var(--gold)">RM ' + sub.monthlyFee + '/mo</span>'
-        + '</div>'
-        + '</div>';
-    }).join('');
 
     // Upcoming workshops
     const today = App.Utils.today();
@@ -829,15 +809,6 @@
     }).join('');
 
     return '<div>'
-      // Subjects
-      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
-      +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Subjects / Courses</h2>'
-      +   (isAdmin ? '<button onclick="App.Calendar._addSubjectModal()" style="padding:0.35rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Subject</button>' : '')
-      + '</div>'
-      + (subjects.length === 0
-          ? '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:2rem;text-align:center;color:#94a3b8;font-size:0.84rem;margin-bottom:1.5rem">No subjects yet. Add your first subject to get started.</div>'
-          : '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:0.85rem;margin-bottom:2rem">' + subjectCards + '</div>')
-
       // Workshops
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
       +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Workshops</h2>'
@@ -860,77 +831,6 @@
           : holidayRows)
       + '</div>'
       + '</div>';
-  }
-
-  function _addSubjectModal() {
-    const colorOpts = ['green','teal','blue','purple','orange'].map(function(c) {
-      return '<option value="' + c + '">' + c.charAt(0).toUpperCase() + c.slice(1) + '</option>';
-    }).join('');
-    App.Utils.showModal(
-      '<div class="p-6" style="min-width:380px">'
-      + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 1.25rem">Add Subject / Course</h2>'
-      + '<form id="add-subject-form" class="space-y-3">'
-      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Subject Name</label><input name="name" class="form-input" placeholder="e.g. Japanese Level 1 & 2" required></div>'
-      + '<div class="grid grid-cols-2 gap-3">'
-      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Category</label><select name="category" class="form-input"><option>Academic</option><option>Non-academic</option></select></div>'
-      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Level</label><input name="level" class="form-input" placeholder="e.g. Beginner" value="All Levels"></div>'
-      + '</div>'
-      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Description</label><textarea name="description" class="form-input" rows="2" placeholder="Short description of this course"></textarea></div>'
-      + '<div class="grid grid-cols-2 gap-3">'
-      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Monthly Fee (RM)</label><input name="monthlyFee" type="number" min="0" class="form-input" value="150" required></div>'
-      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Color</label><select name="color" class="form-input">' + colorOpts + '</select></div>'
-      + '</div>'
-      + '<div class="flex justify-end gap-3 pt-2">'
-      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Subject</button>'
-      + '</div>'
-      + '</form></div>'
-    );
-    document.getElementById('add-subject-form').addEventListener('submit', function(e) {
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      const newSubject = {
-        id: App.Utils.generateId('sub'),
-        name: fd.get('name').trim(),
-        category: fd.get('category'),
-        level: fd.get('level').trim() || 'All Levels',
-        description: fd.get('description').trim(),
-        monthlyFee: parseFloat(fd.get('monthlyFee')) || 0,
-        color: fd.get('color')
-      };
-      App.Api.post('/api/subjects', newSubject).then(function(result) {
-        const state = App.Store.get();
-        const subjects = (state.subjects || []).slice();
-        subjects.push(newSubject);
-        App.Store.set({ subjects: subjects });
-        App.Utils.hideModal(true);
-        App.Utils.showToast('Subject added', 'success');
-        App.Router.refresh();
-      }).catch(function(err) {
-        const state = App.Store.get();
-        const subjects = (state.subjects || []).slice();
-        subjects.push(newSubject);
-        App.Store.set({ subjects: subjects });
-        App.Utils.hideModal(true);
-        App.Utils.showToast('Saved locally (offline)', 'warning');
-        App.Router.refresh();
-      });
-    });
-  }
-
-  async function _deleteSubject(subId) {
-    var ok = await App.Utils.showConfirm({ title: 'Delete subject', message: 'Classes linked to it will not be removed.', confirmLabel: 'Delete', danger: true });
-    if (!ok) return;
-    const state = App.Store.get();
-    App.Api.del('/api/subjects/' + subId).then(function() {
-      App.Store.set({ subjects: (state.subjects || []).filter(function(s) { return s.id !== subId; }) });
-      App.Utils.showToast('Subject deleted', 'info');
-      App.Router.refresh();
-    }).catch(function(err) {
-      App.Store.set({ subjects: (state.subjects || []).filter(function(s) { return s.id !== subId; }) });
-      App.Utils.showToast('Deleted locally (offline)', 'warning');
-      App.Router.refresh();
-    });
   }
 
   function _addWorkshopModal() {
@@ -1224,5 +1124,5 @@
     });
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _setStar: _setStar, _submitFeedback: _submitFeedback, _addSubjectModal: _addSubjectModal, _deleteSubject: _deleteSubject, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday };
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _setStar: _setStar, _submitFeedback: _submitFeedback, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday };
 })();

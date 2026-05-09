@@ -61,7 +61,7 @@
 
     var paged = filtered.slice(_studentPage * _PAGE_SIZE, (_studentPage + 1) * _PAGE_SIZE);
 
-    const colCount = isAdmin ? 7 : 6;
+    const colCount = isAdmin ? 6 : 5;
 
     container.innerHTML = ''
       + '<div class="flex items-center justify-between mb-6">'
@@ -88,7 +88,10 @@
     container.innerHTML += '<div class="grid grid-cols-5 gap-4 mb-6">'
       + ['Total','Active','Inactive','New','Waitlisted'].map(function(k) {
           const colors = { Total:'text-blue-600', Active:'text-emerald-600', Inactive:'text-red-500', New:'text-blue-500', Waitlisted:'text-amber-500' };
-          return '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-center">'
+          var filterVal = (k === 'Total') ? 'All' : k;
+          var isActive = (filterVal === _statusFilter);
+          var activeStyle = isActive ? 'border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-dim, rgba(201,162,39,0.18));' : '';
+          return '<div onclick="App.Students._onFilter(\'' + filterVal + '\')" class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-center cursor-pointer hover:border-slate-200 transition-colors" style="' + activeStyle + '">'
             + '<div class="text-3xl font-bold ' + (colors[k]||'text-slate-700') + '">' + counts[k] + '</div>'
             + '<div class="text-xs text-slate-500 mt-1">' + k + '</div>'
             + '</div>';
@@ -111,7 +114,7 @@
       +       '<thead class="bg-slate-50 border-b border-slate-100"><tr>'
       +         (isAdmin ? '<th scope="col" class="th" style="width:36px"><input type="checkbox" id="select-all-cb" onchange="App.Students._toggleSelectAll(this.checked)" style="cursor:pointer"></th>' : '')
       +         '<th scope="col" class="th">Student</th><th scope="col" class="th">Classes</th><th scope="col" class="th">DOB</th>'
-      +         '<th scope="col" class="th">Parent / Contact</th><th scope="col" class="th">Status</th><th scope="col" class="th">Action</th>'
+      +         '<th scope="col" class="th">Parent / Contact</th><th scope="col" class="th">Status</th>'
       +       '</tr></thead>'
       +       '<tbody class="divide-y divide-slate-50">'
       +       (filtered.length === 0
@@ -130,8 +133,8 @@
               var _rc = (replacementCredits || []).filter(function(rc) { return rc.studentId === s.id; });
               var _bal = _rc.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0)
                       - _rc.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
-              return '<tr class="hover:bg-slate-50 transition-colors">'
-                + (isAdmin ? '<td class="td" style="width:36px"><input type="checkbox" class="stu-cb" data-id="' + s.id + '" onchange="App.Students._toggleSelect(\'' + s.id + '\',this.checked)" style="cursor:pointer"' + (_selected[s.id] ? ' checked' : '') + '></td>' : '')
+              return '<tr onclick="App.Students._viewModal(\'' + s.id + '\')" class="hover:bg-slate-50 transition-colors cursor-pointer">'
+                + (isAdmin ? '<td class="td" style="width:36px" onclick="event.stopPropagation()"><input type="checkbox" class="stu-cb" data-id="' + s.id + '" onchange="App.Students._toggleSelect(\'' + s.id + '\',this.checked)" style="cursor:pointer"' + (_selected[s.id] ? ' checked' : '') + '></td>' : '')
                 + '<td class="td"><div class="flex items-center gap-3">'
                 +   '<div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">' + App.Utils.esc(s.firstName.charAt(0)) + App.Utils.esc(s.lastName.charAt(0)) + '</div>'
                 +   '<div><div class="font-medium text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName)
@@ -145,7 +148,6 @@
                 + '<td class="td text-sm text-slate-600">' + App.Utils.formatDate(s.dob) + '</td>'
                 + '<td class="td text-sm"><div class="text-slate-700">' + App.Utils.esc(s.parentName) + '</div><div class="text-slate-400 text-xs">' + App.Utils.esc(s.contact) + '</div></td>'
                 + '<td class="td">' + App.Utils.statusBadge(s.status) + '</td>'
-                + '<td class="td"><button onclick="App.Students._viewModal(\'' + s.id + '\')" class="text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">View</button></td>'
                 + '</tr>';
             }).join(''))
       +       '</tbody>'
@@ -401,8 +403,8 @@
       +     '</div>'
       +   '</div>'
       +   ((isAdmin || isTeacher) ? '<div style="display:flex;gap:0.5rem">'
-      +     '<button onclick="App.Students._addCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer;white-space:nowrap">Log Absence</button>'
-      +     '<button onclick="App.Students._useCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;white-space:nowrap">Log Extension</button>'
+      +     '<button onclick="App.Students._addCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer;white-space:nowrap">Mark absent</button>'
+      +     '<button onclick="App.Students._useCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;white-space:nowrap">Use credit</button>'
       +   '</div>' : '')
       + '</div>'
       + (stuCredits.length === 0
@@ -526,10 +528,12 @@
 
   function _addModal() {
     const { classes } = App.Store.get();
+    var suggestedId = App.Utils.generateId('STU');
     App.Utils.showModal(
       '<div class="p-6">'
       + '<h2 class="text-xl font-bold mb-4">Add New Student</h2>'
       + '<form id="add-student-form" class="space-y-4">'
+      + _field('Student # <span class="text-slate-400 font-normal">(auto-generated, editable)</span>', '<input name="id" class="form-input" value="' + suggestedId + '" required>')
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('First Name', '<input name="firstName" class="form-input" required>')
       + _field('Last Name', '<input name="lastName" class="form-input" required>')
@@ -562,7 +566,13 @@
       const fd = new FormData(e.target);
       const state = App.Store.get();
       const selectedClasses = fd.getAll('classIds');
-      const newId = App.Utils.generateId('STU');
+      const submittedId = (fd.get('id') || '').trim();
+      const newId = submittedId || App.Utils.generateId('STU');
+      // Reject duplicate within the local store
+      if (state.students.some(function(s) { return s.id === newId; })) {
+        App.Utils.showToast('Student # "' + newId + '" already in use', 'error');
+        return;
+      }
       const newStudent = {
         id: newId,
         firstName: fd.get('firstName'),
@@ -814,17 +824,21 @@
         }).join('');
     App.Utils.showModal(
       '<div class="p-6">'
-      + '<h2 class="text-lg font-bold mb-1">Log Absence</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">Record an absence for a missed class (default 4 credits). This also marks the student absent in attendance.</p>'
+      + '<h2 class="text-lg font-bold mb-1">Mark child absent</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">If informed at least 3 hours before class start, the child earns a replacement credit. If informed late, tick "Late absence" to skip the credit.</p>'
       + '<form id="add-credit-form" class="space-y-4">'
       + _field('Class', '<select name="classId" class="form-input">' + classOpts + '</select>')
-      + _field('Credits', '<select name="minutes" class="form-input"><option value="1">1 credit</option><option value="2">2 credits</option><option value="3">3 credits</option><option value="4" selected>4 credits</option></select>')
+      + '<label style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;color:#374151;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:0.55rem 0.75rem;cursor:pointer">'
+      +   '<input type="checkbox" name="lateAbsence" style="cursor:pointer">'
+      +   'Late absence (informed less than 3 hours before — no credit)'
+      + '</label>'
+      + _field('Credits <span class="text-slate-400 font-normal">(ignored if late absence)</span>', '<select name="minutes" class="form-input"><option value="1">1 credit</option><option value="2">2 credits</option><option value="3">3 credits</option><option value="4" selected>4 credits</option></select>')
       + _field('Category', '<select name="category" class="form-input"><option value="class" selected>Class</option><option value="self-study">Self-study</option></select>')
-      + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Absent from Math 12 Mar">')
+      + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Sick, family event">')
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
       + '<div class="flex justify-end gap-2 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Log Absence</button>'
+      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Mark absent</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -834,29 +848,33 @@
       var fd = new FormData(e.target);
       var classId = fd.get('classId') || '';
       var date = fd.get('date');
+      var isLate = fd.get('lateAbsence') === 'on';
       try {
         // Mark absent in attendance if class selected
         if (classId) {
           await App.Api.post('/api/attendance', { personId: studentId, personType: 'student', date: date, classId: classId, status: 'Absent' });
         }
-        // Add replacement credits
-        var cls = classId ? state.classes.find(function(c) { return c.id === classId; }) : null;
-        await App.Api.post('/api/replacement-credits', {
-          studentId: studentId,
-          type: 'earned',
-          minutes: parseInt(fd.get('minutes'), 10),
-          category: fd.get('category') || 'class',
-          note: fd.get('note') || (cls ? 'Absent from ' + cls.name + ' on ' + date : ''),
-          classId: classId,
-          date: date
-        });
+        if (!isLate) {
+          var cls = classId ? state.classes.find(function(c) { return c.id === classId; }) : null;
+          await App.Api.post('/api/replacement-credits', {
+            studentId: studentId,
+            type: 'earned',
+            minutes: parseInt(fd.get('minutes'), 10),
+            category: fd.get('category') || 'class',
+            note: fd.get('note') || (cls ? 'Absent from ' + cls.name + ' on ' + date : ''),
+            classId: classId,
+            date: date
+          });
+          App.Utils.showToast('Marked absent — replacement credit added', 'success');
+        } else {
+          App.Utils.showToast('Marked absent — late notice, no credit issued', 'info');
+        }
         App.Utils.hideModal(true);
-        App.Utils.showToast('Replacement added', 'success');
-        await App.Api.refresh();
+        App.Router.refresh();
         _viewModal(studentId);
         _switchTab('replacements');
       } catch(err) {
-        App.Utils.showToast(err.message || 'Failed to add replacement', 'error');
+        App.Utils.showToast(err.message || 'Failed to record absence', 'error');
       }
     });
   }
@@ -871,8 +889,8 @@
         }).join('');
     App.Utils.showModal(
       '<div class="p-6">'
-      + '<h2 class="text-lg font-bold mb-1">Log Extension</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">Use replacement credits as a class extension (1-4 credits)</p>'
+      + '<h2 class="text-lg font-bold mb-1">Use replacement credit</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Apply earned credits to an extension class (1-4 credits per session).</p>'
       + '<form id="use-credit-form" class="space-y-4">'
       + _field('Credits', '<select name="minutes" class="form-input"><option value="1">1 credit</option><option value="2">2 credits</option><option value="3">3 credits</option><option value="4">4 credits</option></select>')
       + _field('Category', '<select name="category" class="form-input"><option value="class" selected>Class</option><option value="self-study">Self-study</option></select>')
@@ -881,7 +899,7 @@
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
       + '<div class="flex justify-end gap-2 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Log Extension</button>'
+      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Use credit</button>'
       + '</div>'
       + '</form>'
       + '</div>'
