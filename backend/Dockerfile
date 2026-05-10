@@ -11,6 +11,18 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w -X main.buildVersion=${VERSION}" \
     -o studyhub .
 
+# Build a purged + minified tailwind.css from the current frontend sources.
+# Uses the Tailwind v4 standalone CLI (no npm needed). Pinned to a release
+# for reproducibility; bump the URL when upgrading.
+FROM alpine:3.19 AS tailwind-builder
+RUN apk add --no-cache curl
+RUN curl -sLo /usr/local/bin/tailwindcss \
+        https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.0/tailwindcss-linux-x64 \
+    && chmod +x /usr/local/bin/tailwindcss
+WORKDIR /frontend
+COPY frontend/ ./
+RUN tailwindcss -i tailwind.in.css -o tailwind.css --minify
+
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates postgresql16-client bash s3cmd && \
     addgroup -g 1000 studyhub && adduser -D -u 1000 -G studyhub studyhub
@@ -18,6 +30,9 @@ WORKDIR /app
 COPY --from=builder /app/studyhub .
 # Serve frontend from the project root's frontend/ folder
 COPY frontend/ ./frontend/
+# Overlay the freshly purged tailwind.css from the dedicated build stage so
+# the runtime image always carries CSS that matches the current HTML/JS.
+COPY --from=tailwind-builder /frontend/tailwind.css ./frontend/tailwind.css
 COPY backend/backup.sh ./backup.sh
 RUN chmod +x /app/backup.sh && \
     mkdir -p /app/uploads /app/backups && chown -R studyhub:studyhub /app/uploads /app/backups /app

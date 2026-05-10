@@ -2,8 +2,34 @@
   window.App = window.App || {};
   const KEY = 'studyhub_v1';
 
+  const _structuredClone = typeof structuredClone === 'function' ? structuredClone : null;
   function deepClone(obj) {
+    if (_structuredClone) {
+      try { return _structuredClone(obj); } catch (e) { /* fall through */ }
+    }
     return JSON.parse(JSON.stringify(obj));
+  }
+
+  // Debounced persistence: every set() updates _state synchronously, but the
+  // localStorage.setItem (which serializes ~100KB of state) is coalesced. A
+  // burst of edits — e.g. an admin toggling 30 attendance rows — produces
+  // one write 400ms after the last change, not 30 sequential serializations.
+  let _persistTimer = null;
+  function _persistNow() {
+    if (_persistTimer) { clearTimeout(_persistTimer); _persistTimer = null; }
+    try { localStorage.setItem(KEY, JSON.stringify(_state)); } catch (e) {}
+  }
+  function _persistSoon() {
+    if (_persistTimer) return;
+    _persistTimer = setTimeout(function() {
+      _persistTimer = null;
+      try { localStorage.setItem(KEY, JSON.stringify(_state)); } catch (e) {}
+    }, 400);
+  }
+  // Flush pending write before the tab is unloaded so a quick close does
+  // not drop the user's last few mutations.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', _persistNow);
   }
 
   function validate(patch) {
@@ -68,7 +94,7 @@
     set(patch) {
       const validated = validate(deepClone(patch));
       Object.assign(_state, validated);
-      try { localStorage.setItem(KEY, JSON.stringify(_state)); } catch(e) {}
+      _persistSoon();
       _listeners.forEach(fn => fn(_state));
     },
     subscribe(fn) {

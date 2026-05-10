@@ -14,8 +14,9 @@ func initDB(dsn string) *DB {
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
-	db.SetMaxOpenConns(20)
-	db.SetMaxIdleConns(5)
+	db.SetMaxOpenConns(50)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 	if err := db.Ping(); err != nil {
 		log.Fatalf("ping db: %v", err)
 	}
@@ -490,6 +491,26 @@ func runMigrations(db *sql.DB) {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_progress_reports_student_term ON progress_reports(student_id, term)`,
 		`CREATE INDEX IF NOT EXISTS idx_progress_reports_tenant ON progress_reports(tenant_id)`,
+
+		// Composite (tenant_id, deleted_at) indexes — every list query filters
+		// on this pair. Without them Postgres falls back to seq-scan + filter on
+		// large tables.
+		`CREATE INDEX IF NOT EXISTS idx_invoices_tenant_deleted           ON invoices(tenant_id, deleted_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_students_tenant_deleted           ON students(tenant_id, deleted_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_classes_tenant_deleted            ON classes(tenant_id, deleted_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_staff_tenant_deleted              ON staff(tenant_id, deleted_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_families_tenant_deleted           ON families(tenant_id, deleted_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_attendance_tenant                 ON attendance(tenant_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_feedback_tenant_deleted           ON feedback(tenant_id, deleted_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_announcements_tenant              ON announcements(tenant_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_payroll_tenant                    ON payroll(tenant_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_workshops_tenant_deleted          ON workshops(tenant_id, deleted_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_holidays_tenant_deleted           ON holidays(tenant_id, deleted_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_replacement_credits_tenant        ON replacement_credits(tenant_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_cancelled_classes_tenant          ON cancelled_classes(tenant_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_self_study_tenant_deleted         ON self_study_sessions(tenant_id, deleted_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_progress_reports_tenant_deleted   ON progress_reports(tenant_id, deleted_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_performance_reviews_tenant_deleted ON performance_reviews(tenant_id, deleted_at)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) // intentionally ignore errors (index/row already exists = OK)

@@ -30,8 +30,9 @@
     const isClient = App.currentRole === 'client';
     const isTeacher = App.currentRole === 'teacher';
 
-    // Parents always see students list, not families
-    if (isClient) _studentsTab = 'students';
+    // Parents and teachers always see the students list — the families
+    // directory is an admin-only tool and would otherwise show every family.
+    if (isClient || isTeacher) _studentsTab = 'students';
 
     let displayStudents = students;
     if (isClient && App.clientParent) {
@@ -75,18 +76,18 @@
       +   '</div>'
       + '</div>'
 
-      + ((isAdmin || isTeacher) ? '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px;margin-bottom:1rem;width:fit-content">'
+      + (isAdmin ? '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px;margin-bottom:1rem;width:fit-content">'
       + '<button onclick="App.Students._setTab(\'students\')" style="padding:0.35rem 1rem;font-size:0.78rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_studentsTab==='students'?'var(--gold)':'transparent') + ';color:' + (_studentsTab==='students'?'#0a0a0a':'#94a3b8') + '">Students</button>'
       + '<button onclick="App.Students._setTab(\'families\')" style="padding:0.35rem 1rem;font-size:0.78rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_studentsTab==='families'?'var(--gold)':'transparent') + ';color:' + (_studentsTab==='families'?'#0a0a0a':'#94a3b8') + '">Families</button>'
       + '</div>' : '');
 
-    if (_studentsTab === 'families' && (isAdmin || isTeacher)) {
+    if (_studentsTab === 'families' && isAdmin) {
       container.innerHTML += _familiesView();
       return;
     }
 
     container.innerHTML += (isTeacher
-      ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-3 mb-6 text-sm text-slate-600 inline-block"><span class="font-semibold text-slate-800">' + displayStudents.length + '</span> of your students</div>'
+      ? '<div onclick="App.Router.navigate(\'attendance\')" class="bg-white rounded-xl border border-slate-100 shadow-sm p-3 mb-6 text-sm text-slate-600 inline-flex items-center gap-2 cursor-pointer transition-shadow hover:shadow-md" title="Take attendance"><span class="font-semibold text-slate-800">' + displayStudents.length + '</span> of your students<span class="text-slate-400">→ Attendance</span></div>'
       : '<div class="grid grid-cols-5 gap-4 mb-6">'
         + ['Total','Active','Inactive','New','Waitlisted'].map(function(k) {
             const colors = { Total:'text-blue-600', Active:'text-emerald-600', Inactive:'text-red-500', New:'text-blue-500', Waitlisted:'text-amber-500' };
@@ -125,16 +126,25 @@
               (_search || _statusFilter !== 'All') ? 'Try adjusting your search or status filter.' : 'Add your first student to get started.',
               (isAdmin && !(_search || _statusFilter !== 'All')) ? '<button onclick="App.Students._addModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Student</button>' : (_search || _statusFilter !== 'All') ? '<button onclick="App.Students._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer">Clear Filters</button>' : ''
             ) + '</td></tr>'
-          : paged.map(function(s) {
-              const { classes, replacementCredits } = App.Store.get();
+          : (function() {
+              // Pre-compute lookups once instead of inside the per-row map.
+              // The naive version did classes.find() per enrolled class per
+              // row and re-filtered replacementCredits per row — O(rows ×
+              // classes × creds) on every keystroke.
+              const _store = App.Store.get();
+              const _classMap = {};
+              (_store.classes || []).forEach(function(c) { _classMap[c.id] = c; });
+              const _creditsByStudent = {};
+              (_store.replacementCredits || []).forEach(function(rc) {
+                if (!_creditsByStudent[rc.studentId]) _creditsByStudent[rc.studentId] = 0;
+                _creditsByStudent[rc.studentId] += (rc.type === 'earned' ? 1 : rc.type === 'used' ? -1 : 0) * (rc.minutes || 0);
+              });
+              return paged.map(function(s) {
               const enrolledNames = s.enrolledClasses.map(function(cid) {
-                const c = classes.find(function(x) { return x.id === cid; });
+                const c = _classMap[cid];
                 return c ? c.name : cid;
               });
-              // Replacement credit balance
-              var _rc = (replacementCredits || []).filter(function(rc) { return rc.studentId === s.id; });
-              var _bal = _rc.filter(function(rc) { return rc.type === 'earned'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0)
-                      - _rc.filter(function(rc) { return rc.type === 'used'; }).reduce(function(a, rc) { return a + (rc.minutes || 0); }, 0);
+              var _bal = _creditsByStudent[s.id] || 0;
               var rowSubStatus = s.subscriptionStatus || 'active';
               var rowSubChip = '';
               if (rowSubStatus === 'paused') rowSubChip = ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.6rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;vertical-align:middle;margin-left:4px">Paused</span>';
@@ -156,7 +166,8 @@
                 + '<td class="td text-sm"><div class="text-slate-700">' + App.Utils.esc(s.parentName) + '</div><div class="text-slate-400 text-xs">' + App.Utils.esc(s.contact) + '</div></td>'
                 + '<td class="td">' + App.Utils.statusBadge(s.status) + '</td>'
                 + '</tr>';
-            }).join(''))
+            }).join('');
+            })())
       +       '</tbody>'
       +     '</table>'
       +   '</div>'

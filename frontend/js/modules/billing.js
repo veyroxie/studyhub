@@ -25,6 +25,12 @@
 
   function render(container) {
     const { invoices, students } = App.Store.get();
+    // Pre-compute lookup so the per-row students.find() inside paged.map()
+    // becomes O(1). Without this, rendering 50 invoices over 200 students
+    // is 10k iterations per render — costly when search re-renders on every
+    // keystroke.
+    const _studentMap = {};
+    students.forEach(function(s) { _studentMap[s.id] = s; });
     const isAdmin = App.currentRole === 'admin';
     const isClient = App.currentRole === 'client';
 
@@ -118,14 +124,14 @@
 
       + (isClient
         ? '<div class="grid grid-cols-2 gap-4 mb-6">'
-          + _statCard('Pending', App.Utils.formatCurrency(pending), 'text-amber-600', 'bg-amber-50')
-          + _statCard('Overdue', App.Utils.formatCurrency(overdue), 'text-red-600', 'bg-red-50')
+          + _statCard('Pending', App.Utils.formatCurrency(pending), 'text-amber-600', 'bg-amber-50', 'Unpaid')
+          + _statCard('Overdue', App.Utils.formatCurrency(overdue), 'text-red-600', 'bg-red-50', 'Overdue')
           + '</div>'
         : '<div class="grid grid-cols-4 gap-4 mb-6">'
-          + _statCard('Total Revenue', App.Utils.formatCurrency(totalRevenue), 'text-slate-700', 'bg-slate-50')
-          + _statCard('Collected', App.Utils.formatCurrency(collected), 'text-emerald-600', 'bg-emerald-50')
-          + _statCard('Pending', App.Utils.formatCurrency(pending), 'text-amber-600', 'bg-amber-50')
-          + _statCard('Overdue', App.Utils.formatCurrency(overdue), 'text-red-600', 'bg-red-50')
+          + _statCard('Total Revenue', App.Utils.formatCurrency(totalRevenue), 'text-slate-700', 'bg-slate-50', 'All')
+          + _statCard('Collected', App.Utils.formatCurrency(collected), 'text-emerald-600', 'bg-emerald-50', 'Archive')
+          + _statCard('Pending', App.Utils.formatCurrency(pending), 'text-amber-600', 'bg-amber-50', 'Unpaid')
+          + _statCard('Overdue', App.Utils.formatCurrency(overdue), 'text-red-600', 'bg-red-50', 'Overdue')
           + '</div>')
 
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">'
@@ -169,7 +175,7 @@
               (isAdmin && _filter === 'All' && !_studentFilter) ? '<button onclick="App.Billing._createModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Create Invoice</button>' : ''
             ) + '</td></tr>'
           : paged.map(function(inv) {
-              const stu = students.find(function(s) { return s.id === inv.studentId; });
+              const stu = _studentMap[inv.studentId];
               const stuName = stu ? stu.firstName + ' ' + stu.lastName : inv.studentId;
               const isNearDue = inv.status === 'Unpaid' && new Date(inv.dueDate) <= in7 && new Date(inv.dueDate) >= today;
               return '<tr class="hover:bg-slate-50 transition-colors">'
@@ -299,8 +305,11 @@
     App.Router.refresh();
   }
 
-  function _statCard(label, value, textClass, bgClass) {
-    return '<div class="' + bgClass + ' rounded-xl border border-slate-100 shadow-sm p-4">'
+  function _statCard(label, value, textClass, bgClass, filter) {
+    var isActive = filter && filter === _filter;
+    var activeStyle = isActive ? 'border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-dim, rgba(201,162,39,0.18));' : '';
+    var clickAttr = filter ? ' onclick="App.Billing._setFilter(\'' + filter + '\')" style="cursor:pointer;' + activeStyle + '"' : '';
+    return '<div class="' + bgClass + ' rounded-xl border border-slate-100 shadow-sm p-4 transition-shadow hover:shadow-md"' + clickAttr + '>'
       + '<div class="text-xl font-bold ' + textClass + '">' + value + '</div>'
       + '<div class="text-xs text-slate-500 mt-1">' + label + '</div>'
       + '</div>';

@@ -21,6 +21,43 @@ func tenantID(c *Claims) int {
 	return c.TenantID
 }
 
+// teacherClassIDSet returns the set of class IDs a teacher (identified by
+// claims email) is currently assigned to. Used to scope student lists so a
+// teacher can only see kids enrolled in their own classes.
+func teacherClassIDSet(db *DB, c *Claims) map[string]bool {
+	out := map[string]bool{}
+	if c == nil || c.Role != "teacher" {
+		return out
+	}
+	var staffID string
+	db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL LIMIT 1`, c.Email).Scan(&staffID)
+	if staffID == "" {
+		return out
+	}
+	tid := tenantID(c)
+	rows, err := db.Query(`SELECT id FROM classes WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0) AND teacher_ids LIKE '%"'||?||'"%'`, tid, tid, staffID)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+func studentInClassSet(s Student, classIDs map[string]bool) bool {
+	for _, cid := range s.EnrolledClasses {
+		if classIDs[cid] {
+			return true
+		}
+	}
+	return false
+}
+
 func listStudents(db *DB, c *Claims) []Student {
 	var rows *sql.Rows
 	var err error
@@ -34,6 +71,11 @@ func listStudents(db *DB, c *Claims) []Student {
 		return []Student{}
 	}
 	defer rows.Close()
+	var classIDs map[string]bool
+	isTeacher := c != nil && c.Role == "teacher"
+	if isTeacher {
+		classIDs = teacherClassIDSet(db, c)
+	}
 	out := []Student{}
 	for rows.Next() {
 		var s Student
@@ -52,12 +94,32 @@ func listStudents(db *DB, c *Claims) []Student {
 		if resumedAt.Valid {
 			s.ResumedAt = &resumedAt.String
 		}
+		if isTeacher && !studentInClassSet(s, classIDs) {
+			continue
+		}
 		out = append(out, s)
 	}
 	return out
 }
 
 func listStudentsPaged(db *DB, c *Claims, p Pagination) ([]Student, int) {
+	// Teachers see only students in their own classes — a class-set filter
+	// that doesn't fit cleanly in SQL with the existing JSON-string columns,
+	// so list-then-slice in Go. Teacher rosters stay small enough that this
+	// is fine.
+	if c != nil && c.Role == "teacher" {
+		all := listStudents(db, c)
+		total := len(all)
+		start := p.Offset
+		if start > total {
+			start = total
+		}
+		end := start + p.Limit
+		if end > total {
+			end = total
+		}
+		return all[start:end], total
+	}
 	tid := tenantID(c)
 	var total int
 	var rows *sql.Rows

@@ -10,6 +10,24 @@
 
   let _charts = {};
 
+  // Lazy-load Chart.js the first time analytics renders. Returns a promise
+  // that resolves when window.Chart is available. Other pages never pay the
+  // ~100KB download cost.
+  let _chartLibPromise = null;
+  function _loadChartLib() {
+    if (window.Chart) return Promise.resolve();
+    if (_chartLibPromise) return _chartLibPromise;
+    _chartLibPromise = new Promise(function(resolve, reject) {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+      s.async = true;
+      s.onload = function() { resolve(); };
+      s.onerror = function() { _chartLibPromise = null; reject(new Error('chart.js failed to load')); };
+      document.head.appendChild(s);
+    });
+    return _chartLibPromise;
+  }
+
   function render(container) {
     const { students, staff, classes, invoices, attendance } = App.Store.get();
 
@@ -95,25 +113,25 @@
 
     if (_filterView === 'financial') {
       container.innerHTML = viewToggle + filterBar + header + _financialHTML(filteredInvoices, students);
-      setTimeout(function() { _buildFinancialCharts(filteredInvoices); }, 50);
+      _loadChartLib().then(function() { setTimeout(function() { _buildFinancialCharts(filteredInvoices); }, 50); });
       return;
     }
 
     if (_filterView === 'bystudents') {
       container.innerHTML = viewToggle + filterBar + header + _byStudentsHTML(filteredStudents, filteredAttendance);
-      setTimeout(function() { _buildStudentsChart(filteredStudents, filteredAttendance); }, 50);
+      _loadChartLib().then(function() { setTimeout(function() { _buildStudentsChart(filteredStudents, filteredAttendance); }, 50); });
       return;
     }
 
     if (_filterView === 'byteachers') {
       container.innerHTML = viewToggle + filterBar + header + _byTeachersHTML(staff, classes, attendance, students);
-      setTimeout(function() { _buildTeachersChart(staff, classes, attendance); }, 50);
+      _loadChartLib().then(function() { setTimeout(function() { _buildTeachersChart(staff, classes, attendance); }, 50); });
       return;
     }
 
     if (_filterView === 'bysubject') {
       container.innerHTML = viewToggle + filterBar + header + _bySubjectHTML(classes, invoices);
-      setTimeout(function() { _buildSubjectChart(classes); }, 50);
+      _loadChartLib().then(function() { setTimeout(function() { _buildSubjectChart(classes); }, 50); });
       return;
     }
 
@@ -134,12 +152,14 @@
       + '</div>'
       + '</div>';
 
-    setTimeout(function() {
-      _buildEnrollmentChart(filteredStudents);
-      _buildFillRateChart(filteredClasses);
-      _buildRevenueChart(filteredInvoices);
-      _buildAttendanceChart(filteredStudents, filteredAttendance);
-    }, 50);
+    _loadChartLib().then(function() {
+      setTimeout(function() {
+        _buildEnrollmentChart(filteredStudents);
+        _buildFillRateChart(filteredClasses);
+        _buildRevenueChart(filteredInvoices);
+        _buildAttendanceChart(filteredStudents, filteredAttendance);
+      }, 50);
+    });
   }
 
   function _months(count) {
@@ -482,8 +502,13 @@
     var rate = total > 0 ? Math.round(collected / total * 100) : 0;
     var today = new Date();
 
-    function statCard(label, value, color) {
-      return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.1rem 1.2rem;box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
+    function statCard(label, value, color, filter) {
+      // Cards drill into Billing with the matching filter pre-applied.
+      // Collection Rate is derived, so it just opens the Billing page.
+      var click = filter
+        ? ' onclick="App.Router.navigate(\'billing\');setTimeout(function(){App.Billing&&App.Billing._setFilter(\'' + filter + '\')},120)" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s" onmouseover="this.style.boxShadow=\'0 4px 12px rgba(0,0,0,0.08)\';this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.boxShadow=\'0 1px 2px rgba(0,0,0,0.04)\';this.style.transform=\'none\'"'
+        : '';
+      return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.1rem 1.2rem;box-shadow:0 1px 2px rgba(0,0,0,0.04)"' + click + '>'
         + '<p style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8;margin:0 0 0.4rem">' + label + '</p>'
         + '<p style="font-size:1.7rem;font-weight:800;color:' + color + ';margin:0">' + value + '</p>'
         + '</div>';
@@ -504,10 +529,10 @@
         }).join('');
 
     return '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem;margin-bottom:1.25rem">'
-      + statCard('Total Revenue', App.Utils.formatCurrency(total), '#374151')
-      + statCard('Collected', App.Utils.formatCurrency(collected), '#15803d')
-      + statCard('Outstanding', App.Utils.formatCurrency(outstanding), outstanding > 0 ? '#dc2626' : '#15803d')
-      + statCard('Collection Rate', rate + '%', rate >= 80 ? '#15803d' : rate >= 60 ? '#d97706' : '#dc2626')
+      + statCard('Total Revenue', App.Utils.formatCurrency(total), '#374151', 'All')
+      + statCard('Collected', App.Utils.formatCurrency(collected), '#15803d', 'Archive')
+      + statCard('Outstanding', App.Utils.formatCurrency(outstanding), outstanding > 0 ? '#dc2626' : '#15803d', 'Unpaid')
+      + statCard('Collection Rate', rate + '%', rate >= 80 ? '#15803d' : rate >= 60 ? '#d97706' : '#dc2626', 'All')
       + '</div>'
       + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;margin-bottom:1.25rem">'
       + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem"><h3 style="font-weight:600;font-size:0.9rem;color:#374151;margin:0 0 1rem">Monthly Collection</h3><canvas id="chart-fin-monthly" height="200"></canvas></div>'

@@ -73,6 +73,20 @@ services:
       POSTGRES_DB: studyhub
       POSTGRES_USER: studyhub
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    # Tuned for a 512MB-768MB container on a small droplet. Defaults
+    # (shared_buffers=128MB, work_mem=4MB) leave Postgres I/O-bound on
+    # the snapshot endpoint; these settings give it real headroom for
+    # the bulk SELECTs without OOM-killing the box.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=64MB
     volumes:
       - postgres_data:/var/lib/postgresql/data
     expose:
@@ -87,7 +101,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 768M
           cpus: "1.0"
 
 volumes:

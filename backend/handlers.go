@@ -150,6 +150,11 @@ func newReferralCode() string {
 func handleSnapshot(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
+		cacheKey := snapshotCacheKey(c)
+		if body, ok := snapshotCacheGet(cacheKey); ok {
+			writeCachedSnapshot(w, body)
+			return
+		}
 		isAdmin := c != nil && (c.Role == "admin" || c.Role == "superadmin")
 		isParent := c != nil && c.Role != "admin" && c.Role != "superadmin" && c.Role != "teacher"
 
@@ -211,6 +216,6 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 			// Hide internal performance reviews from parents
 			snap.PerformanceReviews = []PerformanceReview{}
 		}
-		respond(w, snap)
+		marshalAndCacheSnapshot(w, cacheKey, snap)
 	}
 }

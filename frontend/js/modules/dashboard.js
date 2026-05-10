@@ -565,18 +565,18 @@
         +   '<span style="font-size:0.68rem;font-weight:700;color:' + statusColor + ';background:' + statusBg + ';padding:3px 10px;border-radius:6px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.04em">' + App.Utils.esc(stu.status) + '</span>'
         + '</div>'
 
-        // Mini stats grid
+        // Mini stats grid — each tile is a shortcut into the matching page
         + '<div style="padding:0.5rem 1.5rem 1rem;display:grid;grid-template-columns:repeat(4,1fr);gap:0.6rem">'
 
         // Attendance
-        +   '<div style="background:#f0fdf4;border-radius:10px;padding:0.65rem 0.7rem;text-align:center">'
+        +   '<div onclick="App.Router.navigate(\'attendance\')" style="background:#f0fdf4;border-radius:10px;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(21,128,61,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#15803d;margin-bottom:0.3rem">Attendance</div>'
         +     '<div style="font-family:var(--serif);font-size:1.15rem;font-weight:700;color:#15803d">' + presentCount + '/' + totalSessions + '</div>'
         +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">Present</div>'
         +   '</div>'
 
         // Next class
-        +   '<div style="background:#eff6ff;border-radius:10px;padding:0.65rem 0.7rem;text-align:center">'
+        +   '<div onclick="App.Router.navigate(\'calendar\')" style="background:#eff6ff;border-radius:10px;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(37,99,235,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#2563eb;margin-bottom:0.3rem">Next Class</div>'
         +     (nextClass
               ? '<div style="font-size:0.82rem;font-weight:700;color:#2563eb">' + nextClassDay + ' ' + App.Utils.formatTime(nextClass.time) + '</div>'
@@ -584,15 +584,16 @@
               : '<div style="font-size:0.78rem;color:#94a3b8">None</div>')
         +   '</div>'
 
-        // Replacement balance
-        +   '<div style="background:' + (repBalance > 0 ? '#fffbeb' : '#f8fafc') + ';border-radius:10px;padding:0.65rem 0.7rem;text-align:center">'
+        // Replacement balance — opens the student modal directly on the
+        // Replacements tab so parents can see the breakdown of credits.
+        +   '<div onclick="App.Students&&App.Students._viewModal(\'' + stu.id + '\')" style="background:' + (repBalance > 0 ? '#fffbeb' : '#f8fafc') + ';border-radius:10px;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(146,64,14,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (repBalance > 0 ? '#92400e' : '#94a3b8') + ';margin-bottom:0.3rem">Replace</div>'
         +     '<div style="font-family:var(--serif);font-size:1.15rem;font-weight:700;color:' + (repBalance > 0 ? '#92400e' : '#64748b') + '">' + repBalance + 'cr</div>'
         +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (repBalance > 0 ? 'credits' : 'none') + '</div>'
         +   '</div>'
 
         // Billing
-        +   '<div style="background:' + (outstanding > 0 ? '#fef2f2' : '#f0fdf4') + ';border-radius:10px;padding:0.65rem 0.7rem;text-align:center">'
+        +   '<div onclick="App.Router.navigate(\'billing\')" style="background:' + (outstanding > 0 ? '#fef2f2' : '#f0fdf4') + ';border-radius:10px;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(0,0,0,0.08)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (outstanding > 0 ? '#991b1b' : '#15803d') + ';margin-bottom:0.3rem">Billing</div>'
         +     '<div style="font-family:var(--serif);font-size:1.05rem;font-weight:700;color:' + (outstanding > 0 ? '#991b1b' : '#15803d') + '">RM ' + outstanding.toFixed(0) + '</div>'
         +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (outstanding > 0 ? 'outstanding' : 'Paid up') + '</div>'
@@ -1100,9 +1101,9 @@
 
       // Stats row
       + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.25rem">'
-      + stat('My Classes', myClasses.length, false, '#6366f1', false, '#f5f3ff')
-      + stat('My Students', myStudents.length, false, '#0891b2', false, '#ecfeff')
-      + stat('Today', todayClasses.length, false, '#d97706', false, '#fefce8')
+      + stat('My Classes', myClasses.length, false, '#6366f1', false, '#f5f3ff', 'calendar')
+      + stat('My Students', myStudents.length, false, '#0891b2', false, '#ecfeff', 'students')
+      + stat('Today', todayClasses.length, false, '#d97706', false, '#fefce8', 'attendance')
       + '</div>'
 
       // Today's classes

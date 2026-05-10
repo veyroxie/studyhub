@@ -133,8 +133,8 @@ func securityHeaders(next http.Handler) http.Handler {
 		// Content Security Policy — adjust allowed sources as needed
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' https://cdn.tailwindcss.com https://cdn.jsdelivr.net 'unsafe-inline'; "+
-				"style-src 'self' https://cdn.tailwindcss.com https://fonts.googleapis.com 'unsafe-inline'; "+
+				"script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "+
+				"style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; "+
 				"font-src 'self' https://fonts.gstatic.com; "+
 				"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; "+
 				"img-src 'self' data:; "+
@@ -144,9 +144,15 @@ func securityHeaders(next http.Handler) http.Handler {
 		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
-		// Prevent caching of static assets so CSS/JS changes take effect immediately
-		if strings.HasSuffix(r.URL.Path, ".css") || strings.HasSuffix(r.URL.Path, ".js") || strings.HasSuffix(r.URL.Path, ".html") || r.URL.Path == "/" {
+		// HTML and the SPA root: revalidate every load so the latest shell is
+		// always served. CSS/JS: short browser-cache window (5 min) with
+		// must-revalidate — repeat visits hit disk cache (zero bytes over the
+		// wire, near-instant render) but a deploy propagates within minutes.
+		path := r.URL.Path
+		if strings.HasSuffix(path, ".html") || path == "/" {
 			h.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		} else if strings.HasSuffix(path, ".css") || strings.HasSuffix(path, ".js") {
+			h.Set("Cache-Control", "public, max-age=300, must-revalidate")
 		}
 		next.ServeHTTP(w, r)
 	})

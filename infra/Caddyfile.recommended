@@ -1,0 +1,48 @@
+# Recommended Caddyfile for studyhub.fit
+#
+# This config moves static assets off the Go container (Caddy serves them
+# with sendfile) and turns on edge compression + sensible browser-cache
+# hints. Apply on the droplet at /etc/caddy/Caddyfile (or wherever the
+# current Caddyfile lives).
+#
+# Prereq: make the frontend directory readable by the caddy user. Easiest
+# way is to add a bind-mount in docker-compose.yml that maps the frontend
+# folder into a host path Caddy can read, e.g.
+#
+#   volumes:
+#     - ./frontend:/srv/frontend:ro
+#
+# and point the `root` directive below at that host path. If Caddy is
+# host-installed (apt) and the api container runs locally, just symlink:
+#
+#   sudo ln -s /opt/studyhub/frontend /srv/studyhub-frontend
+#
+# Then `caddy reload` picks it up.
+
+studyhub.fit {
+    # Edge compression — applies to everything Caddy serves, including
+    # responses proxied from the Go container that already gzipped them
+    # (Caddy passes through, no double-compress).
+    encode zstd gzip
+
+    # Static asset routes — Caddy serves directly. Skips the Go middleware
+    # chain entirely, freeing a goroutine per request.
+    @static path /js/* /modules/* *.css *.tailwind.css *.svg *.png *.jpg *.jpeg *.woff *.woff2 *.ico
+    handle @static {
+        root * /srv/studyhub-frontend
+        header Cache-Control "public, max-age=300, must-revalidate"
+        file_server
+    }
+
+    # API + WebSocket — proxy to the Go API container.
+    @backend path /api/* /ws/*
+    handle @backend {
+        reverse_proxy localhost:8080
+    }
+
+    # HTML / SPA shell — proxy to Go so it can attach security headers and
+    # the no-store policy that keeps the shell fresh after every deploy.
+    handle {
+        reverse_proxy localhost:8080
+    }
+}

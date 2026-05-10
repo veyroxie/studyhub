@@ -13,7 +13,9 @@ func listAttendance(db *DB, c *Claims) []Attendance {
 	var err error
 	tid := tenantID(c)
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT a.id,a.person_id,a.person_type,a.date,a.class_id,a.check_in,a.check_out,a.status FROM attendance a JOIN students s ON s.id=a.person_id WHERE a.person_type='student' AND s.contact=? AND (a.tenant_id=? OR ?=0) ORDER BY a.date DESC`, c.Email, tid, tid)
+		// Parents are always tenant-scoped — drop the (tenant_id=? OR ?=0)
+		// pattern so Postgres can use idx_attendance_tenant_date.
+		rows, err = db.Query(`SELECT a.id,a.person_id,a.person_type,a.date,a.class_id,a.check_in,a.check_out,a.status FROM attendance a JOIN students s ON s.id=a.person_id WHERE a.person_type='student' AND s.contact=? AND s.tenant_id=? AND a.tenant_id=? ORDER BY a.date DESC`, c.Email, tid, tid)
 	} else {
 		rows, err = db.Query(`SELECT id,person_id,person_type,date,class_id,check_in,check_out,status FROM attendance WHERE (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
 	}
@@ -48,8 +50,8 @@ func listAttendancePaged(db *DB, c *Claims, p Pagination) ([]Attendance, int) {
 	var rows *sql.Rows
 	var err error
 	if c != nil && c.Role == "parent" {
-		db.QueryRow(`SELECT COUNT(*) FROM attendance a JOIN students s ON s.id=a.person_id WHERE a.person_type='student' AND s.contact=? AND (a.tenant_id=? OR ?=0)`, c.Email, tid, tid).Scan(&total)
-		rows, err = db.Query(`SELECT a.id,a.person_id,a.person_type,a.date,a.class_id,a.check_in,a.check_out,a.status FROM attendance a JOIN students s ON s.id=a.person_id WHERE a.person_type='student' AND s.contact=? AND (a.tenant_id=? OR ?=0) ORDER BY a.date DESC LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
+		db.QueryRow(`SELECT COUNT(*) FROM attendance a JOIN students s ON s.id=a.person_id WHERE a.person_type='student' AND s.contact=? AND s.tenant_id=? AND a.tenant_id=?`, c.Email, tid, tid).Scan(&total)
+		rows, err = db.Query(`SELECT a.id,a.person_id,a.person_type,a.date,a.class_id,a.check_in,a.check_out,a.status FROM attendance a JOIN students s ON s.id=a.person_id WHERE a.person_type='student' AND s.contact=? AND s.tenant_id=? AND a.tenant_id=? ORDER BY a.date DESC LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
 	} else {
 		db.QueryRow(`SELECT COUNT(*) FROM attendance WHERE (tenant_id=? OR ?=0)`, tid, tid).Scan(&total)
 		rows, err = db.Query(`SELECT id,person_id,person_type,date,class_id,check_in,check_out,status FROM attendance WHERE (tenant_id=? OR ?=0) ORDER BY date DESC LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)

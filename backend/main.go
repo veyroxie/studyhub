@@ -104,6 +104,9 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(requestID)
 	r.Use(middleware.Recoverer)
+	// Gzip JSON, HTML, CSS, JS responses. Snapshot payload (~500KB) compresses
+	// to ~50KB; saves bandwidth and the bulk of TTFB on slow networks.
+	r.Use(middleware.Compress(5))
 	r.Use(securityHeaders) // CSP, X-Frame-Options, etc.
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,

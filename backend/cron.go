@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -63,8 +65,16 @@ func previousMonth(now time.Time) time.Time {
 // generateMonthlyInvoices is the core of the monthly subscription cycle.
 // Returns the number of invoices created. Safe to call repeatedly: an
 // existing Monthly invoice for the current month blocks duplicates.
+//
+// Performance: bulk-fetches the existing-invoice and family-credit lookups
+// up-front, then issues all inserts inside a single transaction. The naive
+// per-student loop ran ~3 queries × N students; for N=200 that's 600 round
+// trips. The bulk version is 3 setup queries + N inserts in one transaction.
 func generateMonthlyInvoices(db *DB, now time.Time) int {
 	monthPrefix := now.Format("2006-01")
+
+	existing := loadExistingMonthlyInvoiceStudentIDs(db, monthPrefix)
+
 	rows, err := db.Query(`
 		SELECT s.id, s.tenant_id, s.first_name, s.last_name, s.family_id, s.package_amount
 		FROM students s
@@ -76,76 +86,153 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 		logger.Error("monthly invoice cron query failed", "err", err)
 		return 0
 	}
-	defer rows.Close()
-
 	type row struct {
 		id, tenantID, firstName, lastName, familyID string
 		packageAmount                               float64
 	}
-	var students []row
+	var pending []row
 	for rows.Next() {
 		var r row
 		if err := rows.Scan(&r.id, &r.tenantID, &r.firstName, &r.lastName, &r.familyID, &r.packageAmount); err != nil {
 			continue
 		}
-		students = append(students, r)
-	}
-
-	created := 0
-	for _, s := range students {
-		var existing int
-		db.QueryRow(`
-			SELECT COUNT(*) FROM invoices
-			WHERE student_id=? AND type='Monthly'
-			  AND created_on LIKE ?
-			  AND deleted_at IS NULL`,
-			s.id, monthPrefix+"%",
-		).Scan(&existing)
-		if existing > 0 {
+		if existing[r.id] {
 			continue
 		}
+		pending = append(pending, r)
+	}
+	rows.Close()
+	if len(pending) == 0 {
+		return 0
+	}
 
-		amount := s.packageAmount
-		earlyBird := EarlyBirdRM // cron only runs day 1-7, so always applies
+	familyIDs := uniqueFamilyIDs(pending, func(i int) string { return pending[i].familyID })
+	familyCredits := loadFamilyReferralCredits(db, familyIDs)
+
+	tx, err := db.BeginTx(context.Background())
+	if err != nil {
+		logger.Error("monthly invoice cron tx begin failed", "err", err)
+		return 0
+	}
+
+	earlyBird := EarlyBirdRM
+	dueDate := time.Date(now.Year(), now.Month(), 7, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	createdOn := now.Format("2006-01-02")
+	monthLabel := now.Format("Jan 2006")
+
+	created := 0
+	for _, s := range pending {
 		referralCredit := 0.0
-		if s.familyID != "" {
-			var remaining int
-			db.QueryRow(`SELECT COALESCE(referral_credits_remaining,0) FROM families WHERE id=?`, s.familyID).Scan(&remaining)
-			if remaining > 0 {
-				referralCredit = ReferralMonthlyRM
-			}
+		if s.familyID != "" && familyCredits[s.familyID] > 0 {
+			referralCredit = ReferralMonthlyRM
 		}
-		total := amount - earlyBird - referralCredit
+		total := s.packageAmount - earlyBird - referralCredit
 		if total < 0 {
 			total = 0
 		}
-
 		invID := generateID("INV")
-		dueDate := time.Date(now.Year(), now.Month(), 7, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
-		desc := "Monthly tuition — " + now.Format("Jan 2006") + " — " + s.firstName + " " + s.lastName
+		desc := "Monthly tuition — " + monthLabel + " — " + s.firstName + " " + s.lastName
 
-		_, err := db.Exec(`
+		_, err := tx.Exec(`
 			INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no)
 			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			invID, s.tenantID, s.id, desc, "Monthly", total, dueDate, "Unpaid",
-			now.Format("2006-01-02"), nil, "", 0.0, false, "[]", 0.0, referralCredit, "",
+			createdOn, nil, "", 0.0, false, "[]", 0.0, referralCredit, "",
 		)
 		if err != nil {
 			logger.Error("could not insert monthly invoice", "err", err, "student_id", s.id)
 			continue
 		}
-
 		if referralCredit > 0 && s.familyID != "" {
-			db.Exec(`UPDATE families SET referral_credits_remaining = GREATEST(0, COALESCE(referral_credits_remaining,0) - 1) WHERE id=?`, s.familyID)
+			tx.Exec(`UPDATE families SET referral_credits_remaining = GREATEST(0, COALESCE(referral_credits_remaining,0) - 1) WHERE id=?`, s.familyID)
+			familyCredits[s.familyID]--
 		}
-
 		created++
+	}
+
+	if err := tx.Commit(); err != nil {
+		logger.Error("monthly invoice cron tx commit failed", "err", err)
+		return 0
+	}
+	if created > 0 {
+		snapshotCacheInvalidateAll()
 	}
 	return created
 }
 
+// loadExistingMonthlyInvoiceStudentIDs returns the set of student IDs that
+// already have a Monthly invoice for the given YYYY-MM prefix.
+func loadExistingMonthlyInvoiceStudentIDs(db *DB, monthPrefix string) map[string]bool {
+	out := map[string]bool{}
+	rows, err := db.Query(`
+		SELECT DISTINCT student_id FROM invoices
+		WHERE type='Monthly' AND created_on LIKE ? AND deleted_at IS NULL`,
+		monthPrefix+"%")
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sid string
+		if err := rows.Scan(&sid); err == nil {
+			out[sid] = true
+		}
+	}
+	return out
+}
+
+// loadFamilyReferralCredits returns a map of family_id → remaining credits
+// for the requested family IDs. Empty input returns an empty map without
+// running a query.
+func loadFamilyReferralCredits(db *DB, familyIDs []string) map[string]int {
+	out := map[string]int{}
+	if len(familyIDs) == 0 {
+		return out
+	}
+	placeholders := make([]string, len(familyIDs))
+	args := make([]any, len(familyIDs))
+	for i, id := range familyIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	q := "SELECT id, COALESCE(referral_credits_remaining,0) FROM families WHERE id IN (" + strings.Join(placeholders, ",") + ")"
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var fid string
+		var rem int
+		if err := rows.Scan(&fid, &rem); err == nil {
+			out[fid] = rem
+		}
+	}
+	return out
+}
+
+// uniqueFamilyIDs collects the distinct non-empty family IDs from a slice
+// without an external dep — keeps the cron file self-contained.
+func uniqueFamilyIDs[T any](items []T, get func(int) string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(items))
+	for i := range items {
+		id := get(i)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
 // handleRunMonthlyCron is the admin-triggered manual run for cases where
 // the cron missed a window or a new student was set up mid-month.
+//
+// Runs in a goroutine and returns 202 Accepted immediately so the admin
+// dashboard does not block on a 30–60s job that holds DB connections.
+// Status is reported through the audit log.
 func handleRunMonthlyCron(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
@@ -153,10 +240,17 @@ func handleRunMonthlyCron(db *DB) http.HandlerFunc {
 			respondError(w, "admin only", 403)
 			return
 		}
-		invoices := generateMonthlyInvoices(db, time.Now())
-		payrolls := generateMonthlyPayroll(db, time.Now())
-		logAudit(db, c.Email, "monthly_cron_manual_run", "system", "", "")
-		respond(w, map[string]int{"invoices": invoices, "payrolls": payrolls})
+		actor := c.Email
+		go func() {
+			now := time.Now()
+			invoices := generateMonthlyInvoices(db, now)
+			payrolls := generateMonthlyPayroll(db, now)
+			logger.Info("monthly cron manual run finished", "actor", actor, "invoices", invoices, "payrolls", payrolls)
+			logAudit(db, actor, "monthly_cron_manual_run", "system", "", "")
+		}()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte(`{"status":"started","note":"running in background; check audit log for completion"}`))
 	}
 }
 
@@ -296,7 +390,7 @@ func hoursBetween(start, end string) float64 {
 
 // handleRegeneratePayroll lets admin re-run payroll for a specific month
 // when a teacher checks in late or a staff record changes after the
-// cron has already fired.
+// cron has already fired. Runs in the background — see handleRunMonthlyCron.
 func handleRegeneratePayroll(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
@@ -318,8 +412,14 @@ func handleRegeneratePayroll(db *DB) http.HandlerFunc {
 			// next month to compute payroll for the requested month.
 			target = t.AddDate(0, 1, 0)
 		}
-		count := generateMonthlyPayroll(db, target)
-		logAudit(db, c.Email, "payroll_regenerated", "system", monthArg, "")
-		respond(w, map[string]int{"created": count})
+		actor := c.Email
+		go func() {
+			count := generateMonthlyPayroll(db, target)
+			logger.Info("payroll regenerated", "actor", actor, "month", monthArg, "created", count)
+			logAudit(db, actor, "payroll_regenerated", "system", monthArg, "")
+		}()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte(`{"status":"started"}`))
 	}
 }

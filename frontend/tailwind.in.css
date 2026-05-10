@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+@source "./index.html";
+@source "./register.html";
+@source "./reset.html";
+@source "./set-password.html";
+@source "./verify.html";
+@source "./js/**/*.js";
