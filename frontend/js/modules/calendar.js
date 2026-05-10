@@ -136,10 +136,10 @@
         : '')
 
       + (isClient ? '' : '<div class="grid grid-cols-4 gap-4 mb-6">'
-        + _statCard('Total Classes', totalClasses, 'text-blue-600')
-        + _statCard('Full Classes', fullClasses, 'text-red-500')
-        + _statCard('Avg Fill Rate', Math.round(avgFill * 100) + '%', 'text-emerald-600')
-        + _statCard('Active Staff', staff.length, 'text-purple-600')
+        + _statCard('Total Classes', totalClasses, 'text-blue-600', 'analytics')
+        + _statCard('Full Classes', fullClasses, 'text-red-500', 'analytics')
+        + _statCard('Avg Fill Rate', Math.round(avgFill * 100) + '%', 'text-emerald-600', 'analytics')
+        + _statCard('Active Staff', staff.length, 'text-purple-600', 'staff')
         + '</div>');
 
     const filterBar = isClient ? '' : '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;flex-wrap:wrap">'
@@ -314,8 +314,9 @@
       + '</div>';
   }
 
-  function _statCard(label, value, colorClass) {
-    return '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4">'
+  function _statCard(label, value, colorClass, page) {
+    var click = page ? ' onclick="App.Router.navigate(\'' + page + '\')" style="cursor:pointer"' : '';
+    return '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 transition-shadow hover:shadow-md"' + click + '>'
       + '<div class="text-2xl font-bold ' + colorClass + '">' + value + '</div>'
       + '<div class="text-xs text-slate-500 mt-1">' + label + '</div>'
       + '</div>';
