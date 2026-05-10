@@ -12,16 +12,18 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o studyhub .
 
 # Build a purged + minified tailwind.css from the current frontend sources.
-# Uses the Tailwind v4 standalone CLI (no npm needed). Pinned to a release
-# for reproducibility; bump the URL when upgrading.
-FROM alpine:3.19 AS tailwind-builder
-RUN apk add --no-cache curl
-RUN curl -sLo /usr/local/bin/tailwindcss \
+# Uses the Tailwind v4 standalone CLI (no npm needed). The binary is a
+# glibc-linked Rust executable, so we build on debian-slim, not alpine
+# (musl) — only the resulting CSS file gets copied into the final image.
+FROM debian:stable-slim AS tailwind-builder
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSLo /usr/local/bin/tailwindcss \
         https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.0/tailwindcss-linux-x64 \
-    && chmod +x /usr/local/bin/tailwindcss
+    && chmod +x /usr/local/bin/tailwindcss \
+    && /usr/local/bin/tailwindcss --help >/dev/null
 WORKDIR /frontend
 COPY frontend/ ./
-RUN tailwindcss -i tailwind.in.css -o tailwind.css --minify
+RUN /usr/local/bin/tailwindcss -i tailwind.in.css -o tailwind.css --minify
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates postgresql16-client bash s3cmd && \
