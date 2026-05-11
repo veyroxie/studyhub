@@ -1,6 +1,11 @@
 (function() {
   window.App = window.App || {};
-  const KEY = 'studyhub_v1';
+  // Bump this suffix to force every browser to discard its cached state on
+  // next visit — the old key becomes orphaned and the loader falls back to
+  // App.DATA defaults, so every device effectively starts fresh.
+  const KEY = 'studyhub_v2';
+  // One-shot cleanup so the old key doesn't sit in localStorage forever.
+  try { localStorage.removeItem('studyhub_v1'); } catch (e) {}
 
   const _structuredClone = typeof structuredClone === 'function' ? structuredClone : null;
   function deepClone(obj) {
