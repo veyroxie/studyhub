@@ -12,7 +12,7 @@ import (
 // Admins see everything; parents see only rewards where they are the referrer.
 // Joined names are filled for easy rendering on the frontend.
 func listReferralRewards(db *DB, c *Claims) []ReferralReward {
-	tid := tenantID(c)
+	tw, twArgs := scopeTenant(c, "r")
 	var rows *sql.Rows
 	var err error
 	q := `SELECT r.id, r.referrer_family_id, r.referred_student_id, r.status,
@@ -21,13 +21,14 @@ func listReferralRewards(db *DB, c *Claims) []ReferralReward {
 	      FROM referral_rewards r
 	      LEFT JOIN families f ON f.id = r.referrer_family_id
 	      LEFT JOIN students s ON s.id = r.referred_student_id
-	      WHERE (r.tenant_id=? OR ?=0)`
+	      WHERE 1=1` + tw
 	if c != nil && c.Role == "parent" {
 		q += ` AND f.contact = ? ORDER BY r.created_at DESC`
-		rows, err = db.Query(q, tid, tid, c.Email)
+		args := append(append([]any{}, twArgs...), c.Email)
+		rows, err = db.Query(q, args...)
 	} else {
 		q += ` ORDER BY r.created_at DESC`
-		rows, err = db.Query(q, tid, tid)
+		rows, err = db.Query(q, twArgs...)
 	}
 	if err != nil {
 		return []ReferralReward{}
@@ -68,11 +69,12 @@ func handleReferralEarn(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		tid := tenantID(c)
+		tw, twArgs := scopeTenant(c, "")
 
 		var status string
 		var studentID string
-		if err := db.QueryRow(`SELECT status, referred_student_id FROM referral_rewards WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid).Scan(&status, &studentID); err != nil {
+		args := append([]any{id}, twArgs...)
+		if err := db.QueryRow(`SELECT status, referred_student_id FROM referral_rewards WHERE id=?`+tw, args...).Scan(&status, &studentID); err != nil {
 			respondError(w, "referral not found", 404)
 			return
 		}
@@ -110,14 +112,15 @@ func handleReferralConsume(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		tid := tenantID(c)
+		tw, twArgs := scopeTenant(c, "")
 
 		// Atomic decrement — a single UPDATE that both validates and mutates
 		// in one statement, preventing the TOCTOU race where two concurrent
 		// requests could both read remaining=1 and both decrement to 0.
+		args := append([]any{id}, twArgs...)
 		res, err := db.Exec(`UPDATE referral_rewards SET credits_remaining = credits_remaining - 1,
 			status = CASE WHEN credits_remaining - 1 <= 0 THEN 'exhausted' ELSE 'earned' END
-			WHERE id=? AND (tenant_id=? OR ?=0) AND status='earned' AND credits_remaining > 0`, id, tid, tid)
+			WHERE id=?`+tw+` AND status='earned' AND credits_remaining > 0`, args...)
 		if err != nil {
 			respondError(w, "could not consume credit", 500)
 			return
@@ -143,10 +146,11 @@ func handleFamilyReferral(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
 		id := chi.URLParam(r, "id")
-		tid := tenantID(c)
+		tw, twArgs := scopeTenant(c, "")
 
 		var code, contact string
-		if err := db.QueryRow(`SELECT COALESCE(referral_code,''), contact FROM families WHERE id=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, id, tid, tid).Scan(&code, &contact); err != nil {
+		args := append([]any{id}, twArgs...)
+		if err := db.QueryRow(`SELECT COALESCE(referral_code,''), contact FROM families WHERE id=?`+tw+` AND deleted_at IS NULL`, args...).Scan(&code, &contact); err != nil {
 			respondError(w, "family not found", 404)
 			return
 		}

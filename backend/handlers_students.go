@@ -21,6 +21,31 @@ func tenantID(c *Claims) int {
 	return c.TenantID
 }
 
+// scopeTenant returns a SQL fragment that scopes a query to the caller's
+// tenant, plus the args to thread through. For tenant-scoped users it
+// appends "AND tenant_id = ?" (or "AND <alias>.tenant_id = ?"); for
+// superadmin (tid=0) it returns the empty string and no args, granting
+// cross-tenant visibility.
+//
+// Callers concatenate the clause directly into their SQL — preserving the
+// `?` placeholder convention used throughout the project — and append
+// twArgs to their existing args slice.
+//
+// Why this matters: the previous "(tenant_id=? OR ?=0)" pattern prevented
+// PostgreSQL from using the composite (tenant_id, deleted_at) indexes
+// because the planner couldn't pick a generic plan. The helper keeps the
+// superadmin escape hatch while letting the common case use indexes.
+func scopeTenant(c *Claims, alias string) (string, []any) {
+	tid := tenantID(c)
+	if tid == 0 {
+		return "", nil
+	}
+	if alias == "" {
+		return " AND tenant_id = ?", []any{tid}
+	}
+	return " AND " + alias + ".tenant_id = ?", []any{tid}
+}
+
 // teacherClassIDSet returns the set of class IDs a teacher (identified by
 // claims email) is currently assigned to. Used to scope student lists so a
 // teacher can only see kids enrolled in their own classes.
@@ -34,8 +59,9 @@ func teacherClassIDSet(db *DB, c *Claims) map[string]bool {
 	if staffID == "" {
 		return out
 	}
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id FROM classes WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0) AND teacher_ids LIKE '%"'||?||'"%'`, tid, tid, staffID)
+	tw, twArgs := scopeTenant(c, "")
+	args := append(append([]any{}, twArgs...), staffID)
+	rows, err := db.Query(`SELECT id FROM classes WHERE deleted_at IS NULL`+tw+` AND teacher_ids LIKE '%"'||?||'"%'`, args...)
 	if err != nil {
 		return out
 	}
@@ -61,11 +87,13 @@ func studentInClassSet(s Student, classIDs map[string]bool) bool {
 func listStudents(db *DB, c *Claims) []Student {
 	var rows *sql.Rows
 	var err error
-	tid := tenantID(c)
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, c.Email, tid, tid)
+		// Parents are always tenant-scoped — drop the OR pattern.
+		tid := tenantID(c)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE contact=? AND tenant_id=? AND deleted_at IS NULL ORDER BY registered_on`, c.Email, tid)
 	} else {
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on`, tid, tid)
+		tw, twArgs := scopeTenant(c, "")
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE deleted_at IS NULL`+tw+` ORDER BY registered_on`, twArgs...)
 	}
 	if err != nil {
 		return []Student{}
@@ -120,16 +148,19 @@ func listStudentsPaged(db *DB, c *Claims, p Pagination) ([]Student, int) {
 		}
 		return all[start:end], total
 	}
-	tid := tenantID(c)
 	var total int
 	var rows *sql.Rows
 	var err error
 	if c != nil && c.Role == "parent" {
-		db.QueryRow(`SELECT COUNT(*) FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, c.Email, tid, tid).Scan(&total)
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
+		// Parents are always tenant-scoped — drop the OR pattern.
+		tid := tenantID(c)
+		db.QueryRow(`SELECT COUNT(*) FROM students WHERE contact=? AND tenant_id=? AND deleted_at IS NULL`, c.Email, tid).Scan(&total)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE contact=? AND tenant_id=? AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, c.Email, tid, p.Limit, p.Offset)
 	} else {
-		db.QueryRow(`SELECT COUNT(*) FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL`, tid, tid).Scan(&total)
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
+		tw, twArgs := scopeTenant(c, "")
+		db.QueryRow(`SELECT COUNT(*) FROM students WHERE deleted_at IS NULL`+tw, twArgs...).Scan(&total)
+		pageArgs := append(append([]any{}, twArgs...), p.Limit, p.Offset)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at FROM students WHERE deleted_at IS NULL`+tw+` ORDER BY registered_on LIMIT ? OFFSET ?`, pageArgs...)
 	}
 	if err != nil {
 		return []Student{}, total
@@ -197,7 +228,9 @@ func handleStudents(db *DB) http.HandlerFunc {
 			// Auto-find or create family for this student
 			if s.FamilyID == "" && s.Contact != "" {
 				var famID string
-				db.QueryRow(`SELECT id FROM families WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, s.Contact, tid, tid).Scan(&famID)
+				famTw, famTwArgs := scopeTenant(c, "")
+				famArgs := append([]any{s.Contact}, famTwArgs...)
+				db.QueryRow(`SELECT id FROM families WHERE contact=?`+famTw+` AND deleted_at IS NULL`, famArgs...).Scan(&famID)
 				if famID == "" {
 					famID = generateID("FAM")
 					familyName := s.ParentName + " Family"
@@ -242,17 +275,18 @@ func handleStudent(db *DB) http.HandlerFunc {
 				return
 			}
 			s.ID = id
-			tid := tenantID(c)
-			if _, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,siblings=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=? WHERE id=? AND (tenant_id=? OR ?=0)`,
-				s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, id, tid, tid); err != nil {
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, id}, twArgs...)
+			if _, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,siblings=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=? WHERE id=?`+tw, args...); err != nil {
 				respondError(w, "could not update student", 500)
 				return
 			}
 			logAudit(db, c.Email, "student_updated", "student", id, s.FirstName+" "+s.LastName)
 			respond(w, s)
 		case http.MethodDelete:
-			tid := tenantID(c)
-			if _, err := db.Exec(`UPDATE students SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{id}, twArgs...)
+			if _, err := db.Exec(`UPDATE students SET deleted_at=NOW() WHERE id=?`+tw, args...); err != nil {
 				respondError(w, "could not delete student", 500)
 				return
 			}
@@ -293,15 +327,17 @@ func handleStudentSubscription(db *DB) http.HandlerFunc {
 			respondError(w, "action must be pause, freeze, or resume", 400)
 			return
 		}
-		tid := tenantID(c)
+		tw, twArgs := scopeTenant(c, "")
 		now := time.Now().UTC().Format(time.RFC3339)
 		if newStatus == "active" {
-			if _, err := db.Exec(`UPDATE students SET subscription_status=?, resumed_at=? WHERE id=? AND (tenant_id=? OR ?=0)`, newStatus, now, id, tid, tid); err != nil {
+			args := append([]any{newStatus, now, id}, twArgs...)
+			if _, err := db.Exec(`UPDATE students SET subscription_status=?, resumed_at=? WHERE id=?`+tw, args...); err != nil {
 				respondError(w, "could not update subscription", 500)
 				return
 			}
 		} else {
-			if _, err := db.Exec(`UPDATE students SET subscription_status=?, paused_at=? WHERE id=? AND (tenant_id=? OR ?=0)`, newStatus, now, id, tid, tid); err != nil {
+			args := append([]any{newStatus, now, id}, twArgs...)
+			if _, err := db.Exec(`UPDATE students SET subscription_status=?, paused_at=? WHERE id=?`+tw, args...); err != nil {
 				respondError(w, "could not update subscription", 500)
 				return
 			}

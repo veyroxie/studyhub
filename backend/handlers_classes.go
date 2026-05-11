@@ -10,8 +10,8 @@ import (
 // ── Classes ───────────────────────────────────────────────────────────────────
 
 func listClasses(db *DB, c *Claims) []Class {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category FROM classes WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0)`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category FROM classes WHERE deleted_at IS NULL`+tw, twArgs...)
 	if err != nil {
 		return []Class{}
 	}
@@ -146,9 +146,9 @@ func handleClassByID(db *DB) http.HandlerFunc {
 				}
 			}
 
-			tid := tenantID(c)
-			db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,enrolled=?,color=?,category=? WHERE id=? AND (tenant_id=? OR ?=0)`,
-				cl.Name, jsonArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Enrolled, cl.Color, cl.Category, id, tid, tid)
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{cl.Name, jsonArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Enrolled, cl.Color, cl.Category, id}, twArgs...)
+			db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,enrolled=?,color=?,category=? WHERE id=?`+tw, args...)
 			if c != nil {
 				logAudit(db, c.Email, "class_updated", "class", id, cl.Name)
 			}
@@ -159,8 +159,9 @@ func handleClassByID(db *DB) http.HandlerFunc {
 				respondError(w, "admin only", 403)
 				return
 			}
-			tid := tenantID(c)
-			db.Exec(`UPDATE classes SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{id}, twArgs...)
+			db.Exec(`UPDATE classes SET deleted_at=NOW() WHERE id=?`+tw, args...)
 			if c != nil {
 				logAudit(db, c.Email, "class_deleted", "class", id, "soft deleted")
 			}

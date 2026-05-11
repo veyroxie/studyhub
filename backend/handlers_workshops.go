@@ -10,8 +10,8 @@ import (
 // ── Workshop CRUD ─────────────────────────────────────────────────────────────
 
 func listWorkshops(db *DB, c *Claims) []Workshop {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,name,description,date,time,end_time,classroom,capacity,enrolled,fee,teacher_ids,status FROM workshops WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,name,description,date,time,end_time,classroom,capacity,enrolled,fee,teacher_ids,status FROM workshops WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC`, twArgs...)
 	if err != nil {
 		return []Workshop{}
 	}
@@ -87,9 +87,9 @@ func handleUpdateWorkshop(db *DB) http.HandlerFunc {
 			return
 		}
 		ws.ID = id
-		tid := tenantID(c)
-		res, err := db.Exec(`UPDATE workshops SET name=?,description=?,date=?,time=?,end_time=?,classroom=?,capacity=?,enrolled=?,fee=?,teacher_ids=?,status=? WHERE id=? AND (tenant_id=? OR ?=0)`,
-			ws.Name, ws.Description, ws.Date, ws.Time, ws.EndTime, ws.Classroom, ws.Capacity, ws.Enrolled, ws.Fee, jsonArr(ws.TeacherIDs), ws.Status, id, tid, tid)
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{ws.Name, ws.Description, ws.Date, ws.Time, ws.EndTime, ws.Classroom, ws.Capacity, ws.Enrolled, ws.Fee, jsonArr(ws.TeacherIDs), ws.Status, id}, twArgs...)
+		res, err := db.Exec(`UPDATE workshops SET name=?,description=?,date=?,time=?,end_time=?,classroom=?,capacity=?,enrolled=?,fee=?,teacher_ids=?,status=? WHERE id=?`+tw, args...)
 		if err != nil {
 			respondError(w, "server error", 500)
 			return
@@ -113,8 +113,9 @@ func handleDeleteWorkshop(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		tid := tenantID(c)
-		if _, err := db.Exec(`UPDATE workshops SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{id}, twArgs...)
+		if _, err := db.Exec(`UPDATE workshops SET deleted_at=NOW() WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not delete workshop", 500)
 			return
 		}

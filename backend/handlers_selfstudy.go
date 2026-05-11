@@ -27,8 +27,8 @@ func parentStudentIDs(db *DB, email string) map[string]bool {
 }
 
 func listSelfStudy(db *DB, c *Claims) []SelfStudySession {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC`, twArgs...)
 	if err != nil {
 		return []SelfStudySession{}
 	}
@@ -70,8 +70,9 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 				respond(w, []SelfStudySession{})
 				return
 			}
-			tid := tenantID(c)
-			rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE student_id=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC`, studentID, tid, tid)
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{studentID}, twArgs...)
+			rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE student_id=?`+tw+` AND deleted_at IS NULL ORDER BY date DESC`, args...)
 			if err != nil {
 				respond(w, []SelfStudySession{})
 				return
@@ -91,11 +92,12 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 
 		// Admin/teacher path — supports pagination
 		p := parsePagination(r)
-		tid := tenantID(c)
+		tw, twArgs := scopeTenant(c, "")
 
 		if studentID != "" {
 			// Filtered by studentId — no pagination needed (small dataset)
-			rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE student_id=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC`, studentID, tid, tid)
+			args := append([]any{studentID}, twArgs...)
+			rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE student_id=?`+tw+` AND deleted_at IS NULL ORDER BY date DESC`, args...)
 			if err != nil {
 				respond(w, []SelfStudySession{})
 				return
@@ -119,8 +121,9 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 		}
 
 		var total int
-		db.QueryRow(`SELECT COUNT(*) FROM self_study_sessions WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL`, tid, tid).Scan(&total)
-		rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
+		db.QueryRow(`SELECT COUNT(*) FROM self_study_sessions WHERE deleted_at IS NULL`+tw, twArgs...).Scan(&total)
+		pageArgs := append(append([]any{}, twArgs...), p.Limit, p.Offset)
+		rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC LIMIT ? OFFSET ?`, pageArgs...)
 		if err != nil {
 			respond(w, PaginatedResponse{Data: []SelfStudySession{}, Total: total, Limit: p.Limit, Offset: p.Offset})
 			return
@@ -180,8 +183,9 @@ func handleDeleteSelfStudy(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		tid := tenantID(c)
-		if _, err := db.Exec(`UPDATE self_study_sessions SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{id}, twArgs...)
+		if _, err := db.Exec(`UPDATE self_study_sessions SET deleted_at=NOW() WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not delete session", 500)
 			return
 		}

@@ -38,8 +38,8 @@ func listParentEnrollments(db *DB, c *Claims) []Registration {
 }
 
 func listRegistrations(db *DB, c *Claims) []Registration {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,parent_name,email,phone,COALESCE(emergency_name,''),COALESCE(emergency_phone,''),COALESCE(student_first_name,''),COALESCE(student_last_name,''),COALESCE(student_dob,''),COALESCE(student_gender,''),COALESCE(gender,''),COALESCE(school_name,''),COALESCE(year_grade,''),COALESCE(class_type_interest,''),COALESCE(subject_interest,''),COALESCE(school_fees,0),COALESCE(registration_date,''),COALESCE(workshop_interest,''),COALESCE(class_interest,''),COALESCE(notes,''),submitted_on,status,COALESCE(type,'student'),COALESCE(specialization,''),COALESCE(nric,''),COALESCE(display_name,''),COALESCE(employment_type,'Full-time'),COALESCE(experience,''),COALESCE(qualifications,''),COALESCE(bio,''),COALESCE(schedule,''),COALESCE(expected_salary,''),COALESCE(referral_code,''),COALESCE(email_verified_at::text,'') FROM registrations WHERE status='pending' AND (tenant_id=? OR ?=0) ORDER BY submitted_on DESC`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,parent_name,email,phone,COALESCE(emergency_name,''),COALESCE(emergency_phone,''),COALESCE(student_first_name,''),COALESCE(student_last_name,''),COALESCE(student_dob,''),COALESCE(student_gender,''),COALESCE(gender,''),COALESCE(school_name,''),COALESCE(year_grade,''),COALESCE(class_type_interest,''),COALESCE(subject_interest,''),COALESCE(school_fees,0),COALESCE(registration_date,''),COALESCE(workshop_interest,''),COALESCE(class_interest,''),COALESCE(notes,''),submitted_on,status,COALESCE(type,'student'),COALESCE(specialization,''),COALESCE(nric,''),COALESCE(display_name,''),COALESCE(employment_type,'Full-time'),COALESCE(experience,''),COALESCE(qualifications,''),COALESCE(bio,''),COALESCE(schedule,''),COALESCE(expected_salary,''),COALESCE(referral_code,''),COALESCE(email_verified_at::text,'') FROM registrations WHERE status='pending'`+tw+` ORDER BY submitted_on DESC`, twArgs...)
 	if err != nil {
 		return []Registration{}
 	}
@@ -243,7 +243,9 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 			// We only need to create the student and link to the family.
 			parentEmail := strings.ToLower(strings.TrimSpace(reg.Email))
 			var famID string
-			tx.QueryRow(`SELECT id FROM families WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, parentEmail, tid, tid).Scan(&famID)
+			famTw, famTwArgs := scopeTenant(c, "")
+			famArgs := append([]any{parentEmail}, famTwArgs...)
+			tx.QueryRow(`SELECT id FROM families WHERE contact=?`+famTw+` AND deleted_at IS NULL`, famArgs...).Scan(&famID)
 			if famID == "" {
 				// Parent has no family record (e.g. admin-created account).
 				// Create one so the student is linked and visible to the parent.
@@ -270,15 +272,19 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 				return
 			}
 			// Increment enrolled count on each assigned class.
+			clsTw, clsTwArgs := scopeTenant(c, "")
 			for _, cid := range approveBody.ClassIds {
-				tx.Exec(`UPDATE classes SET enrolled=enrolled+1 WHERE id=? AND (tenant_id=? OR ?=0)`, cid, tid, tid)
+				clsArgs := append([]any{cid}, clsTwArgs...)
+				tx.Exec(`UPDATE classes SET enrolled=enrolled+1 WHERE id=?`+clsTw, clsArgs...)
 			}
 
 			// Referral validation (same pattern as the old combined flow).
 			code := strings.ToUpper(strings.TrimSpace(reg.ReferralCode))
 			if code != "" && famID != "" {
 				var referrerFamID string
-				tx.QueryRow(`SELECT id FROM families WHERE referral_code=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, code, tid, tid).Scan(&referrerFamID)
+				refTw, refTwArgs := scopeTenant(c, "")
+				refArgs := append([]any{code}, refTwArgs...)
+				tx.QueryRow(`SELECT id FROM families WHERE referral_code=?`+refTw+` AND deleted_at IS NULL`, refArgs...).Scan(&referrerFamID)
 				if referrerFamID != "" && referrerFamID != famID {
 					if _, err := tx.Exec(`INSERT INTO referral_rewards(id,tenant_id,referrer_family_id,referred_student_id,status) VALUES(?,?,?,?,'pending') ON CONFLICT(referred_student_id) DO NOTHING`,
 						generateID("REF"), tid, referrerFamID, stuID); err == nil {
@@ -413,7 +419,9 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 
 			// Find or create family for parent
 			var famID string
-			tx.QueryRow(`SELECT id FROM families WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, strings.ToLower(strings.TrimSpace(reg.Email)), tid, tid).Scan(&famID)
+			famTw, famTwArgs := scopeTenant(c, "")
+			famArgs := append([]any{strings.ToLower(strings.TrimSpace(reg.Email))}, famTwArgs...)
+			tx.QueryRow(`SELECT id FROM families WHERE contact=?`+famTw+` AND deleted_at IS NULL`, famArgs...).Scan(&famID)
 			if famID == "" {
 				famID = generateID("FAM")
 				familyName := reg.ParentName + " Family"
@@ -431,7 +439,9 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 			code := strings.ToUpper(strings.TrimSpace(reg.ReferralCode))
 			if code != "" {
 				var referrerFamID string
-				tx.QueryRow(`SELECT id FROM families WHERE referral_code=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, code, tid, tid).Scan(&referrerFamID)
+				refTw, refTwArgs := scopeTenant(c, "")
+				refArgs := append([]any{code}, refTwArgs...)
+				tx.QueryRow(`SELECT id FROM families WHERE referral_code=?`+refTw+` AND deleted_at IS NULL`, refArgs...).Scan(&referrerFamID)
 				if referrerFamID != "" && referrerFamID != famID {
 					if _, err := tx.Exec(`INSERT INTO referral_rewards(id,tenant_id,referrer_family_id,referred_student_id,status) VALUES(?,?,?,?,'pending') ON CONFLICT(referred_student_id) DO NOTHING`,
 						generateID("REF"), tid, referrerFamID, stuID); err == nil {
@@ -591,8 +601,9 @@ func handleEnrollmentRequest(db *DB) http.HandlerFunc {
 func handleRegistrationReject(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		tid := tenantID(claimsFrom(r))
-		if _, err := db.Exec(`UPDATE registrations SET status='rejected' WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+		regTw, regTwArgs := scopeTenant(claimsFrom(r), "")
+		regArgs := append([]any{id}, regTwArgs...)
+		if _, err := db.Exec(`UPDATE registrations SET status='rejected' WHERE id=?`+regTw, regArgs...); err != nil {
 			respondError(w, "could not reject registration", 500)
 			return
 		}

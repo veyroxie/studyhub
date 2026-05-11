@@ -11,8 +11,8 @@ import (
 // ── Announcements ─────────────────────────────────────────────────────────────
 
 func listAnnouncements(db *DB, c *Claims) []Announcement {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE (tenant_id=? OR ?=0) ORDER BY created_on DESC`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE 1=1`+tw+` ORDER BY created_on DESC`, twArgs...)
 	if err != nil {
 		return []Announcement{}
 	}
@@ -35,10 +35,11 @@ func listAnnouncements(db *DB, c *Claims) []Announcement {
 }
 
 func listAnnouncementsPaged(db *DB, c *Claims, p Pagination) ([]Announcement, int) {
-	tid := tenantID(c)
+	tw, twArgs := scopeTenant(c, "")
 	var total int
-	db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE (tenant_id=? OR ?=0)`, tid, tid).Scan(&total)
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE (tenant_id=? OR ?=0) ORDER BY created_on DESC LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
+	db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE 1=1`+tw, twArgs...).Scan(&total)
+	pageArgs := append(append([]any{}, twArgs...), p.Limit, p.Offset)
+	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE 1=1`+tw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
 	if err != nil {
 		return []Announcement{}, total
 	}
@@ -117,8 +118,9 @@ func handleAnnouncementDelete(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		tid := tenantID(c)
-		if _, err := db.Exec(`DELETE FROM announcements WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{id}, twArgs...)
+		if _, err := db.Exec(`DELETE FROM announcements WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not delete announcement", 500)
 			return
 		}
@@ -140,9 +142,9 @@ func handleAnnouncementUpdate(db *DB) http.HandlerFunc {
 			respondError(w, "bad body", 400)
 			return
 		}
-		tid := tenantID(c)
-		if _, err := db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=? WHERE id=? AND (tenant_id=? OR ?=0)`,
-			a.Title, a.Message, a.Type, a.ArchiveOn, id, tid, tid); err != nil {
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{a.Title, a.Message, a.Type, a.ArchiveOn, id}, twArgs...)
+		if _, err := db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=? WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not update announcement", 500)
 			return
 		}
@@ -168,8 +170,9 @@ func handleAnnouncementApprove(db *DB) http.HandlerFunc {
 		if body.Status == "" {
 			body.Status = "published"
 		}
-		tid := tenantID(c)
-		if _, err := db.Exec(`UPDATE announcements SET status=? WHERE id=? AND (tenant_id=? OR ?=0)`, body.Status, id, tid, tid); err != nil {
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{body.Status, id}, twArgs...)
+		if _, err := db.Exec(`UPDATE announcements SET status=? WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not update announcement", 500)
 			return
 		}

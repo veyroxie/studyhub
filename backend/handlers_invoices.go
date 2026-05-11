@@ -21,7 +21,8 @@ func listInvoices(db *DB, c *Claims) []Invoice {
 		// use idx_invoices_tenant_deleted instead of falling back to a scan.
 		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on,COALESCE(i.payment_proof,''),COALESCE(i.payment_method,''),COALESCE(i.discount_pct,0),COALESCE(i.submitted_by_parent,false),COALESCE(i.sibling_ids,''),COALESCE(i.sibling_discount,0),COALESCE(i.referral_credit,0),COALESCE(i.reference_no,'') FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND s.tenant_id=? AND i.tenant_id=? AND i.deleted_at IS NULL ORDER BY i.created_on DESC`, c.Email, tid, tid)
 	} else {
-		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on,COALESCE(payment_proof,''),COALESCE(payment_method,''),COALESCE(discount_pct,0),COALESCE(submitted_by_parent,false),COALESCE(sibling_ids,''),COALESCE(sibling_discount,0),COALESCE(referral_credit,0),COALESCE(reference_no,'') FROM invoices WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0) ORDER BY created_on DESC`, tid, tid)
+		tw, twArgs := scopeTenant(c, "")
+		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on,COALESCE(payment_proof,''),COALESCE(payment_method,''),COALESCE(discount_pct,0),COALESCE(submitted_by_parent,false),COALESCE(sibling_ids,''),COALESCE(sibling_discount,0),COALESCE(referral_credit,0),COALESCE(reference_no,'') FROM invoices WHERE deleted_at IS NULL`+tw+` ORDER BY created_on DESC`, twArgs...)
 	}
 	if err != nil {
 		return []Invoice{}
@@ -51,8 +52,10 @@ func listInvoicesPaged(db *DB, c *Claims, p Pagination) ([]Invoice, int) {
 		db.QueryRow(`SELECT COUNT(*) FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND s.tenant_id=? AND i.tenant_id=? AND i.deleted_at IS NULL`, c.Email, tid, tid).Scan(&total)
 		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on,COALESCE(i.payment_proof,''),COALESCE(i.payment_method,''),COALESCE(i.discount_pct,0),COALESCE(i.submitted_by_parent,false),COALESCE(i.sibling_ids,''),COALESCE(i.sibling_discount,0),COALESCE(i.referral_credit,0),COALESCE(i.reference_no,'') FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND s.tenant_id=? AND i.tenant_id=? AND i.deleted_at IS NULL ORDER BY i.created_on DESC LIMIT ? OFFSET ?`, c.Email, tid, tid, p.Limit, p.Offset)
 	} else {
-		db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0)`, tid, tid).Scan(&total)
-		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on,COALESCE(payment_proof,''),COALESCE(payment_method,''),COALESCE(discount_pct,0),COALESCE(submitted_by_parent,false),COALESCE(sibling_ids,''),COALESCE(sibling_discount,0),COALESCE(referral_credit,0),COALESCE(reference_no,'') FROM invoices WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0) ORDER BY created_on DESC LIMIT ? OFFSET ?`, tid, tid, p.Limit, p.Offset)
+		tw, twArgs := scopeTenant(c, "")
+		db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE deleted_at IS NULL`+tw, twArgs...).Scan(&total)
+		pageArgs := append(append([]any{}, twArgs...), p.Limit, p.Offset)
+		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on,COALESCE(payment_proof,''),COALESCE(payment_method,''),COALESCE(discount_pct,0),COALESCE(submitted_by_parent,false),COALESCE(sibling_ids,''),COALESCE(sibling_discount,0),COALESCE(referral_credit,0),COALESCE(reference_no,'') FROM invoices WHERE deleted_at IS NULL`+tw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
 	}
 	if err != nil {
 		return []Invoice{}, total
@@ -188,8 +191,9 @@ func handleInvoicePay(db *DB) http.HandlerFunc {
 		}
 
 		t := today()
-		tid := tenantID(c)
-		if _, err := db.Exec(`UPDATE invoices SET status=?, paid_on=?, payment_method=COALESCE(NULLIF(?,''),payment_method), reference_no=COALESCE(NULLIF(?,''),reference_no) WHERE id=? AND (tenant_id=? OR ?=0)`, newStatus, t, body.PaymentMethod, body.ReferenceNo, id, tid, tid); err != nil {
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{newStatus, t, body.PaymentMethod, body.ReferenceNo, id}, twArgs...)
+		if _, err := db.Exec(`UPDATE invoices SET status=?, paid_on=?, payment_method=COALESCE(NULLIF(?,''),payment_method), reference_no=COALESCE(NULLIF(?,''),reference_no) WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not update invoice", 500)
 			return
 		}

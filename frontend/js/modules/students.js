@@ -87,7 +87,7 @@
     }
 
     container.innerHTML += (isTeacher
-      ? '<div onclick="App.Router.navigate(\'attendance\')" class="bg-white rounded-xl border border-slate-100 shadow-sm p-3 mb-6 text-sm text-slate-600 inline-flex items-center gap-2 cursor-pointer transition-shadow hover:shadow-md" title="Take attendance"><span class="font-semibold text-slate-800">' + displayStudents.length + '</span> of your students<span class="text-slate-400">→ Attendance</span></div>'
+      ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-3 mb-6 text-sm text-slate-600 inline-block"><span class="font-semibold text-slate-800">' + displayStudents.length + '</span> of your students</div>'
       : '<div class="grid grid-cols-5 gap-4 mb-6">'
         + ['Total','Active','Inactive','New','Waitlisted'].map(function(k) {
             const colors = { Total:'text-blue-600', Active:'text-emerald-600', Inactive:'text-red-500', New:'text-blue-500', Waitlisted:'text-amber-500' };

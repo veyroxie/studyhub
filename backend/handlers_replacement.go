@@ -12,13 +12,15 @@ import (
 // ── Replacement Credits ──────────────────────────────────────────────────────
 
 func listReplacementCredits(db *DB, c *Claims) []ReplacementCredit {
-	tid := tenantID(c)
 	var rows *sql.Rows
 	var err error
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT rc.id,rc.student_id,rc.type,rc.minutes,rc.note,rc.class_id,rc.date,rc.created_by,COALESCE(rc.category,'class') FROM replacement_credits rc JOIN students s ON s.id=rc.student_id WHERE s.contact=? AND (rc.tenant_id=? OR ?=0) ORDER BY rc.created_at DESC`, c.Email, tid, tid)
+		// Parents are always tenant-scoped — drop the OR pattern.
+		tid := tenantID(c)
+		rows, err = db.Query(`SELECT rc.id,rc.student_id,rc.type,rc.minutes,rc.note,rc.class_id,rc.date,rc.created_by,COALESCE(rc.category,'class') FROM replacement_credits rc JOIN students s ON s.id=rc.student_id WHERE s.contact=? AND s.tenant_id=? AND rc.tenant_id=? ORDER BY rc.created_at DESC`, c.Email, tid, tid)
 	} else {
-		rows, err = db.Query(`SELECT id,student_id,type,minutes,note,class_id,date,created_by,COALESCE(category,'class') FROM replacement_credits WHERE (tenant_id=? OR ?=0) ORDER BY created_at DESC`, tid, tid)
+		tw, twArgs := scopeTenant(c, "")
+		rows, err = db.Query(`SELECT id,student_id,type,minutes,note,class_id,date,created_by,COALESCE(category,'class') FROM replacement_credits WHERE 1=1`+tw+` ORDER BY created_at DESC`, twArgs...)
 	}
 	if err != nil {
 		return []ReplacementCredit{}
@@ -50,8 +52,9 @@ func handleListReplacementCredits(db *DB) http.HandlerFunc {
 				return
 			}
 		}
-		tid := tenantID(c)
-		rows, err := db.Query(`SELECT id,student_id,type,minutes,note,class_id,date,created_by,COALESCE(category,'class') FROM replacement_credits WHERE student_id=? AND (tenant_id=? OR ?=0) ORDER BY created_at DESC`, studentID, tid, tid)
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{studentID}, twArgs...)
+		rows, err := db.Query(`SELECT id,student_id,type,minutes,note,class_id,date,created_by,COALESCE(category,'class') FROM replacement_credits WHERE student_id=?`+tw+` ORDER BY created_at DESC`, args...)
 		if err != nil {
 			respond(w, []ReplacementCredit{})
 			return
@@ -116,7 +119,9 @@ func handleCreateReplacementCredit(db *DB) http.HandlerFunc {
 			defer tx.Rollback()
 
 			var earned, used int
-			if err := tx.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND category=? AND (tenant_id=? OR ?=0)`, rc.StudentID, rc.Category, tid, tid).Scan(&earned, &used); err != nil {
+			tw, twArgs := scopeTenant(c, "")
+			balArgs := append([]any{rc.StudentID, rc.Category}, twArgs...)
+			if err := tx.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND category=?`+tw, balArgs...).Scan(&earned, &used); err != nil {
 				respondError(w, "server error", 500)
 				return
 			}
@@ -162,8 +167,9 @@ func handleDeleteReplacementCredit(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		tid := tenantID(c)
-		if _, err := db.Exec(`DELETE FROM replacement_credits WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{id}, twArgs...)
+		if _, err := db.Exec(`DELETE FROM replacement_credits WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not delete replacement credit", 500)
 			return
 		}
@@ -187,13 +193,15 @@ func handleReplacementBalance(db *DB) http.HandlerFunc {
 				return
 			}
 		}
-		tid := tenantID(c)
+		tw, twArgs := scopeTenant(c, "")
 		var classEarned, classUsed, ssEarned, ssUsed int
-		if err := db.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND COALESCE(category,'class')='class' AND (tenant_id=? OR ?=0)`, studentID, tid, tid).Scan(&classEarned, &classUsed); err != nil {
+		argsClass := append([]any{studentID}, twArgs...)
+		if err := db.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND COALESCE(category,'class')='class'`+tw, argsClass...).Scan(&classEarned, &classUsed); err != nil {
 			respondError(w, "server error", 500)
 			return
 		}
-		if err := db.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND category='self-study' AND (tenant_id=? OR ?=0)`, studentID, tid, tid).Scan(&ssEarned, &ssUsed); err != nil {
+		argsSS := append([]any{studentID}, twArgs...)
+		if err := db.QueryRow(`SELECT COALESCE(SUM(CASE WHEN type='earned' THEN minutes ELSE 0 END),0), COALESCE(SUM(CASE WHEN type='used' THEN minutes ELSE 0 END),0) FROM replacement_credits WHERE student_id=? AND category='self-study'`+tw, argsSS...).Scan(&ssEarned, &ssUsed); err != nil {
 			respondError(w, "server error", 500)
 			return
 		}

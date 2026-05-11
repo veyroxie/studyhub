@@ -97,8 +97,9 @@ func handleUploadProof(db *DB) http.HandlerFunc {
 
 		// Update invoice record
 		proofPath := "uploads/" + filename
-		tid := tenantID(c)
-		if _, err := db.Exec(`UPDATE invoices SET payment_proof=? WHERE id=? AND (tenant_id=? OR ?=0)`, proofPath, invoiceID, tid, tid); err != nil {
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{proofPath, invoiceID}, twArgs...)
+		if _, err := db.Exec(`UPDATE invoices SET payment_proof=? WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not update invoice", 500)
 			return
 		}

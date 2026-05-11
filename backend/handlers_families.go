@@ -15,9 +15,11 @@ func listFamilies(db *DB, c *Claims) []Family {
 	var rows *sql.Rows
 	var err error
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,''),COALESCE(referral_credits_remaining,0) FROM families WHERE contact=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY name`, c.Email, tid, tid)
+		// Parents are always tenant-scoped — drop the OR pattern.
+		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,''),COALESCE(referral_credits_remaining,0) FROM families WHERE contact=? AND tenant_id=? AND deleted_at IS NULL ORDER BY name`, c.Email, tid)
 	} else {
-		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,''),COALESCE(referral_credits_remaining,0) FROM families WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY name`, tid, tid)
+		tw, twArgs := scopeTenant(c, "")
+		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,''),COALESCE(referral_credits_remaining,0) FROM families WHERE deleted_at IS NULL`+tw+` ORDER BY name`, twArgs...)
 	}
 	if err != nil {
 		return []Family{}
@@ -88,10 +90,11 @@ func handleFamilyPDPADelete(db *DB) http.HandlerFunc {
 			return
 		}
 		famID := chi.URLParam(r, "id")
-		tid := tenantID(c)
+		tw, twArgs := scopeTenant(c, "")
 
 		var contact string
-		if err := db.QueryRow(`SELECT contact FROM families WHERE id=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL`, famID, tid, tid).Scan(&contact); err != nil {
+		qArgs := append([]any{famID}, twArgs...)
+		if err := db.QueryRow(`SELECT contact FROM families WHERE id=? AND deleted_at IS NULL`+tw, qArgs...).Scan(&contact); err != nil {
 			respondError(w, "family not found", 404)
 			return
 		}
@@ -134,7 +137,7 @@ func handleFamilyByID(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		tid := tenantID(c)
+		tw, twArgs := scopeTenant(c, "")
 		switch r.Method {
 		case http.MethodPut:
 			var f Family
@@ -143,15 +146,16 @@ func handleFamilyByID(db *DB) http.HandlerFunc {
 				return
 			}
 			f.ID = id
-			if _, err := db.Exec(`UPDATE families SET name=?,contact=?,phone=?,parent_name=?,address=?,notes=? WHERE id=? AND (tenant_id=? OR ?=0)`,
-				f.Name, f.Contact, f.Phone, f.ParentName, f.Address, f.Notes, id, tid, tid); err != nil {
+			args := append([]any{f.Name, f.Contact, f.Phone, f.ParentName, f.Address, f.Notes, id}, twArgs...)
+			if _, err := db.Exec(`UPDATE families SET name=?,contact=?,phone=?,parent_name=?,address=?,notes=? WHERE id=?`+tw, args...); err != nil {
 				respondError(w, "could not update family", 500)
 				return
 			}
 			logAudit(db, c.Email, "family_updated", "family", id, f.Name)
 			respond(w, f)
 		case http.MethodDelete:
-			if _, err := db.Exec(`UPDATE families SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+			args := append([]any{id}, twArgs...)
+			if _, err := db.Exec(`UPDATE families SET deleted_at=NOW() WHERE id=?`+tw, args...); err != nil {
 				respondError(w, "could not delete family", 500)
 				return
 			}

@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 // Snapshot cache — short-TTL in-memory cache for /api/snapshot.
@@ -84,6 +86,36 @@ func snapshotCacheInvalidateAll() {
 	for k := range snapshotCache {
 		delete(snapshotCache, k)
 	}
+}
+
+// snapshotCacheInvalidator is HTTP middleware that drops the requester's
+// tenant cache after any successful (2xx) non-GET request. This way every
+// write handler — students, invoices, classes, attendance, etc. — gets
+// cache invalidation for free without per-handler bookkeeping. The 10s
+// TTL is the safety net; this middleware makes admin writes feel instant.
+//
+// Must be registered AFTER jwtMiddleware so claims are available.
+func snapshotCacheInvalidator(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodOptions || r.Method == http.MethodHead {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(ww, r)
+		status := ww.Status()
+		if status >= 200 && status < 300 {
+			c := claimsFrom(r)
+			if c == nil {
+				return
+			}
+			if c.TenantID == 0 {
+				snapshotCacheInvalidateAll()
+				return
+			}
+			snapshotCacheInvalidateTenant(c.TenantID)
+		}
+	})
 }
 
 // writeCachedSnapshot writes an already-marshalled snapshot to the response.

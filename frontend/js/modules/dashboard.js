@@ -584,9 +584,10 @@
               : '<div style="font-size:0.78rem;color:#94a3b8">None</div>')
         +   '</div>'
 
-        // Replacement balance — opens the student modal directly on the
-        // Replacements tab so parents can see the breakdown of credits.
-        +   '<div onclick="App.Students&&App.Students._viewModal(\'' + stu.id + '\')" style="background:' + (repBalance > 0 ? '#fffbeb' : '#f8fafc') + ';border-radius:10px;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(146,64,14,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
+        // Replacement balance — opens the student modal already switched to
+        // the Replacements tab so parents see the credit breakdown without
+        // having to hunt for the right tab.
+        +   '<div onclick="if(App.Students){App.Students._viewModal(\'' + stu.id + '\');App.Students._switchTab(\'replacements\');}" style="background:' + (repBalance > 0 ? '#fffbeb' : '#f8fafc') + ';border-radius:10px;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(146,64,14,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (repBalance > 0 ? '#92400e' : '#94a3b8') + ';margin-bottom:0.3rem">Replace</div>'
         +     '<div style="font-family:var(--serif);font-size:1.15rem;font-weight:700;color:' + (repBalance > 0 ? '#92400e' : '#64748b') + '">' + repBalance + 'cr</div>'
         +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (repBalance > 0 ? 'credits' : 'none') + '</div>'

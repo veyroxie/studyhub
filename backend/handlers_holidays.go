@@ -11,8 +11,8 @@ import (
 // ── Holiday CRUD ──────────────────────────────────────────────────────────────
 
 func listHolidays(db *DB, c *Claims) []Holiday {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,name,date,end_date,type,notes,created_by FROM holidays WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,name,date,end_date,type,notes,created_by FROM holidays WHERE deleted_at IS NULL`+tw+` ORDER BY date`, twArgs...)
 	if err != nil {
 		return []Holiday{}
 	}
@@ -97,9 +97,9 @@ func handleUpdateHoliday(db *DB) http.HandlerFunc {
 		if h.Type == "" {
 			h.Type = "holiday"
 		}
-		tid := tenantID(c)
-		res, err := db.Exec(`UPDATE holidays SET name=?,date=?,end_date=?,type=?,notes=? WHERE id=? AND (tenant_id=? OR ?=0)`,
-			h.Name, h.Date, h.EndDate, h.Type, h.Notes, id, tid, tid)
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{h.Name, h.Date, h.EndDate, h.Type, h.Notes, id}, twArgs...)
+		res, err := db.Exec(`UPDATE holidays SET name=?,date=?,end_date=?,type=?,notes=? WHERE id=?`+tw, args...)
 		if err != nil {
 			respondError(w, "server error", 500)
 			return
@@ -121,8 +121,9 @@ func handleDeleteHoliday(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		tid := tenantID(c)
-		db.Exec(`UPDATE holidays SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{id}, twArgs...)
+		db.Exec(`UPDATE holidays SET deleted_at=NOW() WHERE id=?`+tw, args...)
 		logAudit(db, c.Email, "holiday_deleted", "holiday", id, "soft deleted")
 		w.WriteHeader(http.StatusNoContent)
 	}

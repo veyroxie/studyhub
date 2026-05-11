@@ -10,8 +10,8 @@ import (
 // ── Performance Reviews ───────────────────────────────────────────────────────
 
 func listPerformanceReviews(db *DB, c *Claims) []PerformanceReview {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC`, twArgs...)
 	if err != nil {
 		return []PerformanceReview{}
 	}
@@ -38,8 +38,9 @@ func handleListPerformanceReviews(db *DB) http.HandlerFunc {
 		staffID := r.URL.Query().Get("staffId")
 		if staffID != "" {
 			// Filtered by staffId — small dataset, no pagination
-			tid := tenantID(c)
-			rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE staff_id=? AND (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC`, staffID, tid, tid)
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{staffID}, twArgs...)
+			rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE staff_id=? AND deleted_at IS NULL`+tw+` ORDER BY date DESC`, args...)
 			if err != nil {
 				respond(w, []PerformanceReview{})
 				return
@@ -63,10 +64,11 @@ func handleListPerformanceReviews(db *DB) http.HandlerFunc {
 			return
 		}
 
-		tid := tenantID(c)
+		tw, twArgs := scopeTenant(c, "")
 		var total int
-		db.QueryRow(`SELECT COUNT(*) FROM performance_reviews WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL`, tid, tid).Scan(&total)
-		rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE (tenant_id=? OR ?=0) AND deleted_at IS NULL ORDER BY date DESC LIMIT ? OFFSET ?`, tid, tid, pg.Limit, pg.Offset)
+		db.QueryRow(`SELECT COUNT(*) FROM performance_reviews WHERE deleted_at IS NULL`+tw, twArgs...).Scan(&total)
+		pageArgs := append(append([]any{}, twArgs...), pg.Limit, pg.Offset)
+		rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC LIMIT ? OFFSET ?`, pageArgs...)
 		if err != nil {
 			respond(w, PaginatedResponse{Data: []PerformanceReview{}, Total: total, Limit: pg.Limit, Offset: pg.Offset})
 			return
@@ -132,8 +134,9 @@ func handleDeletePerformanceReview(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		tid := tenantID(c)
-		db.Exec(`UPDATE performance_reviews SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid)
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{id}, twArgs...)
+		db.Exec(`UPDATE performance_reviews SET deleted_at=NOW() WHERE id=?`+tw, args...)
 		if c := claimsFrom(r); c != nil {
 			logAudit(db, c.Email, "performance_review_deleted", "performance_review", id, "soft deleted")
 		}

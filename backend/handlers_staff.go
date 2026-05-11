@@ -11,8 +11,8 @@ import (
 // ── Staff ─────────────────────────────────────────────────────────────────────
 
 func listStaff(db *DB, c *Claims) []Staff {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type,hourly_rate FROM staff WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0)`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type,hourly_rate FROM staff WHERE deleted_at IS NULL`+tw, twArgs...)
 	if err != nil {
 		return []Staff{}
 	}
@@ -105,9 +105,9 @@ func handleStaffByID(db *DB) http.HandlerFunc {
 			if s.EmploymentType == "" {
 				s.EmploymentType = "Full-time"
 			}
-			tid := tenantID(c)
-			if _, err := db.Exec(`UPDATE staff SET name=?,full_name=?,role=?,email=?,phone=?,salary=?,join_date=?,status=?,specialization=?,nric=?,emergency_name=?,emergency_phone=?,employment_type=?,hourly_rate=? WHERE id=? AND (tenant_id=? OR ?=0)`,
-				s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate, id, tid, tid); err != nil {
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate, id}, twArgs...)
+			if _, err := db.Exec(`UPDATE staff SET name=?,full_name=?,role=?,email=?,phone=?,salary=?,join_date=?,status=?,specialization=?,nric=?,emergency_name=?,emergency_phone=?,employment_type=?,hourly_rate=? WHERE id=?`+tw, args...); err != nil {
 				respondError(w, "could not update staff", 500)
 				return
 			}
@@ -121,8 +121,9 @@ func handleStaffByID(db *DB) http.HandlerFunc {
 				respondError(w, "admin only", 403)
 				return
 			}
-			tid := tenantID(c)
-			if _, err := db.Exec(`UPDATE staff SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{id}, twArgs...)
+			if _, err := db.Exec(`UPDATE staff SET deleted_at=NOW() WHERE id=?`+tw, args...); err != nil {
 				respondError(w, "could not delete staff", 500)
 				return
 			}

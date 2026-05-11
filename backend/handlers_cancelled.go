@@ -8,8 +8,8 @@ import (
 // ── Cancelled Classes ─────────────────────────────────────────────────────────
 
 func listCancelledClasses(db *DB, c *Claims) []CancelledClass {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,class_id,date,reason,cancelled_by,created_on FROM cancelled_classes WHERE (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,class_id,date,reason,cancelled_by,created_on FROM cancelled_classes WHERE 1=1`+tw+` ORDER BY date DESC`, twArgs...)
 	if err != nil {
 		return []CancelledClass{}
 	}

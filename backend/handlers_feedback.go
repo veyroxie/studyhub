@@ -10,8 +10,8 @@ import (
 // ── Feedback CRUD ─────────────────────────────────────────────────────────────
 
 func listFeedback(db *DB, c *Claims) []Feedback {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,class_id,date,teacher_id,topic,mood,notes,student_notes FROM feedback WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0) ORDER BY date DESC`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,class_id,date,teacher_id,topic,mood,notes,student_notes FROM feedback WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC`, twArgs...)
 	if err != nil {
 		return []Feedback{}
 	}
@@ -86,9 +86,9 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 				respond(w, all)
 				return
 			}
-			tid := tenantID(c)
-			q := `SELECT id,class_id,date,teacher_id,topic,mood,notes,student_notes FROM feedback WHERE deleted_at IS NULL AND (tenant_id=? OR ?=0)`
-			args := []any{tid, tid}
+			tw, twArgs := scopeTenant(c, "")
+			q := `SELECT id,class_id,date,teacher_id,topic,mood,notes,student_notes FROM feedback WHERE deleted_at IS NULL` + tw
+			args := append([]any{}, twArgs...)
 			if date != "" {
 				q += ` AND date=?`
 				args = append(args, date)
@@ -132,9 +132,9 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 			return
 		}
 
-		tid := tenantID(c)
-		where := `deleted_at IS NULL AND (tenant_id=? OR ?=0)`
-		args := []any{tid, tid}
+		tw, twArgs := scopeTenant(c, "")
+		where := `deleted_at IS NULL` + tw
+		args := append([]any{}, twArgs...)
 		if date != "" {
 			where += ` AND date=?`
 			args = append(args, date)
@@ -255,9 +255,9 @@ func handleUpdateFeedback(db *DB) http.HandlerFunc {
 		if f.StudentNotes == nil {
 			snJSON = []byte("[]")
 		}
-		tid := tenantID(c)
-		res, err := db.Exec(`UPDATE feedback SET class_id=?,date=?,teacher_id=?,topic=?,mood=?,notes=?,student_notes=? WHERE id=? AND deleted_at IS NULL AND (tenant_id=? OR ?=0)`,
-			f.ClassID, f.Date, f.TeacherID, f.Topic, f.Mood, f.Notes, string(snJSON), id, tid, tid)
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{f.ClassID, f.Date, f.TeacherID, f.Topic, f.Mood, f.Notes, string(snJSON), id}, twArgs...)
+		res, err := db.Exec(`UPDATE feedback SET class_id=?,date=?,teacher_id=?,topic=?,mood=?,notes=?,student_notes=? WHERE id=? AND deleted_at IS NULL`+tw, args...)
 		if err != nil {
 			respondError(w, "server error", 500)
 			return
@@ -281,8 +281,9 @@ func handleDeleteFeedback(db *DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		tid := tenantID(c)
-		if _, err := db.Exec(`UPDATE feedback SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{id}, twArgs...)
+		if _, err := db.Exec(`UPDATE feedback SET deleted_at=NOW() WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not delete feedback", 500)
 			return
 		}
@@ -296,8 +297,8 @@ func handleDeleteFeedback(db *DB) http.HandlerFunc {
 // ── Feedback Replies ─────────────────────────────────────────────────────────
 
 func listFeedbackReplies(db *DB, c *Claims) []FeedbackReply {
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,feedback_id,author_email,author_name,message,created_at FROM feedback_replies WHERE (tenant_id=? OR ?=0) ORDER BY created_at DESC`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,feedback_id,author_email,author_name,message,created_at FROM feedback_replies WHERE 1=1`+tw+` ORDER BY created_at DESC`, twArgs...)
 	if err != nil {
 		return []FeedbackReply{}
 	}

@@ -10,8 +10,8 @@ func listPayroll(db *DB, c *Claims) []Payroll {
 	if c != nil && c.Role == "parent" {
 		return []Payroll{}
 	}
-	tid := tenantID(c)
-	rows, err := db.Query(`SELECT id,staff_id,month,base_salary,bonus,deductions,total,status,paid_on FROM payroll WHERE (tenant_id=? OR ?=0) ORDER BY month DESC`, tid, tid)
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,staff_id,month,base_salary,bonus,deductions,total,status,paid_on FROM payroll WHERE 1=1`+tw+` ORDER BY month DESC`, twArgs...)
 	if err != nil {
 		return []Payroll{}
 	}

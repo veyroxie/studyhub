@@ -14,10 +14,11 @@ import (
 // reports for their own children, and only when the report is Published
 // AND there's no unpaid Monthly invoice on the family.
 func listProgressReports(db *DB, c *Claims) []ProgressReport {
-	tid := tenantID(c)
 	var rows *sql.Rows
 	var err error
 	if c != nil && c.Role == "parent" {
+		// Parents are always tenant-scoped — drop the OR pattern.
+		tid := tenantID(c)
 		rows, err = db.Query(`
 			SELECT pr.id, pr.student_id, pr.term, COALESCE(pr.teacher_id,''),
 			       COALESCE(pr.subject,''), COALESCE(pr.grade,''),
@@ -27,12 +28,14 @@ func listProgressReports(db *DB, c *Claims) []ProgressReport {
 			FROM progress_reports pr
 			JOIN students s ON s.id = pr.student_id
 			WHERE s.contact = ?
+			  AND s.tenant_id = ?
+			  AND pr.tenant_id = ?
 			  AND pr.deleted_at IS NULL
 			  AND pr.published = true
-			  AND (pr.tenant_id = ? OR ? = 0)
 			ORDER BY pr.term DESC, pr.created_at DESC`,
 			c.Email, tid, tid)
 	} else {
+		tw, twArgs := scopeTenant(c, "")
 		rows, err = db.Query(`
 			SELECT id, student_id, term, COALESCE(teacher_id,''),
 			       COALESCE(subject,''), COALESCE(grade,''),
@@ -40,9 +43,9 @@ func listProgressReports(db *DB, c *Claims) []ProgressReport {
 			       COALESCE(teacher_comment,''), COALESCE(next_term_focus,''),
 			       COALESCE(published,false), created_at, updated_at
 			FROM progress_reports
-			WHERE deleted_at IS NULL AND (tenant_id = ? OR ? = 0)
+			WHERE deleted_at IS NULL`+tw+`
 			ORDER BY term DESC, created_at DESC`,
-			tid, tid)
+			twArgs...)
 	}
 	if err != nil {
 		return []ProgressReport{}
@@ -122,15 +125,15 @@ func handleProgressReportByID(db *DB) http.HandlerFunc {
 				return
 			}
 			now := time.Now().UTC().Format(time.RFC3339)
-			tid := tenantID(c)
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{pr.TeacherID, pr.Subject, pr.Grade, pr.Strengths, pr.AreasToImprove,
+				pr.TeacherComment, pr.NextTermFocus, pr.Published, now, id}, twArgs...)
 			if _, err := db.Exec(`
 				UPDATE progress_reports
 				SET teacher_id=?, subject=?, grade=?, strengths=?, areas_to_improve=?,
 				    teacher_comment=?, next_term_focus=?, published=?, updated_at=?
-				WHERE id=? AND (tenant_id=? OR ?=0)`,
-				pr.TeacherID, pr.Subject, pr.Grade, pr.Strengths, pr.AreasToImprove,
-				pr.TeacherComment, pr.NextTermFocus, pr.Published, now,
-				id, tid, tid); err != nil {
+				WHERE id=?`+tw,
+				args...); err != nil {
 				respondError(w, "could not update progress report", 500)
 				return
 			}
@@ -143,8 +146,9 @@ func handleProgressReportByID(db *DB) http.HandlerFunc {
 				respondError(w, "admin only", 403)
 				return
 			}
-			tid := tenantID(c)
-			if _, err := db.Exec(`UPDATE progress_reports SET deleted_at=NOW() WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{id}, twArgs...)
+			if _, err := db.Exec(`UPDATE progress_reports SET deleted_at=NOW() WHERE id=?`+tw, args...); err != nil {
 				respondError(w, "could not delete progress report", 500)
 				return
 			}

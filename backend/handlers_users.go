@@ -22,8 +22,8 @@ func handleUsers(db *DB) http.HandlerFunc {
 		switch r.Method {
 		case http.MethodGet:
 			c := claimsFrom(r)
-			tid := tenantID(c)
-			rows, _ := db.Query(`SELECT id,email,role,name,COALESCE(status,'active') FROM users WHERE (tenant_id=? OR ?=0) ORDER BY role,name`, tid, tid)
+			tw, twArgs := scopeTenant(c, "")
+			rows, _ := db.Query(`SELECT id,email,role,name,COALESCE(status,'active') FROM users WHERE 1=1`+tw+` ORDER BY role,name`, twArgs...)
 			defer rows.Close()
 			type userRow struct {
 				ID     int    `json:"id"`
@@ -167,8 +167,9 @@ func handleUserResendVerification(db *DB) http.HandlerFunc {
 func handleUserDelete(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		tid := tenantID(claimsFrom(r))
-		if _, err := db.Exec(`DELETE FROM users WHERE id=? AND (tenant_id=? OR ?=0)`, id, tid, tid); err != nil {
+		tw, twArgs := scopeTenant(claimsFrom(r), "")
+		args := append([]any{id}, twArgs...)
+		if _, err := db.Exec(`DELETE FROM users WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not delete user", 500)
 			return
 		}

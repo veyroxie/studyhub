@@ -170,6 +170,10 @@ func main() {
 	// ── Authenticated routes ──────────────────────────────────────────────────
 	r.Group(func(r chi.Router) {
 		r.Use(jwtMiddleware)
+		// Drop the tenant snapshot cache after every successful write so
+		// admins / parents see their changes on the next dashboard load
+		// instead of waiting up to snapshotCacheTTL.
+		r.Use(snapshotCacheInvalidator)
 
 		r.Get("/api/auth/me", handleMe(db))
 		r.Get("/api/auth/profile", handleProfile(db))
