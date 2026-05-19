@@ -130,7 +130,9 @@ func handleSetPassword(db *DB) http.HandlerFunc {
 			return
 		}
 
-		jwtTok, err := makeToken(int(t.UserID.Int64), tenantID, email, role, name)
+		// Password reset issues a default (short) session — the user can
+		// opt into a remembered session via the login form on a future visit.
+		jwtTok, err := makeToken(int(t.UserID.Int64), tenantID, email, role, name, tokenExpiryShort)
 		if err != nil {
 			respondError(w, "could not sign token", 500)
 			return
@@ -140,7 +142,7 @@ func handleSetPassword(db *DB) http.HandlerFunc {
 			Name:     "sh_token",
 			Value:    jwtTok,
 			Path:     "/",
-			Expires:  time.Now().Add(tokenExpiry),
+			Expires:  time.Now().Add(tokenExpiryShort),
 			HttpOnly: true,
 			Secure:   secure,
 			SameSite: http.SameSiteLaxMode,

@@ -374,6 +374,25 @@
       +   (!isTeacher && s.emergency2Name ? _infoRow('Emergency Contact', App.Utils.esc(s.emergency2Name) + (s.emergency2Phone ? ' · ' + App.Utils.esc(s.emergency2Phone) : '')) : '')
       +   (!isTeacher && s.notes ? _infoRow('Notes', '<div style="white-space:pre-wrap">' + App.Utils.esc(s.notes) + '</div>') : '')
       +   '</div>'
+      +   (isAdmin ? (function() {
+            // Admin-only: surface the parent linkage as its own card with a
+            // "Change link" action. Useful for fixing wrong-email entries or
+            // moving a student to a different household.
+            var fam = (App.Store.get().families || []).find(function(x) { return x.id === s.familyId; });
+            var linked = !!s.contact;
+            var summary = linked
+              ? '<span style="font-weight:600;color:#111">' + App.Utils.esc(s.parentName || '(no name)') + '</span>'
+                + '<span style="color:#64748b"> · ' + App.Utils.esc(s.contact) + '</span>'
+                + (fam ? '<span style="color:#94a3b8"> · ' + App.Utils.esc(fam.name) + '</span>' : '')
+              : '<span style="color:#dc2626;font-weight:600">No parent linked</span>';
+            return '<div style="margin-top:1rem;padding:0.85rem 1rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px;display:flex;align-items:center;gap:0.75rem">'
+              + '<div style="flex:1;min-width:0;font-size:0.83rem">'
+              +   '<div style="font-size:0.65rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.2rem">Linked Parent</div>'
+              +   summary
+              + '</div>'
+              + '<button onclick="App.Students._relinkModal(\'' + studentId + '\')" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold-dim);color:#92400e;border:1px solid rgba(201,162,39,0.3);border-radius:8px;cursor:pointer;white-space:nowrap">' + (linked ? 'Change link' : 'Link parent') + '</button>'
+              + '</div>';
+          })() : '')
       +   '<div style="margin-top:1rem;padding:1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px">'
       +     '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.65rem">'
       +       '<svg style="width:18px;height:18px;color:#b45309" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342"/></svg>'
@@ -1463,8 +1482,74 @@
     _familyModal: _familyModal,
     _addFamilyModal: _addFamilyModal,
     _editFamilyModal: _editFamilyModal,
-    _pdpaDelete: _pdpaDelete
+    _pdpaDelete: _pdpaDelete,
+    _relinkModal: _relinkModal,
+    _relinkUnlink: _relinkUnlink
   };
+
+  function _relinkModal(studentId) {
+    var state = App.Store.get();
+    var s = (state.students || []).find(function(x) { return x.id === studentId; });
+    if (!s) return;
+    var families = (state.families || []).filter(function(f) { return f.contact; });
+    var datalistOpts = families.map(function(f) {
+      return '<option value="' + App.Utils.esc(f.contact) + '">' + App.Utils.esc(f.name) + '</option>';
+    }).join('');
+
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:440px;max-width:520px">'
+      + '<h2 class="text-lg font-bold mb-1">Change parent link</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Re-assign <strong>' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</strong> to a different parent. If the email matches an existing family, the student joins that family; otherwise a new family is created.</p>'
+      + '<form id="relink-form" class="space-y-3">'
+      +   _field('Parent email', '<input name="contact" type="email" class="form-input" list="relink-fam-list" value="' + App.Utils.esc(s.contact || '') + '" required>')
+      +   '<datalist id="relink-fam-list">' + datalistOpts + '</datalist>'
+      +   _field('Parent name', '<input name="parentName" class="form-input" value="' + App.Utils.esc(s.parentName || '') + '">')
+      +   _field('Parent phone (optional, used only if a new family is created)', '<input name="phone" class="form-input" value="' + App.Utils.esc(s.phone || '') + '">')
+      +   '<div class="flex justify-between items-center pt-2">'
+      +     (s.contact ? '<button type="button" onclick="App.Students._relinkUnlink(\'' + studentId + '\')" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:600;background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:8px;cursor:pointer">Unlink (no parent)</button>' : '<span></span>')
+      +     '<div class="flex gap-2">'
+      +       '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      +       '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Re-link</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</form>'
+      + '</div>'
+    );
+
+    document.getElementById('relink-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      await _submitRelink(studentId, {
+        contact: (fd.get('contact') || '').toString().trim(),
+        parentName: (fd.get('parentName') || '').toString().trim(),
+        phone: (fd.get('phone') || '').toString().trim()
+      });
+    });
+  }
+
+  async function _relinkUnlink(studentId) {
+    var ok = await App.Utils.showConfirm({
+      title: 'Unlink parent',
+      message: 'This student will no longer be visible to any parent account. You can re-link later from the same screen.',
+      confirmLabel: 'Unlink',
+      danger: true
+    });
+    if (!ok) return;
+    await _submitRelink(studentId, { contact: '', parentName: '', phone: '' });
+  }
+
+  async function _submitRelink(studentId, payload) {
+    try {
+      var res = await App.Api.post('/api/students/' + studentId + '/relink', payload);
+      App.Utils.hideModal();
+      var msg = !payload.contact
+        ? 'Student unlinked from parent'
+        : (res && res.isNewFamily ? 'Linked — new family created' : 'Linked to existing family');
+      App.Utils.showToast(msg, 'success');
+      await App.Api.loadSnapshot();
+      _viewModal(studentId);
+    } catch (err) {}
+  }
 
   async function _pdpaDelete(familyId) {
     var ok = await App.Utils.showConfirm({

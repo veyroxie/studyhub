@@ -62,20 +62,33 @@ func handleProfile(db *DB) http.HandlerFunc {
 			logAudit(db, c.Email, "profile_updated", "user", c.Email, body.Name)
 
 			// Reissue the JWT so the new name is reflected in the cookie
-			// immediately (no need to re-login). Read tenant_id from the
-			// existing claims.
-			newToken, terr := makeToken(c.UserID, c.TenantID, c.Email, c.Role, body.Name)
+			// immediately (no need to re-login). Preserve the original
+			// session lifetime by reading the existing claim's expiry —
+			// otherwise a "Remember me" session would silently shrink to
+			// the short default on every profile update.
+			remaining := time.Until(c.ExpiresAt.Time)
+			if remaining <= 0 {
+				remaining = tokenExpiryShort
+			}
+			newToken, terr := makeToken(c.UserID, c.TenantID, c.Email, c.Role, body.Name, remaining)
 			if terr == nil {
 				secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
-				http.SetCookie(w, &http.Cookie{
+				cookie := &http.Cookie{
 					Name:     "sh_token",
 					Value:    newToken,
 					Path:     "/",
-					Expires:  time.Now().Add(tokenExpiry),
 					HttpOnly: true,
 					Secure:   secure,
 					SameSite: http.SameSiteLaxMode,
-				})
+				}
+				// Mirror the original cookie's persistence: if the
+				// remaining lifetime is longer than the short default,
+				// the user had opted into "Remember me" — keep the cookie
+				// persistent. Otherwise leave Expires zero (session cookie).
+				if remaining > tokenExpiryShort {
+					cookie.Expires = time.Now().Add(remaining)
+				}
+				http.SetCookie(w, cookie)
 			}
 
 			respond(w, map[string]string{"message": "Profile updated."})

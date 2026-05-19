@@ -187,6 +187,7 @@ func main() {
 			r.Put("/{id}", handleStudent(db))
 			r.Delete("/{id}", handleStudent(db))
 			r.Post("/{id}/subscription", handleStudentSubscription(db))
+			r.Post("/{id}/relink", handleStudentRelink(db))
 		})
 
 		r.Route("/api/classes", func(r chi.Router) {

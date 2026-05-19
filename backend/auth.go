@@ -30,7 +30,13 @@ func validatePassword(password string) (bool, string) {
 // jwtSecret is set from JWT_SECRET env var in main.go — this default is only used in dev
 var jwtSecret []byte
 
-const tokenExpiry = 7 * 24 * time.Hour // 7 days — long enough to not annoy users
+// Two session lifetimes: a short one for the default browser-session case
+// (cookie dies on browser close) and a long one when the user ticks
+// "Remember me" on the login form (persistent cookie, 30 days).
+const (
+	tokenExpiryShort    = 24 * time.Hour      // 1 day — default
+	tokenExpiryRemember = 30 * 24 * time.Hour // 30 days — opt-in via "Remember me"
+)
 
 type Claims struct {
 	UserID   int    `json:"userId"`
@@ -48,8 +54,9 @@ const claimsKey contextKey = "claims"
 // ── Login ─────────────────────────────────────────────────────────────────────
 
 type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	RememberMe bool   `json:"rememberMe"`
 }
 
 // loginResponse never contains the token — it goes in an HttpOnly cookie instead
@@ -154,7 +161,11 @@ func handleLogin(db *DB) http.HandlerFunc {
 			return
 		}
 
-		token, err := makeToken(id, tenantID, req.Email, role, name)
+		expiry := tokenExpiryShort
+		if req.RememberMe {
+			expiry = tokenExpiryRemember
+		}
+		token, err := makeToken(id, tenantID, req.Email, role, name, expiry)
 		if err != nil {
 			respondError(w, "could not sign token", http.StatusInternalServerError)
 			return
@@ -162,15 +173,21 @@ func handleLogin(db *DB) http.HandlerFunc {
 
 		// ── Set HttpOnly cookie (JS cannot read this, prevents XSS token theft) ──
 		secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" // behind reverse proxy (Caddy)
-		http.SetCookie(w, &http.Cookie{
+		cookie := &http.Cookie{
 			Name:     "sh_token",
 			Value:    token,
 			Path:     "/",
-			Expires:  time.Now().Add(tokenExpiry),
-			HttpOnly: true,                  // JavaScript cannot access this cookie
-			Secure:   secure,                // HTTPS only in production
-			SameSite: http.SameSiteLaxMode,  // Lax allows cookie on top-level navigation (Strict blocks it)
-		})
+			HttpOnly: true,                 // JavaScript cannot access this cookie
+			Secure:   secure,               // HTTPS only in production
+			SameSite: http.SameSiteLaxMode, // Lax allows cookie on top-level navigation (Strict blocks it)
+		}
+		if req.RememberMe {
+			// Persistent cookie — survives browser close until the JWT expires.
+			cookie.Expires = time.Now().Add(expiry)
+		}
+		// Else: leave Expires/MaxAge zero so the browser treats it as a
+		// session cookie and deletes it when the window closes.
+		http.SetCookie(w, cookie)
 
 		// Return role/name/email — NOT the token itself.
 		// For teachers, also look up their staff ID so the frontend can
@@ -224,7 +241,7 @@ func handleMe(db *DB) http.HandlerFunc {
 	}
 }
 
-func makeToken(userID, tenantID int, email, role, name string) (string, error) {
+func makeToken(userID, tenantID int, email, role, name string, expiry time.Duration) (string, error) {
 	claims := Claims{
 		UserID:   userID,
 		TenantID: tenantID,
@@ -232,7 +249,7 @@ func makeToken(userID, tenantID int, email, role, name string) (string, error) {
 		Role:     role,
 		Name:     name,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(tokenExpiry)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}

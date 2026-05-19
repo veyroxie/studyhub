@@ -40,18 +40,30 @@
       document.getElementById('app').classList.remove('hidden');
     },
     async quickLogin(email, password) {
-      await App.Login._doLogin(email, password);
+      // Dev shortcuts never auto-remember — they're for testing on shared
+      // machines where you don't want a 30-day cookie sticking around.
+      await App.Login._doLogin(email, password, false);
     },
-    async _doLogin(email, password) {
+    async _doLogin(email, password, rememberOverride) {
       const btn = document.getElementById('login-btn');
       const errEl = document.getElementById('login-error');
       const resendBanner = document.getElementById('resend-verify-banner');
+      // Read the "Keep me signed in" checkbox if no explicit override was
+      // passed (the dev quick-login buttons always force false).
+      let remember = false;
+      if (typeof rememberOverride === 'boolean') {
+        remember = rememberOverride;
+      } else {
+        const cb = document.getElementById('login-remember');
+        remember = !!(cb && cb.checked);
+      }
       if (btn) { btn.textContent = 'Signing in...'; btn.disabled = true; }
       errEl.classList.add('hidden');
       if (resendBanner) resendBanner.classList.add('hidden');
       try {
         _showLoading('Signing in...');
-        const data = await App.Api.login(email, password);
+        const data = await App.Api.login(email, password, remember);
+        try { localStorage.setItem('sh_remember', remember ? '1' : '0'); } catch (e) {}
         App.currentRole = data.role === 'admin' ? 'admin' : (data.role === 'teacher' ? 'teacher' : 'client');
         sessionStorage.setItem('sh_role', App.currentRole);
         if (data.role === 'parent') {
@@ -531,9 +543,9 @@
 
   // ── Session Idle Timeout ──────────────────────────────────────────────────
   (function() {
-    var IDLE_LIMIT   = 30 * 60 * 1000; // 30 minutes
-    var WARN_BEFORE  = 60 * 1000;      // warn 60s before logout
-    var CHECK_INTERVAL = 15 * 1000;    // check every 15s
+    var IDLE_LIMIT   = 2 * 60 * 60 * 1000; // 2 hours
+    var WARN_BEFORE  = 60 * 1000;          // warn 60s before logout
+    var CHECK_INTERVAL = 15 * 1000;        // check every 15s
     var _lastActivity = Date.now();
     var _warned = false;
     var _intervalId = null;
@@ -552,6 +564,11 @@
 
     function _startIdleWatch() {
       if (_intervalId) return;
+      // "Remember me" sessions opt out of the idle timeout entirely — the
+      // whole point of the checkbox is to stay signed in indefinitely.
+      try {
+        if (localStorage.getItem('sh_remember') === '1') return;
+      } catch (e) {}
       ['mousemove','keydown','click','scroll','touchstart'].forEach(function(evt) {
         document.addEventListener(evt, _onActivity, { passive: true, capture: true });
       });

@@ -145,8 +145,11 @@ func handleAttendance(db *DB, hub *WSHub) http.HandlerFunc {
 				}
 			}
 
-			// Broadcast check-in/out event to WebSocket clients
-			if hub != nil && a.PersonType == "student" {
+			// Broadcast check-in/out event to WebSocket clients. Only fire
+			// when there's an actual time to communicate — status-only
+			// updates (e.g. marking absent) would otherwise produce a
+			// "checked in at " toast with no time on the parent's screen.
+			if hub != nil && a.PersonType == "student" && (a.CheckIn != nil || a.CheckOut != nil) {
 				eventType := "CHECK_IN"
 				if a.CheckOut != nil {
 					eventType = "CHECK_OUT"

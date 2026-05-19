@@ -72,7 +72,10 @@ func handleVerifyEmail(db *DB) http.HandlerFunc {
 			return
 		}
 
-		jwtTok, err := makeToken(int(t.UserID.Int64), tenantID, email, role, name)
+		// Email verification activates the account and issues a default
+		// (short) session. The user can opt into a remembered session via the
+		// login form on a future visit.
+		jwtTok, err := makeToken(int(t.UserID.Int64), tenantID, email, role, name, tokenExpiryShort)
 		if err != nil {
 			respondError(w, "could not sign token", 500)
 			return
@@ -82,7 +85,7 @@ func handleVerifyEmail(db *DB) http.HandlerFunc {
 			Name:     "sh_token",
 			Value:    jwtTok,
 			Path:     "/",
-			Expires:  time.Now().Add(tokenExpiry),
+			Expires:  time.Now().Add(tokenExpiryShort),
 			HttpOnly: true,
 			Secure:   secure,
 			SameSite: http.SameSiteLaxMode,

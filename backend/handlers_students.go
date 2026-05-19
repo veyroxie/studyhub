@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -211,6 +212,11 @@ func handleStudents(db *DB) http.HandlerFunc {
 				respondError(w, "bad body", 400)
 				return
 			}
+			// Normalise contact to lowercase/trimmed so it matches the
+			// parent's login email exactly. Without this, an admin who
+			// types "John@Email.com" would silently hide the kid from a
+			// parent who logs in as "john@email.com".
+			s.Contact = strings.ToLower(strings.TrimSpace(s.Contact))
 			if msg := validationError("firstName", s.FirstName, "lastName", s.LastName, "contact", s.Contact); msg != "" {
 				respondError(w, msg, 400)
 				return
@@ -275,6 +281,9 @@ func handleStudent(db *DB) http.HandlerFunc {
 				return
 			}
 			s.ID = id
+			// Same normalisation as create — keep contact matchable against
+			// the lowercased login email parents authenticate with.
+			s.Contact = strings.ToLower(strings.TrimSpace(s.Contact))
 			tw, twArgs := scopeTenant(c, "")
 			args := append([]any{s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, id}, twArgs...)
 			if _, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,siblings=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=? WHERE id=?`+tw, args...); err != nil {
@@ -344,5 +353,114 @@ func handleStudentSubscription(db *DB) http.HandlerFunc {
 		}
 		logAudit(db, c.Email, "subscription_"+body.Action, "student", id, newStatus)
 		respond(w, map[string]string{"subscriptionStatus": newStatus})
+	}
+}
+
+// resolveFamilyForContact finds the family row matching the given parent
+// email; if none exists it creates one with the supplied parent name and a
+// fresh referral code. Returns the family id and a flag indicating whether a
+// new row was created. An empty contact yields ("", false, nil).
+func resolveFamilyForContact(db *DB, c *Claims, contact, parentName, phone string) (string, bool, error) {
+	if contact == "" {
+		return "", false, nil
+	}
+	tid := tenantID(c)
+	famTw, famTwArgs := scopeTenant(c, "")
+	var famID string
+	args := append([]any{contact}, famTwArgs...)
+	db.QueryRow(`SELECT id FROM families WHERE contact=?`+famTw+` AND deleted_at IS NULL`, args...).Scan(&famID)
+	if famID != "" {
+		return famID, false, nil
+	}
+	famID = generateID("FAM")
+	familyName := parentName + " Family"
+	if parentName == "" {
+		familyName = contact
+	}
+	if _, err := db.Exec(`INSERT INTO families(id,tenant_id,name,contact,phone,parent_name,referral_code) VALUES(?,?,?,?,?,?,?)`,
+		famID, tid, familyName, contact, phone, parentName, newReferralCode()); err != nil {
+		return "", false, err
+	}
+	return famID, true, nil
+}
+
+// handleStudentRelink lets an admin change which parent / family a student is
+// attached to. Body: {contact, parentName?, phone?}. An empty contact unlinks
+// the student (clears contact, parent_name, family_id) — useful when the
+// original parent email was wrong and a fresh link is being set up.
+type relinkRequest struct {
+	Contact    string `json:"contact"`
+	ParentName string `json:"parentName"`
+	Phone      string `json:"phone"`
+}
+
+type relinkResponse struct {
+	StudentID    string `json:"studentId"`
+	Contact      string `json:"contact"`
+	ParentName   string `json:"parentName"`
+	FamilyID     string `json:"familyId"`
+	FamilyName   string `json:"familyName"`
+	IsNewFamily  bool   `json:"isNewFamily"`
+}
+
+func handleStudentRelink(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		if c == nil || c.Role != "admin" {
+			respondError(w, "admin only", 403)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var req relinkRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, "bad body", 400)
+			return
+		}
+		req.Contact = strings.ToLower(strings.TrimSpace(req.Contact))
+		if req.Contact != "" && !validateEmail(req.Contact) {
+			respondError(w, "invalid email", 400)
+			return
+		}
+
+		tw, twArgs := scopeTenant(c, "")
+		var oldContact string
+		oldArgs := append([]any{id}, twArgs...)
+		if err := db.QueryRow(`SELECT COALESCE(contact,'') FROM students WHERE id=?`+tw+` AND deleted_at IS NULL`, oldArgs...).Scan(&oldContact); err != nil {
+			respondError(w, "student not found", 404)
+			return
+		}
+
+		famID, isNew, err := resolveFamilyForContact(db, c, req.Contact, req.ParentName, req.Phone)
+		if err != nil {
+			respondError(w, "could not resolve family", 500)
+			return
+		}
+
+		updArgs := append([]any{req.Contact, req.ParentName, famID, id}, twArgs...)
+		if _, err := db.Exec(`UPDATE students SET contact=?, parent_name=?, family_id=? WHERE id=?`+tw, updArgs...); err != nil {
+			respondError(w, "could not relink student", 500)
+			return
+		}
+
+		detail := oldContact + " -> " + req.Contact
+		if req.Contact == "" {
+			detail = oldContact + " -> (unlinked)"
+		}
+		logAudit(db, c.Email, "student_relinked", "student", id, detail)
+
+		var familyName string
+		if famID != "" {
+			famTw, famTwArgs := scopeTenant(c, "")
+			famArgs := append([]any{famID}, famTwArgs...)
+			db.QueryRow(`SELECT name FROM families WHERE id=?`+famTw, famArgs...).Scan(&familyName)
+		}
+		respond(w, relinkResponse{
+			StudentID:   id,
+			Contact:     req.Contact,
+			ParentName:  req.ParentName,
+			FamilyID:    famID,
+			FamilyName:  familyName,
+			IsNewFamily: isNew,
+		})
 	}
 }

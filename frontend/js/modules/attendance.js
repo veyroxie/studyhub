@@ -442,10 +442,12 @@
     });
     let newAtt = state.attendance.slice();
     let action;
+    let existingCheckIn = null;
     if (existingIdx === -1) {
       newAtt.push({ id: App.Utils.generateId('ATT'), personId: id, personType: 'student', date: today, classId: _kioskClassId, checkIn: now, checkOut: null, status: 'Present' });
       action = 'in';
     } else if (!newAtt[existingIdx].checkOut) {
+      existingCheckIn = newAtt[existingIdx].checkIn || null;
       newAtt[existingIdx] = Object.assign({}, newAtt[existingIdx], { checkOut: now });
       action = 'out';
     } else {
@@ -456,6 +458,24 @@
     }
 
     App.Store.set({ attendance: newAtt });
+    // Persist to backend so the parent's device gets the WebSocket
+    // notification. Optimistic UI above keeps the kiosk feedback instant.
+    const apiBody = {
+      personId: id,
+      personType: 'student',
+      date: today,
+      classId: _kioskClassId,
+      status: 'Present'
+    };
+    if (action === 'in') {
+      apiBody.checkIn = now;
+    } else {
+      apiBody.checkIn = existingCheckIn;
+      apiBody.checkOut = now;
+    }
+    App.Api.post('/api/attendance', apiBody, { silent: true }).catch(function(err) {
+      App.Utils.showToast('Scan failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
+    });
     _kioskLastScan = {
       ok: true,
       name: stu.firstName + ' ' + stu.lastName,
@@ -775,6 +795,9 @@
     const state = App.Store.get();
     const now = App.Utils.nowTime();
     const existing = state.attendance.find(function(a) { return a.personId === studentId && a.classId === _attClassId && a.date === _attDate; });
+    // Optimistic UI update so the table flips immediately. The POST below
+    // is what actually persists the row and triggers the WebSocket
+    // broadcast that notifies the parent's device.
     let newAtt = state.attendance.slice();
     if (!existing) {
       newAtt.push({ id: App.Utils.generateId('ATT'), personId: studentId, personType: 'student', date: _attDate, classId: _attClassId, checkIn: now, checkOut: null, status: 'Present' });
@@ -783,31 +806,47 @@
     const stu = state.students.find(function(s) { return s.id === studentId; });
     const stuName = stu ? stu.firstName + ' ' + stu.lastName : studentId;
     App.Utils.showToast(stuName + ' checked in at ' + App.Utils.formatTime(now), 'info');
-    // Simulate parent notification via BroadcastChannel
-    try {
-      const ch = new BroadcastChannel('studyhub_notifs');
-      ch.postMessage({ type: 'CHECK_IN', student: stuName, time: now, parent: stu ? stu.contact : '' });
-      ch.close();
-    } catch(e) {}
     App.Router.refresh();
+    App.Api.post('/api/attendance', {
+      personId: studentId,
+      personType: 'student',
+      date: _attDate,
+      classId: _attClassId,
+      checkIn: now,
+      status: 'Present'
+    }, { silent: true }).catch(function(err) {
+      App.Utils.showToast('Check-in failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
+    });
   }
 
   function _checkOutStudent(studentId) {
     const state = App.Store.get();
     const now = App.Utils.nowTime();
+    const existing = state.attendance.find(function(a) {
+      return a.personId === studentId && a.classId === _attClassId && a.date === _attDate;
+    });
+    // Backend upsert overwrites check_in to whatever we send — pass the
+    // existing check-in time through so check-out doesn't blank it.
+    const existingCheckIn = existing && existing.checkIn ? existing.checkIn : null;
     const newAtt = state.attendance.map(function(a) {
-      return (a.personId === studentId && a.classId === _attClassId && a.date === _attDate) ? { ...a, checkOut: now } : a;
+      return (a.personId === studentId && a.classId === _attClassId && a.date === _attDate) ? Object.assign({}, a, { checkOut: now }) : a;
     });
     App.Store.set({ attendance: newAtt });
     const stu = state.students.find(function(s) { return s.id === studentId; });
     const stuName = stu ? stu.firstName + ' ' + stu.lastName : studentId;
-    App.Utils.showToast('📱 Parent notified: ' + App.Utils.esc(stuName) + ' checked out at ' + App.Utils.formatTime(now), 'success');
-    try {
-      const ch = new BroadcastChannel('studyhub_notifs');
-      ch.postMessage({ type: 'CHECK_OUT', student: stuName, time: now, parent: stu ? stu.contact : '' });
-      ch.close();
-    } catch(e) {}
+    App.Utils.showToast(stuName + ' checked out at ' + App.Utils.formatTime(now), 'success');
     App.Router.refresh();
+    App.Api.post('/api/attendance', {
+      personId: studentId,
+      personType: 'student',
+      date: _attDate,
+      classId: _attClassId,
+      checkIn: existingCheckIn,
+      checkOut: now,
+      status: 'Present'
+    }, { silent: true }).catch(function(err) {
+      App.Utils.showToast('Check-out failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
+    });
   }
 
   function _renderTeacherSelfCheckIn() {
@@ -876,12 +915,25 @@
     App.Store.set({ attendance: newAtt });
     App.Utils.showToast('Checked in at ' + App.Utils.formatTime(now), 'success');
     App.Router.refresh();
+    App.Api.post('/api/attendance', {
+      personId: App.currentTeacher,
+      personType: 'staff',
+      date: today,
+      checkIn: now,
+      status: 'Present'
+    }, { silent: true }).catch(function(err) {
+      App.Utils.showToast('Check-in failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
+    });
   }
 
   function _teacherCheckOut() {
     var state = App.Store.get();
     var today = _attDate || App.Utils.today();
     var now = App.Utils.nowTime();
+    var existing = state.attendance.find(function(a) {
+      return a.personId === App.currentTeacher && a.personType === 'staff' && a.date === today && !a.checkOut;
+    });
+    var existingCheckIn = existing && existing.checkIn ? existing.checkIn : null;
     var newAtt = state.attendance.map(function(a) {
       if (a.personId === App.currentTeacher && a.personType === 'staff' && a.date === today && !a.checkOut) {
         return Object.assign({}, a, { checkOut: now });
@@ -891,6 +943,16 @@
     App.Store.set({ attendance: newAtt });
     App.Utils.showToast('Checked out at ' + App.Utils.formatTime(now), 'info');
     App.Router.refresh();
+    App.Api.post('/api/attendance', {
+      personId: App.currentTeacher,
+      personType: 'staff',
+      date: today,
+      checkIn: existingCheckIn,
+      checkOut: now,
+      status: 'Present'
+    }, { silent: true }).catch(function(err) {
+      App.Utils.showToast('Check-out failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
+    });
   }
 
   function _renderTeacherView() {

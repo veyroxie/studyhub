@@ -31,11 +31,11 @@
       return this._user || null;
     },
 
-    async login(email, password) {
+    async login(email, password, rememberMe) {
       const res = await fetch(BASE + '/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, rememberMe: !!rememberMe }),
         credentials: 'include'
       });
       if (!res.ok) {
@@ -49,6 +49,7 @@
 
     async logout() {
       this._user = null;
+      try { localStorage.removeItem('sh_remember'); } catch (e) {}
       await fetch(BASE + '/api/auth/logout', { method: 'POST', credentials: 'include' });
     },
 
@@ -136,6 +137,7 @@
 
     _handle401() {
       this._user = null;
+      try { localStorage.removeItem('sh_remember'); } catch (e) {}
       App.Login.show('Session expired. Please log in again.');
     },
 
