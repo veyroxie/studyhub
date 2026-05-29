@@ -329,49 +329,100 @@
   };
 
   // ── Confirm Dialog (replaces browser confirm()) ─────────────────────────────
-  // Usage: App.Utils.showConfirm({ title, message, confirmLabel, danger }).then(ok => { if (ok) ... })
+  // Usage: App.Utils.showConfirm({ title, message, details, confirmLabel,
+  //   cancelLabel, danger, icon }).then(ok => { if (ok) ... })
+  //   - message accepts HTML (legacy: some callers pass <strong>/<br>)
+  //   - details renders as a smaller boxed note under the message
+  //   - icon: 'trash' | 'warning' | 'info' | 'question' (auto if omitted)
+  function _confirmIconSvg(kind) {
+    switch (kind) {
+      case 'trash':
+        return '<polyline points="3 6 5 6 21 6"/>'
+          + '<path d="M19 6l-1.2 13.2A2 2 0 0 1 15.8 21H8.2A2 2 0 0 1 6.2 19.2L5 6"/>'
+          + '<line x1="10" y1="11" x2="10" y2="17"/>'
+          + '<line x1="14" y1="11" x2="14" y2="17"/>'
+          + '<path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>';
+      case 'warning':
+        return '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>'
+          + '<line x1="12" y1="9" x2="12" y2="13"/>'
+          + '<line x1="12" y1="17" x2="12.01" y2="17"/>';
+      case 'info':
+        return '<circle cx="12" cy="12" r="10"/>'
+          + '<line x1="12" y1="16" x2="12" y2="12"/>'
+          + '<line x1="12" y1="8" x2="12.01" y2="8"/>';
+      case 'question':
+      default:
+        return '<circle cx="12" cy="12" r="10"/>'
+          + '<path d="M9.5 9a2.5 2.5 0 1 1 4.5 1.5c-1 .8-2 1.2-2 2.5"/>'
+          + '<line x1="12" y1="17" x2="12.01" y2="17"/>';
+    }
+  }
+
   App.Utils.showConfirm = function(opts) {
     opts = opts || {};
     var title = opts.title || 'Are you sure?';
     var message = opts.message || '';
+    var details = opts.details || '';
     var confirmLabel = opts.confirmLabel || 'Confirm';
-    var danger = opts.danger || false;
+    var cancelLabel = opts.cancelLabel || 'Cancel';
+    var danger = !!opts.danger;
+    var iconKind = opts.icon || (function() {
+      if (!danger) return 'question';
+      // Delete/Remove/Reject → trash icon; other danger → warning triangle.
+      var t = (title || '').toLowerCase();
+      if (/^(delete|remove|reject)\b/.test(t)) return 'trash';
+      return 'warning';
+    })();
+    var iconBg = danger ? '#fdecec' : '#fbf3dc';
+    var iconStroke = danger ? '#c1272d' : '#8a6d12';
+    var actionClass = danger ? 'sh-btn-danger' : 'sh-btn-primary';
 
     return new Promise(function(resolve) {
       var id = 'confirm-' + Date.now();
-      var btnColor = danger
-        ? 'background:#ef4444;color:#fff;border:none'
-        : 'background:var(--gold, #C9A227);color:#0a0a0a;border:none';
+      var iconSvg = _confirmIconSvg(iconKind);
 
-      var html = '<div style="padding:1.75rem">'
-        + '<div style="display:flex;align-items:flex-start;gap:0.85rem">'
-        +   (danger
-              ? '<div style="width:2.5rem;height:2.5rem;border-radius:50%;background:#fef2f2;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg></div>'
-              : '<div style="width:2.5rem;height:2.5rem;border-radius:50%;background:#fffbeb;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" fill="none" stroke="#C9A227" stroke-width="2" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg></div>')
-        +   '<div style="flex:1;min-width:0">'
-        +     '<h3 style="margin:0 0 0.35rem;font-size:1.05rem;font-weight:700;color:#111">' + App.Utils.esc(title) + '</h3>'
-        +     (message ? '<p style="margin:0;font-size:0.85rem;color:#64748b;line-height:1.5">' + message + '</p>' : '')
+      var html = '<div class="sh-confirm">'
+        +   '<div class="sh-confirm-head">'
+        +     '<div class="sh-confirm-icon" style="background:' + iconBg + '">'
+        +       '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" '
+        +         'stroke="' + iconStroke + '" stroke-width="1.7" '
+        +         'stroke-linecap="round" stroke-linejoin="round">'
+        +         iconSvg
+        +       '</svg>'
+        +     '</div>'
+        +     '<div class="sh-confirm-text">'
+        +       '<h3 class="sh-confirm-title">' + App.Utils.esc(title) + '</h3>'
+        +       (message ? '<p class="sh-confirm-message">' + message + '</p>' : '')
+        +       (details ? '<div class="sh-confirm-details">' + App.Utils.esc(details) + '</div>' : '')
+        +     '</div>'
         +   '</div>'
-        + '</div>'
-        + '<div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:1.5rem">'
-        +   '<button id="' + id + '-cancel" style="padding:0.5rem 1.1rem;font-size:0.82rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;cursor:pointer">Cancel</button>'
-        +   '<button id="' + id + '-ok" style="padding:0.5rem 1.1rem;font-size:0.82rem;font-weight:600;border-radius:8px;cursor:pointer;' + btnColor + '">' + App.Utils.esc(confirmLabel) + '</button>'
-        + '</div>'
+        +   '<div class="sh-confirm-actions">'
+        +     '<button id="' + id + '-cancel" type="button" class="sh-btn-secondary">' + App.Utils.esc(cancelLabel) + '</button>'
+        +     '<button id="' + id + '-ok" type="button" class="' + actionClass + '">' + App.Utils.esc(confirmLabel) + '</button>'
+        +   '</div>'
         + '</div>';
 
       App.Utils.showModal(html);
-
-      // Prevent dirty-change warning on cancel
       _modalDirty = false;
 
-      document.getElementById(id + '-cancel').addEventListener('click', function() {
+      // Narrow + softer-cornered frame for confirm dialogs only.
+      var mc = document.getElementById('modal-content');
+      mc.classList.add('sh-confirm-frame');
+
+      var okBtn = document.getElementById(id + '-ok');
+      var cancelBtn = document.getElementById(id + '-cancel');
+
+      function finish(result) {
+        mc.classList.remove('sh-confirm-frame');
         App.Utils.hideModal(true);
-        resolve(false);
-      });
-      document.getElementById(id + '-ok').addEventListener('click', function() {
-        App.Utils.hideModal(true);
-        resolve(true);
-      });
+        resolve(result);
+      }
+
+      cancelBtn.addEventListener('click', function() { finish(false); });
+      okBtn.addEventListener('click', function() { finish(true); });
+
+      // Danger defaults focus to Cancel (safer). Non-danger focuses Confirm.
+      setTimeout(function() { (danger ? cancelBtn : okBtn).focus(); }, 30);
     });
   };
 

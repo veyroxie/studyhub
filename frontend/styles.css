@@ -817,6 +817,118 @@ button[disabled]:hover,
   to { transform: rotate(360deg); }
 }
 
+/* Destructive action — red. Mirrors .sh-btn-primary geometry so they
+   sit side-by-side without size mismatch. */
+.sh-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.15rem;
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  background: #c1272d;
+  color: #fff;
+  border: 1px solid #c1272d;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.06s ease, box-shadow 0.18s ease;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.06);
+}
+.sh-btn-danger:hover { background: #a31f25; border-color: #a31f25; box-shadow: 0 6px 18px -8px rgba(193,39,45,0.55); }
+.sh-btn-danger:active { transform: translateY(1px); }
+.sh-btn-danger[disabled],
+.sh-btn-danger:disabled { cursor: not-allowed; opacity: 0.5; box-shadow: none; }
+.sh-btn-danger[disabled]:hover { background: #c1272d; transform: none; }
+
+/* ──────────────────────────────────────────────────────────────────
+   Confirm dialog — polished frame, serif title, contextual icon.
+   .sh-confirm-frame narrows the shared #modal-content for confirms.
+   ────────────────────────────────────────────────────────────────── */
+#modal-content.sh-confirm-frame {
+  max-width: 440px;
+  border-radius: 18px;
+  box-shadow: 0 24px 60px -22px rgba(20, 14, 8, 0.35), 0 2px 6px rgba(20, 14, 8, 0.06);
+}
+.sh-confirm {
+  padding: 1.6rem 1.6rem 1.25rem;
+  font-family: var(--sans);
+  background: var(--paper-card, #fdfbf5);
+  border-radius: 18px;
+}
+.sh-confirm-head {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.sh-confirm-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.03);
+}
+.sh-confirm-text {
+  flex: 1;
+  min-width: 0;
+  padding-top: 0.1rem;
+}
+.sh-confirm-title {
+  font-family: var(--display, 'Cormorant Garamond', 'Fraunces', Georgia, serif);
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink, #1a1612);
+  margin: 0 0 0.4rem;
+  line-height: 1.2;
+}
+.sh-confirm-message {
+  font-size: 0.9rem;
+  color: var(--ink-soft, #3a342c);
+  line-height: 1.55;
+  margin: 0;
+}
+.sh-confirm-message strong { color: var(--ink, #1a1612); font-weight: 600; }
+.sh-confirm-details {
+  font-size: 0.78rem;
+  color: #6f6859;
+  line-height: 1.5;
+  margin: 0.6rem 0 0;
+  padding: 0.55rem 0.7rem;
+  background: rgba(0,0,0,0.025);
+  border-radius: 7px;
+  border-left: 2px solid var(--gold-dim, rgba(201,162,39,0.35));
+}
+.sh-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-top: 1.4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule, #e5decb);
+}
+.sh-confirm-actions .sh-btn-primary,
+.sh-confirm-actions .sh-btn-secondary,
+.sh-confirm-actions .sh-btn-danger {
+  min-width: 92px;
+}
+@media (max-width: 520px) {
+  #modal-content.sh-confirm-frame { max-width: 100%; }
+  .sh-confirm { padding: 1.25rem 1.25rem 1rem; border-radius: 14px; }
+  .sh-confirm-title { font-size: 1.15rem; }
+  .sh-confirm-head { gap: 0.8rem; }
+  .sh-confirm-icon { width: 40px; height: 40px; }
+  .sh-confirm-actions { flex-direction: column-reverse; }
+  .sh-confirm-actions .sh-btn-primary,
+  .sh-confirm-actions .sh-btn-secondary,
+  .sh-confirm-actions .sh-btn-danger { width: 100%; }
+}
+
 /* Symmetrical modal exit — entry fades in over ~200ms via the existing
    .modal-content animation; hideModal adds .sh-modal-exit then removes
    the overlay 160ms later. */
