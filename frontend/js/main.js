@@ -145,15 +145,25 @@
             return;
           }
         }
-        // Load all data from backend
-        _showLoading('Loading your data...');
-        await App.Api.loadSnapshot();
+        // Shell-first render: hide the login screen and show the dashboard
+        // structure IMMEDIATELY. The snapshot loads in the background and
+        // the active module re-renders when data lands. Users see the nav
+        // + empty cards in ~50ms instead of waiting ~500ms for the full
+        // snapshot round-trip before any pixel changes.
         _hideLoading();
         App.Login.hide();
         App.Theme.init();
         applyRole();
         App.Dev.init();
         App.Router.navigate('dashboard');
+        var snapshotPromise = App.Api.loadSnapshot().then(function() {
+          // Data arrived — re-render the current page so empty placeholders
+          // are replaced with real rows.
+          App.Router.refresh();
+        });
+        // Existing post-login side-effects can wait for the data without
+        // blocking the visible shell.
+        await snapshotPromise;
         App.Notifs.updateBadge();
         if (App.Billing && App.Billing.checkLoginNotifications) App.Billing.checkLoginNotifications();
         App.IdleTimeout.start();
@@ -478,14 +488,15 @@
             return;
           }
         }
-        _showLoading('Loading your data...');
+        // Shell-first on session-restore too: paint the dashboard
+        // structure immediately, fill in data when the snapshot arrives.
+        App.Login.hide();
+        App.Theme.init();
+        App.Dev.init();
+        applyRole();
+        App.Router.navigate('dashboard');
         return App.Api.loadSnapshot().then(function() {
-          _hideLoading();
-          App.Login.hide();
-          App.Theme.init();
-          App.Dev.init();
-          applyRole();
-          App.Router.navigate('dashboard');
+          App.Router.refresh();
           App.Notifs.updateBadge();
           App.Api.connectWS();
           App.IdleTimeout.start();

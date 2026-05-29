@@ -2,10 +2,33 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Critical inline CSS — paints the editorial shell BEFORE tailwind.css
+       or fonts arrive. Eliminates flash-of-unstyled-content on cold loads. -->
+  <style>
+    :root { --ink:#1a1612; --ink-soft:#3a342c; --paper-warm:#f8f3e7; --paper-card:#fdfbf5; --rule:#e5decb; --gold:#c9a227; }
+    html,body { margin:0; padding:0; background:var(--paper-warm); color:var(--ink); font-family:'Instrument Sans','DM Sans',-apple-system,BlinkMacSystemFont,system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+    .editorial-h, h1, h2, h3 { font-family:'Cormorant Garamond','Fraunces',Georgia,serif; letter-spacing:-0.01em; }
+    #app, #login-screen { min-height:100vh; }
+    .hidden { display:none !important; }
+  </style>
+
+  <!-- Snapshot preload — the browser starts the fetch during HTML parse
+       so the data races the JS modules instead of waiting for them. The
+       sh_token cookie is sent because crossorigin=use-credentials keeps
+       the request same-origin-cookied. -->
+  <link rel="preload" href="/api/snapshot" as="fetch" crossorigin="use-credentials">
+
+  <!-- Fonts: trimmed to the weights actually used. Cormorant 400+600 for
+       mastheads, Fraunces 400+600 for hero numerals, Instrument Sans
+       500+600 for nav + labels, JetBrains Mono 400 for IDs. Dropped 9
+       Fraunces opsz variants + 6 weights total across the four families.
+       display=swap means text renders in fallback first, swaps when font
+       arrives — no FOIT. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600;9..144,700;9..144,900&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Fraunces:wght@400;600&family=Instrument+Sans:wght@500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
 
   <title>Study Hub — Education Manager</title>
   <link rel="stylesheet" href="tailwind.css">
