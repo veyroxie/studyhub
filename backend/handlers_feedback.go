@@ -34,9 +34,15 @@ func listFeedback(db *DB, c *Claims) []Feedback {
 	return out
 }
 
-// parentClassIDs returns the set of class IDs the parent's children are enrolled in.
-func parentClassIDs(db *DB, email string) map[string]bool {
-	rows, err := db.Query(`SELECT enrolled_classes FROM students WHERE contact=? AND deleted_at IS NULL`, email)
+// parentClassIDs returns the set of class IDs the parent's children are
+// enrolled in — scoped to the parent's tenant.
+func parentClassIDs(db *DB, c *Claims) map[string]bool {
+	if c == nil {
+		return map[string]bool{}
+	}
+	tw, twArgs := scopeTenant(c, "")
+	args := append([]any{c.Email}, twArgs...)
+	rows, err := db.Query(`SELECT enrolled_classes FROM students WHERE contact=? AND deleted_at IS NULL`+tw, args...)
 	if err != nil {
 		return nil
 	}
@@ -70,6 +76,23 @@ func filterFeedbackForParent(all []Feedback, classIDs map[string]bool) []Feedbac
 	return out
 }
 
+// stripStudentNotesForParent removes per-student notes that don't belong
+// to the parent's own children. Without this, curl/devtools would expose
+// the entire student_notes array (other classmates' notes) for any
+// feedback row a parent's child is enrolled in.
+func stripStudentNotesForParent(rows []Feedback, ownIDs map[string]bool) []Feedback {
+	for i := range rows {
+		kept := make([]StudentNote, 0, len(rows[i].StudentNotes))
+		for _, n := range rows[i].StudentNotes {
+			if ownIDs[n.StudentID] {
+				kept = append(kept, n)
+			}
+		}
+		rows[i].StudentNotes = kept
+	}
+	return rows
+}
+
 func handleListFeedback(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
@@ -80,9 +103,11 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 
 		// Parents use in-memory filtering — skip pagination for them
 		if isParent {
+			ownIDs := parentStudentIDs(db, c)
 			if date == "" && classID == "" {
 				all := listFeedback(db, c)
-				all = filterFeedbackForParent(all, parentClassIDs(db, c.Email))
+				all = filterFeedbackForParent(all, parentClassIDs(db, c))
+				all = stripStudentNotesForParent(all, ownIDs)
 				respond(w, all)
 				return
 			}
@@ -119,7 +144,8 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 				}
 				out = append(out, f)
 			}
-			out = filterFeedbackForParent(out, parentClassIDs(db, c.Email))
+			out = filterFeedbackForParent(out, parentClassIDs(db, c))
+			out = stripStudentNotesForParent(out, ownIDs)
 			respond(w, out)
 			return
 		}
@@ -202,7 +228,7 @@ func handleListFeedback(db *DB) http.HandlerFunc {
 func handleCreateFeedback(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+		if !isStaffRole(c) {
 			respondError(w, "staff only", 403)
 			return
 		}
@@ -211,8 +237,36 @@ func handleCreateFeedback(db *DB) http.HandlerFunc {
 			respondError(w, "bad body", 400)
 			return
 		}
-		if msg := validationError("classId", f.ClassID, "date", f.Date, "teacherId", f.TeacherID); msg != "" {
+		if msg := validationError("classId", f.ClassID, "date", f.Date); msg != "" {
 			respondError(w, msg, 400)
+			return
+		}
+		// Authorship is derived from the authenticated session — a teacher
+		// cannot post feedback under another teacher's id. Admins keep the
+		// freedom to set teacher_id when filing on a teacher's behalf, but
+		// only after verifying that staff row belongs to this tenant.
+		if c.Role == "teacher" {
+			var staffID string
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{c.Email}, twArgs...)
+			db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL`+tw, args...).Scan(&staffID)
+			if staffID == "" {
+				respondError(w, "no staff record matches your account", http.StatusForbidden)
+				return
+			}
+			f.TeacherID = staffID
+		} else if f.TeacherID != "" {
+			var ok int
+			tw, twArgs := scopeTenant(c, "")
+			args := append([]any{f.TeacherID}, twArgs...)
+			db.QueryRow(`SELECT 1 FROM staff WHERE id=? AND deleted_at IS NULL`+tw, args...).Scan(&ok)
+			if ok != 1 {
+				respondError(w, "teacher not found in tenant", http.StatusBadRequest)
+				return
+			}
+		}
+		if f.TeacherID == "" {
+			respondError(w, "teacherId is required", http.StatusBadRequest)
 			return
 		}
 		if f.ID == "" {
@@ -240,7 +294,7 @@ func handleCreateFeedback(db *DB) http.HandlerFunc {
 func handleUpdateFeedback(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+		if !isStaffRole(c) {
 			respondError(w, "staff only", 403)
 			return
 		}
@@ -256,6 +310,22 @@ func handleUpdateFeedback(db *DB) http.HandlerFunc {
 			snJSON = []byte("[]")
 		}
 		tw, twArgs := scopeTenant(c, "")
+		// Ownership: a teacher may only edit feedback rows they authored.
+		// Admins/superadmins keep tenant-wide edit rights. teacher_id can
+		// never be reassigned via PUT — preserves audit trail.
+		if c.Role == "teacher" {
+			var existingTeacher string
+			ownArgs := append([]any{id}, twArgs...)
+			db.QueryRow(`SELECT teacher_id FROM feedback WHERE id=? AND deleted_at IS NULL`+tw, ownArgs...).Scan(&existingTeacher)
+			var myStaffID string
+			staffArgs := append([]any{c.Email}, twArgs...)
+			db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL`+tw, staffArgs...).Scan(&myStaffID)
+			if existingTeacher == "" || existingTeacher != myStaffID {
+				respondError(w, "you can only edit feedback you authored", http.StatusForbidden)
+				return
+			}
+			f.TeacherID = existingTeacher
+		}
 		args := append([]any{f.ClassID, f.Date, f.TeacherID, f.Topic, f.Mood, f.Notes, string(snJSON), id}, twArgs...)
 		res, err := db.Exec(`UPDATE feedback SET class_id=?,date=?,teacher_id=?,topic=?,mood=?,notes=?,student_notes=? WHERE id=? AND deleted_at IS NULL`+tw, args...)
 		if err != nil {
@@ -276,12 +346,25 @@ func handleUpdateFeedback(db *DB) http.HandlerFunc {
 func handleDeleteFeedback(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+		if !isStaffRole(c) {
 			respondError(w, "staff only", 403)
 			return
 		}
 		id := chi.URLParam(r, "id")
 		tw, twArgs := scopeTenant(c, "")
+		// Same ownership gate as PUT — teachers delete only their own.
+		if c.Role == "teacher" {
+			var existingTeacher string
+			ownArgs := append([]any{id}, twArgs...)
+			db.QueryRow(`SELECT teacher_id FROM feedback WHERE id=? AND deleted_at IS NULL`+tw, ownArgs...).Scan(&existingTeacher)
+			var myStaffID string
+			staffArgs := append([]any{c.Email}, twArgs...)
+			db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL`+tw, staffArgs...).Scan(&myStaffID)
+			if existingTeacher == "" || existingTeacher != myStaffID {
+				respondError(w, "you can only delete feedback you authored", http.StatusForbidden)
+				return
+			}
+		}
 		args := append([]any{id}, twArgs...)
 		if _, err := db.Exec(`UPDATE feedback SET deleted_at=NOW() WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not delete feedback", 500)
@@ -297,16 +380,36 @@ func handleDeleteFeedback(db *DB) http.HandlerFunc {
 // ── Feedback Replies ─────────────────────────────────────────────────────────
 
 func listFeedbackReplies(db *DB, c *Claims) []FeedbackReply {
-	tw, twArgs := scopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,feedback_id,author_email,author_name,message,created_at FROM feedback_replies WHERE 1=1`+tw+` ORDER BY created_at DESC`, twArgs...)
+	tw, twArgs := scopeTenant(c, "fr")
+	// Join through feedback so we can scope visible replies by class
+	// membership. Admins (and superadmins) see everything; teachers see
+	// replies on classes they teach; parents see replies on classes their
+	// children are enrolled in.
+	q := `SELECT fr.id, fr.feedback_id, fr.author_email, fr.author_name, fr.message, fr.created_at, f.class_id
+	      FROM feedback_replies fr
+	      JOIN feedback f ON f.id = fr.feedback_id
+	      WHERE f.deleted_at IS NULL` + tw
+	rows, err := db.Query(q+` ORDER BY fr.created_at DESC`, twArgs...)
 	if err != nil {
 		return []FeedbackReply{}
 	}
 	defer rows.Close()
+
+	var classFilter map[string]bool
+	if c != nil && c.Role == "parent" {
+		classFilter = parentClassIDs(db, c)
+	} else if c != nil && c.Role == "teacher" {
+		classFilter = teacherClassIDSet(db, c)
+	}
+
 	out := []FeedbackReply{}
 	for rows.Next() {
 		var r FeedbackReply
-		if err := rows.Scan(&r.ID, &r.FeedbackID, &r.AuthorEmail, &r.AuthorName, &r.Message, &r.CreatedAt); err != nil {
+		var classID string
+		if err := rows.Scan(&r.ID, &r.FeedbackID, &r.AuthorEmail, &r.AuthorName, &r.Message, &r.CreatedAt, &classID); err != nil {
+			continue
+		}
+		if classFilter != nil && !classFilter[classID] {
 			continue
 		}
 		out = append(out, r)

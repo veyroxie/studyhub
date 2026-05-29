@@ -226,7 +226,7 @@
       + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.75rem">'
       + rows.map(function(r) {
           return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0.85rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px;cursor:pointer" onclick="App.Students._viewModal(\'' + r.id + '\')">'
-            + '<div style="width:2.2rem;height:2.2rem;border-radius:10px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:0.85rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + r.name.charAt(0) + '</div>'
+            + '<div style="width:2.2rem;height:2.2rem;border-radius:10px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:0.85rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + App.Utils.esc(r.name.charAt(0)) + '</div>'
             + '<div style="flex:1;min-width:0">'
             +   '<div style="font-size:0.83rem;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(r.name) + '</div>'
             +   '<div style="font-size:0.7rem;color:#94a3b8">Earned ' + r.earned + ' · Used ' + r.used + '</div>'
@@ -889,8 +889,8 @@
       return '<div onclick="' + clickAction + '" style="display:flex;align-items:center;gap:0.65rem;padding:0.6rem 0.5rem;margin:0 -0.5rem;border-radius:8px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid #f4f4f2" onmouseover="this.style.background=\'#fafaf8\'" onmouseout="this.style.background=\'transparent\'">'
         + '<span style="width:7px;height:7px;border-radius:50%;background:' + (DOTS[item.sev]||DOTS.info) + ';flex-shrink:0"></span>'
         + '<div style="flex:1;min-width:0">'
-        +   '<div style="font-size:0.81rem;font-weight:600;color:#111">' + item.title + '</div>'
-        +   (item.sub ? '<div style="font-size:0.71rem;color:#94a3b8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + item.sub + '</div>' : '')
+        +   '<div style="font-size:0.81rem;font-weight:600;color:#111">' + App.Utils.esc(item.title) + '</div>'
+        +   (item.sub ? '<div style="font-size:0.71rem;color:#94a3b8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(item.sub) + '</div>' : '')
         + '</div>'
         + '<svg style="width:0.85rem;height:0.85rem;color:#d1d5db;flex-shrink:0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5l7 7-7 7"/></svg>'
         + '</div>';
@@ -1235,11 +1235,18 @@
       + '</form>'
       + '</div>'
 
+      + (App.currentRole === 'admin' || App.currentRole === 'superadmin'
+        ? '<div id="mfa-section" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid #f1f5f9"></div>'
+        : '')
+
       + '<div style="margin-top:1rem;text-align:right">'
       + '<button onclick="App.Utils.hideModal()" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Close</button>'
       + '</div>'
       + '</div>'
     );
+    if (App.currentRole === 'admin' || App.currentRole === 'superadmin') {
+      _renderMFASection(profile.mfaEnabled);
+    }
 
     document.getElementById('profile-form').addEventListener('submit', async function(e) {
       e.preventDefault();
@@ -1263,6 +1270,95 @@
         e.target.reset();
       } catch(err) {}
     });
+  }
+
+  // ── MFA enrolment (inside profile modal) ────────────────────────────────
+  // Two states: not-enrolled (show "Enable" → setup → QR → confirm → codes)
+  // and enrolled (show "Disable" with confirmation). The /api/auth/profile
+  // payload carries mfaEnabled so we render the right state without a
+  // second round-trip.
+  function _renderMFASection(enabled) {
+    var sec = document.getElementById('mfa-section');
+    if (!sec) return;
+    if (enabled) {
+      sec.innerHTML = '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.5rem">Two-factor authentication</h3>'
+        + '<p style="font-size:0.78rem;color:#64748b;margin:0 0 0.75rem">Active — you\'ll be prompted for a 6-digit code at login.</p>'
+        + '<button onclick="App.Dashboard._mfaDisable()" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #fecaca;border-radius:8px;background:#fff;color:#dc2626;cursor:pointer">Disable 2FA</button>';
+    } else {
+      sec.innerHTML = '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.5rem">Two-factor authentication</h3>'
+        + '<p style="font-size:0.78rem;color:#64748b;margin:0 0 0.75rem">Strongly recommended for admin accounts. Uses any TOTP app (Google Authenticator, 1Password, Authy).</p>'
+        + '<button onclick="App.Dashboard._mfaStart()" style="padding:0.45rem 1rem;font-size:0.8rem;font-weight:700;background:#0a0a0a;color:#fff;border:none;border-radius:8px;cursor:pointer">Enable 2FA</button>';
+    }
+  }
+
+  async function _mfaStart() {
+    try {
+      var res = await App.Api.post('/api/auth/mfa/setup', {});
+      if (!res || !res.uri) return;
+      var qr = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(res.uri);
+      var sec = document.getElementById('mfa-section');
+      sec.innerHTML = '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.5rem">Scan with your authenticator</h3>'
+        + '<div style="display:flex;gap:1rem;align-items:flex-start;margin-bottom:0.75rem">'
+        +   '<img src="' + qr + '" alt="QR code" style="width:140px;height:140px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:6px">'
+        +   '<div style="flex:1;font-size:0.74rem;color:#64748b;line-height:1.5">'
+        +     '<p style="margin:0 0 0.5rem">Or enter this secret manually:</p>'
+        +     '<code style="display:block;background:#f8fafc;padding:0.5rem;border-radius:6px;border:1px solid #e2e8f0;font-size:0.7rem;word-break:break-all">' + App.Utils.esc(res.secret) + '</code>'
+        +   '</div>'
+        + '</div>'
+        + '<form id="mfa-confirm-form" style="display:flex;gap:0.5rem;align-items:center">'
+        +   '<input name="code" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required style="font-family:ui-monospace,monospace;font-size:1rem;letter-spacing:0.2em;text-align:center;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;width:11ch">'
+        +   '<button type="submit" style="padding:0.55rem 1rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Confirm</button>'
+        + '</form>';
+      document.getElementById('mfa-confirm-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var fd = new FormData(e.target);
+        try {
+          var out = await App.Api.post('/api/auth/mfa/confirm', { code: fd.get('code') });
+          if (out && out.recoveryCodes) {
+            _renderMFARecoveryCodes(out.recoveryCodes);
+          }
+        } catch (err) {}
+      });
+    } catch (err) {}
+  }
+
+  // _renderMFARecoveryCodes displays the one-time recovery codes — these
+  // are the user's only fallback if they lose the authenticator, and the
+  // server hashes them immediately so we cannot show them again.
+  function _renderMFARecoveryCodes(codes) {
+    var sec = document.getElementById('mfa-section');
+    if (!sec) return;
+    var list = codes.map(function(c) {
+      return '<code style="display:block;font-size:0.85rem;padding:0.3rem 0.5rem;background:#f8fafc;border-radius:4px">' + App.Utils.esc(c) + '</code>';
+    }).join('');
+    sec.innerHTML = '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.5rem">2FA enabled — save your recovery codes</h3>'
+      + '<p style="font-size:0.78rem;color:#dc2626;margin:0 0 0.75rem;font-weight:600">These won\'t be shown again. Store them somewhere safe.</p>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.75rem">' + list + '</div>'
+      + '<button onclick="App.Dashboard._mfaCopyCodes(' + JSON.stringify(JSON.stringify(codes)).replace(/"/g,'&quot;') + ')" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;cursor:pointer">Copy all</button>';
+  }
+
+  function _mfaCopyCodes(codesJson) {
+    try {
+      var codes = JSON.parse(codesJson);
+      navigator.clipboard.writeText(codes.join('\n')).then(function() {
+        App.Utils.showToast('Recovery codes copied', 'success');
+      });
+    } catch (e) {}
+  }
+
+  async function _mfaDisable() {
+    var ok = await App.Utils.showConfirm({
+      title: 'Disable 2FA?',
+      message: 'You\'ll be able to log in with just your password. Not recommended for admin accounts.',
+      confirmLabel: 'Disable',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await App.Api.post('/api/auth/mfa/disable', {});
+      _renderMFASection(false);
+      App.Utils.showToast('2FA disabled', 'info');
+    } catch (err) {}
   }
 
   // ── Pending Users Modal ────────────────────────────────────────────────────
@@ -1311,6 +1407,9 @@
     _profileModal: _profileModal,
     _pendingUsersModal: _pendingUsersModal,
     _verifyUser: _verifyUser,
-    _resendVerification: _resendVerification
+    _resendVerification: _resendVerification,
+    _mfaStart: _mfaStart,
+    _mfaDisable: _mfaDisable,
+    _mfaCopyCodes: _mfaCopyCodes
   };
 })();

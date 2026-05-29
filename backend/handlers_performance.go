@@ -11,7 +11,7 @@ import (
 
 func listPerformanceReviews(db *DB, c *Claims) []PerformanceReview {
 	tw, twArgs := scopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC`, twArgs...)
+	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC LIMIT 5000`, twArgs...)
 	if err != nil {
 		return []PerformanceReview{}
 	}
@@ -40,7 +40,7 @@ func handleListPerformanceReviews(db *DB) http.HandlerFunc {
 			// Filtered by staffId — small dataset, no pagination
 			tw, twArgs := scopeTenant(c, "")
 			args := append([]any{staffID}, twArgs...)
-			rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE staff_id=? AND deleted_at IS NULL`+tw+` ORDER BY date DESC`, args...)
+			rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE staff_id=? AND deleted_at IS NULL`+tw+` ORDER BY date DESC LIMIT 5000`, args...)
 			if err != nil {
 				respond(w, []PerformanceReview{})
 				return
@@ -89,7 +89,7 @@ func handleListPerformanceReviews(db *DB) http.HandlerFunc {
 func handleCreatePerformanceReview(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+		if !isStaffRole(c) {
 			respondError(w, "staff only", 403)
 			return
 		}
@@ -129,7 +129,7 @@ func handleCreatePerformanceReview(db *DB) http.HandlerFunc {
 func handleDeletePerformanceReview(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}

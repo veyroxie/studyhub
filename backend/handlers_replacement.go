@@ -17,10 +17,10 @@ func listReplacementCredits(db *DB, c *Claims) []ReplacementCredit {
 	if c != nil && c.Role == "parent" {
 		// Parents are always tenant-scoped — drop the OR pattern.
 		tid := tenantID(c)
-		rows, err = db.Query(`SELECT rc.id,rc.student_id,rc.type,rc.minutes,rc.note,rc.class_id,rc.date,rc.created_by,COALESCE(rc.category,'class') FROM replacement_credits rc JOIN students s ON s.id=rc.student_id WHERE s.contact=? AND s.tenant_id=? AND rc.tenant_id=? ORDER BY rc.created_at DESC`, c.Email, tid, tid)
+		rows, err = db.Query(`SELECT rc.id,rc.student_id,rc.type,rc.minutes,rc.note,rc.class_id,rc.date,rc.created_by,COALESCE(rc.category,'class') FROM replacement_credits rc JOIN students s ON s.id=rc.student_id WHERE s.contact=? AND s.tenant_id=? AND rc.tenant_id=? ORDER BY rc.created_at DESC LIMIT 5000`, c.Email, tid, tid)
 	} else {
 		tw, twArgs := scopeTenant(c, "")
-		rows, err = db.Query(`SELECT id,student_id,type,minutes,note,class_id,date,created_by,COALESCE(category,'class') FROM replacement_credits WHERE 1=1`+tw+` ORDER BY created_at DESC`, twArgs...)
+		rows, err = db.Query(`SELECT id,student_id,type,minutes,note,class_id,date,created_by,COALESCE(category,'class') FROM replacement_credits WHERE 1=1`+tw+` ORDER BY created_at DESC LIMIT 5000`, twArgs...)
 	}
 	if err != nil {
 		return []ReplacementCredit{}
@@ -46,7 +46,7 @@ func handleListReplacementCredits(db *DB) http.HandlerFunc {
 			return
 		}
 		if c != nil && c.Role == "parent" {
-			stuIDs := parentStudentIDs(db, c.Email)
+			stuIDs := parentStudentIDs(db, c)
 			if !stuIDs[studentID] {
 				respond(w, []ReplacementCredit{})
 				return
@@ -54,7 +54,7 @@ func handleListReplacementCredits(db *DB) http.HandlerFunc {
 		}
 		tw, twArgs := scopeTenant(c, "")
 		args := append([]any{studentID}, twArgs...)
-		rows, err := db.Query(`SELECT id,student_id,type,minutes,note,class_id,date,created_by,COALESCE(category,'class') FROM replacement_credits WHERE student_id=?`+tw+` ORDER BY created_at DESC`, args...)
+		rows, err := db.Query(`SELECT id,student_id,type,minutes,note,class_id,date,created_by,COALESCE(category,'class') FROM replacement_credits WHERE student_id=?`+tw+` ORDER BY created_at DESC LIMIT 5000`, args...)
 		if err != nil {
 			respond(w, []ReplacementCredit{})
 			return
@@ -75,7 +75,7 @@ func handleListReplacementCredits(db *DB) http.HandlerFunc {
 func handleCreateReplacementCredit(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+		if !isStaffRole(c) {
 			respondError(w, "staff only", 403)
 			return
 		}
@@ -117,6 +117,17 @@ func handleCreateReplacementCredit(db *DB) http.HandlerFunc {
 				return
 			}
 			defer tx.Rollback()
+
+			// Serialise concurrent redemptions for the same (student, category)
+			// via a transaction-scoped advisory lock so two parallel POSTs can't
+			// both read the same balance and both pass the threshold check.
+			// The lock is released automatically when the tx commits or rolls
+			// back.
+			lockKey := advisoryLockKey(rc.StudentID + "|" + rc.Category)
+			if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, lockKey); err != nil {
+				respondError(w, "server error", 500)
+				return
+			}
 
 			var earned, used int
 			tw, twArgs := scopeTenant(c, "")
@@ -162,7 +173,7 @@ func handleCreateReplacementCredit(db *DB) http.HandlerFunc {
 func handleDeleteReplacementCredit(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
@@ -187,7 +198,7 @@ func handleReplacementBalance(db *DB) http.HandlerFunc {
 			return
 		}
 		if c != nil && c.Role == "parent" {
-			stuIDs := parentStudentIDs(db, c.Email)
+			stuIDs := parentStudentIDs(db, c)
 			if !stuIDs[studentID] {
 				respondError(w, "not your student", 403)
 				return

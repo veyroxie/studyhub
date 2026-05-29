@@ -103,12 +103,8 @@
 
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">'
       +   '<div class="p-4 border-b border-slate-100 flex items-center gap-3 flex-wrap">'
-      +     '<input id="student-search" type="text" placeholder="Search by name or ID..." value="' + _search + '" oninput="App.Students._onSearch(this.value)" class="flex-1 min-w-48 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">'
-      +     (isAdmin || isTeacher ? '<select onchange="App.Students._onFilter(this.value)" class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none">'
-      +     ['All','Active','Inactive','New','Waitlisted'].map(function(s) {
-              return '<option value="' + s + '" ' + (s === _statusFilter ? 'selected' : '') + '>' + s + '</option>';
-            }).join('')
-      +     '</select>' : '')
+      +     '<input id="student-search" type="text" placeholder="Search by name or ID..." value="' + _search + '" oninput="App.Students._onSearchLive(this.value)" class="flex-1 min-w-48 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">'
+      // Status filter is the stat-card row above — no redundant dropdown.
       +   '</div>'
       +   '<div id="stu-bulk-bar" style="padding:0 1rem">' + _bulkBar() + '</div>'
       +   '<div class="overflow-x-auto">'
@@ -149,7 +145,10 @@
               var rowSubChip = '';
               if (rowSubStatus === 'paused') rowSubChip = ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.6rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;vertical-align:middle;margin-left:4px">Paused</span>';
               else if (rowSubStatus === 'frozen') rowSubChip = ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.6rem;font-weight:700;background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe;border-radius:999px;vertical-align:middle;margin-left:4px">Frozen</span>';
-              return '<tr onclick="App.Students._viewModal(\'' + s.id + '\')" class="hover:bg-slate-50 transition-colors cursor-pointer">'
+              // data-search holds the lower-cased haystack the live filter
+              // checks against — name + id + contact + class names.
+              var haystack = (s.firstName + ' ' + s.lastName + ' ' + s.id + ' ' + (s.contact || '') + ' ' + enrolledNames.join(' ')).toLowerCase();
+              return '<tr tabindex="0" data-search="' + App.Utils.esc(haystack) + '" onclick="App.Students._viewModal(\'' + s.id + '\')" onkeydown="if(event.key===\'Enter\'){App.Students._viewModal(\'' + s.id + '\')}" class="hover:bg-slate-50 transition-colors cursor-pointer">'
                 + (isAdmin ? '<td class="td" style="width:36px" onclick="event.stopPropagation()"><input type="checkbox" class="stu-cb" data-id="' + s.id + '" onchange="App.Students._toggleSelect(\'' + s.id + '\',this.checked)" style="cursor:pointer"' + (_selected[s.id] ? ' checked' : '') + '></td>' : '')
                 + '<td class="td"><div class="flex items-center gap-3">'
                 +   '<div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">' + App.Utils.esc(s.firstName.charAt(0)) + App.Utils.esc(s.lastName.charAt(0)) + '</div>'
@@ -260,6 +259,29 @@
   }
 
   let _searchTimer = null;
+
+  // _onSearchLive does in-place DOM filtering — no Router.refresh, no
+  // re-render of the whole list. Each row carries a data-search blob
+  // injected at render time; we toggle row visibility by exact substring
+  // match. Bypasses the React-like full re-render cost (~80ms per
+  // keystroke on a 100-row table) so search feels instant even on slow
+  // devices.
+  function _onSearchLive(val) {
+    _search = val;
+    var q = (val || '').toLowerCase().trim();
+    var rows = document.querySelectorAll('tr[data-search]');
+    var shown = 0;
+    rows.forEach(function(tr) {
+      var hay = tr.getAttribute('data-search') || '';
+      var match = !q || hay.indexOf(q) !== -1;
+      tr.style.display = match ? '' : 'none';
+      if (match) shown++;
+    });
+    // If everything is filtered out and there's a "no results" row, show it.
+    var emptyRow = document.getElementById('stu-empty-row');
+    if (emptyRow) emptyRow.style.display = (shown === 0 && q) ? '' : 'none';
+  }
+
   let _focusSearchAfterRender = false;
   async function _subscriptionAction(studentId, action) {
     var label = { pause:'pause', resume:'resume', freeze:'freeze' }[action] || action;
@@ -582,20 +604,10 @@
       + '</div>'
     );
 
-    document.getElementById('edit-student-form').addEventListener('submit', function(e) {
+    document.getElementById('edit-student-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       const fd = new FormData(e.target);
       const newClasses = fd.getAll('classIds');
-      const st = App.Store.get();
-
-      // Recalculate class enrollment counts
-      let newClasses2 = st.classes.map(function(c) {
-        const wasEnrolled = s.enrolledClasses.indexOf(c.id) > -1;
-        const willEnroll  = newClasses.indexOf(c.id) > -1;
-        if (wasEnrolled && !willEnroll) return Object.assign({}, c, { enrolled: Math.max(0, c.enrolled - 1) });
-        if (!wasEnrolled && willEnroll) return Object.assign({}, c, { enrolled: c.enrolled + 1 });
-        return c;
-      });
 
       const updated = Object.assign({}, s, {
         firstName: fd.get('firstName'),
@@ -616,10 +628,16 @@
         packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4
       });
 
-      App.Store.set({ students: st.students.map(function(x) { return x.id === studentId ? updated : x; }), classes: newClasses2 });
-      App.Utils.hideModal(true);
-      App.Utils.showToast(App.Utils.esc(updated.firstName) + ' ' + App.Utils.esc(updated.lastName) + ' updated', 'success');
-      App.Router.refresh();
+      var submitBtn = e.target.querySelector('button[type="submit"]');
+      try {
+        await App.Utils.withLoading(submitBtn, async function() {
+          await App.Api.put('/api/students/' + studentId, updated);
+          await App.Api.loadSnapshot();
+        });
+        App.Utils.hideModal(true);
+        App.Utils.showToast(App.Utils.esc(updated.firstName) + ' ' + App.Utils.esc(updated.lastName) + ' updated', 'success');
+        App.Router.refresh();
+      } catch (err) { /* auto-toasted */ }
     });
   }
 
@@ -662,14 +680,13 @@
       + '</form>'
       + '</div>'
     );
-    document.getElementById('add-student-form').addEventListener('submit', function(e) {
+    document.getElementById('add-student-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       const fd = new FormData(e.target);
       const state = App.Store.get();
       const selectedClasses = fd.getAll('classIds');
       const submittedId = (fd.get('id') || '').trim();
       const newId = submittedId || App.Utils.generateId('STU');
-      // Reject duplicate within the local store
       if (state.students.some(function(s) { return s.id === newId; })) {
         App.Utils.showToast('Student # "' + newId + '" already in use', 'error');
         return;
@@ -697,13 +714,18 @@
         packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4,
         subscriptionStatus: 'active'
       };
-      const newClasses = state.classes.map(function(c) {
-        return selectedClasses.indexOf(c.id) > -1 ? Object.assign({}, c, { enrolled: c.enrolled + 1 }) : c;
-      });
-      App.Store.set({ students: [...state.students, newStudent], classes: newClasses });
-      App.Utils.hideModal(true);
-      App.Utils.showToast(App.Utils.esc(newStudent.firstName) + ' ' + App.Utils.esc(newStudent.lastName) + ' added!', 'success');
-      App.Router.refresh();
+      var submitBtn = e.target.querySelector('button[type="submit"]');
+      try {
+        await App.Utils.withLoading(submitBtn, async function() {
+          await App.Api.post('/api/students', newStudent);
+          await App.Api.loadSnapshot();
+        });
+        App.Utils.hideModal(true);
+        App.Utils.showToast(App.Utils.esc(newStudent.firstName) + ' ' + App.Utils.esc(newStudent.lastName) + ' added!', 'success');
+        App.Router.refresh();
+      } catch (err) {
+        // App.Api auto-toasts the failure; spinner is already restored.
+      }
     });
   }
 
@@ -861,10 +883,14 @@
   async function _rejectReg(regId) {
     var ok = await App.Utils.showConfirm({ title: 'Reject registration', message: 'This registration will be removed from the pending list.', confirmLabel: 'Reject', danger: true });
     if (!ok) return;
-    await App.Api.del('/api/registrations/' + regId);
-    await App.Api.loadSnapshot();
-    App.Notifs.refresh();
+    // Optimistic: drop the row locally so the modal closes instantly;
+    // background snapshot reconciles.
+    App.Api.optimisticRemove('registrations', regId);
     App.Utils.hideModal(true);
+    App.Router.refresh();
+    try { await App.Api.del('/api/registrations/' + regId); } catch (e) { /* restore via background reload below */ }
+    App.Notifs.refresh();
+    App.Api.loadSnapshot().catch(function(){});
     App.Utils.showToast('Registration rejected', 'info');
     App.Router.refresh();
   }
@@ -1456,6 +1482,7 @@
   App.Students = {
     render: render,
     _onSearch: _onSearch,
+    _onSearchLive: _onSearchLive,
     _onFilter: _onFilter,
     _viewModal: _viewModal,
     _editModal: _editModal,
@@ -1560,10 +1587,12 @@
     });
     if (!ok) return;
     try {
+      App.Api.optimisticRemove('families', familyId);
+      App.Utils.hideModal(true);
+      App.Router.refresh();
       await App.Api.del('/api/families/' + familyId + '/pdpa');
       App.Utils.showToast('Account deleted and data anonymised', 'success');
-      await App.Api.loadSnapshot();
-      App.Router.refresh();
+      App.Api.loadSnapshot().catch(function(){});
     } catch(err) {}
   }
 })();

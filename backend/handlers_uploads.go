@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -28,16 +27,25 @@ func handleUploadProof(db *DB) http.HandlerFunc {
 			return
 		}
 
-		// Verify invoice exists and check ownership for parents
+		// Verify invoice exists in the caller's tenant and check ownership
+		// for parents. All lookups scoped to tenant — a parent guessing a
+		// foreign-tenant invoice ID must not be able to read or overwrite it.
 		c := claimsFrom(r)
+		if c == nil {
+			respondError(w, "auth required", http.StatusUnauthorized)
+			return
+		}
+		tw, twArgs := scopeTenant(c, "")
 		var studentID string
-		if err := db.QueryRow(`SELECT student_id FROM invoices WHERE id=? AND deleted_at IS NULL`, invoiceID).Scan(&studentID); err != nil {
+		invArgs := append([]any{invoiceID}, twArgs...)
+		if err := db.QueryRow(`SELECT student_id FROM invoices WHERE id=? AND deleted_at IS NULL`+tw, invArgs...).Scan(&studentID); err != nil {
 			respondError(w, "invoice not found", 404)
 			return
 		}
-		if c != nil && c.Role == "parent" {
+		if c.Role == "parent" {
 			var ownerEmail string
-			db.QueryRow(`SELECT contact FROM students WHERE id=?`, studentID).Scan(&ownerEmail)
+			stuArgs := append([]any{studentID}, twArgs...)
+			db.QueryRow(`SELECT contact FROM students WHERE id=?`+tw, stuArgs...).Scan(&ownerEmail)
 			if ownerEmail != c.Email {
 				respondError(w, "not your invoice", 403)
 				return
@@ -74,46 +82,36 @@ func handleUploadProof(db *DB) http.HandlerFunc {
 			return
 		}
 
-		// Create uploads directory
-		if err := os.MkdirAll("uploads", 0755); err != nil {
-			respondError(w, "could not create uploads directory", 500)
-			return
-		}
-
-		// Save file
+		// Read file into memory (capped at 5MB by MaxBytesReader above) and
+		// hand it to the upload driver. Local disk for single-node; S3 in
+		// production multi-pod deploys.
 		ts := time.Now().Unix()
 		filename := fmt.Sprintf("proof_%s_%d%s", invoiceID, ts, ext)
-		savePath := filepath.Join("uploads", filename)
-		dst, err := os.Create(savePath)
+		buf2, err := io.ReadAll(file)
 		if err != nil {
-			respondError(w, "could not save file", 500)
+			respondError(w, "could not read upload", 500)
 			return
 		}
-		defer dst.Close()
-		if _, err := io.Copy(dst, file); err != nil {
-			respondError(w, "could not write file", 500)
+		if err := uploads.Put(filename, mime, buf2); err != nil {
+			respondError(w, "could not store file", 500)
 			return
 		}
 
-		// Update invoice record
+		// Update invoice record (already tenant-scoped above)
 		proofPath := "uploads/" + filename
-		tw, twArgs := scopeTenant(c, "")
-		args := append([]any{proofPath, invoiceID}, twArgs...)
-		if _, err := db.Exec(`UPDATE invoices SET payment_proof=? WHERE id=?`+tw, args...); err != nil {
+		updArgs := append([]any{proofPath, invoiceID}, twArgs...)
+		if _, err := db.Exec(`UPDATE invoices SET payment_proof=? WHERE id=?`+tw, updArgs...); err != nil {
 			respondError(w, "could not update invoice", 500)
 			return
 		}
 
-		// Audit log
-		if c := claimsFrom(r); c != nil {
-			logAudit(db, c.Email, "proof_uploaded", "invoice", invoiceID, proofPath)
-		}
+		logAudit(db, c.Email, "proof_uploaded", "invoice", invoiceID, proofPath)
 
 		respond(w, map[string]string{"path": proofPath})
 	}
 }
 
-func handleServeUpload() http.HandlerFunc {
+func handleServeUpload(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filename := chi.URLParam(r, "filename")
 		// Sanitize: only allow alphanumeric, underscores, dots, dashes
@@ -123,11 +121,56 @@ func handleServeUpload() http.HandlerFunc {
 				return
 			}
 		}
-		filePath := filepath.Join("uploads", filename)
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+
+		// Authorise the caller against the invoice this file belongs to.
+		// Filename pattern is "proof_<invoiceID>_<unix>.<ext>" — anything
+		// else served from /uploads we treat as inaccessible to non-admins.
+		caller := claimsFrom(r)
+		if caller == nil {
+			respondError(w, "auth required", http.StatusUnauthorized)
+			return
+		}
+		if !strings.HasPrefix(filename, "proof_") {
+			respondError(w, "invalid filename", http.StatusBadRequest)
+			return
+		}
+		rest := strings.TrimPrefix(filename, "proof_")
+		idx := strings.LastIndex(rest, "_")
+		if idx <= 0 {
+			respondError(w, "invalid filename", http.StatusBadRequest)
+			return
+		}
+		invoiceID := rest[:idx]
+		tw, twArgs := scopeTenant(caller, "")
+		var studentID string
+		invArgs := append([]any{invoiceID}, twArgs...)
+		if err := db.QueryRow(`SELECT student_id FROM invoices WHERE id=? AND deleted_at IS NULL`+tw, invArgs...).Scan(&studentID); err != nil {
+			respondError(w, "file not found", http.StatusNotFound)
+			return
+		}
+		if caller.Role == "parent" {
+			var ownerEmail string
+			stuArgs := append([]any{studentID}, twArgs...)
+			db.QueryRow(`SELECT contact FROM students WHERE id=?`+tw, stuArgs...).Scan(&ownerEmail)
+			if ownerEmail != caller.Email {
+				respondError(w, "not your invoice", http.StatusForbidden)
+				return
+			}
+		}
+
+		// If the driver supports presigned URLs, redirect — saves the API
+		// from being a download proxy.
+		if redirectURL := uploads.Redirect(filename, 15*time.Minute); redirectURL != "" {
+			http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
+			return
+		}
+
+		rc, err := uploads.Get(filename)
+		if err != nil {
 			respondError(w, "file not found", 404)
 			return
 		}
+		defer rc.Close()
 
 		ext := strings.ToLower(filepath.Ext(filename))
 		switch ext {
@@ -142,6 +185,6 @@ func handleServeUpload() http.HandlerFunc {
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Disposition", "inline; filename="+filename)
-		http.ServeFile(w, r, filePath)
+		io.Copy(w, rc)
 	}
 }

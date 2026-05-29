@@ -89,7 +89,7 @@ func handleInvoices(db *DB) http.HandlerFunc {
 			data, total := listInvoicesPaged(db, c, p)
 			respond(w, PaginatedResponse{Data: data, Total: total, Limit: p.Limit, Offset: p.Offset})
 		case http.MethodPost:
-			if c.Role != "admin" {
+			if !isAdminRole(c) {
 				respondError(w, "admin only", 403)
 				return
 			}
@@ -106,6 +106,18 @@ func handleInvoices(db *DB) http.HandlerFunc {
 				respondError(w, "amount must be greater than 0", 400)
 				return
 			}
+			if inv.DiscountPct < 0 || inv.DiscountPct > 100 {
+				respondError(w, "discountPct must be between 0 and 100", 400)
+				return
+			}
+			if inv.SiblingDiscount < 0 {
+				respondError(w, "siblingDiscount cannot be negative", 400)
+				return
+			}
+			if inv.ReferralCredit < 0 {
+				respondError(w, "referralCredit cannot be negative", 400)
+				return
+			}
 			if inv.ID == "" {
 				inv.ID = generateID("INV")
 			}
@@ -120,12 +132,15 @@ func handleInvoices(db *DB) http.HandlerFunc {
 			// earned reward with remaining credits. Zero the credit only when
 			// the family genuinely has no rewards — not on transient DB errors.
 			if inv.ReferralCredit > 0 {
+				tw, twArgs := scopeTenant(c, "")
 				var famID string
-				if err := db.QueryRow(`SELECT family_id FROM students WHERE id=?`, inv.StudentID).Scan(&famID); err != nil || famID == "" {
+				famArgs := append([]any{inv.StudentID}, twArgs...)
+				if err := db.QueryRow(`SELECT family_id FROM students WHERE id=?`+tw, famArgs...).Scan(&famID); err != nil || famID == "" {
 					inv.ReferralCredit = 0
 				} else {
 					var earned int
-					if err := db.QueryRow(`SELECT COUNT(*) FROM referral_rewards WHERE referrer_family_id=? AND status='earned' AND credits_remaining > 0`, famID).Scan(&earned); err == nil && earned == 0 {
+					rewArgs := append([]any{famID}, twArgs...)
+					if err := db.QueryRow(`SELECT COUNT(*) FROM referral_rewards WHERE referrer_family_id=? AND status='earned' AND credits_remaining > 0`+tw, rewArgs...).Scan(&earned); err == nil && earned == 0 {
 						inv.ReferralCredit = 0
 					}
 				}
@@ -136,26 +151,84 @@ func handleInvoices(db *DB) http.HandlerFunc {
 				respondError(w, "could not create invoice", 500)
 				return
 			}
+			logAudit(db, c.Email, "invoice_created", "invoice", inv.ID, inv.StudentID+" "+inv.Description)
 			respond(w, inv)
 		}
+	}
+}
+
+// handleInvoiceDelete soft-deletes an invoice. Admin-only. Used by the admin
+// UI when an invoice was created in error or needs voiding — refund logic
+// (returning money to the parent) is out of scope and handled by admin
+// externally. Audit log records the actor for post-hoc review.
+func handleInvoiceDelete(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		if !isAdminRole(c) {
+			respondError(w, "admin only", http.StatusForbidden)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		tw, twArgs := scopeTenant(c, "")
+		// Capture the invoice's state for the audit trail BEFORE soft-delete.
+		var studentID, status string
+		var amount float64
+		readArgs := append([]any{id}, twArgs...)
+		if err := db.QueryRow(`SELECT student_id, COALESCE(status,''), COALESCE(amount,0) FROM invoices WHERE id=? AND deleted_at IS NULL`+tw, readArgs...).Scan(&studentID, &status, &amount); err != nil {
+			respondError(w, "invoice not found", http.StatusNotFound)
+			return
+		}
+		args := append([]any{id}, twArgs...)
+		res, err := db.Exec(`UPDATE invoices SET deleted_at=NOW() WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+		if err != nil {
+			respondError(w, "could not delete invoice", http.StatusInternalServerError)
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			respondError(w, "invoice not found", http.StatusNotFound)
+			return
+		}
+		detailBytes, _ := json.Marshal(map[string]any{
+			"studentId": studentID,
+			"status":    status,
+			"amount":    amount,
+		})
+		logAudit(db, c.Email, "invoice_deleted", "invoice", id, string(detailBytes))
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
 func handleInvoicePay(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
+		if c == nil {
+			respondError(w, "auth required", http.StatusUnauthorized)
+			return
+		}
+		// Only parents (self-pay submission) and admins can hit this route.
+		// Teachers and any other role are explicitly rejected — previously
+		// they bypassed the parent-ownership check and could mark any
+		// invoice in the tenant as Paid.
+		if c.Role != "admin" && c.Role != "superadmin" && c.Role != "parent" {
+			respondError(w, "admin only", http.StatusForbidden)
+			return
+		}
 		id := chi.URLParam(r, "id")
+		tw, twArgs := scopeTenant(c, "")
 
-		// Verify invoice exists and check ownership for parents
+		// Verify invoice exists in caller's tenant and check ownership for parents.
 		var studentID string
 		var amount float64
-		if err := db.QueryRow(`SELECT student_id, amount FROM invoices WHERE id=? AND deleted_at IS NULL`, id).Scan(&studentID, &amount); err != nil {
+		var existingMethod, existingRef string
+		invArgs := append([]any{id}, twArgs...)
+		if err := db.QueryRow(`SELECT student_id, amount, COALESCE(payment_method,''), COALESCE(reference_no,'') FROM invoices WHERE id=? AND deleted_at IS NULL`+tw, invArgs...).Scan(&studentID, &amount, &existingMethod, &existingRef); err != nil {
 			respondError(w, "invoice not found", 404)
 			return
 		}
-		if c != nil && c.Role == "parent" {
+		if c.Role == "parent" {
 			var ownerEmail string
-			if err := db.QueryRow(`SELECT contact FROM students WHERE id=?`, studentID).Scan(&ownerEmail); err != nil {
+			stuArgs := append([]any{studentID}, twArgs...)
+			if err := db.QueryRow(`SELECT contact FROM students WHERE id=?`+tw, stuArgs...).Scan(&ownerEmail); err != nil {
 				logFromReq(r).Error("failed to look up student contact for invoice ownership", "err", err, "student_id", studentID)
 			}
 			if ownerEmail != c.Email {
@@ -178,41 +251,77 @@ func handleInvoicePay(db *DB) http.HandlerFunc {
 		}
 		newStatus := "Paid"
 		if body.Status != "" {
+			// Parents may only submit "Pending Verification" — admins can
+			// set any whitelisted status. This prevents a parent from
+			// self-marking an invoice as Paid.
+			allowed := map[string]bool{
+				"Paid":                 true,
+				"Pending Verification": true,
+				"Pending":              true,
+				"Overdue":              true,
+			}
+			if !allowed[body.Status] {
+				respondError(w, "invalid status", http.StatusBadRequest)
+				return
+			}
+			if c.Role == "parent" && body.Status != "Pending Verification" {
+				respondError(w, "parents may only submit payment for verification", http.StatusForbidden)
+				return
+			}
 			newStatus = body.Status
+		} else if c.Role == "parent" {
+			// Parents with empty body cannot self-mark Paid — they must
+			// explicitly submit "Pending Verification".
+			respondError(w, "parents must submit status=Pending Verification", http.StatusBadRequest)
+			return
 		}
 
-		// Reference number is mandatory for non-cash payments. Cash uses
-		// the empty default. This also runs for parent self-submit (when
-		// status is "Pending Verification").
-		methodNeedsRef := body.PaymentMethod != "" && body.PaymentMethod != "Cash"
-		if methodNeedsRef && body.ReferenceNo == "" {
-			respondError(w, "reference number required for "+body.PaymentMethod, http.StatusBadRequest)
+		// Reference number is mandatory for non-cash payments. Resolve the
+		// effective method+ref after this update (body overrides existing,
+		// otherwise existing wins via COALESCE in the UPDATE below) and
+		// reject when the resulting state has a non-cash method but no ref.
+		// This closes the bypass where admin marked Paid with an empty body
+		// on an invoice that already had method="Bank Transfer", ref="".
+		effectiveMethod := body.PaymentMethod
+		if effectiveMethod == "" {
+			effectiveMethod = existingMethod
+		}
+		effectiveRef := body.ReferenceNo
+		if effectiveRef == "" {
+			effectiveRef = existingRef
+		}
+		if effectiveMethod != "" && effectiveMethod != "Cash" && effectiveRef == "" {
+			respondError(w, "reference number required for "+effectiveMethod, http.StatusBadRequest)
 			return
 		}
 
 		t := today()
-		tw, twArgs := scopeTenant(c, "")
 		args := append([]any{newStatus, t, body.PaymentMethod, body.ReferenceNo, id}, twArgs...)
 		if _, err := db.Exec(`UPDATE invoices SET status=?, paid_on=?, payment_method=COALESCE(NULLIF(?,''),payment_method), reference_no=COALESCE(NULLIF(?,''),reference_no) WHERE id=?`+tw, args...); err != nil {
 			respondError(w, "could not update invoice", 500)
 			return
 		}
-		if c != nil {
-			detail := fmt.Sprintf(`{"studentId":"%s","amount":%.2f,"paidOn":"%s","method":"%s"}`, studentID, amount, t, body.PaymentMethod)
-			logAudit(db, c.Email, "invoice_paid", "invoice", id, detail)
-		}
+		detailBytes, _ := json.Marshal(map[string]any{
+			"studentId": studentID,
+			"amount":    amount,
+			"paidOn":    t,
+			"method":    body.PaymentMethod,
+		})
+		logAudit(db, c.Email, "invoice_paid", "invoice", id, string(detailBytes))
+
 		// Referral milestone: re-evaluate the referred student's progress.
 		// Only relevant for Monthly invoices, but the helper checks itself.
 		if newStatus == "Paid" {
-			referralCheckMilestoneOnPay(db, studentID)
+			referralCheckMilestoneOnPay(db, studentID, c)
 		}
 
 		// Send a payment-received confirmation email to the parent when THEY
 		// submit payment (not when admin marks it paid from the admin panel).
 		// This closes the "did you get my money?" feedback loop.
-		if c != nil && c.Role == "parent" {
+		if c.Role == "parent" {
 			var description string
-			if err := db.QueryRow(`SELECT description FROM invoices WHERE id=?`, id).Scan(&description); err != nil {
+			descArgs := append([]any{id}, twArgs...)
+			if err := db.QueryRow(`SELECT description FROM invoices WHERE id=?`+tw, descArgs...).Scan(&description); err != nil {
 				description = "Invoice " + id
 			}
 			go func() {

@@ -1,17 +1,46 @@
 package main
 
 import (
-	"golang.org/x/crypto/bcrypt"
+	"crypto/rand"
+	"encoding/hex"
 	"log"
+	"os"
 )
 
+// hashPassword is the canonical entry point for new password storage.
+// Delegates to Argon2id (passwords.go) so all new accounts use the modern
+// hash. Existing bcrypt hashes verify transparently and are upgraded on
+// the user's next login.
 func hashPassword(password string) (string, error) {
-	b, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(b), err
+	return hashPasswordArgon2id(password)
+}
+
+// seedAdminPassword resolves the password to assign to the bootstrap admin.
+// In production, SEED_ADMIN_PASSWORD must be set explicitly — we never ship a
+// hardcoded credential to a live deployment. In dev (APP_ENV unset or not
+// "production"), we fall back to "admin123" so local boot-up is friction-free.
+// If SEED_ADMIN_PASSWORD is missing in production we generate a one-shot
+// random password and print it to the log; the operator must capture it.
+func seedAdminPassword() string {
+	if v := os.Getenv("SEED_ADMIN_PASSWORD"); v != "" {
+		return v
+	}
+	if appEnv() == "production" {
+		b := make([]byte, 12)
+		rand.Read(b)
+		generated := "sh-" + hex.EncodeToString(b)
+		log.Printf("WARNING: SEED_ADMIN_PASSWORD not set; generated one-time admin password: %s", generated)
+		return generated
+	}
+	return "admin123"
 }
 
 // seedIfEmpty populates the database on first run.
 // It only runs when tables are empty.
+//
+// Demo data (sample parents, students, classes, invoices, etc.) is only
+// seeded outside production OR when SEED_DEMO_DATA=1. Production deployments
+// get JUST the bootstrap admin row.
 func seedIfEmpty(db *DB) {
 	var count int
 	db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count)
@@ -22,12 +51,20 @@ func seedIfEmpty(db *DB) {
 	log.Println("First run — seeding database...")
 
 	// ── Users ──────────────────────────────────────────────────────────────────
-	adminHash, _ := hashPassword("admin123")
+	adminHash, _ := hashPassword(seedAdminPassword())
+	db.Exec(`INSERT INTO users(email,password_hash,role,name,status) VALUES(?,?,?,?,?) ON CONFLICT(email) DO NOTHING`,
+		"admin@studyhub.com", adminHash, "admin", "Admin", "active")
+
+	seedDemoData := appEnv() != "production" || os.Getenv("SEED_DEMO_DATA") == "1"
+	if !seedDemoData {
+		log.Println("Seed complete (admin only — set SEED_DEMO_DATA=1 to include sample data).")
+		return
+	}
+
 	parentHash, _ := hashPassword("parent123")
 	teacherHash, _ := hashPassword("Teacher123!")
 
 	users := []struct{ email, hash, role, name string }{
-		{"admin@studyhub.com", adminHash, "admin", "Admin"},
 		{"chiying@studyhub.com", teacherHash, "teacher", "Teacher Chiying"},
 		{"nadine@studyhub.com", teacherHash, "teacher", "Teacher Nadine"},
 		{"rose@studyhub.com", teacherHash, "teacher", "Teacher Rose"},

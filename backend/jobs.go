@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -19,28 +21,67 @@ import (
 //
 // All jobs share the same DB pool — there's no per-job connection limit
 // because the workload is tiny (one query every few minutes).
-func startJobs(db *DB) {
+func startJobs(ctx context.Context, wg *sync.WaitGroup, db *DB) {
 	logger.Info("background jobs starting")
 
-	// Daily: archive announcements past their archive_on date so parents
-	// stop seeing stale "Holiday closure" notices in February.
-	go runEvery(24*time.Hour, "archive-announcements", func() {
-		archiveExpiredAnnouncements(db)
-	})
+	jobs := []struct {
+		every time.Duration
+		name  string
+		fn    func()
+	}{
+		// Daily: archive announcements past their archive_on date so parents
+		// stop seeing stale "Holiday closure" notices in February.
+		{24 * time.Hour, "archive-announcements", func() { archiveExpiredAnnouncements(db) }},
+		// Hourly: send overdue invoice reminders (deduped by reminder_sent_on
+		// so a parent doesn't get spammed every hour for the same invoice).
+		{1 * time.Hour, "overdue-reminders", func() { sendOverdueInvoiceReminders(db) }},
+		// Hourly: re-evaluate pending referral_rewards rows.
+		{1 * time.Hour, "referral-recheck", func() { recheckReferralMilestones(db) }},
+		// Daily: prune email_tokens rows that are either used or expired and
+		// older than 30 days.
+		{24 * time.Hour, "email-tokens-purge", func() { purgeExpiredEmailTokens(db) }},
+		// Every 30s: drain the email queue (send + retry with backoff).
+		{30 * time.Second, "email-queue-worker", func() { processEmailQueue(db) }},
+		// Daily: prune long-since-sent/failed email rows.
+		{24 * time.Hour, "email-queue-prune", func() { purgeOldEmailQueueRows(db) }},
+	}
+	for _, j := range jobs {
+		wg.Add(1)
+		go runEvery(ctx, wg, j.every, j.name, j.fn)
+	}
+}
 
-	// Hourly: send overdue invoice reminders (deduped by reminder_sent_on
-	// so a parent doesn't get spammed every hour for the same invoice).
-	go runEvery(1*time.Hour, "overdue-reminders", func() {
-		sendOverdueInvoiceReminders(db)
-	})
-
-	// Hourly: re-evaluate pending referral_rewards rows. The handleInvoicePay
-	// path already triggers this on payment, but the recheck job catches
-	// invoices that were marked paid via direct DB update or backfilled
-	// imports.
-	go runEvery(1*time.Hour, "referral-recheck", func() {
-		recheckReferralMilestones(db)
-	})
+// purgeExpiredEmailTokens removes spent or expired email verification tokens
+// older than 30 days. Active (not yet used, not yet expired) tokens are kept
+// regardless of age.
+func purgeExpiredEmailTokens(db *DB) {
+	res, err := db.Exec(`DELETE FROM email_tokens WHERE (used_at IS NOT NULL OR expires_at < NOW()) AND created_at < NOW() - INTERVAL '30 days'`)
+	if err != nil {
+		logger.Error("email-tokens-purge failed", "err", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		logger.Info("email tokens purged", "count", n)
+	}
+	// Same pass: drop revoked-token entries whose underlying JWT has
+	// already expired. Keeping them around achieves nothing — the JWT
+	// itself wouldn't validate anymore.
+	if res, err := db.Exec(`DELETE FROM revoked_tokens WHERE expires_at < NOW()`); err == nil {
+		if n, _ := res.RowsAffected(); n > 0 {
+			logger.Info("revoked tokens purged", "count", n)
+		}
+	}
+	if err := purgeExpiredRefreshTokens(db); err != nil {
+		logger.Error("refresh-tokens-purge failed", "err", err)
+	}
+	// MFA intermediate tokens are normally consumed by /api/auth/mfa/verify
+	// (DELETE … RETURNING). Abandoned logins leave rows behind that nothing
+	// else cleans. Sweep daily — 5-minute TTL means expired rows are inert.
+	if res, err := db.Exec(`DELETE FROM mfa_intermediate WHERE expires_at < NOW()`); err == nil {
+		if n, _ := res.RowsAffected(); n > 0 {
+			logger.Info("mfa intermediate purged", "count", n)
+		}
+	}
 }
 
 // runEvery is the goroutine wrapper used by every background job. It
@@ -50,14 +91,21 @@ func startJobs(db *DB) {
 // The goroutine never exits — it's expected to live for the lifetime of
 // the server. Graceful shutdown is handled at the HTTP layer; in-flight
 // jobs are allowed to finish naturally.
-func runEvery(d time.Duration, name string, fn func()) {
+func runEvery(ctx context.Context, wg *sync.WaitGroup, d time.Duration, name string, fn func()) {
+	defer wg.Done()
 	// Run once on startup so freshly-deployed servers don't wait for the
 	// first tick before doing useful work.
 	safeRun(name, fn)
 	t := time.NewTicker(d)
 	defer t.Stop()
-	for range t.C {
-		safeRun(name, fn)
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("background job stopped", "job", name)
+			return
+		case <-t.C:
+			safeRun(name, fn)
+		}
 	}
 }
 
@@ -99,9 +147,28 @@ func archiveExpiredAnnouncements(db *DB) {
 // migration). Reminders are batched per invoice — one email per invoice,
 // not one email per parent — so the parent sees a clear breakdown if they
 // have multiple kids in arrears.
+// isHolidayToday returns true when the given tenant has a holiday row whose
+// date range covers today. Used by the reminder job to suppress parent-facing
+// emails on public holidays (e.g. Hari Raya). end_date is optional — a single
+// day holiday has end_date NULL/empty and matches only when date == today.
+func isHolidayToday(db *DB, tenantID string) bool {
+	t := today()
+	var cnt int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM holidays
+		  WHERE tenant_id=? AND deleted_at IS NULL
+		    AND date <= ?
+		    AND (COALESCE(end_date,'') = '' OR end_date >= ?)`,
+		tenantID, t, t,
+	).Scan(&cnt); err != nil {
+		return false
+	}
+	return cnt > 0
+}
+
 func sendOverdueInvoiceReminders(db *DB) {
 	rows, err := db.Query(`
-		SELECT i.id, i.student_id, i.description, i.amount, i.due_date,
+		SELECT i.id, i.tenant_id, i.student_id, i.description, i.amount, i.due_date,
 		       COALESCE(s.first_name||' '||s.last_name,'student'), COALESCE(s.contact,''), COALESCE(s.parent_name,'')
 		FROM invoices i
 		LEFT JOIN students s ON s.id = i.student_id
@@ -117,21 +184,22 @@ func sendOverdueInvoiceReminders(db *DB) {
 	defer rows.Close()
 
 	type pending struct {
-		invoiceID    string
-		studentID    string
-		studentName  string
-		parentEmail  string
-		parentName   string
-		description  string
-		amountRM     string
-		dueDate      string
-		daysOverdue  int
+		invoiceID   string
+		tenantID    string
+		studentID   string
+		studentName string
+		parentEmail string
+		parentName  string
+		description string
+		amountRM    string
+		dueDate     string
+		daysOverdue int
 	}
 	var batch []pending
 	for rows.Next() {
 		var p pending
 		var amount float64
-		if err := rows.Scan(&p.invoiceID, &p.studentID, &p.description, &amount, &p.dueDate, &p.studentName, &p.parentEmail, &p.parentName); err != nil {
+		if err := rows.Scan(&p.invoiceID, &p.tenantID, &p.studentID, &p.description, &amount, &p.dueDate, &p.studentName, &p.parentEmail, &p.parentName); err != nil {
 			continue
 		}
 		p.amountRM = fmt.Sprintf("%.2f", amount)
@@ -151,7 +219,27 @@ func sendOverdueInvoiceReminders(db *DB) {
 	}
 	logger.Info("sending overdue reminders", "count", len(batch))
 
+	// Group skip-checks per tenant so the holiday lookup runs once per
+	// tenant rather than once per reminder.
+	holidaySkip := map[string]bool{}
+
 	for _, p := range batch {
+		if _, seen := holidaySkip[p.tenantID]; !seen {
+			holidaySkip[p.tenantID] = isHolidayToday(db, p.tenantID)
+		}
+		if holidaySkip[p.tenantID] {
+			continue
+		}
+		// Honor parent's notification preference. The default is true
+		// (opt-out) so missing rows behave as before.
+		var wantReminders bool
+		db.QueryRow(`SELECT COALESCE(notify_invoice_reminders,true) FROM users WHERE email=?`, p.parentEmail).Scan(&wantReminders)
+		if !wantReminders {
+			// Still mark reminder_sent_on so we don't re-evaluate
+			// this invoice every hour — keeps the query selective.
+			db.Exec(`UPDATE invoices SET reminder_sent_on=? WHERE id=? AND tenant_id=?`, today(), p.invoiceID, p.tenantID)
+			continue
+		}
 		var label string
 		if p.daysOverdue <= 0 {
 			label = "overdue"
@@ -167,7 +255,9 @@ func sendOverdueInvoiceReminders(db *DB) {
 			continue
 		}
 		// Mark this invoice as reminded so it doesn't fire again for 3 days.
-		if _, err := db.Exec(`UPDATE invoices SET reminder_sent_on=? WHERE id=?`, today(), p.invoiceID); err != nil {
+		// Pin to the original tenant so an id collision across tenants cannot
+		// accidentally suppress a different tenant's reminder.
+		if _, err := db.Exec(`UPDATE invoices SET reminder_sent_on=? WHERE id=? AND tenant_id=?`, today(), p.invoiceID, p.tenantID); err != nil {
 			logger.Error("overdue reminder mark failed", "err", err, "invoice_id", p.invoiceID)
 		}
 	}
@@ -191,28 +281,35 @@ func threeDaysAgo() string {
 // Calls the same helper used by the inline path so the logic stays in one
 // place — change the threshold once, both paths pick it up.
 func recheckReferralMilestones(db *DB) {
-	rows, err := db.Query(`SELECT referred_student_id FROM referral_rewards WHERE status='pending'`)
+	rows, err := db.Query(`SELECT referred_student_id, tenant_id FROM referral_rewards WHERE status='pending'`)
 	if err != nil {
 		logger.Error("referral-recheck query failed", "err", err)
 		return
 	}
 	defer rows.Close()
 
-	var studentIDs []string
+	type pendingRow struct {
+		studentID string
+		tenantID  int
+	}
+	var pending []pendingRow
 	for rows.Next() {
-		var sid string
-		if err := rows.Scan(&sid); err == nil {
-			studentIDs = append(studentIDs, sid)
+		var p pendingRow
+		if err := rows.Scan(&p.studentID, &p.tenantID); err == nil {
+			pending = append(pending, p)
 		}
 	}
 
-	if len(studentIDs) == 0 {
+	if len(pending) == 0 {
 		return
 	}
-	logger.Debug("rechecking referral milestones", "pending", len(studentIDs))
+	logger.Debug("rechecking referral milestones", "pending", len(pending))
 
-	for _, sid := range studentIDs {
-		referralCheckMilestoneOnPay(db, sid)
+	for _, p := range pending {
+		// Synthesise a tenant-scoped claim so the helper's scopeTenant
+		// query targets the row's actual tenant rather than running
+		// cross-tenant.
+		referralCheckMilestoneOnPay(db, p.studentID, &Claims{TenantID: p.tenantID, Role: "system"})
 	}
 }
 

@@ -7,6 +7,29 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// validateTeacherIDs rejects class create/update payloads referencing staff
+// rows that don't exist in the caller's tenant. Without this a typo or
+// foreign id silently goes into teacher_ids JSON and clash detection misses.
+func validateTeacherIDs(db *DB, c *Claims, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	tw, twArgs := scopeTenant(c, "")
+	for _, id := range ids {
+		var exists int
+		args := append([]any{id}, twArgs...)
+		db.QueryRow(`SELECT 1 FROM staff WHERE id=? AND deleted_at IS NULL`+tw, args...).Scan(&exists)
+		if exists != 1 {
+			return errClassTeacherNotFound{id: id}
+		}
+	}
+	return nil
+}
+
+type errClassTeacherNotFound struct{ id string }
+
+func (e errClassTeacherNotFound) Error() string { return "teacher not found in tenant: " + e.id }
+
 // ── Classes ───────────────────────────────────────────────────────────────────
 
 func listClasses(db *DB, c *Claims) []Class {
@@ -60,14 +83,22 @@ func handleClasses(db *DB) http.HandlerFunc {
 				c.ID = generateID("cls")
 			}
 
+			if err := validateTeacherIDs(db, cl, c.TeacherIDs); err != nil {
+				respondError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
 			// ── Clash detection ────────────────────────────────────────────────
-			// Two intervals [s1,e1) and [s2,e2) overlap when s1<e2 AND s2<e1
+			// Two intervals [s1,e1) and [s2,e2) overlap when s1<e2 AND s2<e1.
+			// Scoped to the caller's tenant so a teacher booked in tenant A
+			// does not produce a false-positive conflict when tenant B tries
+			// to create a class at the same time.
+			ctw, ctwArgs := scopeTenant(cl, "")
 			for _, tid2 := range c.TeacherIDs {
 				var cnt int
-				// Use exact JSON substring match with double-quote delimiters
-				// so "stf_1" doesn't false-match "stf_10" or "stf_100".
-				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`,
-					c.Day, c.ID, c.Time, c.EndTime, tid2).Scan(&cnt); err != nil {
+				clashArgs := append([]any{c.Day, c.ID, c.Time, c.EndTime, tid2}, ctwArgs...)
+				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`+ctw,
+					clashArgs...).Scan(&cnt); err != nil {
 					respondError(w, "server error checking class conflicts", 500)
 					return
 				}
@@ -78,8 +109,9 @@ func handleClasses(db *DB) http.HandlerFunc {
 			}
 			if c.Classroom != "" {
 				var cnt int
-				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`,
-					c.Day, c.Classroom, c.ID, c.Time, c.EndTime).Scan(&cnt); err != nil {
+				roomArgs := append([]any{c.Day, c.Classroom, c.ID, c.Time, c.EndTime}, ctwArgs...)
+				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`+ctw,
+					roomArgs...).Scan(&cnt); err != nil {
 					respondError(w, "server error checking class conflicts", 500)
 					return
 				}
@@ -98,6 +130,7 @@ func handleClasses(db *DB) http.HandlerFunc {
 				respondError(w, "could not create class", 500)
 				return
 			}
+			logAudit(db, cl.Email, "class_created", "class", c.ID, c.Name)
 			respond(w, c)
 		}
 	}
@@ -109,7 +142,7 @@ func handleClassByID(db *DB) http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		switch r.Method {
 		case http.MethodPut:
-			if c == nil || (c.Role != "admin" && c.Role != "superadmin") {
+			if !isAdminRole(c) {
 				respondError(w, "admin only", 403)
 				return
 			}
@@ -120,11 +153,18 @@ func handleClassByID(db *DB) http.HandlerFunc {
 			}
 			cl.ID = id
 
-			// Clash detection (same as create)
+			if err := validateTeacherIDs(db, c, cl.TeacherIDs); err != nil {
+				respondError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			// Clash detection (same as create) — tenant-scoped.
+			tw, twArgs := scopeTenant(c, "")
 			for _, tid2 := range cl.TeacherIDs {
 				var cnt int
-				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`,
-					cl.Day, cl.ID, cl.Time, cl.EndTime, tid2).Scan(&cnt); err != nil {
+				clashArgs := append([]any{cl.Day, cl.ID, cl.Time, cl.EndTime, tid2}, twArgs...)
+				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`+tw,
+					clashArgs...).Scan(&cnt); err != nil {
 					respondError(w, "server error checking class conflicts", 500)
 					return
 				}
@@ -135,8 +175,9 @@ func handleClassByID(db *DB) http.HandlerFunc {
 			}
 			if cl.Classroom != "" {
 				var cnt int
-				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`,
-					cl.Day, cl.Classroom, cl.ID, cl.Time, cl.EndTime).Scan(&cnt); err != nil {
+				roomArgs := append([]any{cl.Day, cl.Classroom, cl.ID, cl.Time, cl.EndTime}, twArgs...)
+				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`+tw,
+					roomArgs...).Scan(&cnt); err != nil {
 					respondError(w, "server error checking class conflicts", 500)
 					return
 				}
@@ -146,7 +187,7 @@ func handleClassByID(db *DB) http.HandlerFunc {
 				}
 			}
 
-			tw, twArgs := scopeTenant(c, "")
+
 			args := append([]any{cl.Name, jsonArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Enrolled, cl.Color, cl.Category, id}, twArgs...)
 			db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,enrolled=?,color=?,category=? WHERE id=?`+tw, args...)
 			if c != nil {
@@ -155,7 +196,7 @@ func handleClassByID(db *DB) http.HandlerFunc {
 			respond(w, cl)
 
 		case http.MethodDelete:
-			if c == nil || (c.Role != "admin" && c.Role != "superadmin") {
+			if !isAdminRole(c) {
 				respondError(w, "admin only", 403)
 				return
 			}

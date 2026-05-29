@@ -16,9 +16,12 @@ func handleAuditLogs(db *DB) http.HandlerFunc {
 			CreatedAt  string `json:"createdAt"`
 		}
 
+		c := claimsFrom(r)
+		tw, twArgs := scopeTenant(c, "")
+
 		p := parsePagination(r)
 		if !p.Active {
-			rows, err := db.Query(`SELECT id,actor_email,action,entity_type,entity_id,detail,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 200`)
+			rows, err := db.Query(`SELECT id,actor_email,action,entity_type,entity_id,detail,created_at FROM audit_logs WHERE 1=1`+tw+` ORDER BY created_at DESC LIMIT 200`, twArgs...)
 			if err != nil {
 				respond(w, []any{})
 				return
@@ -37,8 +40,9 @@ func handleAuditLogs(db *DB) http.HandlerFunc {
 		}
 
 		var total int
-		db.QueryRow(`SELECT COUNT(*) FROM audit_logs`).Scan(&total)
-		rows, err := db.Query(`SELECT id,actor_email,action,entity_type,entity_id,detail,created_at FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?`, p.Limit, p.Offset)
+		db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE 1=1`+tw, twArgs...).Scan(&total)
+		pageArgs := append(append([]any{}, twArgs...), p.Limit, p.Offset)
+		rows, err := db.Query(`SELECT id,actor_email,action,entity_type,entity_id,detail,created_at FROM audit_logs WHERE 1=1`+tw+` ORDER BY created_at DESC LIMIT ? OFFSET ?`, pageArgs...)
 		if err != nil {
 			respond(w, PaginatedResponse{Data: []LogEntry{}, Total: total, Limit: p.Limit, Offset: p.Offset})
 			return

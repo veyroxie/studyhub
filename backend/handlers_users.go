@@ -101,9 +101,11 @@ func handleUserVerify(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		c := claimsFrom(r)
+		tw, twArgs := scopeTenant(c, "")
 
 		var email, status string
-		if err := db.QueryRow(`SELECT email, COALESCE(status,'active') FROM users WHERE id=?`, id).Scan(&email, &status); err != nil {
+		selArgs := append([]any{id}, twArgs...)
+		if err := db.QueryRow(`SELECT email, COALESCE(status,'active') FROM users WHERE id=?`+tw, selArgs...).Scan(&email, &status); err != nil {
 			respondError(w, "user not found", 404)
 			return
 		}
@@ -112,7 +114,8 @@ func handleUserVerify(db *DB) http.HandlerFunc {
 			return
 		}
 
-		if _, err := db.Exec(`UPDATE users SET status='active', email_verified_at=NOW() WHERE id=?`, id); err != nil {
+		updArgs := append([]any{id}, twArgs...)
+		if _, err := db.Exec(`UPDATE users SET status='active', email_verified_at=NOW() WHERE id=?`+tw, updArgs...); err != nil {
 			respondError(w, "could not verify user", 500)
 			return
 		}
@@ -131,10 +134,12 @@ func handleUserResendVerification(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		c := claimsFrom(r)
+		tw, twArgs := scopeTenant(c, "")
 
 		var userID int64
 		var email, name, status string
-		if err := db.QueryRow(`SELECT id, email, name, COALESCE(status,'active') FROM users WHERE id=?`, id).Scan(&userID, &email, &name, &status); err != nil {
+		selArgs := append([]any{id}, twArgs...)
+		if err := db.QueryRow(`SELECT id, email, name, COALESCE(status,'active') FROM users WHERE id=?`+tw, selArgs...).Scan(&userID, &email, &name, &status); err != nil {
 			respondError(w, "user not found", 404)
 			return
 		}

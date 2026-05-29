@@ -176,6 +176,18 @@ body::after {
   letter-spacing: 0.16em;
   background: var(--paper-warm);
   border-bottom: 1px solid var(--rule);
+  /* Sticky so long student/invoice/attendance lists keep their column
+     headers visible. The inherit-background + the explicit fallback above
+     keep the row from looking transparent over scrolling content. */
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+/* Clickable table rows (students, billing) get a gold focus ring so
+   tab-navigation is visible. Pair with tabindex="0" on the row in JS. */
+tr[tabindex]:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
 }
 .td {
   padding: 15px 22px;
@@ -205,6 +217,16 @@ tr:hover > .td {
   color: var(--ink);
 }
 .form-input:hover { border-color: #d3c9ad; }
+/* Inline-on-type validation: turn the border red the moment the user
+   types something invalid (the :placeholder-shown guard skips empty
+   fields so they don't glow red before any input). */
+.form-input:invalid:not(:placeholder-shown) {
+  border-color: #dc2626;
+  background: rgba(220, 38, 38, 0.03);
+}
+.form-input:invalid:not(:placeholder-shown):focus {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+}
 .form-input:focus {
   border-color: var(--gold);
   background: #fff;
@@ -704,20 +726,112 @@ body.sidebar-collapsed #sidebar .nav-btn:hover::after {
 }
 
 /* Staggered reveal — one orchestrated entrance, not scattered fx.
-   Children of the active page cascade in 60ms apart. */
+   Cascade tightened from 60ms to 20ms so the dashboard feels like one
+   smooth fade-up instead of "loading bit by bit" on every navigation. */
 .page.active > * {
-  animation: rise 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  animation: rise 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
 }
-.page.active > *:nth-child(1) { animation-delay: 0.05s; }
-.page.active > *:nth-child(2) { animation-delay: 0.11s; }
-.page.active > *:nth-child(3) { animation-delay: 0.17s; }
-.page.active > *:nth-child(4) { animation-delay: 0.23s; }
-.page.active > *:nth-child(5) { animation-delay: 0.29s; }
-.page.active > *:nth-child(6) { animation-delay: 0.35s; }
-.page.active > *:nth-child(n+7) { animation-delay: 0.4s; }
+.page.active > *:nth-child(1) { animation-delay: 0.02s; }
+.page.active > *:nth-child(2) { animation-delay: 0.04s; }
+.page.active > *:nth-child(3) { animation-delay: 0.06s; }
+.page.active > *:nth-child(4) { animation-delay: 0.08s; }
+.page.active > *:nth-child(5) { animation-delay: 0.10s; }
+.page.active > *:nth-child(6) { animation-delay: 0.12s; }
+.page.active > *:nth-child(n+7) { animation-delay: 0.14s; }
 @keyframes rise {
-  from { opacity: 0; transform: translateY(14px); }
+  from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ==============================
+   UTILITY CLASSES — buttons, spinner, modal exit
+   ============================== */
+
+/* Primary action — gold + dark text. One per panel. */
+.sh-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.15rem;
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  background: var(--gold);
+  color: var(--ink);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.06s ease, box-shadow 0.18s ease;
+  box-shadow: 0 1px 0 rgba(26,22,18,0.05);
+}
+.sh-btn-primary:hover { background: #d4ae2e; box-shadow: 0 4px 14px -6px rgba(201,162,39,0.45); }
+.sh-btn-primary:active { transform: translateY(1px); }
+
+/* Secondary action — neutral surface with rule border. */
+.sh-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.05rem;
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: var(--paper-card, #fff);
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.sh-btn-secondary:hover { border-color: #d3c9ad; background: #fafaf5; }
+
+/* Disabled state on ANY button — clear visual + cursor. */
+button[disabled],
+.sh-btn-primary[disabled],
+.sh-btn-secondary[disabled],
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+}
+button[disabled]:hover,
+.sh-btn-primary[disabled]:hover,
+.sh-btn-secondary[disabled]:hover { background: inherit; transform: none; }
+
+/* Inline spinner shown by App.Utils.withLoading — sized to the
+   surrounding text so it doesn't reflow the button. */
+.sh-spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: shSpin 0.65s linear infinite;
+  vertical-align: -0.15em;
+}
+@keyframes shSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Symmetrical modal exit — entry fades in over ~200ms via the existing
+   .modal-content animation; hideModal adds .sh-modal-exit then removes
+   the overlay 160ms later. */
+.sh-modal-exit {
+  animation: shModalOut 0.16s ease-in forwards !important;
+}
+.sh-modal-exit .modal-content,
+.sh-modal-exit > * {
+  animation: shModalOutInner 0.16s ease-in forwards !important;
+}
+@keyframes shModalOut {
+  to { opacity: 0; }
+}
+@keyframes shModalOutInner {
+  to { opacity: 0; transform: scale(0.97) translateY(4px); }
 }
 
 /* ==============================

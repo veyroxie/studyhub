@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 
@@ -11,40 +12,60 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// wsAllowedOrigins is the static portion of the WS origin allowlist. The
+// ALLOWED_ORIGIN env var (same one CORS reads in main.go) is appended at
+// upgrade time so custom-domain deploys don't have to rebuild the binary.
+var wsAllowedOrigins = []string{
+	"https://studyhub.fit",
+	"https://www.studyhub.fit",
+	"http://studyhub.fit",
+	"http://localhost:8080",
+	"http://127.0.0.1:8080",
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
-		allowed := []string{
-			"https://studyhub.fit",
-			"https://www.studyhub.fit",
-			"http://localhost:8080",
-			"http://127.0.0.1:8080",
-		}
-		for _, a := range allowed {
+		for _, a := range wsAllowedOrigins {
 			if origin == a {
 				return true
 			}
+		}
+		if env := os.Getenv("ALLOWED_ORIGIN"); env != "" && origin == env {
+			return true
 		}
 		return false
 	},
 }
 
-type WSHub struct {
-	mu      sync.RWMutex
-	clients map[*websocket.Conn]bool
+// wsClient tracks a single WebSocket connection plus the tenant the
+// authenticated user belongs to. broadcastTenant uses this so a parent in
+// tenant B never sees attendance events from tenant A.
+type wsClient struct {
+	conn     *websocket.Conn
+	tenantID int
 }
 
-func newHub() *WSHub { return &WSHub{clients: make(map[*websocket.Conn]bool)} }
+type WSHub struct {
+	mu      sync.RWMutex
+	clients map[*websocket.Conn]*wsClient
+}
 
-func (h *WSHub) broadcast(v any) {
+func newHub() *WSHub { return &WSHub{clients: make(map[*websocket.Conn]*wsClient)} }
+
+// broadcastTenant delivers the message only to clients whose JWT tenant_id
+// matches tid. Superadmin connections (tenantID==0) receive everything.
+func (h *WSHub) broadcastTenant(tid int, v any) {
 	msg, err := json.Marshal(v)
 	if err != nil {
 		return
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	for conn := range h.clients {
-		conn.WriteMessage(websocket.TextMessage, msg)
+	for _, c := range h.clients {
+		if c.tenantID == 0 || c.tenantID == tid {
+			c.conn.WriteMessage(websocket.TextMessage, msg)
+		}
 	}
 }
 
@@ -81,8 +102,9 @@ func (h *WSHub) handleWS() http.HandlerFunc {
 			log.Println("ws upgrade:", err)
 			return
 		}
+		client := &wsClient{conn: conn, tenantID: claims.TenantID}
 		h.mu.Lock()
-		h.clients[conn] = true
+		h.clients[conn] = client
 		h.mu.Unlock()
 
 		defer func() {

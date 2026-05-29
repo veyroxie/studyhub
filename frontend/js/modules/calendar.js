@@ -142,6 +142,8 @@
         + _statCard('Active Staff', staff.length, 'text-purple-600', "App.Router.navigate('staff')")
         + '</div>');
 
+    // Parents only get the week view with their child's classes — no
+    // search box, no teacher dropdown (those are admin/teacher affordances).
     const filterBar = isClient ? '' : '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;flex-wrap:wrap">'
       + '<input id="cal-search" type="search" placeholder="Search class..." value="' + App.Utils.esc(_filterSearch) + '" oninput="App.Calendar._setSearch(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;width:180px;background:#fff">'
       + (!isTeacher
@@ -425,43 +427,28 @@
       + '</div>'
       + '<div class="grid grid-cols-2 gap-3 mb-5 text-sm">'
       +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Teacher(s)</div><div class="font-medium">' + App.Utils.esc(teachers) + '</div></div>'
-      +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Enrolled</div><div class="font-medium">' + c.enrolled + '/' + c.capacity + '</div></div>'
+      +   (isClient ? '' : '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Enrolled</div><div class="font-medium">' + c.enrolled + '/' + c.capacity + '</div></div>')
       +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Category</div><div class="font-medium">' + (c.category || 'Academic') + '</div></div>'
       +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Type</div><div class="font-medium">' + (c.classType || 'Group') + '</div></div>'
       + '</div>'
-      // Feedback section
-      + '<div class="border-t border-slate-100 pt-4">'
-      +   '<div class="flex items-center justify-between mb-3">'
-      +     '<h3 class="text-sm font-bold text-slate-700">Class Feedback</h3>'
-      +     (avgRating ? '<span class="text-sm font-bold text-amber-600">' + avgRating + '/5 (' + feedbackList.length + ' reviews)</span>' : '<span class="text-xs text-slate-400">No reviews yet</span>')
-      +   '</div>'
-      +   (feedbackList.length > 0
-            ? '<div class="space-y-2 max-h-36 overflow-y-auto mb-4">'
-            + feedbackList.map(function(f) {
-                var stars = '★'.repeat(f.rating||0) + '☆'.repeat(5-(f.rating||0));
-                return '<div class="bg-slate-50 rounded-lg p-2.5">'
-                  + '<div class="flex items-center gap-2">'
-                  +   '<span class="text-amber-400 text-sm">' + stars + '</span>'
-                  +   '<span class="text-xs text-slate-400">' + App.Utils.formatDate(f.createdOn) + '</span>'
-                  + '</div>'
-                  + (f.comment ? '<div class="text-xs text-slate-600 mt-1">' + App.Utils.esc(f.comment) + '</div>' : '')
-                  + '</div>';
-              }).join('')
-            + '</div>'
-            : '<div class="text-xs text-slate-400 text-center py-4 mb-3">Be the first to leave a review!</div>')
-      +   (canLeaveFeedback && !alreadyReviewed
-            ? '<div id="feedback-form-' + classId + '">'
-            +   '<div class="text-xs font-semibold text-slate-600 mb-2">Your Rating</div>'
-            +   '<div style="display:flex;gap:0.5rem;margin-bottom:0.75rem" id="star-row-' + classId + '">'
-            +   [1,2,3,4,5].map(function(n) {
-                  return '<button onclick="App.Calendar._setStar(\'' + classId + '\',' + n + ')" data-star="' + n + '" style="font-size:1.5rem;background:none;border:none;cursor:pointer;color:#d1d5db;transition:color 0.1s">★</button>';
+      // Enrolled students roster (admin/teacher only — parents see their
+      // own kids via Students panel, not other families' kids).
+      + (isClient ? '' :
+          (function() {
+            var enrolledStu = (state.students || []).filter(function(s) {
+              return (s.enrolledClasses || []).indexOf(classId) > -1 && (s.status === 'Active' || s.status === 'New');
+            });
+            if (enrolledStu.length === 0) return '<div class="border-t border-slate-100 pt-4 mb-4 text-xs text-slate-400">No students enrolled yet.</div>';
+            return '<div class="border-t border-slate-100 pt-4 mb-4">'
+              + '<h3 class="text-sm font-bold text-slate-700 mb-2">Students in this class (' + enrolledStu.length + ')</h3>'
+              + '<div style="display:flex;flex-wrap:wrap;gap:0.4rem">'
+              + enrolledStu.map(function(s) {
+                  return '<button onclick="App.Utils.hideModal(true);App.Students._viewModal(\'' + s.id + '\')" '
+                    + 'style="padding:0.25rem 0.65rem;font-size:0.74rem;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:14px;color:#374151;cursor:pointer">'
+                    + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</button>';
                 }).join('')
-            +   '</div>'
-            +   '<textarea id="feedback-comment-' + classId + '" rows="2" placeholder="Optional comment..." style="width:100%;padding:0.5rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;resize:none;outline:none;margin-bottom:0.5rem"></textarea>'
-            +   '<button onclick="App.Calendar._submitFeedback(\'' + classId + '\')" style="padding:0.4rem 1rem;font-size:0.82rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Submit Review</button>'
-            + '</div>'
-            : (alreadyReviewed ? '<div class="text-xs text-emerald-600 font-semibold">You have already reviewed this class.</div>' : ''))
-      + '</div>'
+              + '</div></div>';
+          })())
       + '</div>'
     );
   }
@@ -1127,5 +1114,5 @@
     });
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _setStar: _setStar, _submitFeedback: _submitFeedback, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday };
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday };
 })();

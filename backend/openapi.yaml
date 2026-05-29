@@ -1,0 +1,616 @@
+openapi: 3.0.3
+info:
+  title: StudyHub API
+  description: |
+    REST API for the StudyHub tutoring centre platform. Multi-tenant
+    Postgres-backed; auth via JWT in HttpOnly cookie + CSRF double-submit
+    cookie/header; optional TOTP MFA for admin/superadmin roles.
+
+    **Conventions**
+    - All requests and responses are JSON unless noted.
+    - State-changing requests (POST/PUT/DELETE) require the `X-CSRF-Token`
+      header to match the `sh_csrf` cookie value (double-submit pattern).
+    - Errors return `{ "error": "human msg", "request_id": "..." }`.
+    - List endpoints accept `?limit=&offset=` for pagination on the large
+      tables (invoices, attendance, feedback, etc.).
+  version: 1.0.0
+  contact:
+    name: The Study Hub
+    email: hello@studyhub.fit
+
+servers:
+  - url: https://studyhub.fit
+    description: Production
+  - url: http://localhost:8080
+    description: Local dev
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sh_token
+      description: JWT issued by /api/auth/login. Set HttpOnly; not readable by JS.
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Echoes the sh_csrf cookie. Required on state-changing requests.
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        request_id: { type: string }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        rememberMe: { type: boolean }
+    LoginResponse:
+      type: object
+      properties:
+        role: { type: string, enum: [admin, superadmin, teacher, parent] }
+        name: { type: string }
+        email: { type: string, format: email }
+        staffId: { type: string, nullable: true }
+        mfaRequired: { type: boolean }
+        token: { type: string, description: Intermediate token when MFA is required }
+        mustAcceptTos: { type: boolean }
+    Student:
+      type: object
+      properties:
+        id: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        dob: { type: string, format: date }
+        contact: { type: string, format: email }
+        familyId: { type: string }
+        enrolledClasses: { type: array, items: { type: string } }
+        packageAmount: { type: number, format: float }
+    Invoice:
+      type: object
+      properties:
+        id: { type: string }
+        studentId: { type: string }
+        description: { type: string }
+        amount: { type: number, format: float }
+        status: { type: string, enum: [Unpaid, Paid, Overdue, "Pending Verification"] }
+        dueDate: { type: string, format: date }
+        paymentMethod: { type: string, nullable: true }
+        referenceNo: { type: string, nullable: true }
+    CheckoutResponse:
+      type: object
+      properties:
+        url: { type: string, description: Gateway-hosted checkout URL }
+        provider: { type: string, enum: [billplz, stripe] }
+
+security:
+  - sessionCookie: []
+    csrfHeader: []
+
+paths:
+  /api/health:
+    get:
+      tags: [meta]
+      security: []
+      summary: Liveness check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  db: { type: string }
+                  version: { type: string }
+
+  /metrics:
+    get:
+      tags: [meta]
+      security: []
+      summary: Prometheus metrics
+      description: Text-format counters + summaries. Firewall this port from public traffic.
+      responses:
+        '200':
+          description: Prometheus text format
+          content:
+            text/plain: {}
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Password login (sets sh_token + sh_refresh cookies)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Logged in or MFA challenge issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401':
+          description: Invalid credentials
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '403':
+          description: Account locked / suspended / needs verification
+
+  /api/auth/refresh:
+    post:
+      tags: [auth]
+      security: []
+      summary: Rotate access + refresh tokens
+      description: |
+        Exchanges the sh_refresh cookie for a new access JWT + a rotated
+        refresh token. Reuse detection: presenting an already-used token
+        revokes the entire family.
+      responses:
+        '200':
+          description: Rotated
+        '401':
+          description: Missing / invalid / expired refresh token
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      security: []
+      summary: Revoke session
+      description: Records the JWT id in revoked_tokens so the cookie can't be replayed.
+      responses:
+        '204': { description: Logged out }
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      summary: Current session info
+      responses:
+        '200':
+          description: Active session
+          content: { application/json: { schema: { $ref: '#/components/schemas/LoginResponse' } } }
+        '401':
+          description: Not authenticated
+        '403':
+          description: Account suspended
+
+  /api/auth/mfa/setup:
+    post:
+      tags: [auth]
+      summary: Begin TOTP enrolment
+      responses:
+        '200':
+          description: Secret + otpauth URI for QR rendering
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: { type: string }
+                  uri: { type: string }
+        '409': { description: MFA already enabled }
+
+  /api/auth/mfa/confirm:
+    post:
+      tags: [auth]
+      summary: Confirm TOTP code and finalise enrolment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code: { type: string, minLength: 6, maxLength: 6 }
+      responses:
+        '200':
+          description: Enabled + recovery codes (shown ONCE)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: { type: boolean }
+                  recoveryCodes:
+                    type: array
+                    items: { type: string }
+
+  /api/auth/mfa/verify:
+    post:
+      tags: [auth]
+      security: []
+      summary: Second step of MFA login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string, description: Intermediate token from /login }
+                code: { type: string, description: TOTP code (or omit if using recoveryCode) }
+                recoveryCode: { type: string, nullable: true }
+      responses:
+        '200': { description: Session cookie issued }
+        '401': { description: Bad code / expired intermediate }
+
+  /api/auth/mfa/disable:
+    post:
+      tags: [auth]
+      summary: Disable MFA on the current account
+      responses:
+        '200': { description: Disabled }
+
+  /api/account/export-my-data:
+    get:
+      tags: [account]
+      summary: PDPA / DSAR export
+      description: Returns a JSON dump of every row the caller owns.
+      responses:
+        '200':
+          description: Data dump
+          content:
+            application/json: {}
+
+  /api/account/tos-status:
+    get:
+      tags: [account]
+      summary: ToS acceptance status
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  acceptedVersion: { type: integer }
+                  currentVersion: { type: integer }
+                  mustAccept: { type: boolean }
+
+  /api/account/accept-tos:
+    post:
+      tags: [account]
+      summary: Record acceptance of the current ToS version
+      responses:
+        '200': { description: Recorded }
+
+  /api/snapshot:
+    get:
+      tags: [data]
+      summary: Tenant-wide data snapshot (cached 10s, singleflight-protected)
+      responses:
+        '200':
+          description: Snapshot
+          content:
+            application/json: {}
+
+  /api/students:
+    get:
+      tags: [students]
+      summary: List students (tenant + role scoped)
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Student' }
+    post:
+      tags: [students]
+      summary: Create a student (admin only). Auto-creates parent user if missing.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/Student' } } }
+      responses:
+        '200': { description: Created }
+        '403': { description: Admin only }
+
+  /api/students/{id}:
+    put:
+      tags: [students]
+      summary: Update a student (admin only). Capacity-checked on enroll changes.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Updated }
+        '404': { description: Not found }
+        '409': { description: Class full }
+    delete:
+      tags: [students]
+      summary: Soft-delete a student
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found }
+
+  /api/invoices:
+    get:
+      tags: [billing]
+      summary: List invoices (parents see their own only)
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer }
+        - in: query
+          name: offset
+          schema: { type: integer }
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Invoice' }
+
+  /api/invoices/{id}/pay:
+    put:
+      tags: [billing]
+      summary: Mark paid (admin) or submit for verification (parent)
+      description: |
+        Reference number is mandatory for non-cash payment methods. The
+        server resolves the effective method from body + existing row.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [Paid, "Pending Verification", Unpaid] }
+                paymentMethod: { type: string }
+                referenceNo: { type: string }
+      responses:
+        '200': { description: Updated }
+        '400': { description: Reference number required for non-cash }
+        '403': { description: Not your invoice }
+
+  /api/invoices/{id}/checkout:
+    post:
+      tags: [billing]
+      summary: Create a hosted-checkout session
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: provider
+          schema: { type: string, enum: [billplz, stripe] }
+      responses:
+        '200':
+          description: Checkout URL
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutResponse' }
+        '502': { description: Gateway unconfigured / error }
+
+  /api/invoices/{id}:
+    delete:
+      tags: [billing]
+      summary: Soft-delete an invoice (admin only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found }
+
+  /api/payments/webhook/billplz:
+    post:
+      tags: [billing, webhooks]
+      security: []
+      summary: Billplz callback — signature-verified, marks invoice Paid
+      requestBody:
+        content: { application/x-www-form-urlencoded: {} }
+      responses:
+        '200': { description: Accepted }
+
+  /api/payments/webhook/stripe:
+    post:
+      tags: [billing, webhooks]
+      security: []
+      summary: Stripe checkout.session.completed handler
+      requestBody:
+        content: { application/json: {} }
+      responses:
+        '200': { description: Accepted }
+
+  /api/cancelled-classes:
+    post:
+      tags: [classes]
+      summary: Cancel a class — fans out announcement + replacement credits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [classId, date]
+              properties:
+                classId: { type: string }
+                date: { type: string, format: date }
+                reason: { type: string }
+      responses:
+        '201': { description: Cancelled }
+
+  /api/admin/cron/run-monthly-invoices:
+    post:
+      tags: [admin]
+      summary: Manually trigger the monthly invoice + payroll job
+      description: Advisory-lock-protected against double clicks.
+      responses:
+        '202': { description: Started in background }
+        '409': { description: Already running }
+
+  /api/branding:
+    get:
+      tags: [meta]
+      security: []
+      summary: Public tenant branding (called by login / register pages)
+      description: |
+        Resolves the tenant by `?tenant=<slug>` query param OR Host-header
+        subdomain match, falling back to tenant 1. Used by the public
+        shell to apply brand name + colour + logo before login.
+      parameters:
+        - in: query
+          name: tenant
+          schema: { type: string }
+      responses:
+        '200':
+          description: Branding payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenantId: { type: integer }
+                  slug: { type: string }
+                  brandName: { type: string }
+                  brandTagline: { type: string }
+                  logoUrl: { type: string, nullable: true }
+                  primaryColor: { type: string }
+                  locale: { type: string }
+                  currency: { type: string }
+
+  /api/admin/settings:
+    get:
+      tags: [admin]
+      summary: Tenant settings (admin only)
+      responses:
+        '200':
+          description: Full settings struct
+          content: { application/json: {} }
+    put:
+      tags: [admin]
+      summary: Update tenant settings (admin only)
+      description: Partial update — fields absent are left alone.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                brandName: { type: string }
+                brandTagline: { type: string }
+                logoPath: { type: string }
+                primaryColor: { type: string }
+                addressLine1: { type: string }
+                addressLine2: { type: string }
+                taxId: { type: string }
+                supportEmail: { type: string, format: email }
+                supportPhone: { type: string }
+                locale: { type: string }
+                currency: { type: string }
+                timezone: { type: string }
+                invoiceFooterHtml: { type: string }
+                slug: { type: string }
+      responses:
+        '200': { description: Updated }
+        '403': { description: Admin only }
+
+  /api/account/calendar-url:
+    get:
+      tags: [account]
+      summary: Personalised iCal feed URL for the authenticated parent
+      responses:
+        '200':
+          description: webcal:// + https:// variants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webcalUrl: { type: string }
+                  httpsUrl: { type: string }
+
+  /api/calendar/{userID}/{token}:
+    get:
+      tags: [account]
+      security: []
+      summary: iCalendar (.ics) feed for a parent's children's classes
+      description: |
+        Auth is via the HMAC-signed token in the URL — calendar apps don't
+        speak cookies. Filename ends `.ics`.
+      parameters:
+        - in: path
+          name: userID
+          required: true
+          schema: { type: integer }
+        - in: path
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: iCalendar feed
+          content:
+            text/calendar: {}
+        '401': { description: Bad signed token }
+
+  /api/users/{id}/unlock:
+    post:
+      tags: [admin]
+      summary: Clear a user's failed_login_count + locked_until (admin only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Unlocked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  email: { type: string, format: email }
+        '404': { description: User not in caller's tenant }
+
+  /api/upload-proof:
+    post:
+      tags: [billing]
+      summary: Upload payment proof for an invoice
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [invoiceId, proof]
+              properties:
+                invoiceId: { type: string }
+                proof: { type: string, format: binary }
+      responses:
+        '200':
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path: { type: string }

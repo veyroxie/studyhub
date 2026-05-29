@@ -14,8 +14,12 @@ func initDB(dsn string) *DB {
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
-	db.SetMaxOpenConns(50)
-	db.SetMaxIdleConns(10)
+	// Pool tuned for snapshot fan-out (~18 concurrent queries per build)
+	// × ~10 concurrent dashboard sessions before we hit the ceiling. The
+	// previous 50/10 sat under that load and caused pool exhaustion when
+	// admins refreshed simultaneously.
+	db.SetMaxOpenConns(150)
+	db.SetMaxIdleConns(25)
 	db.SetConnMaxIdleTime(5 * time.Minute)
 	if err := db.Ping(); err != nil {
 		log.Fatalf("ping db: %v", err)
@@ -351,6 +355,20 @@ func createSchema(db *sql.DB) error {
 		created_at          TIMESTAMPTZ DEFAULT NOW()
 	);
 
+	-- MFA intermediate tokens: 5-minute-TTL handles between password
+	-- verification and TOTP verification when MFA is enabled.
+	CREATE TABLE IF NOT EXISTS mfa_intermediate (
+		token       TEXT PRIMARY KEY,
+		user_id     INTEGER NOT NULL,
+		tenant_id   INTEGER NOT NULL,
+		email       TEXT NOT NULL,
+		role        TEXT NOT NULL,
+		name        TEXT,
+		remember_me BOOLEAN DEFAULT FALSE,
+		expires_at  TIMESTAMPTZ NOT NULL,
+		created_at  TIMESTAMPTZ DEFAULT NOW()
+	);
+
 	CREATE TABLE IF NOT EXISTS email_tokens (
 		token            TEXT PRIMARY KEY,
 		tenant_id        INTEGER NOT NULL DEFAULT 1,
@@ -491,6 +509,31 @@ func runMigrations(db *sql.DB) {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_progress_reports_student_term ON progress_reports(student_id, term)`,
 		`CREATE INDEX IF NOT EXISTS idx_progress_reports_tenant ON progress_reports(tenant_id)`,
+
+		// Currency: migrate float columns to NUMERIC(12,2). DOUBLE PRECISION
+		// produces rounding errors that compound across discount + credit
+		// calculations (e.g., 0.1 + 0.2 != 0.3). NUMERIC is exact decimal
+		// arithmetic — required for any system that bills money.
+		// ALTER TYPE USING ::numeric preserves existing values.
+		`ALTER TABLE invoices  ALTER COLUMN amount           TYPE NUMERIC(12,2) USING amount::numeric`,
+		`ALTER TABLE invoices  ALTER COLUMN discount_pct     TYPE NUMERIC(5,2)  USING discount_pct::numeric`,
+		`ALTER TABLE invoices  ALTER COLUMN sibling_discount TYPE NUMERIC(12,2) USING sibling_discount::numeric`,
+		`ALTER TABLE invoices  ALTER COLUMN referral_credit  TYPE NUMERIC(12,2) USING referral_credit::numeric`,
+		`ALTER TABLE staff     ALTER COLUMN salary           TYPE NUMERIC(12,2) USING salary::numeric`,
+		`ALTER TABLE staff     ALTER COLUMN hourly_rate      TYPE NUMERIC(8,2)  USING hourly_rate::numeric`,
+		`ALTER TABLE payroll   ALTER COLUMN base_salary      TYPE NUMERIC(12,2) USING base_salary::numeric`,
+		`ALTER TABLE payroll   ALTER COLUMN bonus            TYPE NUMERIC(12,2) USING bonus::numeric`,
+		`ALTER TABLE payroll   ALTER COLUMN deductions       TYPE NUMERIC(12,2) USING deductions::numeric`,
+		`ALTER TABLE payroll   ALTER COLUMN total            TYPE NUMERIC(12,2) USING total::numeric`,
+		`ALTER TABLE subjects  ALTER COLUMN monthly_fee      TYPE NUMERIC(12,2) USING monthly_fee::numeric`,
+		`ALTER TABLE workshops ALTER COLUMN fee              TYPE NUMERIC(12,2) USING fee::numeric`,
+		`ALTER TABLE students  ALTER COLUMN package_amount   TYPE NUMERIC(12,2) USING package_amount::numeric`,
+
+		// MFA columns on users — admin/superadmin can enrol via /api/auth/mfa/setup.
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret TEXT DEFAULT ''`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN DEFAULT FALSE`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_recovery_codes TEXT DEFAULT '[]'`,
+		`CREATE INDEX IF NOT EXISTS idx_mfa_intermediate_expires ON mfa_intermediate(expires_at)`,
 
 		// Composite (tenant_id, deleted_at) indexes — every list query filters
 		// on this pair. Without them Postgres falls back to seq-scan + filter on

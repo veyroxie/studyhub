@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,21 +18,37 @@ const EarlyBirdRM = 10.0
 // when a new family registers using an existing family's referral code.
 const ReferralMonthlyRM = 10.0
 
+// SiblingMonthlyRM is the per-month per-child sibling discount applied when
+// a family has 2+ active subscribed students. Flat RM10 off each invoice.
+const SiblingMonthlyRM = 10.0
+
+// SelfStudyOverflowRatePerHour is what we bill per hour beyond the student's
+// package_self_study_hours quota for the month. Cheap on purpose — the
+// quota is generous and overflow is a soft nudge, not a profit centre.
+const SelfStudyOverflowRatePerHour = 10.0
+
 // startCron launches the background scheduler. It wakes up daily at 00:05
 // local time and, on days 1–7 of the month, ensures every active student
 // has a Monthly invoice for the current month. Idempotent: skips students
 // that already have one. The 7-day window gives the cron room to catch up
 // if a deploy or outage caused the 1st to be missed.
-func startCron(db *DB) {
+func startCron(ctx context.Context, wg *sync.WaitGroup, db *DB) {
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		// Run once shortly after boot in case the server was down at the
 		// scheduled time.
 		runMonthlyInvoiceCycle(db)
 
 		for {
 			next := nextRunAt(time.Now())
-			time.Sleep(time.Until(next))
-			runMonthlyInvoiceCycle(db)
+			select {
+			case <-ctx.Done():
+				logger.Info("monthly cron stopped")
+				return
+			case <-time.After(time.Until(next)):
+				runMonthlyInvoiceCycle(db)
+			}
 		}
 	}()
 }
@@ -52,10 +70,93 @@ func runMonthlyInvoiceCycle(db *DB) {
 	if created > 0 {
 		logger.Info("monthly invoice cron created invoices", "count", created, "month", now.Format("2006-01"))
 	}
+	overflow := generateSelfStudyOverflowInvoices(db, now)
+	if overflow > 0 {
+		logger.Info("self-study overflow invoices created", "count", overflow, "month", previousMonth(now).Format("2006-01"))
+	}
 	payrolls := generateMonthlyPayroll(db, now)
 	if payrolls > 0 {
 		logger.Info("monthly payroll cron created rows", "count", payrolls, "month", previousMonth(now).Format("2006-01"))
 	}
+}
+
+// generateSelfStudyOverflowInvoices bills students for self-study hours used
+// in the previous month beyond their package_self_study_hours quota. Hours
+// are summed from self_study_sessions.duration_min (rounded UP to whole
+// hours so a 61-minute session counts as 2). Idempotent: skips students that
+// already have a "Self-study overflow — <YYYY-MM>" invoice for the period.
+func generateSelfStudyOverflowInvoices(db *DB, now time.Time) int {
+	prev := previousMonth(now)
+	monthLabel := prev.Format("2006-01")
+	monthHuman := prev.Format("Jan 2006")
+	monthStart := prev.Format("2006-01-02")
+	monthEnd := time.Date(prev.Year(), prev.Month()+1, 1, 0, 0, 0, 0, prev.Location()).AddDate(0, 0, -1).Format("2006-01-02")
+
+	// Pre-load the set of (tenant_id|student_id) pairs that already have
+	// an overflow invoice for this month, so the per-student dedup check
+	// in the loop is a map lookup instead of a SELECT COUNT(*) round-trip.
+	// 200 students × 12ms = 2.4s eliminated.
+	existingOverflow := map[string]bool{}
+	if existRows, err := db.Query(`SELECT tenant_id, student_id FROM invoices WHERE type='Self-study Overflow' AND created_on LIKE ? AND deleted_at IS NULL`, monthLabel+"%"); err == nil {
+		for existRows.Next() {
+			var t, s string
+			if err := existRows.Scan(&t, &s); err == nil {
+				existingOverflow[t+"|"+s] = true
+			}
+		}
+		existRows.Close()
+	}
+
+	rows, err := db.Query(`
+		SELECT s.id, s.tenant_id, s.first_name, s.last_name,
+		       COALESCE(s.package_self_study_hours,4),
+		       COALESCE(SUM(ss.duration_min),0) AS used_min
+		  FROM students s
+		  LEFT JOIN self_study_sessions ss ON ss.student_id = s.id AND ss.deleted_at IS NULL AND ss.date BETWEEN ? AND ?
+		 WHERE s.deleted_at IS NULL
+		   AND COALESCE(s.subscription_status,'active') = 'active'
+		 GROUP BY s.id, s.tenant_id, s.first_name, s.last_name, s.package_self_study_hours
+	`, monthStart, monthEnd)
+	if err != nil {
+		logger.Error("self-study overflow query failed", "err", err)
+		return 0
+	}
+	defer rows.Close()
+
+	created := 0
+	createdOn := now.Format("2006-01-02")
+	dueDate := time.Date(now.Year(), now.Month(), 7, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	for rows.Next() {
+		var stuID, tid, firstName, lastName string
+		var quotaHours, usedMin int
+		if err := rows.Scan(&stuID, &tid, &firstName, &lastName, &quotaHours, &usedMin); err != nil {
+			continue
+		}
+		// Round usage UP to whole hours.
+		usedHours := usedMin / 60
+		if usedMin%60 != 0 {
+			usedHours++
+		}
+		overflowHours := usedHours - quotaHours
+		if overflowHours <= 0 {
+			continue
+		}
+		// Skip if an overflow invoice for this student/month already exists.
+		if existingOverflow[tid+"|"+stuID] {
+			continue
+		}
+		amount := float64(overflowHours) * SelfStudyOverflowRatePerHour
+		desc := "Self-study overflow — " + monthHuman + " — " + firstName + " " + lastName +
+			" (" + fmt.Sprintf("%d", overflowHours) + " hr over quota)"
+		invID := generateID("INV")
+		if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			invID, tid, stuID, desc, "Self-study Overflow", amount, dueDate, "Unpaid", createdOn, nil, "", 0.0, false, "[]", 0.0, 0.0, ""); err != nil {
+			logger.Error("self-study overflow insert failed", "err", err, "student_id", stuID)
+			continue
+		}
+		created++
+	}
+	return created
 }
 
 func previousMonth(now time.Time) time.Time {
@@ -73,6 +174,9 @@ func previousMonth(now time.Time) time.Time {
 func generateMonthlyInvoices(db *DB, now time.Time) int {
 	monthPrefix := now.Format("2006-01")
 
+	// Key by (tenant_id, student_id) so a colliding STU_<ts> across tenants
+	// (unlikely under millisecond timestamps but not impossible) cannot
+	// suppress a real invoice for the other tenant.
 	existing := loadExistingMonthlyInvoiceStudentIDs(db, monthPrefix)
 
 	rows, err := db.Query(`
@@ -96,7 +200,7 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 		if err := rows.Scan(&r.id, &r.tenantID, &r.firstName, &r.lastName, &r.familyID, &r.packageAmount); err != nil {
 			continue
 		}
-		if existing[r.id] {
+		if existing[r.tenantID+"|"+r.id] {
 			continue
 		}
 		pending = append(pending, r)
@@ -106,8 +210,49 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 		return 0
 	}
 
-	familyIDs := uniqueFamilyIDs(pending, func(i int) string { return pending[i].familyID })
-	familyCredits := loadFamilyReferralCredits(db, familyIDs)
+	// Build the (tenantID, familyID) pair list so loadFamilyReferralCredits
+	// can scope each lookup to the right tenant.
+	pairSet := map[string]bool{}
+	pairs := []familyTenantPair{}
+	for _, s := range pending {
+		if s.familyID == "" {
+			continue
+		}
+		k := s.tenantID + "|" + s.familyID
+		if pairSet[k] {
+			continue
+		}
+		pairSet[k] = true
+		pairs = append(pairs, familyTenantPair{tenantID: s.tenantID, familyID: s.familyID})
+	}
+	familyCredits := loadFamilyReferralCredits(db, pairs)
+
+	// Build family → [sibling student IDs] map. The 2+-kids threshold is
+	// based on the WHOLE family (any active subscribed student counts),
+	// not just kids with package_amount > 0 — a family with one paying
+	// kid and one free trial kid still qualifies for the sibling discount.
+	// Query the full family roster up front to avoid the case where the
+	// `pending` set is filtered by package_amount.
+	siblingsByFamily := map[string][]string{}
+	familyIDsForCount := uniqueFamilyIDs(pending, func(i int) string { return pending[i].familyID })
+	if len(familyIDsForCount) > 0 {
+		fph := make([]string, len(familyIDsForCount))
+		fargs := make([]any, len(familyIDsForCount))
+		for i, id := range familyIDsForCount {
+			fph[i] = "?"
+			fargs[i] = id
+		}
+		rows, err := db.Query(`SELECT id, family_id FROM students WHERE deleted_at IS NULL AND COALESCE(subscription_status,'active')='active' AND family_id IN (`+strings.Join(fph, ",")+`)`, fargs...)
+		if err == nil {
+			for rows.Next() {
+				var sid, fid string
+				if err := rows.Scan(&sid, &fid); err == nil && fid != "" {
+					siblingsByFamily[fid] = append(siblingsByFamily[fid], sid)
+				}
+			}
+			rows.Close()
+		}
+	}
 
 	tx, err := db.BeginTx(context.Background())
 	if err != nil {
@@ -123,10 +268,27 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 	created := 0
 	for _, s := range pending {
 		referralCredit := 0.0
-		if s.familyID != "" && familyCredits[s.familyID] > 0 {
+		creditKey := s.tenantID + "|" + s.familyID
+		if s.familyID != "" && familyCredits[creditKey] > 0 {
 			referralCredit = ReferralMonthlyRM
 		}
-		total := s.packageAmount - earlyBird - referralCredit
+		// Sibling discount applies when the family has 2+ active subscribed
+		// students this month. Each child gets RM10 off — flat per child.
+		siblingDiscount := 0.0
+		siblingIDsJSON := "[]"
+		if sibs := siblingsByFamily[s.familyID]; len(sibs) >= 2 {
+			siblingDiscount = SiblingMonthlyRM
+			// Store the other siblings' IDs so the frontend can render
+			// "shared family: X, Y" without re-querying.
+			others := make([]string, 0, len(sibs)-1)
+			for _, id := range sibs {
+				if id != s.id {
+					others = append(others, id)
+				}
+			}
+			siblingIDsJSON = jsonArr(others)
+		}
+		total := s.packageAmount - earlyBird - referralCredit - siblingDiscount
 		if total < 0 {
 			total = 0
 		}
@@ -137,15 +299,29 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 			INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no)
 			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			invID, s.tenantID, s.id, desc, "Monthly", total, dueDate, "Unpaid",
-			createdOn, nil, "", 0.0, false, "[]", 0.0, referralCredit, "",
+			createdOn, nil, "", 0.0, false, siblingIDsJSON, siblingDiscount, referralCredit, "",
 		)
 		if err != nil {
 			logger.Error("could not insert monthly invoice", "err", err, "student_id", s.id)
 			continue
 		}
 		if referralCredit > 0 && s.familyID != "" {
-			tx.Exec(`UPDATE families SET referral_credits_remaining = GREATEST(0, COALESCE(referral_credits_remaining,0) - 1) WHERE id=?`, s.familyID)
-			familyCredits[s.familyID]--
+			// Decrement the oldest earned referral_rewards row that still has
+			// credits remaining. The CASE flips status to 'exhausted' when
+			// the row hits zero so future cron runs skip it. Tenant-scoped
+			// to keep an id collision across tenants from settling the wrong row.
+			if _, err := tx.Exec(`
+				UPDATE referral_rewards
+				   SET credits_remaining = credits_remaining - 1,
+				       status = CASE WHEN credits_remaining - 1 <= 0 THEN 'exhausted' ELSE 'earned' END
+				 WHERE id = (
+				   SELECT id FROM referral_rewards
+				    WHERE referrer_family_id=? AND tenant_id=? AND status='earned' AND credits_remaining > 0
+				    ORDER BY created_at ASC LIMIT 1
+				 )`, s.familyID, s.tenantID); err != nil {
+				logger.Error("could not decrement referral credit", "err", err, "family_id", s.familyID)
+			}
+			familyCredits[creditKey]--
 		}
 		created++
 	}
@@ -160,12 +336,12 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 	return created
 }
 
-// loadExistingMonthlyInvoiceStudentIDs returns the set of student IDs that
-// already have a Monthly invoice for the given YYYY-MM prefix.
+// loadExistingMonthlyInvoiceStudentIDs returns the set of (tenant_id|student_id)
+// pairs that already have a Monthly invoice for the given YYYY-MM prefix.
 func loadExistingMonthlyInvoiceStudentIDs(db *DB, monthPrefix string) map[string]bool {
 	out := map[string]bool{}
 	rows, err := db.Query(`
-		SELECT DISTINCT student_id FROM invoices
+		SELECT DISTINCT tenant_id, student_id FROM invoices
 		WHERE type='Monthly' AND created_on LIKE ? AND deleted_at IS NULL`,
 		monthPrefix+"%")
 	if err != nil {
@@ -173,42 +349,65 @@ func loadExistingMonthlyInvoiceStudentIDs(db *DB, monthPrefix string) map[string
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var sid string
-		if err := rows.Scan(&sid); err == nil {
-			out[sid] = true
+		var tid, sid string
+		if err := rows.Scan(&tid, &sid); err == nil {
+			out[tid+"|"+sid] = true
 		}
 	}
 	return out
 }
 
 // loadFamilyReferralCredits returns a map of family_id → remaining credits
-// for the requested family IDs. Empty input returns an empty map without
-// running a query.
-func loadFamilyReferralCredits(db *DB, familyIDs []string) map[string]int {
+// for the requested (familyID, tenantID) pairs. The source of truth is the
+// per-referral referral_rewards.credits_remaining counter; the previous
+// families.referral_credits_remaining column was never incremented anywhere
+// and is intentionally ignored here. Empty input returns an empty map
+// without running a query.
+//
+// The result is keyed by "tenantID|familyID" so a cross-tenant id collision
+// (millisecond timestamp clash on FAM_ ids) cannot bleed credits between
+// tenants. Callers compose the lookup key with the student's tenant.
+func loadFamilyReferralCredits(db *DB, pairs []familyTenantPair) map[string]int {
 	out := map[string]int{}
-	if len(familyIDs) == 0 {
+	if len(pairs) == 0 {
 		return out
 	}
-	placeholders := make([]string, len(familyIDs))
-	args := make([]any, len(familyIDs))
-	for i, id := range familyIDs {
-		placeholders[i] = "?"
-		args[i] = id
+	// Group by tenant so we can issue one IN-list per tenant.
+	byTenant := map[string][]string{}
+	for _, p := range pairs {
+		byTenant[p.tenantID] = append(byTenant[p.tenantID], p.familyID)
 	}
-	q := "SELECT id, COALESCE(referral_credits_remaining,0) FROM families WHERE id IN (" + strings.Join(placeholders, ",") + ")"
-	rows, err := db.Query(q, args...)
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var fid string
-		var rem int
-		if err := rows.Scan(&fid, &rem); err == nil {
-			out[fid] = rem
+	for tid, fids := range byTenant {
+		placeholders := make([]string, len(fids))
+		args := make([]any, 0, len(fids)+1)
+		args = append(args, tid)
+		for i, id := range fids {
+			placeholders[i] = "?"
+			args = append(args, id)
 		}
+		q := `SELECT referrer_family_id, COALESCE(SUM(credits_remaining),0)
+		      FROM referral_rewards
+		      WHERE status='earned' AND tenant_id=? AND referrer_family_id IN (` + strings.Join(placeholders, ",") + `)
+		      GROUP BY referrer_family_id`
+		rows, err := db.Query(q, args...)
+		if err != nil {
+			continue
+		}
+		for rows.Next() {
+			var fid string
+			var rem int
+			if err := rows.Scan(&fid, &rem); err == nil {
+				out[tid+"|"+fid] = rem
+			}
+		}
+		rows.Close()
 	}
 	return out
+}
+
+type familyTenantPair struct {
+	tenantID string
+	familyID string
 }
 
 // uniqueFamilyIDs collects the distinct non-empty family IDs from a slice
@@ -236,16 +435,28 @@ func uniqueFamilyIDs[T any](items []T, get func(int) string) []string {
 func handleRunMonthlyCron(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
 		actor := c.Email
+		// Skip overlapping runs. The advisory lock is session-scoped to the
+		// goroutine's DB connection; if a previous click is still running,
+		// pg_try_advisory_lock returns false and we 409 the second click.
+		lockKey := advisoryLockKey("monthly_cron")
+		var got bool
+		db.QueryRow(`SELECT pg_try_advisory_lock(?)`, lockKey).Scan(&got)
+		if !got {
+			respondError(w, "monthly cron is already running — wait for it to finish", http.StatusConflict)
+			return
+		}
 		go func() {
+			defer db.Exec(`SELECT pg_advisory_unlock(?)`, lockKey)
 			now := time.Now()
 			invoices := generateMonthlyInvoices(db, now)
+			overflow := generateSelfStudyOverflowInvoices(db, now)
 			payrolls := generateMonthlyPayroll(db, now)
-			logger.Info("monthly cron manual run finished", "actor", actor, "invoices", invoices, "payrolls", payrolls)
+			logger.Info("monthly cron manual run finished", "actor", actor, "invoices", invoices, "overflow", overflow, "payrolls", payrolls)
 			logAudit(db, actor, "monthly_cron_manual_run", "system", "", "")
 		}()
 		w.Header().Set("Content-Type", "application/json")
@@ -291,11 +502,32 @@ func generateMonthlyPayroll(db *DB, now time.Time) int {
 		staff = append(staff, s)
 	}
 
+	// Pre-load (staff_id, month, tenant_id) triples that already have a
+	// payroll row → map lookup instead of N×SELECT COUNT(*).
+	existingPayroll := map[string]bool{}
+	if er, err := db.Query(`SELECT staff_id, tenant_id FROM payroll WHERE month=?`, monthLabel); err == nil {
+		for er.Next() {
+			var sid, tid string
+			if err := er.Scan(&sid, &tid); err == nil {
+				existingPayroll[sid+"|"+tid] = true
+			}
+		}
+		er.Close()
+	}
+
+	// Pre-compute hours for every part-time staff member in one grouped
+	// query — replaces N×JOIN against attendance+classes.
+	partTimeIDs := []string{}
+	for _, s := range staff {
+		if s.employmentType == "Part-time" && s.hourlyRate > 0 {
+			partTimeIDs = append(partTimeIDs, s.id)
+		}
+	}
+	hoursByStaff := teacherHoursWorkedAll(db, partTimeIDs, monthStart, monthEnd)
+
 	created := 0
 	for _, s := range staff {
-		var existing int
-		db.QueryRow(`SELECT COUNT(*) FROM payroll WHERE staff_id=? AND month=?`, s.id, monthLabel).Scan(&existing)
-		if existing > 0 {
+		if existingPayroll[s.id+"|"+s.tenantID] {
 			continue
 		}
 
@@ -305,7 +537,7 @@ func generateMonthlyPayroll(db *DB, now time.Time) int {
 			if s.hourlyRate <= 0 {
 				continue
 			}
-			hours := teacherHoursWorked(db, s.id, monthStart, monthEnd)
+			hours := hoursByStaff[s.id]
 			if hours <= 0 {
 				continue
 			}
@@ -332,16 +564,71 @@ func generateMonthlyPayroll(db *DB, now time.Time) int {
 	return created
 }
 
+// teacherHoursWorkedAll computes hours-worked for every staff_id in the
+// given list with one grouped query. The previous per-staff variant ran
+// 50× SELECT … JOIN against attendance, blowing payroll runtime as the
+// staff count grows. This collapses to a single query that groups by
+// person_id. Empty input returns an empty map without a round-trip.
+func teacherHoursWorkedAll(db *DB, staffIDs []string, start, end string) map[string]float64 {
+	out := map[string]float64{}
+	if len(staffIDs) == 0 {
+		return out
+	}
+	placeholders := make([]string, len(staffIDs))
+	args := make([]any, 0, len(staffIDs)+2)
+	for i, id := range staffIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, start, end)
+	rows, err := db.Query(`
+		SELECT a.person_id, a.check_in, a.check_out, c.time, c.end_time
+		FROM attendance a
+		LEFT JOIN classes c ON c.id = a.class_id
+		WHERE a.person_id IN (`+strings.Join(placeholders, ",")+`)
+		  AND a.person_type IN ('teacher','staff')
+		  AND a.check_in IS NOT NULL AND a.check_in <> ''
+		  AND a.date BETWEEN ? AND ?
+	`, args...)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var personID string
+		var checkIn, checkOut, classTime, classEnd sql.NullString
+		if err := rows.Scan(&personID, &checkIn, &checkOut, &classTime, &classEnd); err != nil {
+			continue
+		}
+		if checkOut.Valid && checkOut.String != "" {
+			if h := hoursBetween(checkIn.String, checkOut.String); h > 0 {
+				out[personID] += h
+				continue
+			}
+		}
+		if classTime.Valid && classEnd.Valid {
+			if h := hoursBetween(classTime.String, classEnd.String); h > 0 {
+				out[personID] += h
+			}
+		}
+	}
+	return out
+}
+
 // teacherHoursWorked sums hours from teacher attendance check-in rows in
 // the [start, end] window. Falls back to the scheduled class duration
 // (end_time − time) when check_out is missing — covers the case where a
 // teacher checked in but never tapped checkout.
+//
+// Accepts both person_type='teacher' and person_type='staff' because the
+// frontend self-check-in flow writes 'staff' while older bulk admin paths
+// wrote 'teacher'. Both refer to a row in the staff table.
 func teacherHoursWorked(db *DB, staffID, start, end string) float64 {
 	rows, err := db.Query(`
 		SELECT a.check_in, a.check_out, c.time, c.end_time
 		FROM attendance a
 		LEFT JOIN classes c ON c.id = a.class_id
-		WHERE a.person_id = ? AND a.person_type = 'teacher'
+		WHERE a.person_id = ? AND a.person_type IN ('teacher','staff')
 		  AND a.check_in IS NOT NULL AND a.check_in <> ''
 		  AND a.date BETWEEN ? AND ?
 	`, staffID, start, end)
@@ -372,12 +659,20 @@ func teacherHoursWorked(db *DB, staffID, start, end string) float64 {
 	return total
 }
 
-// hoursBetween parses two HH:MM strings and returns the elapsed hours.
-// Tolerates zero-padding and silently returns 0 on bad input rather
-// than crashing the cron.
+// hoursBetween parses two HH:MM or HH:MM:SS strings and returns the
+// elapsed hours. Accepts both formats because browser <input type="time">
+// can render either depending on user agent + step attribute. Tolerates
+// zero-padding and silently returns 0 on bad input rather than crashing
+// the cron.
 func hoursBetween(start, end string) float64 {
-	s, errS := time.Parse("15:04", start)
-	e, errE := time.Parse("15:04", end)
+	parse := func(v string) (time.Time, error) {
+		if t, err := time.Parse("15:04:05", v); err == nil {
+			return t, nil
+		}
+		return time.Parse("15:04", v)
+	}
+	s, errS := parse(start)
+	e, errE := parse(end)
 	if errS != nil || errE != nil {
 		return 0
 	}
@@ -394,7 +689,7 @@ func hoursBetween(start, end string) float64 {
 func handleRegeneratePayroll(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}

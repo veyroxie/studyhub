@@ -4,12 +4,64 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"hash/fnv"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+// isAdminRole returns true for both "admin" and "superadmin" claims. Used by
+// handlers that mutate tenant-level data — the bare check `c.Role != "admin"`
+// would lock superadmins out of routine work like creating an invoice or
+// editing a holiday, which was a recurring drift across handlers.
+func isAdminRole(c *Claims) bool {
+	if c == nil {
+		return false
+	}
+	return c.Role == "admin" || c.Role == "superadmin"
+}
+
+// maskNRIC returns the PII-safe display form of a Malaysian IC / NRIC:
+// the first part is replaced with asterisks and only the last 4 digits
+// are visible. Empty input returns empty. Used in list/snapshot responses
+// where the full value isn't required.
+//
+//	"901231-10-1234" → "************1234"
+//	"901231101234"   → "********1234"
+//	""               → ""
+func maskNRIC(nric string) string {
+	if len(nric) <= 4 {
+		return nric
+	}
+	masked := ""
+	for i := 0; i < len(nric)-4; i++ {
+		masked += "*"
+	}
+	return masked + nric[len(nric)-4:]
+}
+
+// isStaffRole returns true for any role allowed to mutate teaching-side
+// records: admin, superadmin, or teacher. Use this for endpoints like
+// feedback / progress reports / replacement credits where teachers
+// legitimately participate.
+func isStaffRole(c *Claims) bool {
+	if c == nil {
+		return false
+	}
+	return c.Role == "admin" || c.Role == "superadmin" || c.Role == "teacher"
+}
+
+// advisoryLockKey hashes a label into the int8 Postgres pg_advisory_*_lock
+// expects. FNV-1a is fast and avalanche-good enough that two distinct labels
+// collide rarely in practice; collisions only serialise unrelated work, they
+// don't corrupt anything.
+func advisoryLockKey(label string) int64 {
+	h := fnv.New64a()
+	h.Write([]byte(label))
+	return int64(h.Sum64())
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -152,8 +204,21 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 		c := claimsFrom(r)
 		cacheKey := snapshotCacheKey(c)
 		if body, ok := snapshotCacheGet(cacheKey); ok {
-			writeCachedSnapshot(w, body)
+			writeCachedSnapshot(w, r, body)
 			return
+		}
+		// Singleflight: if another goroutine is already building the same
+		// snapshot, wait for its result instead of running the fan-out
+		// queries again. Solves the "10 tabs auto-refresh on TTL expiry"
+		// thundering-herd that previously hammered Postgres.
+		flight, isLeader := snapshotSingleflight(cacheKey)
+		if !isLeader {
+			<-flight.done
+			if flight.err == nil && flight.body != nil {
+				writeCachedSnapshot(w, r, flight.body)
+				return
+			}
+			// Leader failed — fall through and try ourselves.
 		}
 		isAdmin := c != nil && (c.Role == "admin" || c.Role == "superadmin")
 		isParent := c != nil && c.Role != "admin" && c.Role != "superadmin" && c.Role != "teacher"
@@ -169,16 +234,21 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 			}()
 		}
 
+		// Snapshot bounds: for tables that grow linearly with time, only
+		// load a recent window. A dashboard never renders 5 years of
+		// attendance at once — the per-endpoint paginated GETs serve deep
+		// history. These bounds keep the snapshot constant-size as the
+		// centre ages.
 		run(func() { snap.Students = listStudents(db, c) })
 		run(func() { snap.Classes = listClasses(db, c) })
 		run(func() { snap.Staff = listStaff(db, c) })
-		run(func() { snap.Invoices = listInvoices(db, c) })
-		run(func() { snap.Announcements = listAnnouncements(db, c) })
-		run(func() { snap.Attendance = listAttendance(db, c) })
+		run(func() { snap.Invoices = listInvoicesRecent(db, c) })
+		run(func() { snap.Announcements = listAnnouncementsRecent(db, c) })
+		run(func() { snap.Attendance = listAttendanceRecent(db, c) })
 		run(func() { snap.Payroll = listPayroll(db, c) })
-		run(func() { snap.Feedback = listFeedback(db, c) })
+		run(func() { snap.Feedback = listFeedbackRecent(db, c) })
 		run(func() { snap.Workshops = listWorkshops(db, c) })
-		run(func() { snap.SelfStudySessions = listSelfStudy(db, c) })
+		run(func() { snap.SelfStudySessions = listSelfStudyRecent(db, c) })
 		run(func() { snap.PerformanceReviews = listPerformanceReviews(db, c) })
 		run(func() { snap.CancelledClasses = listCancelledClasses(db, c) })
 		run(func() { snap.Holidays = listHolidays(db, c) })
@@ -201,10 +271,10 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 		// Parents: filter to their children's data only (post-load so the heavy
 		// queries above can run in parallel).
 		if isParent && c != nil {
-			classIDs := parentClassIDs(db, c.Email)
+			classIDs := parentClassIDs(db, c)
 			snap.Feedback = filterFeedbackForParent(snap.Feedback, classIDs)
 
-			stuIDs := parentStudentIDs(db, c.Email)
+			stuIDs := parentStudentIDs(db, c)
 			filtered := []SelfStudySession{}
 			for _, s := range snap.SelfStudySessions {
 				if stuIDs[s.StudentID] {
@@ -216,6 +286,15 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 			// Hide internal performance reviews from parents
 			snap.PerformanceReviews = []PerformanceReview{}
 		}
-		marshalAndCacheSnapshot(w, cacheKey, snap)
+		body, err := json.Marshal(snap)
+		if err != nil {
+			snapshotSingleflightDone(cacheKey, nil, err)
+			respondError(w, "snapshot serialization failed", http.StatusInternalServerError)
+			return
+		}
+		snapshotCachePut(cacheKey, body)
+		// Publish to any followers waiting on the singleflight.
+		snapshotSingleflightDone(cacheKey, body, nil)
+		writeCachedSnapshot(w, r, body)
 	}
 }

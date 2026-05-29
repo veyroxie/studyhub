@@ -16,10 +16,10 @@ func listFamilies(db *DB, c *Claims) []Family {
 	var err error
 	if c != nil && c.Role == "parent" {
 		// Parents are always tenant-scoped — drop the OR pattern.
-		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,''),COALESCE(referral_credits_remaining,0) FROM families WHERE contact=? AND tenant_id=? AND deleted_at IS NULL ORDER BY name`, c.Email, tid)
+		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,''),COALESCE(referral_credits_remaining,0) FROM families WHERE contact=? AND tenant_id=? AND deleted_at IS NULL ORDER BY name LIMIT 5000`, c.Email, tid)
 	} else {
 		tw, twArgs := scopeTenant(c, "")
-		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,''),COALESCE(referral_credits_remaining,0) FROM families WHERE deleted_at IS NULL`+tw+` ORDER BY name`, twArgs...)
+		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,''),COALESCE(referral_credits_remaining,0) FROM families WHERE deleted_at IS NULL`+tw+` ORDER BY name LIMIT 5000`, twArgs...)
 	}
 	if err != nil {
 		return []Family{}
@@ -43,7 +43,7 @@ func handleFamilies(db *DB) http.HandlerFunc {
 		case http.MethodGet:
 			respond(w, listFamilies(db, c))
 		case http.MethodPost:
-			if c.Role != "admin" {
+			if !isAdminRole(c) {
 				respondError(w, "admin only", 403)
 				return
 			}
@@ -85,7 +85,7 @@ func handleFamilies(db *DB) http.HandlerFunc {
 func handleFamilyPDPADelete(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
@@ -106,15 +106,24 @@ func handleFamilyPDPADelete(db *DB) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		// Anonymise + soft-delete family.
-		tx.Exec(`UPDATE families SET deleted_at=NOW(), name='[deleted]', contact='deleted-'||id||'@redacted', phone='', parent_name='[deleted]', address='', notes='' WHERE id=?`, famID)
+		// Anonymise + soft-delete family. Tenant scope added so a
+		// superadmin's tx targeting one tenant cannot accidentally touch
+		// a family with the same id in another tenant.
+		famArgs := append([]any{famID}, twArgs...)
+		tx.Exec(`UPDATE families SET deleted_at=NOW(), name='[deleted]', contact='deleted-'||id||'@redacted', phone='', parent_name='[deleted]', address='', notes='' WHERE id=?`+tw, famArgs...)
 
 		// Anonymise + soft-delete all students in this family.
-		tx.Exec(`UPDATE students SET deleted_at=NOW(), first_name='[deleted]', last_name='[deleted]', parent_name='[deleted]', contact='deleted-'||id||'@redacted', phone='', notes='', medical_info='', allergies='', emergency2_name='', emergency2_phone='' WHERE family_id=? AND deleted_at IS NULL`, famID)
+		stuArgs := append([]any{famID}, twArgs...)
+		tx.Exec(`UPDATE students SET deleted_at=NOW(), first_name='[deleted]', last_name='[deleted]', parent_name='[deleted]', contact='deleted-'||id||'@redacted', phone='', notes='', medical_info='', allergies='', emergency2_name='', emergency2_phone='' WHERE family_id=? AND deleted_at IS NULL`+tw, stuArgs...)
 
-		// Delete the parent user account.
+		// Anonymise the parent user account only if this contact email is
+		// unique to a single tenant. users.email is globally unique by
+		// schema, but historical rows may have duplicates from cross-tenant
+		// imports — guard with a tenant scope so an admin in tenant A
+		// cannot delete a user owned by tenant B that shares an email.
 		if contact != "" {
-			tx.Exec(`UPDATE users SET password_hash='DELETED', email='deleted-'||id||'@redacted', name='[deleted]', status='deleted' WHERE email=?`, contact)
+			userArgs := append([]any{contact}, twArgs...)
+			tx.Exec(`UPDATE users SET password_hash='DELETED', email='deleted-'||id||'@redacted', name='[deleted]', status='deleted' WHERE email=?`+tw, userArgs...)
 		}
 
 		if err := tx.Commit(); err != nil {
@@ -132,7 +141,7 @@ func handleFamilyPDPADelete(db *DB) http.HandlerFunc {
 func handleFamilyByID(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}

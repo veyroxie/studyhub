@@ -139,7 +139,7 @@
   <div style="text-align:center;margin-bottom:2.5rem;animation:fadeUp 0.5s cubic-bezier(0.22,0.61,0.36,1) backwards">
     <!-- Gold rule above title -->
     <div style="width:40px;height:1.5px;background:#C9A227;margin:0 auto 1.25rem;opacity:0.6"></div>
-    <h1 style="font-family:'Fraunces','Cormorant Garamond',serif;font-size:2rem;font-weight:300;color:var(--ink);letter-spacing:-0.03em;margin:0 0 0.35rem">The Study Hub</h1>
+    <h1 id="brand-name" style="font-family:'Fraunces','Cormorant Garamond',serif;font-size:2rem;font-weight:300;color:var(--ink);letter-spacing:-0.03em;margin:0 0 0.35rem">The Study Hub</h1>
     <p style="color:var(--ink-mute);font-size:0.76rem;margin:0;font-family:var(--sans);text-transform:uppercase;letter-spacing:0.14em;font-weight:600">Registration</p>
   </div>
 
@@ -154,8 +154,10 @@
     <div style="width:40px;height:1.5px;background:#C9A227;margin:0 auto 1.25rem;opacity:0.6"></div>
     <h2 style="font-family:'Fraunces','Cormorant Garamond',serif;font-size:1.5rem;font-weight:400;color:var(--ink);margin:0 0 0.75rem;letter-spacing:-0.02em">Check your email</h2>
     <p style="color:var(--ink-soft);font-size:0.88rem;line-height:1.7">We've sent a verification link to <strong id="success-email" style="color:var(--gold-deep)"></strong>.<br>Click the link in the email to activate your account and sign in.</p>
-    <p style="color:var(--ink-mute);font-size:0.78rem;line-height:1.6;margin-top:1rem">Didn't get the email? Check your spam folder, then try the <a href="/" style="color:var(--gold-deep);text-decoration:none;font-weight:600;border-bottom:1px solid rgba(201,162,39,0.3)">resend link on the login page</a>.</p>
-    <a href="/" style="display:inline-block;margin-top:1.5rem;padding:0.55rem 1.5rem;font-size:0.72rem;color:var(--gold-deep);border:1px solid var(--rule);border-radius:4px;text-decoration:none;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;transition:border-color 0.15s,background 0.15s"
+    <p style="color:var(--ink-mute);font-size:0.78rem;line-height:1.6;margin-top:1rem">Didn't get the email? Check your spam folder, then click below to resend.</p>
+    <button type="button" id="parent-resend-btn" onclick="resendVerification(this, document.getElementById('parent-resend-status'))" style="margin-top:0.75rem;padding:0.5rem 1.25rem;font-size:0.72rem;color:#0a0a0a;background:rgba(201,162,39,0.18);border:1px solid var(--rule);border-radius:4px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;cursor:pointer">Resend verification email</button>
+    <p id="parent-resend-status" style="font-size:0.78rem;margin-top:0.5rem;min-height:1em"></p>
+    <a href="/" style="display:inline-block;margin-top:1rem;padding:0.55rem 1.5rem;font-size:0.72rem;color:var(--gold-deep);border:1px solid var(--rule);border-radius:4px;text-decoration:none;font-weight:700;text-transform:uppercase;letter-spacing:0.1em"
       onmouseover="this.style.borderColor='#C9A227';this.style.background='rgba(201,162,39,0.06)'" onmouseout="this.style.borderColor='';this.style.background='transparent'">Back to Login</a>
   </div>
 
@@ -320,10 +322,69 @@
       onmouseover="this.style.color='#C9A227'" onmouseout="this.style.color='var(--gold-deep)'">Already have an account? Sign in</a>
   </div>
 
-  <p style="text-align:center;font-size:0.65rem;color:var(--ink-mute);margin-top:1rem;opacity:0.5;letter-spacing:0.08em;text-transform:uppercase">The Study Hub &copy; 2026</p>
+  <p id="brand-footer" style="text-align:center;font-size:0.65rem;color:var(--ink-mute);margin-top:1rem;opacity:0.5;letter-spacing:0.08em;text-transform:uppercase">The Study Hub &copy; 2026</p>
 </div>
 
 <script>
+  // Apply tenant branding before form interaction. Same shape as index.html.
+  (function() {
+    try {
+      var qs = new URLSearchParams(location.search);
+      var url = '/api/branding' + (qs.get('tenant') ? ('?tenant=' + encodeURIComponent(qs.get('tenant'))) : '');
+      fetch(url, { credentials: 'omit' }).then(function(r) { return r.ok ? r.json() : null; }).then(function(b) {
+        if (!b) return;
+        if (b.brandName) {
+          var h = document.getElementById('brand-name'); if (h) h.textContent = b.brandName;
+          var f = document.getElementById('brand-footer'); if (f) f.innerHTML = b.brandName + ' &copy; ' + new Date().getFullYear();
+          document.title = 'Register — ' + b.brandName;
+        }
+      }).catch(function(){});
+    } catch(e){}
+  })();
+</script>
+<script>
+  // parseServerError unwraps the {error, request_id} JSON envelope produced
+  // by the Go backend's respondError. Falls back to raw text or a generic
+  // message so a misconfigured proxy can't make this fail.
+  async function parseServerError(res, fallback) {
+    try {
+      var ct = res.headers.get('content-type') || '';
+      if (ct.indexOf('application/json') > -1) {
+        var j = await res.json();
+        return j.error || j.message || fallback;
+      }
+      var t = await res.text();
+      return t || fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  async function resendVerification(buttonEl, statusEl) {
+    var email = (document.getElementById('success-email') || {}).textContent
+             || (document.getElementById('teacher-success-email') || {}).textContent;
+    if (!email) return;
+    buttonEl.disabled = true;
+    buttonEl.textContent = 'Sending...';
+    statusEl.textContent = '';
+    try {
+      var res = await fetch('/api/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      });
+      if (!res.ok) throw new Error(await parseServerError(res, 'Could not resend'));
+      statusEl.style.color = '#15803d';
+      statusEl.textContent = 'Fresh verification email sent — check your inbox.';
+    } catch (err) {
+      statusEl.style.color = '#dc2626';
+      statusEl.textContent = err.message;
+    } finally {
+      buttonEl.disabled = false;
+      buttonEl.textContent = 'Resend verification email';
+    }
+  }
+
   function switchTab(tab) {
     var tabs = ['student', 'teacher'];
     tabs.forEach(function(t) {
@@ -394,8 +455,7 @@
         body: JSON.stringify(body)
       });
       if (!res.ok) {
-        var msg = await res.text();
-        throw new Error(msg || 'Submission failed');
+        throw new Error(await parseServerError(res, 'Submission failed'));
       }
       document.getElementById('success-email').textContent = body.email;
       document.getElementById('student-form').style.display = 'none';
@@ -454,8 +514,7 @@
         body: JSON.stringify(body)
       });
       if (!res.ok) {
-        var msg = await res.text();
-        throw new Error(msg || 'Submission failed');
+        throw new Error(await parseServerError(res, 'Submission failed'));
       }
       document.getElementById('teacher-success-email').textContent = body.email;
       document.getElementById('teacher-form').style.display = 'none';

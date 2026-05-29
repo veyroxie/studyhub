@@ -72,7 +72,7 @@ func handleProgressReports(db *DB) http.HandlerFunc {
 		case http.MethodGet:
 			respond(w, listProgressReports(db, c))
 		case http.MethodPost:
-			if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+			if !isStaffRole(c) {
 				respondError(w, "admin or teacher only", 403)
 				return
 			}
@@ -115,7 +115,7 @@ func handleProgressReportByID(db *DB) http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		switch r.Method {
 		case http.MethodPut:
-			if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+			if !isStaffRole(c) {
 				respondError(w, "admin or teacher only", 403)
 				return
 			}
@@ -142,7 +142,7 @@ func handleProgressReportByID(db *DB) http.HandlerFunc {
 			logAudit(db, c.Email, "progress_report_updated", "progress_report", id, "")
 			respond(w, pr)
 		case http.MethodDelete:
-			if c == nil || c.Role != "admin" {
+			if !isAdminRole(c) {
 				respondError(w, "admin only", 403)
 				return
 			}
@@ -207,7 +207,7 @@ func handleProgressReportPDF(db *DB) http.HandlerFunc {
 				respondError(w, "report is still a draft", 403)
 				return
 			}
-			if hasUnpaidMonthlyInvoice(db, parentEmail) {
+			if hasUnpaidMonthlyInvoice(db, parentEmail, c) {
 				respondError(w, "settle outstanding invoices to access progress reports", 403)
 				return
 			}
@@ -231,15 +231,18 @@ func handleProgressReportPDF(db *DB) http.HandlerFunc {
 // parent's children have any outstanding Monthly invoices. A single hit
 // blocks PDF access; matches the dashboard banner shown on the parent
 // portal so the experience is consistent.
-func hasUnpaidMonthlyInvoice(db *DB, parentEmail string) bool {
+func hasUnpaidMonthlyInvoice(db *DB, parentEmail string, c *Claims) bool {
+	itw, itwArgs := scopeTenant(c, "i")
+	stw, stwArgs := scopeTenant(c, "s")
+	args := append([]any{parentEmail}, append(stwArgs, itwArgs...)...)
 	var count int
 	db.QueryRow(`
 		SELECT COUNT(*) FROM invoices i
 		JOIN students s ON s.id = i.student_id
-		WHERE s.contact = ?
+		WHERE s.contact = ?`+stw+itw+`
 		  AND i.type = 'Monthly'
 		  AND (i.status = 'Unpaid' OR i.status = 'Overdue')
 		  AND i.deleted_at IS NULL`,
-		parentEmail).Scan(&count)
+		args...).Scan(&count)
 	return count > 0
 }

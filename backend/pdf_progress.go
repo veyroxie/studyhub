@@ -17,7 +17,7 @@ func renderProgressReportPDF(pr ProgressReport, studentName, teacherName string)
 
 	pdf.SetFont("Helvetica", "B", 22)
 	pdf.SetTextColor(15, 15, 15)
-	pdf.Cell(0, 10, "The Study Hub")
+	pdf.Cell(0, 10, brand().BrandName)
 	pdf.Ln(8)
 	pdf.SetFont("Helvetica", "", 11)
 	pdf.SetTextColor(120, 120, 120)

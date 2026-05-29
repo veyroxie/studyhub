@@ -521,7 +521,7 @@
           var stu = students.find(function(s){ return s.id === inv.studentId; });
           var daysOverdue = Math.floor((today - new Date(inv.dueDate)) / 86400000);
           return '<tr style="border-bottom:1px solid #f4f4f2">'
-            + '<td style="padding:0.65rem 1rem;font-size:0.83rem;font-weight:600">' + (stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + '</td>'
+            + '<td style="padding:0.65rem 1rem;font-size:0.83rem;font-weight:600">' + App.Utils.esc(stu ? stu.firstName + ' ' + stu.lastName : inv.studentId) + '</td>'
             + '<td style="padding:0.65rem 1rem;font-size:0.83rem;color:#dc2626;font-weight:700">' + App.Utils.formatCurrency(inv.amount) + '</td>'
             + '<td style="padding:0.65rem 1rem;font-size:0.83rem;color:#94a3b8">' + App.Utils.formatDate(inv.dueDate) + '</td>'
             + '<td style="padding:0.65rem 1rem"><span style="padding:0.2rem 0.6rem;background:#fef2f2;color:#dc2626;border-radius:20px;font-size:0.72rem;font-weight:700">' + daysOverdue + 'd overdue</span></td>'
@@ -579,12 +579,25 @@
     }
   }
 
-  function _setView(v)     { _filterView = v; Object.keys(_charts).forEach(function(k){if(_charts[k]){_charts[k].destroy();delete _charts[k];}}); App.Router.refresh(); }
-  function _setStudent(v)  { _filterStudent = v; App.Router.refresh(); }
-  function _setTeacher(v)  { _filterTeacher = v; App.Router.refresh(); }
-  function _setCategory(v) { _filterCategory = v; App.Router.refresh(); }
-  function _setMonths(v)   { _filterMonths = parseInt(v) || 6; App.Router.refresh(); }
-  function _clearFilters() { _filterStudent = ''; _filterTeacher = ''; _filterCategory = ''; _filterMonths = 6; App.Router.refresh(); }
+  // Debounced refresh — coalesces back-to-back filter changes (e.g.
+  // _clearFilters clears 4 fields) into a single re-render per animation
+  // frame. Each chart destroy + rebuild is expensive (~30ms × 6 charts);
+  // avoiding redundant renders is the biggest win on the analytics page.
+  var _refreshScheduled = false;
+  function _refreshSoon() {
+    if (_refreshScheduled) return;
+    _refreshScheduled = true;
+    requestAnimationFrame(function() {
+      _refreshScheduled = false;
+      App.Router.refresh();
+    });
+  }
+  function _setView(v)     { _filterView = v; Object.keys(_charts).forEach(function(k){if(_charts[k]){_charts[k].destroy();delete _charts[k];}}); _refreshSoon(); }
+  function _setStudent(v)  { _filterStudent = v; _refreshSoon(); }
+  function _setTeacher(v)  { _filterTeacher = v; _refreshSoon(); }
+  function _setCategory(v) { _filterCategory = v; _refreshSoon(); }
+  function _setMonths(v)   { _filterMonths = parseInt(v) || 6; _refreshSoon(); }
+  function _clearFilters() { _filterStudent = ''; _filterTeacher = ''; _filterCategory = ''; _filterMonths = 6; _refreshSoon(); }
   function _setAttendanceMode(m) {
     _attMode = m;
     if (_charts.attendance) { _charts.attendance.destroy(); delete _charts.attendance; }

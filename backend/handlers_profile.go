@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 // handleProfile lets any authenticated user view and update their own
@@ -22,18 +20,33 @@ func handleProfile(db *DB) http.HandlerFunc {
 		}
 		switch r.Method {
 		case http.MethodGet:
+			tw, twArgs := scopeTenant(c, "")
 			var phone string
-			db.QueryRow(`SELECT COALESCE(phone,'') FROM families WHERE contact=? AND deleted_at IS NULL LIMIT 1`, c.Email).Scan(&phone)
-			respond(w, map[string]string{
-				"name":  c.Name,
-				"email": c.Email,
-				"role":  c.Role,
-				"phone": phone,
+			phoneArgs := append([]any{c.Email}, twArgs...)
+			db.QueryRow(`SELECT COALESCE(phone,'') FROM families WHERE contact=? AND deleted_at IS NULL`+tw+` LIMIT 1`, phoneArgs...).Scan(&phone)
+			var mfaEnabled, notifyReminders, notifyAnnouncements, notifyReceipts bool
+			db.QueryRow(`SELECT COALESCE(mfa_enabled,false),
+			                    COALESCE(notify_invoice_reminders,true),
+			                    COALESCE(notify_announcements,true),
+			                    COALESCE(notify_payment_receipts,true)
+			             FROM users WHERE email=?`, c.Email).Scan(&mfaEnabled, &notifyReminders, &notifyAnnouncements, &notifyReceipts)
+			respond(w, map[string]any{
+				"name":                  c.Name,
+				"email":                 c.Email,
+				"role":                  c.Role,
+				"phone":                 phone,
+				"mfaEnabled":            mfaEnabled,
+				"notifyInvoiceReminders": notifyReminders,
+				"notifyAnnouncements":    notifyAnnouncements,
+				"notifyPaymentReceipts":  notifyReceipts,
 			})
 		case http.MethodPut:
 			var body struct {
-				Name  string `json:"name"`
-				Phone string `json:"phone"`
+				Name                   string `json:"name"`
+				Phone                  string `json:"phone"`
+				NotifyInvoiceReminders *bool  `json:"notifyInvoiceReminders"`
+				NotifyAnnouncements    *bool  `json:"notifyAnnouncements"`
+				NotifyPaymentReceipts  *bool  `json:"notifyPaymentReceipts"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				respondError(w, "bad body", 400)
@@ -43,20 +56,37 @@ func handleProfile(db *DB) http.HandlerFunc {
 				respondError(w, "name is required", 400)
 				return
 			}
-			// Update user row
+			tw, twArgs := scopeTenant(c, "")
+			// users.email is globally unique so the user-row update is one row.
+			// families and students use contact=? which can collide across
+			// tenants — scope those to the caller's tenant or a profile edit
+			// in tenant A will leak into tenant B for the same parent email.
 			if _, err := db.Exec(`UPDATE users SET name=? WHERE email=?`, body.Name, c.Email); err != nil {
 				respondError(w, "could not update profile", 500)
 				return
 			}
-			// Update family row (phone + parent_name)
-			if _, err := db.Exec(`UPDATE families SET parent_name=?, phone=? WHERE contact=? AND deleted_at IS NULL`, body.Name, body.Phone, c.Email); err != nil {
+			famArgs := append([]any{body.Name, body.Phone, c.Email}, twArgs...)
+			if _, err := db.Exec(`UPDATE families SET parent_name=?, phone=? WHERE contact=? AND deleted_at IS NULL`+tw, famArgs...); err != nil {
 				respondError(w, "could not update profile", 500)
 				return
 			}
-			// Update students linked to this parent
-			if _, err := db.Exec(`UPDATE students SET parent_name=?, phone=? WHERE contact=? AND deleted_at IS NULL`, body.Name, body.Phone, c.Email); err != nil {
+			stuArgs := append([]any{body.Name, body.Phone, c.Email}, twArgs...)
+			if _, err := db.Exec(`UPDATE students SET parent_name=?, phone=? WHERE contact=? AND deleted_at IS NULL`+tw, stuArgs...); err != nil {
 				respondError(w, "could not update profile", 500)
 				return
+			}
+
+			// Notification toggles — optional fields, only update when the
+			// client actually sent a value. Pointer-bool lets us distinguish
+			// "didn't include the field" from "sent false".
+			if body.NotifyInvoiceReminders != nil {
+				db.Exec(`UPDATE users SET notify_invoice_reminders=? WHERE email=?`, *body.NotifyInvoiceReminders, c.Email)
+			}
+			if body.NotifyAnnouncements != nil {
+				db.Exec(`UPDATE users SET notify_announcements=? WHERE email=?`, *body.NotifyAnnouncements, c.Email)
+			}
+			if body.NotifyPaymentReceipts != nil {
+				db.Exec(`UPDATE users SET notify_payment_receipts=? WHERE email=?`, *body.NotifyPaymentReceipts, c.Email)
 			}
 
 			logAudit(db, c.Email, "profile_updated", "user", c.Email, body.Name)
@@ -127,17 +157,17 @@ func handleChangePassword(db *DB) http.HandlerFunc {
 			respondError(w, "user not found", 404)
 			return
 		}
-		if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(body.CurrentPassword)); err != nil {
+		if err := verifyPassword(hash, body.CurrentPassword); err != nil {
 			respondError(w, "current password is incorrect", 403)
 			return
 		}
 
-		newHash, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcrypt.DefaultCost)
+		newHash, err := hashPassword(body.NewPassword)
 		if err != nil {
 			respondError(w, "server error", 500)
 			return
 		}
-		if _, err := db.Exec(`UPDATE users SET password_hash=? WHERE email=?`, string(newHash), c.Email); err != nil {
+		if _, err := db.Exec(`UPDATE users SET password_hash=? WHERE email=?`, newHash, c.Email); err != nil {
 			respondError(w, "could not update password", 500)
 			return
 		}

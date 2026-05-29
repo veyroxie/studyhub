@@ -53,7 +53,7 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *DB, func()) {
 
 	// Authenticated
 	r.Group(func(r chi.Router) {
-		r.Use(jwtMiddleware)
+		r.Use(jwtMiddleware(db))
 		r.Get("/api/snapshot", handleSnapshot(db))
 		r.Get("/api/students", handleStudents(db))
 		r.Post("/api/students", handleStudents(db))

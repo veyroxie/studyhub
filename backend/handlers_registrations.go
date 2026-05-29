@@ -21,7 +21,9 @@ func listParentEnrollments(db *DB, c *Claims) []Registration {
 	if c == nil {
 		return []Registration{}
 	}
-	rows, err := db.Query(`SELECT id,parent_name,email,COALESCE(student_first_name,''),COALESCE(student_last_name,''),submitted_on,status,COALESCE(type,'enrollment') FROM registrations WHERE email=? AND type='enrollment' ORDER BY submitted_on DESC`, c.Email)
+	tw, twArgs := scopeTenant(c, "")
+	args := append([]any{c.Email}, twArgs...)
+	rows, err := db.Query(`SELECT id,parent_name,email,COALESCE(student_first_name,''),COALESCE(student_last_name,''),submitted_on,status,COALESCE(type,'enrollment') FROM registrations WHERE email=? AND type='enrollment'`+tw+` ORDER BY submitted_on DESC`, args...)
 	if err != nil {
 		return []Registration{}
 	}
@@ -151,6 +153,17 @@ func handleRegister(db *DB) http.HandlerFunc {
 			return
 		}
 
+		// Record the self-registration in the registrations table so admin's
+		// queue + audit reports can find it (the comment block at the top of
+		// this handler advertised this row but it was never actually inserted
+		// — admins had no view of self-registered parents).
+		regID := generateID("REG")
+		if _, err := tx.Exec(`INSERT INTO registrations(id,tenant_id,parent_name,email,phone,emergency_name,emergency_phone,submitted_on,status,type) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			regID, 1, body.ParentName, email, body.Phone, body.EmergencyName, body.EmergencyPhone, today(), "self_registered", "parent"); err != nil {
+			respondError(w, "could not record registration", 500)
+			return
+		}
+
 		if err := tx.Commit(); err != nil {
 			respondError(w, "server error", 500)
 			return
@@ -192,8 +205,10 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 			return
 		}
 
+		regTw, regTwArgs := scopeTenant(c, "")
 		var reg Registration
-		err := db.QueryRow(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes,COALESCE(type,'student'),COALESCE(specialization,''),COALESCE(nric,''),COALESCE(display_name,''),COALESCE(employment_type,'Full-time'),COALESCE(experience,''),COALESCE(qualifications,''),COALESCE(expected_salary,''),COALESCE(referral_code,'') FROM registrations WHERE id=?`, id).
+		regSelArgs := append([]any{id}, regTwArgs...)
+		err := db.QueryRow(`SELECT id,parent_name,email,phone,emergency_name,emergency_phone,student_first_name,student_last_name,student_dob,student_gender,class_interest,notes,COALESCE(type,'student'),COALESCE(specialization,''),COALESCE(nric,''),COALESCE(display_name,''),COALESCE(employment_type,'Full-time'),COALESCE(experience,''),COALESCE(qualifications,''),COALESCE(expected_salary,''),COALESCE(referral_code,'') FROM registrations WHERE id=?`+regTw, regSelArgs...).
 			Scan(&reg.ID, &reg.ParentName, &reg.Email, &reg.Phone, &reg.EmergencyName, &reg.EmergencyPhone,
 				&reg.StudentFirstName, &reg.StudentLastName, &reg.StudentDOB, &reg.StudentGender,
 				&reg.ClassInterest, &reg.Notes, &reg.Type,
@@ -271,11 +286,26 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 				respondError(w, "could not create student record", 500)
 				return
 			}
-			// Increment enrolled count on each assigned class.
+			// Increment enrolled count on each assigned class, gated by capacity.
+			// The atomic UPDATE … WHERE enrolled < capacity bumps the count
+			// only if there's room — two concurrent approvals racing on the
+			// last seat can't both succeed because Postgres serialises the
+			// row update. Zero rows affected = class is full or missing;
+			// abort the whole approval (tx rollback) so the parent isn't
+			// left with a half-enrolled student.
 			clsTw, clsTwArgs := scopeTenant(c, "")
 			for _, cid := range approveBody.ClassIds {
 				clsArgs := append([]any{cid}, clsTwArgs...)
-				tx.Exec(`UPDATE classes SET enrolled=enrolled+1 WHERE id=?`+clsTw, clsArgs...)
+				res, err := tx.Exec(`UPDATE classes SET enrolled=enrolled+1 WHERE id=? AND deleted_at IS NULL AND enrolled < capacity`+clsTw, clsArgs...)
+				if err != nil {
+					respondError(w, "could not enrol in class", 500)
+					return
+				}
+				n, _ := res.RowsAffected()
+				if n == 0 {
+					respondError(w, "class is full or unavailable: "+cid, http.StatusConflict)
+					return
+				}
 			}
 
 			// Referral validation (same pattern as the old combined flow).
@@ -288,7 +318,8 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 				if referrerFamID != "" && referrerFamID != famID {
 					if _, err := tx.Exec(`INSERT INTO referral_rewards(id,tenant_id,referrer_family_id,referred_student_id,status) VALUES(?,?,?,?,'pending') ON CONFLICT(referred_student_id) DO NOTHING`,
 						generateID("REF"), tid, referrerFamID, stuID); err == nil {
-						tx.Exec(`UPDATE students SET referred_by_family_id=? WHERE id=?`, referrerFamID, stuID)
+						stuUpdArgs := append([]any{referrerFamID, stuID}, clsTwArgs...)
+						tx.Exec(`UPDATE students SET referred_by_family_id=? WHERE id=?`+clsTw, stuUpdArgs...)
 						logAudit(tx, c.Email, "referral_validated", "student", stuID, "code="+code+" referrer="+referrerFamID)
 					}
 				}
@@ -306,7 +337,8 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 				classListHTML = `<ul style="margin:0;padding:0 0 0 18px;font-size:13px;color:#374151">`
 				for _, cid := range approveBody.ClassIds {
 					var cname, cday, ctime string
-					db.QueryRow(`SELECT name, day, time FROM classes WHERE id=?`, cid).Scan(&cname, &cday, &ctime)
+					cnameArgs := append([]any{cid}, clsTwArgs...)
+					db.QueryRow(`SELECT name, day, time FROM classes WHERE id=?`+clsTw, cnameArgs...).Scan(&cname, &cday, &ctime)
 					if cname != "" {
 						classListHTML += `<li style="margin-bottom:4px">` + html.EscapeString(cname) + ` — ` + html.EscapeString(cday) + ` ` + html.EscapeString(ctime) + `</li>`
 					}
@@ -431,7 +463,8 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 				tx.Exec(`INSERT INTO families(id,tenant_id,name,contact,phone,parent_name,referral_code) VALUES(?,?,?,?,?,?,?)`,
 					famID, tid, familyName, reg.Email, reg.Phone, reg.ParentName, newReferralCode())
 			}
-			tx.Exec(`UPDATE students SET family_id=? WHERE id=?`, famID, stuID)
+			stuFamArgs := append([]any{famID, stuID}, famTwArgs...)
+			tx.Exec(`UPDATE students SET family_id=? WHERE id=?`+famTw, stuFamArgs...)
 
 			// Referral validation: if a code was supplied, look up the referrer
 			// family and create a pending referral_rewards row. Self-referral and
@@ -445,7 +478,8 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 				if referrerFamID != "" && referrerFamID != famID {
 					if _, err := tx.Exec(`INSERT INTO referral_rewards(id,tenant_id,referrer_family_id,referred_student_id,status) VALUES(?,?,?,?,'pending') ON CONFLICT(referred_student_id) DO NOTHING`,
 						generateID("REF"), tid, referrerFamID, stuID); err == nil {
-						tx.Exec(`UPDATE students SET referred_by_family_id=? WHERE id=?`, referrerFamID, stuID)
+						stuRefArgs := append([]any{referrerFamID, stuID}, refTwArgs...)
+						tx.Exec(`UPDATE students SET referred_by_family_id=? WHERE id=?`+refTw, stuRefArgs...)
 						logAudit(tx, c.Email, "referral_validated", "student", stuID, "code="+code+" referrer="+referrerFamID)
 					}
 				} else {
@@ -473,8 +507,9 @@ func handleRegistrationApprove(db *DB) http.HandlerFunc {
 			}
 		}
 
-		// Mark registration approved
-		if _, err := tx.Exec(`UPDATE registrations SET status='approved' WHERE id=?`, id); err != nil {
+		// Mark registration approved (tenant-scoped — same tw/args computed above).
+		regUpdArgs := append([]any{id}, regTwArgs...)
+		if _, err := tx.Exec(`UPDATE registrations SET status='approved' WHERE id=?`+regTw, regUpdArgs...); err != nil {
 			respondError(w, "could not update registration status", 500)
 			return
 		}
@@ -544,9 +579,28 @@ func handleEnrollmentRequest(db *DB) http.HandlerFunc {
 		}
 
 		// Look up the parent's family so we know which family to link the
-		// student to when admin approves.
+		// student to when admin approves. Tenant-scoped so a parent whose
+		// email exists in multiple tenants gets the right family ID.
 		var famID string
-		db.QueryRow(`SELECT id FROM families WHERE contact=? AND deleted_at IS NULL`, c.Email).Scan(&famID)
+		famTw, famTwArgs := scopeTenant(c, "")
+		famLookupArgs := append([]any{c.Email}, famTwArgs...)
+		db.QueryRow(`SELECT id FROM families WHERE contact=? AND deleted_at IS NULL`+famTw, famLookupArgs...).Scan(&famID)
+
+		// Dedup: refuse if this parent already has a pending registration for
+		// the same child (matched on first+last+DOB so siblings with the same
+		// first name aren't blocked). Saves admin from a queue of identical
+		// rows when a parent double-clicks or re-submits.
+		dupArgs := append([]any{c.Email, strings.TrimSpace(req.StudentFirstName), strings.TrimSpace(req.StudentLastName), strings.TrimSpace(req.StudentDOB)}, famTwArgs...)
+		var dupID string
+		db.QueryRow(`SELECT id FROM registrations
+		             WHERE email=? AND status='pending' AND type='enrollment'
+		               AND lower(student_first_name)=lower(?) AND lower(student_last_name)=lower(?)
+		               AND COALESCE(student_dob,'')=?
+		`+famTw, dupArgs...).Scan(&dupID)
+		if dupID != "" {
+			respondError(w, "you already have a pending enrolment request for this child", http.StatusConflict)
+			return
+		}
 
 		id := generateID("REG")
 		tid := tenantID(c)
@@ -570,13 +624,15 @@ func handleEnrollmentRequest(db *DB) http.HandlerFunc {
 		code := strings.ToUpper(strings.TrimSpace(req.ReferralCode))
 		if code != "" {
 			var referrerFamID string
-			db.QueryRow(`SELECT id FROM families WHERE referral_code=? AND deleted_at IS NULL`, code).Scan(&referrerFamID)
+			codeLookupArgs := append([]any{code}, famTwArgs...)
+			db.QueryRow(`SELECT id FROM families WHERE referral_code=? AND deleted_at IS NULL`+famTw, codeLookupArgs...).Scan(&referrerFamID)
 			if referrerFamID == "" {
 				codeWarning = "The referral code '" + code + "' was not found. Your enrolment has been submitted anyway — please double-check the code with your friend."
 			} else if referrerFamID == famID {
 				codeWarning = "You can't use your own referral code. The enrolment has been submitted without a referral."
-				// Clear the invalid self-referral from the row.
-				if _, err := db.Exec(`UPDATE registrations SET referral_code='' WHERE id=?`, id); err != nil {
+				// Clear the invalid self-referral from the row (tenant-scoped).
+				clearArgs := append([]any{id}, famTwArgs...)
+				if _, err := db.Exec(`UPDATE registrations SET referral_code='' WHERE id=?`+famTw, clearArgs...); err != nil {
 					logFromReq(r).Error("failed to clear self-referral code", "err", err, "registration_id", id)
 				}
 			}

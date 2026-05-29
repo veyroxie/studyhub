@@ -28,6 +28,78 @@
     }
   </script>
   <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Study Hub">
+  <script>
+    // Apply tenant branding to the public shell BEFORE any other script
+    // runs. Reads /api/branding which resolves the tenant by host or
+    // ?tenant= query param. Falls back silently if the endpoint is
+    // unavailable — page still works with the default StudyHub branding.
+    (function() {
+      try {
+        var qs = new URLSearchParams(location.search);
+        var url = '/api/branding' + (qs.get('tenant') ? ('?tenant=' + encodeURIComponent(qs.get('tenant'))) : '');
+        fetch(url, { credentials: 'omit' }).then(function(r) {
+          if (!r.ok) return;
+          return r.json();
+        }).then(function(b) {
+          if (!b) return;
+          if (b.brandName) {
+            var h = document.getElementById('brand-name');
+            if (h) h.textContent = b.brandName;
+            document.title = b.brandName;
+            var f = document.getElementById('brand-footer');
+            if (f) f.innerHTML = b.brandName + ' &copy; ' + new Date().getFullYear();
+          }
+          if (b.primaryColor) {
+            document.documentElement.style.setProperty('--gold', b.primaryColor);
+          }
+          if (b.logoUrl) {
+            window.__brandLogoUrl = b.logoUrl;
+          }
+        }).catch(function(){});
+      } catch (e) {}
+    })();
+  </script>
+  <script>
+    // Register the service worker for PWA install + offline shell. Skipped on
+    // localhost over plain HTTP (file://) and during register.html / verify.html
+    // flows where the parent shouldn't get an installed app prompt mid-signup.
+    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/sw.js').catch(function(err) {
+          console.warn('SW register failed:', err);
+        });
+      });
+    }
+  </script>
+  <!-- Sentry browser SDK — loaded only when window.SENTRY_DSN is injected.
+       The placeholder below is replaced at deploy time by the operator; if
+       empty the SDK script never loads and Sentry is a no-op. -->
+  <script>
+    window.SENTRY_DSN = window.SENTRY_DSN || ''; // set by deploy template
+  </script>
+  <script>
+    if (window.SENTRY_DSN) {
+      var s = document.createElement('script');
+      s.src = 'https://browser.sentry-cdn.com/7.119.0/bundle.min.js';
+      s.crossOrigin = 'anonymous';
+      s.onload = function() {
+        if (window.Sentry) {
+          Sentry.init({
+            dsn: window.SENTRY_DSN,
+            environment: window.SH_ENV || 'production',
+            release: window.SH_VERSION || 'unknown',
+            tracesSampleRate: 0.0,
+          });
+        }
+      };
+      document.head.appendChild(s);
+    }
+  </script>
 </head>
 <body class="bg-slate-50">
 
@@ -45,7 +117,7 @@
     <!-- Masthead — editorial, no icon -->
     <div class="text-center mb-8">
       <div style="width:40px;height:1.5px;background:#C9A227;margin:0 auto 1.25rem;opacity:0.6"></div>
-      <h1 style="font-family:'Fraunces','Cormorant Garamond',serif;font-size:2.15rem;font-weight:300;color:var(--ink,#1a1612);letter-spacing:-0.03em;margin:0">The Study Hub</h1>
+      <h1 id="brand-name" style="font-family:'Fraunces','Cormorant Garamond',serif;font-size:2.15rem;font-weight:300;color:var(--ink,#1a1612);letter-spacing:-0.03em;margin:0">The Study Hub</h1>
       <p style="color:var(--ink-mute,#6b6258);font-size:0.7rem;margin-top:0.5rem;font-family:'Instrument Sans',sans-serif;text-transform:uppercase;letter-spacing:0.14em;font-weight:600">Education Management Portal</p>
     </div>
 
@@ -123,7 +195,7 @@
       <script>if(location.hostname==='localhost'||location.hostname==='127.0.0.1'){document.getElementById('dev-quick-login').style.display='';}</script>
     </div>
 
-    <p style="text-align:center;font-size:0.62rem;color:var(--ink-mute,#6b6258);margin-top:1.5rem;font-family:'Instrument Sans',sans-serif;text-transform:uppercase;letter-spacing:0.1em;opacity:0.45">The Study Hub &copy; 2026</p>
+    <p id="brand-footer" style="text-align:center;font-size:0.62rem;color:var(--ink-mute,#6b6258);margin-top:1.5rem;font-family:'Instrument Sans',sans-serif;text-transform:uppercase;letter-spacing:0.1em;opacity:0.45">The Study Hub &copy; 2026</p>
   </div>
   <style>@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}</style>
 </div>
@@ -488,25 +560,62 @@
 <div id="live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Scripts — order matters -->
-<script src="js/data.js"></script>
-<script src="js/store.js"></script>
-<script src="js/api.js"></script>
-<script src="js/utils.js"></script>
-<script src="js/router.js"></script>
-<script src="js/theme.js"></script>
-<script src="js/notifs.js"></script>
-<script src="js/tutorial.js"></script>
-<script src="js/modules/dashboard.js"></script>
-<script src="js/modules/calendar.js"></script>
-<script src="js/modules/communication.js"></script>
-<!-- <script src="js/modules/messages.js"></script> -->
-<script src="js/modules/students.js"></script>
-<script src="js/modules/billing.js"></script>
-<script src="js/modules/staff.js"></script>
-<script src="js/modules/attendance.js"></script>
-<script src="js/modules/progress.js"></script>
-<script src="js/modules/analytics.js"></script>
-<script src="js/main.js"></script>
+<!--
+  All app scripts are deferred so the HTML shell parses + paints before any
+  JS runs. `defer` preserves load order across the set so the IIFE
+  registration sequence (utils → store → api → router → modules → main)
+  still works.
+
+  analytics.js is intentionally NOT in the initial set — it pulls in
+  Chart.js (~100KB CDN) and is only useful on the analytics page. A small
+  loader below injects it on first navigation to that page.
+-->
+<script src="js/data.js" defer></script>
+<script src="js/store.js" defer></script>
+<script src="js/api.js" defer></script>
+<script src="js/utils.js" defer></script>
+<script src="js/router.js" defer></script>
+<script src="js/theme.js" defer></script>
+<script src="js/notifs.js" defer></script>
+<script src="js/tutorial.js" defer></script>
+<script src="js/modules/dashboard.js" defer></script>
+<script src="js/modules/calendar.js" defer></script>
+<script src="js/modules/communication.js" defer></script>
+<script src="js/modules/students.js" defer></script>
+<script src="js/modules/billing.js" defer></script>
+<script src="js/modules/staff.js" defer></script>
+<script src="js/modules/attendance.js" defer></script>
+<script src="js/modules/progress.js" defer></script>
+<script src="js/main.js" defer></script>
+<script>
+  // Lazy-load analytics.js the first time the user navigates to the
+  // analytics page. Parents typically never visit Analytics, so loading
+  // its ~30KB + the Chart.js CDN eagerly is wasted bandwidth.
+  (function() {
+    var loaded = false;
+    function loadAnalytics() {
+      if (loaded) return;
+      loaded = true;
+      var s = document.createElement('script');
+      s.src = 'js/modules/analytics.js';
+      s.async = false;
+      document.body.appendChild(s);
+    }
+    // Watch for hash navigation; the router publishes the active page id
+    // by setting #analytics or via App.Router.navigate('analytics').
+    window.addEventListener('hashchange', function() {
+      if (location.hash.indexOf('analytics') >= 0) loadAnalytics();
+    });
+    // Boot-time: if the URL already targets analytics (deep link), load
+    // immediately. Otherwise the hashchange listener handles it.
+    document.addEventListener('DOMContentLoaded', function() {
+      if (location.hash.indexOf('analytics') >= 0) loadAnalytics();
+    });
+    // Expose a manual trigger for App.Router code paths that don't change
+    // the hash (e.g., bento card clicks).
+    window.__loadAnalytics = loadAnalytics;
+  })();
+</script>
 
 </body>
 </html>

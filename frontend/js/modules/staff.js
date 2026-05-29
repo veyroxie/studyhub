@@ -369,10 +369,9 @@
       + '</form>'
       + '</div>'
     );
-    document.getElementById('add-staff-form').addEventListener('submit', function(e) {
+    document.getElementById('add-staff-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       const fd = new FormData(e.target);
-      const state = App.Store.get();
       const empType = fd.get('employmentType') || 'fulltime';
       const newStaff = {
         id: App.Utils.generateId('STF'),
@@ -383,7 +382,7 @@
         phone: fd.get('phone'),
         employmentType: empType,
         salary: empType === 'fulltime' ? (parseFloat(fd.get('salary')) || 0) : 0,
-        hourlyRate: empType === 'parttime' ? (parseFloat(fd.get('hourlyRate')) || 0) : undefined,
+        hourlyRate: empType === 'parttime' ? (parseFloat(fd.get('hourlyRate')) || 0) : 0,
         joinDate: fd.get('joinDate'),
         specialization: fd.get('specialization') || '',
         nric: fd.get('nric') || '',
@@ -391,10 +390,16 @@
         emergencyPhone: fd.get('emergencyPhone') || '',
         status: 'Active'
       };
-      App.Store.set({ staff: [...state.staff, newStaff] });
-      App.Utils.hideModal(true);
-      App.Utils.showToast(App.Utils.esc(newStaff.fullName) + ' added!', 'success');
-      App.Router.refresh();
+      var submitBtn = e.target.querySelector('button[type="submit"]');
+      try {
+        await App.Utils.withLoading(submitBtn, async function() {
+          await App.Api.post('/api/staff', newStaff);
+          await App.Api.loadSnapshot();
+        });
+        App.Utils.hideModal(true);
+        App.Utils.showToast(App.Utils.esc(newStaff.fullName) + ' added!', 'success');
+        App.Router.refresh();
+      } catch (err) { /* auto-toasted */ }
     });
   }
 
@@ -455,7 +460,7 @@
       + '</div>'
     );
 
-    document.getElementById('edit-staff-form').addEventListener('submit', function(e) {
+    document.getElementById('edit-staff-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       const fd = new FormData(e.target);
       const empType = fd.get('employmentType') || 'fulltime';
@@ -475,18 +480,17 @@
         emergencyName: fd.get('emergencyName') || '',
         emergencyPhone: fd.get('emergencyPhone') || ''
       });
-      App.Utils.hideModal(true);
-      App.Api.put('/api/staff/' + staffId, updated).then(function(result) {
-        var st = App.Store.get();
-        App.Store.set({ staff: st.staff.map(function(x) { return x.id === staffId ? updated : x; }) });
+      try {
+        await App.Api.put('/api/staff/' + staffId, updated);
+        await App.Api.loadSnapshot();
+        App.Utils.hideModal(true);
         App.Utils.showToast(App.Utils.esc(updated.fullName) + ' updated!', 'success');
         App.Router.refresh();
-      }).catch(function(err) {
-        var st = App.Store.get();
-        App.Store.set({ staff: st.staff.map(function(x) { return x.id === staffId ? updated : x; }) });
-        App.Utils.showToast('Saved locally (offline)', 'warning');
-        App.Router.refresh();
-      });
+      } catch (err) {
+        // App.Api auto-toasts the server error; no "saved locally" fallback
+        // — that wrote to localStorage but the next snapshot reload would
+        // wipe it, hiding the real failure from the user.
+      }
     });
   }
 
@@ -650,10 +654,12 @@
     var ok = await App.Utils.showConfirm({ title: 'Reject application', message: 'This teacher application will be removed.', confirmLabel: 'Reject', danger: true });
     if (!ok) return;
     try {
-      await App.Api.del('/api/registrations/' + regId);
-      await App.Api.loadSnapshot();
-      App.Notifs.refresh();
+      App.Api.optimisticRemove('registrations', regId);
       App.Utils.hideModal(true);
+      App.Router.refresh();
+      await App.Api.del('/api/registrations/' + regId);
+      App.Notifs.refresh();
+      App.Api.loadSnapshot().catch(function(){});
       App.Utils.showToast('Application rejected', 'info');
       App.Router.refresh();
     } catch(err) {

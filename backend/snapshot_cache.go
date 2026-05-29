@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -30,7 +32,54 @@ type snapshotCacheEntry struct {
 var (
 	snapshotCacheMu sync.RWMutex
 	snapshotCache   = map[string]snapshotCacheEntry{}
+
+	// snapshotInFlight tracks builds currently running per cache key. The
+	// singleflight pattern: only one goroutine actually runs the ~18 fan-out
+	// queries, all other concurrent requests for the same key wait on the
+	// shared result channel. Without this, a cold cache + a thundering herd
+	// (e.g., 10 admin tabs auto-refreshing at the same second) runs 10×
+	// duplicate work against Postgres.
+	snapshotFlightsMu sync.Mutex
+	snapshotFlights   = map[string]*snapshotFlight{}
 )
+
+type snapshotFlight struct {
+	done chan struct{}
+	body []byte
+	err  error
+}
+
+// snapshotSingleflight returns the existing in-flight build for this key, or
+// registers a new one and returns it with isLeader=true so the caller
+// performs the actual work. Followers wait on f.done.
+func snapshotSingleflight(key string) (f *snapshotFlight, isLeader bool) {
+	snapshotFlightsMu.Lock()
+	defer snapshotFlightsMu.Unlock()
+	if existing, ok := snapshotFlights[key]; ok {
+		return existing, false
+	}
+	f = &snapshotFlight{done: make(chan struct{})}
+	snapshotFlights[key] = f
+	return f, true
+}
+
+// snapshotSingleflightDone is called by the leader after the build completes
+// (success or error). It publishes the result and removes the entry so the
+// next request rebuilds.
+func snapshotSingleflightDone(key string, body []byte, err error) {
+	snapshotFlightsMu.Lock()
+	f, ok := snapshotFlights[key]
+	if ok {
+		delete(snapshotFlights, key)
+	}
+	snapshotFlightsMu.Unlock()
+	if !ok {
+		return
+	}
+	f.body = body
+	f.err = err
+	close(f.done)
+}
 
 func snapshotCacheKey(c *Claims) string {
 	if c == nil {
@@ -52,14 +101,11 @@ func snapshotCacheGet(key string) ([]byte, bool) {
 func snapshotCachePut(key string, body []byte) {
 	snapshotCacheMu.Lock()
 	defer snapshotCacheMu.Unlock()
-	if len(snapshotCache) > 1024 {
-		now := time.Now()
-		for k, v := range snapshotCache {
-			if now.After(v.expires) {
-				delete(snapshotCache, k)
-			}
-		}
-	}
+	// Lazy expiry: Get already filters by expires, and the map churn is
+	// bounded by (tenants × roles × admins online) which is small enough
+	// that the previous O(n) full-map scan on every Put past 1024 entries
+	// was wasted work in the hot write path. If the map ever grows large
+	// in pathological cases, this can be revisited with a time-wheel.
 	snapshotCache[key] = snapshotCacheEntry{body: body, expires: time.Now().Add(snapshotCacheTTL)}
 }
 
@@ -119,19 +165,36 @@ func snapshotCacheInvalidator(next http.Handler) http.Handler {
 }
 
 // writeCachedSnapshot writes an already-marshalled snapshot to the response.
-func writeCachedSnapshot(w http.ResponseWriter, body []byte) {
+// Adds a weak ETag from the body hash so clients polling on a 30s interval
+// receive a 5-byte 304 instead of the full ~500KB body when nothing has
+// changed.
+func writeCachedSnapshot(w http.ResponseWriter, r *http.Request, body []byte) {
+	etag := snapshotETag(body)
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
+	if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	w.Write(body)
 }
 
-// marshalAndCacheSnapshot serializes the snapshot, stores it in the cache
-// under the given key, and writes it to the response.
-func marshalAndCacheSnapshot(w http.ResponseWriter, key string, snap any) {
+func snapshotETag(body []byte) string {
+	sum := sha256.Sum256(body)
+	return `W/"` + hex.EncodeToString(sum[:16]) + `"`
+}
+
+// marshalAndCacheSnapshot was the all-in-one helper before the singleflight
+// rewrite; handleSnapshot now does marshal + cache + ETag-aware write
+// inline so the leader can publish the body to followers before the
+// response is sent. Kept as a thin wrapper for legacy callers and tests.
+func marshalAndCacheSnapshot(w http.ResponseWriter, r *http.Request, key string, snap any) {
 	body, err := json.Marshal(snap)
 	if err != nil {
 		respondError(w, "snapshot serialization failed", http.StatusInternalServerError)
 		return
 	}
 	snapshotCachePut(key, body)
-	writeCachedSnapshot(w, body)
+	writeCachedSnapshot(w, r, body)
 }

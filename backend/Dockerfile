@@ -36,7 +36,8 @@ COPY frontend/ ./frontend/
 # the runtime image always carries CSS that matches the current HTML/JS.
 COPY --from=tailwind-builder /frontend/tailwind.css ./frontend/tailwind.css
 COPY backend/backup.sh ./backup.sh
-RUN chmod +x /app/backup.sh && \
+COPY backend/backup_verify.sh ./backup_verify.sh
+RUN chmod +x /app/backup.sh /app/backup_verify.sh && \
     mkdir -p /app/uploads /app/backups && chown -R studyhub:studyhub /app/uploads /app/backups /app
 
 USER 1000:1000

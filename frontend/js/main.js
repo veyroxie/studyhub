@@ -27,6 +27,57 @@
     if (el) el.style.display = 'none';
   }
 
+  // _showToSGate renders a blocking modal with the current ToS text. Returns
+  // a Promise that resolves true when accepted, false when declined. The
+  // caller is responsible for handling the false path (logout + reload).
+  // Modal cannot be dismissed by clicking outside or pressing Esc — those
+  // affordances would let a user slip past the gate.
+  function _showToSGate() {
+    return new Promise(function(resolve) {
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,15,15,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(4px)';
+      overlay.innerHTML =
+        '<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3)">'
+        + '<div style="padding:1.5rem 1.75rem 0.75rem;border-bottom:1px solid #f1f5f9">'
+        +   '<h2 style="margin:0;font-family:\'Fraunces\',\'Cormorant Garamond\',serif;font-size:1.5rem;font-weight:500;color:#0a0a0a">Terms of Service</h2>'
+        +   '<p style="margin:0.35rem 0 0;font-size:0.78rem;color:#94a3b8">Please review and accept before continuing.</p>'
+        + '</div>'
+        + '<div style="padding:1.25rem 1.75rem;overflow-y:auto;flex:1;font-size:0.86rem;line-height:1.7;color:#374151">'
+        +   '<h3 style="font-size:0.85rem;font-weight:700;color:#0a0a0a;margin:0 0 0.4rem">1. Acceptance</h3>'
+        +   '<p style="margin:0 0 1rem">By using The Study Hub you agree to these terms. They cover how we handle your personal data, billing, and the platform itself.</p>'
+        +   '<h3 style="font-size:0.85rem;font-weight:700;color:#0a0a0a;margin:0 0 0.4rem">2. Data &amp; privacy</h3>'
+        +   '<p style="margin:0 0 1rem">We store the information you provide (name, contact email, phone, your children\'s names and class enrolments, attendance, payment history) to operate the platform. You can export your data at any time from your profile, and you can request deletion under PDPA.</p>'
+        +   '<h3 style="font-size:0.85rem;font-weight:700;color:#0a0a0a;margin:0 0 0.4rem">3. Billing</h3>'
+        +   '<p style="margin:0 0 1rem">Tuition is billed monthly based on your subscription package. Refunds are at the centre\'s discretion. Payment proof uploads and gateway transactions are kept for at least 7 years for tax purposes.</p>'
+        +   '<h3 style="font-size:0.85rem;font-weight:700;color:#0a0a0a;margin:0 0 0.4rem">4. Acceptable use</h3>'
+        +   '<p style="margin:0 0 1rem">Use the platform for its intended purpose. Don\'t share your account, attempt to access other families\' data, or scrape the platform.</p>'
+        +   '<h3 style="font-size:0.85rem;font-weight:700;color:#0a0a0a;margin:0 0 0.4rem">5. Changes</h3>'
+        +   '<p style="margin:0">We may update these terms; if material, we\'ll ask you to accept again. Contact us at hello@studyhub.fit for any questions.</p>'
+        + '</div>'
+        + '<div style="padding:1rem 1.75rem;border-top:1px solid #f1f5f9;display:flex;gap:0.6rem;justify-content:flex-end;background:#fafaf8">'
+        +   '<button id="tos-decline" style="padding:0.55rem 1.1rem;font-size:0.82rem;font-weight:600;background:#fff;border:1px solid #e2e8f0;border-radius:8px;color:#64748b;cursor:pointer">Decline &amp; sign out</button>'
+        +   '<button id="tos-accept" style="padding:0.55rem 1.4rem;font-size:0.82rem;font-weight:700;background:#0a0a0a;color:#fff;border:none;border-radius:8px;cursor:pointer">Accept &amp; continue</button>'
+        + '</div>'
+        + '</div>';
+      document.body.appendChild(overlay);
+      document.getElementById('tos-accept').addEventListener('click', async function() {
+        try {
+          await App.Api.post('/api/account/accept-tos', {});
+        } catch(e) {
+          // App.Api auto-toasts the failure; keep the modal open so the user
+          // can retry instead of slipping past on a network blip.
+          return;
+        }
+        overlay.remove();
+        resolve(true);
+      });
+      document.getElementById('tos-decline').addEventListener('click', function() {
+        overlay.remove();
+        resolve(false);
+      });
+    });
+  }
+
   // ── Login ─────────────────────────────────────────────────────────────────
   App.Login = {
     show(msg) {
@@ -57,7 +108,13 @@
         const cb = document.getElementById('login-remember');
         remember = !!(cb && cb.checked);
       }
-      if (btn) { btn.textContent = 'Signing in...'; btn.disabled = true; }
+      // Spinner inside the button so the user feels instant feedback even
+      // before the full-screen loader appears for the snapshot fetch.
+      if (btn && !btn._origHTML) btn._origHTML = btn.innerHTML;
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="sh-spinner"></span><span style="margin-left:0.5em">Signing in...</span>';
+      }
       errEl.classList.add('hidden');
       if (resendBanner) resendBanner.classList.add('hidden');
       try {
@@ -73,6 +130,20 @@
         if (data.role === 'teacher') {
           App.currentTeacher = data.staffId || '';
           sessionStorage.setItem('sh_teacher', App.currentTeacher);
+        }
+        // Block entry until the user accepts the current ToS version. The
+        // server sets data.mustAcceptTos when the user's stored version is
+        // below currentToSVersion. We resolve only when the modal is
+        // dismissed — declining redirects to logout so abandoned sessions
+        // don't slip in without acceptance.
+        if (data.mustAcceptTos) {
+          _hideLoading();
+          const accepted = await _showToSGate();
+          if (!accepted) {
+            await App.Api.post('/api/auth/logout', {}, { silent: true }).catch(function(){});
+            window.location.reload();
+            return;
+          }
         }
         // Load all data from backend
         _showLoading('Loading your data...');
@@ -105,7 +176,11 @@
           errEl.classList.remove('hidden');
         }
       } finally {
-        if (btn) { btn.textContent = 'Sign In'; btn.disabled = false; }
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = btn._origHTML || 'Sign In';
+          btn._origHTML = null;
+        }
       }
     },
     // resendVerification fires the backend resend endpoint and confirms with
@@ -288,7 +363,7 @@
       const uniqueParents = {};
       students.forEach(function(s) { uniqueParents[s.contact] = s.parentName; });
       parentSelect.innerHTML = Object.keys(uniqueParents).map(function(email) {
-        return '<option value="' + email + '">' + uniqueParents[email] + '</option>';
+        return '<option value="' + App.Utils.esc(email) + '">' + App.Utils.esc(uniqueParents[email] || email) + '</option>';
       }).join('');
       if (App.clientParent) parentSelect.value = App.clientParent;
       else App.clientParent = parentSelect.value || Object.keys(uniqueParents)[0] || '';
@@ -389,12 +464,20 @@
     }
 
     // Check if already logged in (reads HttpOnly cookie server-side)
-    App.Api.isLoggedIn().then(function(loggedIn) {
+    App.Api.isLoggedIn().then(async function(loggedIn) {
       if (loggedIn) {
         const user = App.Api.currentUser();
         App.currentRole = (user && user.role === 'admin') ? 'admin' : (user && user.role === 'teacher') ? 'teacher' : 'client';
         if (user && user.role === 'parent') App.clientParent = user.email;
         if (user && user.role === 'teacher') { App.currentTeacher = user.staffId || ''; sessionStorage.setItem('sh_teacher', App.currentTeacher); }
+        if (user && user.mustAcceptTos) {
+          const accepted = await _showToSGate();
+          if (!accepted) {
+            await App.Api.post('/api/auth/logout', {}, { silent: true }).catch(function(){});
+            window.location.reload();
+            return;
+          }
+        }
         _showLoading('Loading your data...');
         return App.Api.loadSnapshot().then(function() {
           _hideLoading();
@@ -513,7 +596,7 @@
       const devSel = document.getElementById('dev-parent-select');
       if (devSel) {
         devSel.innerHTML = Object.keys(uniqueParents).map(function(email) {
-          return '<option value="' + email + '">' + uniqueParents[email] + ' (' + email + ')</option>';
+          return '<option value="' + App.Utils.esc(email) + '">' + App.Utils.esc((uniqueParents[email] || '') + ' (' + email + ')') + '</option>';
         }).join('');
         if (App.clientParent) devSel.value = App.clientParent;
         else App.clientParent = Object.keys(uniqueParents)[0] || '';
@@ -522,7 +605,7 @@
       const devTeacherSel = document.getElementById('dev-teacher-select');
       if (devTeacherSel) {
         devTeacherSel.innerHTML = staff.map(function(s) {
-          return '<option value="' + s.id + '">' + App.Utils.esc(s.fullName) + '</option>';
+          return '<option value="' + App.Utils.esc(s.id) + '">' + App.Utils.esc(s.fullName) + '</option>';
         }).join('');
         if (App.currentTeacher) devTeacherSel.value = App.currentTeacher;
         else App.currentTeacher = (staff[0] && staff[0].id) || '';
@@ -532,7 +615,7 @@
       const headerTeacherSel = document.getElementById('teacher-select');
       if (headerTeacherSel) {
         headerTeacherSel.innerHTML = staff.map(function(s) {
-          return '<option value="' + s.id + '">' + App.Utils.esc(s.fullName) + '</option>';
+          return '<option value="' + App.Utils.esc(s.id) + '">' + App.Utils.esc(s.fullName) + '</option>';
         }).join('');
         if (App.currentTeacher) headerTeacherSel.value = App.currentTeacher;
       }

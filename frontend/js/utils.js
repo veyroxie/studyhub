@@ -107,19 +107,65 @@
         _trapFocusHandler = null;
       }
       const overlay = document.getElementById('modal-overlay');
-      overlay.classList.add('hidden');
-      overlay.classList.remove('flex');
+      // Symmetrical exit: fade out over 160ms before clearing. The CSS
+      // animation `sh-modal-exit` runs the overlay + content together.
+      // Skip animation when the overlay is already hidden (defensive
+      // against double-clicks).
+      if (overlay.classList.contains('hidden')) return;
+      overlay.classList.add('sh-modal-exit');
       document.body.style.overflow = '';
-      document.getElementById('modal-content').innerHTML = '';
-      // Restore focus to previously focused element
-      if (_previousFocus && _previousFocus.focus) {
-        _previousFocus.focus();
-        _previousFocus = null;
+      var prev = _previousFocus;
+      _previousFocus = null;
+      setTimeout(function() {
+        overlay.classList.remove('sh-modal-exit');
+        overlay.classList.add('hidden');
+        overlay.classList.remove('flex');
+        document.getElementById('modal-content').innerHTML = '';
+        if (prev && prev.focus) prev.focus();
+      }, 160);
+    },
+
+    // withLoading wraps an async action behind a clicked button so the
+    // user gets immediate visual feedback: spinner + disabled state for
+    // the duration of the fn. Pass the button element OR a CSS selector;
+    // returns whatever the async fn returns.
+    //
+    //   await App.Utils.withLoading(submitBtn, async () => {
+    //     await App.Api.post('/api/students', payload);
+    //   });
+    //
+    // Safe to call multiple times — the button's original HTML is
+    // captured before the first call and restored after the last.
+    async withLoading(btn, fn) {
+      if (typeof btn === 'string') btn = document.querySelector(btn);
+      if (!btn || !btn.tagName) return fn();
+      var orig = btn._origHTML;
+      if (orig == null) {
+        orig = btn.innerHTML;
+        btn._origHTML = orig;
+      }
+      btn.disabled = true;
+      btn.innerHTML = '<span class="sh-spinner" aria-hidden="true"></span>'
+        + '<span style="margin-left:0.5em">' + orig + '</span>';
+      try {
+        return await fn();
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        btn._origHTML = null;
       }
     },
-    showToast(message, type, duration) {
+    // showToast renders a stacked toast (top-right by default; theme B
+    // moves them above the dock). When `opts.action` is provided, an
+    // inline button appears next to the message — used by the undoable
+    // delete pattern:
+    //   App.Utils.showToast('Invoice deleted', 'info', 6000, {
+    //     action: { label: 'Undo', onClick: () => restoreFn() }
+    //   });
+    showToast(message, type, duration, opts) {
       type = type || 'success';
       duration = duration || 4000;
+      opts = opts || {};
       var colors = { success:'bg-emerald-500', info:'bg-blue-500', warning:'bg-amber-500', error:'bg-red-500' };
       var icons = { success:'&#10003;', info:'&#8505;', warning:'&#9888;', error:'&#10005;' };
       var container = _getToastContainer();
@@ -131,17 +177,44 @@
 
       var el = document.createElement('div');
       el.className = 'sh-toast flex items-center gap-3 px-4 py-3 rounded-xl text-white shadow-2xl ' + (colors[type] || colors.info);
-      el.innerHTML =
-        '<span class="text-base font-bold">' + (icons[type] || '&#8505;') + '</span>' +
-        '<span class="text-sm font-medium flex-1">' + message + '</span>' +
-        '<button style="pointer-events:auto;background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:14px;padding:2px 4px;line-height:1" aria-label="Close">&times;</button>';
+      // Build with text nodes, not innerHTML — the message can come from a
+      // server error string or a broadcast student name and must never be
+      // parsed as HTML.
+      var iconSpan = document.createElement('span');
+      iconSpan.className = 'text-base font-bold';
+      iconSpan.innerHTML = icons[type] || '&#8505;';
+      var msgSpan = document.createElement('span');
+      msgSpan.className = 'text-sm font-medium flex-1';
+      msgSpan.textContent = String(message == null ? '' : message);
+      var closeBtn = document.createElement('button');
+      closeBtn.setAttribute('aria-label', 'Close');
+      closeBtn.setAttribute('style', 'pointer-events:auto;background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:14px;padding:2px 4px;line-height:1');
+      closeBtn.innerHTML = '&times;';
+      el.appendChild(iconSpan);
+      el.appendChild(msgSpan);
+
+      // Inline action (Undo / Retry / etc.). Clicking the action runs the
+      // callback AND dismisses the toast — the typical undo flow doesn't
+      // want both the toast and the row to keep flashing.
+      if (opts.action && opts.action.label && typeof opts.action.onClick === 'function') {
+        var actBtn = document.createElement('button');
+        actBtn.textContent = opts.action.label;
+        actBtn.setAttribute('style', 'background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;font-weight:700;font-size:0.78rem;padding:0.25rem 0.65rem;border-radius:6px;cursor:pointer;margin-right:0.35rem');
+        actBtn.addEventListener('click', function() {
+          try { opts.action.onClick(); } catch(e) {}
+          _removeToast(el);
+        });
+        el.appendChild(actBtn);
+      }
+
+      el.appendChild(closeBtn);
 
       // Announce to screen readers
       var announcer = document.getElementById('live-announcer');
-      if (announcer) announcer.textContent = message;
+      if (announcer) announcer.textContent = String(message == null ? '' : message);
 
       // Close button handler
-      el.querySelector('button').addEventListener('click', function() { _removeToast(el); });
+      closeBtn.addEventListener('click', function() { _removeToast(el); });
 
       container.appendChild(el);
 

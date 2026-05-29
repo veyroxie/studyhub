@@ -7,7 +7,9 @@ import (
 // ── Payroll ───────────────────────────────────────────────────────────────────
 
 func listPayroll(db *DB, c *Claims) []Payroll {
-	if c != nil && c.Role == "parent" {
+	// Payroll is admin/superadmin-only. Teachers previously saw every
+	// staff member's salary because only parents were filtered out.
+	if !isAdminRole(c) {
 		return []Payroll{}
 	}
 	tw, twArgs := scopeTenant(c, "")

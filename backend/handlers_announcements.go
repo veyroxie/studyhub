@@ -10,9 +10,45 @@ import (
 
 // ── Announcements ─────────────────────────────────────────────────────────────
 
+// announceVisibilityClause returns a WHERE-clause fragment + args that hide
+// drafts and pending-approval announcements from non-staff callers, plus
+// restrict the audience pool to "all" / "parents" for parents. Staff
+// (admin, superadmin, teacher) get the unfiltered set.
+func announceVisibilityClause(c *Claims) (string, []any) {
+	if c != nil && (c.Role == "admin" || c.Role == "superadmin" || c.Role == "teacher") {
+		return "", nil
+	}
+	// Parents see broadcast announcements ('all', 'parents') AND targeted
+	// class announcements ('class:<id>') for classes any of their children
+	// is enrolled in. Per-class targeting is used by the cancelled-class
+	// auto-announcement so the affected parents actually get notified.
+	// The class-id allow-list is built per-request below so each parent
+	// only sees their own children's classes.
+	return ` AND COALESCE(status,'published')='published' AND (audience IN ('all','parents') OR audience LIKE 'class:%')`, nil
+}
+
+// parentAnnouncementFilter post-filters the broad SQL result to drop
+// class-targeted rows whose class is not in the parent's enrollment set.
+// We can't easily filter in SQL because enrolled_classes is JSON text on
+// students, but the row count for a parent is small so this is cheap.
+func parentAnnouncementFilter(rows []Announcement, classIDs map[string]bool) []Announcement {
+	out := make([]Announcement, 0, len(rows))
+	for _, a := range rows {
+		if len(a.Audience) > 6 && a.Audience[:6] == "class:" {
+			if !classIDs[a.Audience[6:]] {
+				continue
+			}
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
 func listAnnouncements(db *DB, c *Claims) []Announcement {
 	tw, twArgs := scopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE 1=1`+tw+` ORDER BY created_on DESC`, twArgs...)
+	vw, vwArgs := announceVisibilityClause(c)
+	args := append(append([]any{}, twArgs...), vwArgs...)
+	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT 5000`, args...)
 	if err != nil {
 		return []Announcement{}
 	}
@@ -31,15 +67,20 @@ func listAnnouncements(db *DB, c *Claims) []Announcement {
 		a.ArchiveOn = nullStr(archiveOn)
 		out = append(out, a)
 	}
+	if c != nil && c.Role == "parent" {
+		out = parentAnnouncementFilter(out, parentClassIDs(db, c))
+	}
 	return out
 }
 
 func listAnnouncementsPaged(db *DB, c *Claims, p Pagination) ([]Announcement, int) {
 	tw, twArgs := scopeTenant(c, "")
+	vw, vwArgs := announceVisibilityClause(c)
+	baseArgs := append(append([]any{}, twArgs...), vwArgs...)
 	var total int
-	db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE 1=1`+tw, twArgs...).Scan(&total)
-	pageArgs := append(append([]any{}, twArgs...), p.Limit, p.Offset)
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE 1=1`+tw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
+	db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE 1=1`+tw+vw, baseArgs...).Scan(&total)
+	pageArgs := append(append([]any{}, baseArgs...), p.Limit, p.Offset)
+	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
 	if err != nil {
 		return []Announcement{}, total
 	}
@@ -57,6 +98,9 @@ func listAnnouncementsPaged(db *DB, c *Claims, p Pagination) ([]Announcement, in
 		}
 		a.ArchiveOn = nullStr(archiveOn)
 		out = append(out, a)
+	}
+	if c != nil && c.Role == "parent" {
+		out = parentAnnouncementFilter(out, parentClassIDs(db, c))
 	}
 	return out, total
 }
@@ -105,6 +149,7 @@ func handleAnnouncements(db *DB) http.HandlerFunc {
 				respondError(w, "could not create announcement", 500)
 				return
 			}
+			logAudit(db, c.Email, "announcement_created", "announcement", a.ID, a.Title)
 			respond(w, a)
 		}
 	}
@@ -113,7 +158,7 @@ func handleAnnouncements(db *DB) http.HandlerFunc {
 func handleAnnouncementDelete(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
@@ -132,7 +177,7 @@ func handleAnnouncementDelete(db *DB) http.HandlerFunc {
 func handleAnnouncementUpdate(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
@@ -148,6 +193,7 @@ func handleAnnouncementUpdate(db *DB) http.HandlerFunc {
 			respondError(w, "could not update announcement", 500)
 			return
 		}
+		logAudit(db, c.Email, "announcement_updated", "announcement", id, a.Title)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -155,7 +201,7 @@ func handleAnnouncementUpdate(db *DB) http.HandlerFunc {
 func handleAnnouncementApprove(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}

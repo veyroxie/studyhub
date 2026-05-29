@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 // ── Password Reset (public endpoint) ──────────────────────────────────────────
@@ -107,7 +105,7 @@ func handleSetPassword(db *DB) http.HandlerFunc {
 			return
 		}
 
-		hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+		hash, err := hashPasswordBytes(req.NewPassword)
 		if err != nil {
 			respondError(w, "server error", 500)
 			return
@@ -191,12 +189,15 @@ func handleResetPassword(db *DB) http.HandlerFunc {
 			return
 		}
 
-		hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+		hash, err := hashPasswordBytes(req.NewPassword)
 		if err != nil {
 			respondError(w, "server error", 500)
 			return
 		}
-		if _, err := db.Exec(`UPDATE users SET password_hash=? WHERE id=?`, string(hash), t.UserID.Int64); err != nil {
+		// Resetting the password also clears any pending lockout — otherwise
+		// a user who was locked out and reset their password would still hit
+		// the "account locked" wall on their next login.
+		if _, err := db.Exec(`UPDATE users SET password_hash=?, failed_login_count=0, locked_until=NULL WHERE id=?`, string(hash), t.UserID.Int64); err != nil {
 			respondError(w, "could not update password", 500)
 			return
 		}

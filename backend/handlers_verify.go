@@ -145,12 +145,37 @@ func handleResendVerification(db *DB) http.HandlerFunc {
 			return
 		}
 
-		// ── Branch 1: pending parent user ──────────────────────────────────
+		// ── Branch 1: pending user (parent OR teacher) ─────────────────────
+		// Teachers reach this branch when they were approved by admin (which
+		// creates the users row in pending_verification) but never clicked
+		// the set-password link. They need a SetPassword token + the
+		// teacher-welcome template, not the parent verify flow.
 		var userID int64
 		var userName sql.NullString
-		var userStatus string
-		err := db.QueryRow(`SELECT id, name, COALESCE(status,'active') FROM users WHERE email=?`, req.Email).Scan(&userID, &userName, &userStatus)
+		var userStatus, userRole string
+		err := db.QueryRow(`SELECT id, name, COALESCE(status,'active'), COALESCE(role,'parent') FROM users WHERE email=?`, req.Email).Scan(&userID, &userName, &userStatus, &userRole)
 		if err == nil && userStatus == "pending_verification" {
+			l := logFromReq(r).With("email", req.Email, "user_id", userID, "role", userRole)
+
+			if userRole == "teacher" {
+				invalidateOldTokens(db, req.Email, tokenPurposeSetPassword)
+				token, terr := createEmailToken(db, req.Email, tokenPurposeSetPassword, &userID, nil, setPasswordTokenTTL)
+				if terr != nil {
+					l.Error("resend-verification token create failed", "err", terr)
+					respond(w, generic)
+					return
+				}
+				setURL := appURL() + "/set-password.html?token=" + token
+				if err := mailer.Send(req.Email, "Welcome to The Study Hub — set your password", renderTeacherWelcomeEmail(nullStr(userName), setURL)); err != nil {
+					l.Error("resend-verification mail send failed", "err", err)
+				} else {
+					l.Info("teacher set-password link resent")
+				}
+				logAudit(db, req.Email, "verification_resent", "user", fmt.Sprintf("%d", userID), "teacher")
+				respond(w, generic)
+				return
+			}
+
 			var regID sql.NullString
 			db.QueryRow(`SELECT id FROM registrations WHERE email=? AND status='pending' AND COALESCE(type,'student')!='teacher' ORDER BY submitted_on DESC LIMIT 1`, req.Email).Scan(&regID)
 
@@ -161,7 +186,6 @@ func handleResendVerification(db *DB) http.HandlerFunc {
 				regPtr = &regID.String
 			}
 			token, terr := createEmailToken(db, req.Email, tokenPurposeVerifyParent, &userID, regPtr, verifyTokenTTL)
-			l := logFromReq(r).With("email", req.Email, "flow", "parent")
 			if terr != nil {
 				l.Error("resend-verification token create failed", "err", terr)
 				respond(w, generic)

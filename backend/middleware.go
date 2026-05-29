@@ -4,6 +4,7 @@ import (
 	"context"
 	crand "crypto/rand"
 	"encoding/hex"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -48,12 +49,60 @@ func (rl *rateLimiter) allow(ip string) bool {
 	return b.count <= 5
 }
 
-func realIP(r *http.Request) string {
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return ip
+// trustedProxyNets matches the loopback + private ranges that our reverse
+// proxy (Caddy) is allowed to occupy in production and development. Any
+// other peer is treated as untrusted and X-Real-IP / X-Forwarded-For are
+// ignored — otherwise an attacker reaching the app directly (or via a
+// misconfigured CDN) could spoof their source IP and bypass per-IP rate
+// limits.
+var trustedProxyNets = func() []*net.IPNet {
+	cidrs := []string{
+		"127.0.0.0/8",
+		"::1/128",
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"fc00::/7",
 	}
-	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
-		return ip
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		if _, n, err := net.ParseCIDR(c); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}()
+
+func isTrustedProxy(remote string) bool {
+	host, _, err := net.SplitHostPort(remote)
+	if err != nil {
+		host = remote
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range trustedProxyNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func realIP(r *http.Request) string {
+	if isTrustedProxy(r.RemoteAddr) {
+		if ip := r.Header.Get("X-Real-IP"); ip != "" {
+			return strings.TrimSpace(ip)
+		}
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			// X-Forwarded-For is a comma-separated chain — the
+			// left-most entry is the original client.
+			if i := strings.IndexByte(fwd, ','); i >= 0 {
+				return strings.TrimSpace(fwd[:i])
+			}
+			return strings.TrimSpace(fwd)
+		}
 	}
 	return r.RemoteAddr
 }

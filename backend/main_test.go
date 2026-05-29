@@ -50,7 +50,7 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 	r.Post("/api/auth/login", handleLogin(db))
 	r.Get("/ws", hub.handleWS())
 	r.Group(func(r chi.Router) {
-		r.Use(jwtMiddleware)
+		r.Use(jwtMiddleware(db))
 		r.Get("/api/snapshot", handleSnapshot(db))
 		r.Get("/api/students", handleStudents(db))
 		r.Post("/api/students", handleStudents(db))

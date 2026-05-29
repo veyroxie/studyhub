@@ -5,9 +5,11 @@ import (
 	"crypto/rand"
 	"flag"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -94,8 +96,17 @@ func main() {
 	defer db.Close()
 	seedIfEmpty(db)
 	initMailer()
-	startJobs(db)
-	startCron(db)
+	initEmailBrand(db)
+	initUploads()
+
+	// Background jobs and cron share a single cancel context with the HTTP
+	// server. On SIGTERM we cancel, wait for each ticker loop to drain its
+	// current tick via the WaitGroup, then exit — no goroutines killed
+	// mid-write.
+	bgCtx, cancelBG := context.WithCancel(context.Background())
+	var bgWG sync.WaitGroup
+	startJobs(bgCtx, &bgWG, db)
+	startCron(bgCtx, &bgWG, db)
 
 	hub := newHub()
 	r := chi.NewRouter()
@@ -116,32 +127,44 @@ func main() {
 	}))
 	r.Use(rateLimitAPI)
 	r.Use(maxBodySize)
+	r.Use(metricsMiddleware)
+	r.Use(csrfMiddleware)
 
 	// Origin validation for state-changing requests (extra CSRF protection).
 	// Same-origin requests (frontend served by this same Go server) are
 	// always allowed — the check only blocks cross-origin POST/PUT/DELETE
-	// from domains we don't recognise.
+	// from domains we don't recognise. Compare the parsed Origin host
+	// exactly against the request host (and proxy-supplied X-Forwarded-Host)
+	// — substring matching is unsafe because "studyhub.fit.attacker.com"
+	// contains "studyhub.fit".
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Payment webhooks aren't browsers and don't carry Origin —
+			// signature verification inside the handler is the auth.
+			if strings.HasPrefix(r.URL.Path, "/api/payments/webhook/") {
+				next.ServeHTTP(w, r)
+				return
+			}
 			if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" {
 				origin := r.Header.Get("Origin")
 				if origin != "" {
 					ok := false
-					// Allow same-origin: check Origin against Host and
-					// X-Forwarded-Host (set by Caddy/nginx reverse proxy).
-					// Behind a proxy, r.Host is "localhost:8080" but the
-					// real origin is "https://studyhub.fit".
-					host := r.Host
-					if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
-						host = fwd
-					}
-					if strings.Contains(origin, host) {
-						ok = true
-					}
-					for _, ao := range allowedOrigins {
-						if origin == ao {
+					originURL, err := url.Parse(origin)
+					if err == nil && originURL.Host != "" {
+						host := r.Host
+						if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
+							host = fwd
+						}
+						if originURL.Host == host {
 							ok = true
-							break
+						}
+						if !ok {
+							for _, ao := range allowedOrigins {
+								if origin == ao {
+									ok = true
+									break
+								}
+							}
 						}
 					}
 					if !ok {
@@ -156,8 +179,20 @@ func main() {
 
 	// ── Public routes (no auth needed) ───────────────────────────────────────
 	r.Get("/api/health", handleHealth(db))
+	r.Get("/metrics", handleMetrics)
+	// OpenAPI spec — served from the binary's embedded copy so the schema
+	// always matches the running version of the API.
+	r.Get("/api/openapi.yaml", handleOpenAPI)
+	// Public branding — login / register pages fetch this before there's
+	// any session to render the correct centre name + colour.
+	r.Get("/api/branding", handleBranding(db))
+	// iCal feed is auth'd via a signed token in the URL — calendar apps
+	// don't speak cookies, so this lives outside the JWT middleware group.
+	r.Get("/api/calendar/{userID}/{token}", handleParentCalendarFeed(db))
 	r.With(rateLimitLogin).Post("/api/auth/login", handleLogin(db))
-	r.Post("/api/auth/logout", handleLogout)
+	r.With(rateLimitLogin).Post("/api/auth/mfa/verify", handleMFAVerify(db))
+	r.With(rateLimitLogin).Post("/api/auth/refresh", handleRefresh(db))
+	r.Post("/api/auth/logout", handleLogout(db))
 	r.With(rateLimitLogin).Post("/api/register", handleRegister(db))
 	r.With(rateLimitLogin).Post("/api/register-teacher", handleRegisterTeacher(db))
 	r.With(rateLimitLogin).Post("/api/forgot-password", handleForgotPassword(db))
@@ -167,15 +202,30 @@ func main() {
 	r.With(rateLimitLogin).Post("/api/resend-verification", handleResendVerification(db))
 	r.Get("/ws", hub.handleWS())
 
+	// Payment webhooks — public, signature-verified internally. No CSRF
+	// origin check needed (Stripe/Billplz are not browsers).
+	r.Post("/api/payments/webhook/billplz", handleBillplzWebhook(db))
+	r.Post("/api/payments/webhook/stripe", handleStripeWebhook(db))
+
 	// ── Authenticated routes ──────────────────────────────────────────────────
 	r.Group(func(r chi.Router) {
-		r.Use(jwtMiddleware)
+		r.Use(jwtMiddleware(db))
+		// Bind app.tenant_id GUC per request so RLS policies filter rows
+		// even when the handler forgets a tenant WHERE clause.
+		r.Use(rlsScope(db))
 		// Drop the tenant snapshot cache after every successful write so
 		// admins / parents see their changes on the next dashboard load
 		// instead of waiting up to snapshotCacheTTL.
 		r.Use(snapshotCacheInvalidator)
 
 		r.Get("/api/auth/me", handleMe(db))
+		r.Get("/api/account/export-my-data", handleDSARExport(db))
+		r.Get("/api/account/calendar-url", handleParentCalendarURL(db))
+		r.Get("/api/account/tos-status", handleToSStatus(db))
+		r.Post("/api/account/accept-tos", handleToSAccept(db))
+		r.Post("/api/auth/mfa/setup", handleMFASetup(db))
+		r.Post("/api/auth/mfa/confirm", handleMFAConfirm(db))
+		r.Post("/api/auth/mfa/disable", handleMFADisable(db))
 		r.Get("/api/auth/profile", handleProfile(db))
 		r.Put("/api/auth/profile", handleProfile(db))
 		r.Post("/api/auth/change-password", handleChangePassword(db))
@@ -208,6 +258,8 @@ func main() {
 			r.Get("/", handleInvoices(db))
 			r.Post("/", handleInvoices(db))
 			r.Put("/{id}/pay", handleInvoicePay(db))
+			r.Post("/{id}/checkout", handlePaymentCheckout(db))
+			r.Delete("/{id}", handleInvoiceDelete(db))
 			r.Get("/{id}/pdf", handleInvoicePDF(db, false))
 			r.Get("/{id}/receipt.pdf", handleInvoicePDF(db, true))
 		})
@@ -303,7 +355,7 @@ func main() {
 
 		// Payment proof upload/serve
 		r.Post("/api/upload-proof", handleUploadProof(db))
-		r.Get("/api/uploads/{filename}", handleServeUpload())
+		r.Get("/api/uploads/{filename}", handleServeUpload(db))
 
 		// Admin-only: user management + registration review + audit logs
 		r.Group(func(r chi.Router) {
@@ -312,6 +364,9 @@ func main() {
 			r.Post("/api/users", handleUsers(db))
 			r.Delete("/api/users/{id}", handleUserDelete(db))
 			r.Post("/api/users/{id}/verify", handleUserVerify(db))
+			r.Post("/api/users/{id}/unlock", handleAdminUnlockUser(db))
+			r.Get("/api/admin/settings", handleAdminSettings(db))
+			r.Put("/api/admin/settings", handleAdminSettings(db))
 			r.Post("/api/users/{id}/resend-verification", handleUserResendVerification(db))
 			r.Post("/api/admin/import", handleImport(db))
 			r.Post("/api/admin/clear-seed", handleClearSeedData(db))
@@ -328,8 +383,9 @@ func main() {
 	if _, err := os.Stat(frontendDir); os.IsNotExist(err) {
 		frontendDir = "./frontend"
 	}
-	fs := http.FileServer(http.Dir(frontendDir))
-	r.Handle("/*", fs)
+	// Static assets get Cache-Control + ETag. HTML shells fall through to
+	// the bare fileserver so deploys are immediately visible.
+	r.Handle("/*", staticCacheHandler(frontendDir))
 
 	logger.Info("server ready", "addr", ":"+*port, "db", "postgresql")
 	server := &http.Server{
@@ -357,6 +413,18 @@ func main() {
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("forced shutdown", "err", err)
 		os.Exit(1)
+	}
+
+	// Signal background loops to exit at their next select, then wait for
+	// each in-flight tick to finish so we don't kill a goroutine mid-tx.
+	cancelBG()
+	bgDone := make(chan struct{})
+	go func() { bgWG.Wait(); close(bgDone) }()
+	select {
+	case <-bgDone:
+		logger.Info("background jobs stopped cleanly")
+	case <-time.After(15 * time.Second):
+		logger.Warn("background jobs did not stop within 15s — exiting anyway")
 	}
 	logger.Info("server stopped")
 }

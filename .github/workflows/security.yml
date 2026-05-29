@@ -1,0 +1,100 @@
+name: security
+
+# Runs on every PR + weekly so CVE advisories that drop after merge still
+# get flagged. govulncheck scans Go module imports against the official
+# vulnerability database; trivy scans the production Docker image for OS-
+# package + library CVEs.
+#
+# Both are non-blocking by default (continue-on-error: true) — wire them
+# into branch protection once the baseline is clean. Out-of-the-box,
+# a fresh Go 1.24 + Debian-slim image typically reports zero highs.
+
+on:
+  pull_request:
+    branches: [main, prod]
+  schedule:
+    - cron: '0 6 * * 1'  # Mon 06:00 UTC — weekly drift check
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write  # upload SARIF to GitHub Security tab
+
+jobs:
+  govulncheck:
+    name: Go vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Scan
+        working-directory: backend
+        run: govulncheck ./...
+        continue-on-error: true
+
+  trivy-image:
+    name: Trivy image scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t studyhub-api:scan -f backend/Dockerfile .
+      - name: Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: 'studyhub-api:scan'
+          format: 'sarif'
+          output: 'trivy-image.sarif'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+        continue-on-error: true
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+
+  trivy-fs:
+    name: Trivy filesystem scan (deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy FS
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs.sarif'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+        continue-on-error: true
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+
+  gosec:
+    name: gosec (static analysis)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Run gosec
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt=sarif -out=gosec.sarif ./backend/...'
+        continue-on-error: true
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif

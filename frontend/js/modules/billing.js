@@ -114,6 +114,7 @@
       +   '<h1 class="text-2xl font-bold text-slate-800">Billing</h1>'
       +   (isAdmin
           ? '<div class="flex gap-2">'
+          + '<button onclick="App.Billing._generateMonthly()" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700" title="Run the monthly invoice + payroll job for this month">Generate Monthly</button>'
           + '<button onclick="App.Billing._exportCSV()" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Export CSV</button>'
           + '<button onclick="App.Billing._createModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Create Invoice</button>'
           + '</div>'
@@ -190,7 +191,7 @@
                 + '<td class="td">'
                 +   '<div style="display:flex;align-items:center;gap:4px">'
                 +   App.Utils.statusBadge(inv.status)
-                +   (inv.paymentProof ? '<a href="/' + App.Utils.esc(inv.paymentProof) + '" target="_blank" title="View receipt" style="display:inline-flex;align-items:center;color:#94a3b8;hover:color:#374151"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></a>' : '')
+                +   (inv.paymentProof ? '<a href="/api/' + App.Utils.esc(inv.paymentProof) + '" target="_blank" title="View receipt" style="display:inline-flex;align-items:center;color:#94a3b8;hover:color:#374151"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></a>' : '')
                 +   '</div>'
                 +   (inv.status === 'Pending Verification' && inv.paymentMethod ? '<div style="font-size:0.68rem;color:#94a3b8;margin-top:3px">' + App.Utils.esc(inv.paymentMethod) + (inv.paidOn ? ' · ' + App.Utils.formatDate(inv.paidOn) : '') + '</div>' : '')
                 + '</td>'
@@ -214,7 +215,7 @@
                   + '</div>'
                   + '</td>'
                   : isClient && (inv.status === 'Unpaid' || inv.status === 'Overdue')
-                  ? '<td class="td"><div style="display:flex;gap:0.5rem;align-items:center;justify-content:flex-end;flex-wrap:wrap"><a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="font-size:0.7rem;color:#475569;text-decoration:underline">Invoice PDF</a><button onclick="App.Billing._parentSubmitPaid(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer;white-space:nowrap">I\'ve Paid</button></div></td>'
+                  ? '<td class="td"><div style="display:flex;gap:0.5rem;align-items:center;justify-content:flex-end;flex-wrap:wrap"><a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="font-size:0.7rem;color:#475569;text-decoration:underline">Invoice PDF</a><button onclick="App.Billing._payOnline(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:#0a0a0a;color:#ffffff;border:none;border-radius:7px;cursor:pointer;white-space:nowrap">Pay Online</button><button onclick="App.Billing._parentSubmitPaid(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer;white-space:nowrap">I\'ve Paid</button></div></td>'
                   : isClient && inv.status === 'Pending Verification'
                   ? '<td class="td"><span style="font-size:0.72rem;color:#7c3aed;font-weight:600">Awaiting confirmation</span></td>'
                   : isClient && inv.status === 'Paid'
@@ -442,7 +443,8 @@
       fetch('/api/upload-proof', {
         method: 'POST',
         body: formData,
-        credentials: 'include'
+        credentials: 'include',
+        headers: (function(){ var m=document.cookie.match(/(?:^|;\s*)sh_csrf=([^;]+)/); return m?{'X-CSRF-Token':decodeURIComponent(m[1])}:{}; })()
       })
       .then(function(res) {
         if (!res.ok) throw new Error('Upload failed');
@@ -480,18 +482,12 @@
         App.Utils.showToast('Marked paid · ' + method, 'success');
         App.Notifs.refresh();
         App.Router.refresh();
-      }).catch(function() {
-        // Fallback: update locally
-        var updated = invoices.map(function(i) {
-          return i.id === invId ? Object.assign({}, i, { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method }) : i;
-        });
-        App.Store.set({ invoices: updated });
-        _checkReferralMilestoneClient(inv.studentId);
-        App.Utils.hideModal(true);
-        App.Utils.showToast('Marked paid · ' + method, 'success');
-        App.Notifs.refresh();
-        App.Router.refresh();
       });
+    // No local fallback: when the server rejects (e.g. missing reference
+    // number for non-cash), App.Api auto-toasts the error and we leave the
+    // status untouched. The previous fallback wrote Paid locally even on a
+    // 5xx, then the next snapshot reload silently reverted it — making the
+    // admin think the payment was logged when it wasn't.
   }
 
   // _checkReferralMilestoneClient counts paid Monthly invoices for a student
@@ -673,7 +669,8 @@
       fetch('/api/upload-proof', {
         method: 'POST',
         body: formData,
-        credentials: 'include'
+        credentials: 'include',
+        headers: (function(){ var m=document.cookie.match(/(?:^|;\s*)sh_csrf=([^;]+)/); return m?{'X-CSRF-Token':decodeURIComponent(m[1])}:{}; })()
       })
       .then(function(res) {
         if (!res.ok) throw new Error('Upload failed');
@@ -738,14 +735,14 @@
       if (isImage) {
         proofSection = '<div style="margin-bottom:1rem">'
           + '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Payment Receipt</p>'
-          + '<a href="/' + App.Utils.esc(inv.paymentProof) + '" target="_blank">'
-          + '<img src="/' + App.Utils.esc(inv.paymentProof) + '" style="max-width:100%;max-height:300px;border-radius:10px;border:1px solid #e2e8f0;cursor:pointer">'
+          + '<a href="/api/' + App.Utils.esc(inv.paymentProof) + '" target="_blank">'
+          + '<img src="/api/' + App.Utils.esc(inv.paymentProof) + '" style="max-width:100%;max-height:300px;border-radius:10px;border:1px solid #e2e8f0;cursor:pointer">'
           + '</a>'
           + '</div>';
       } else {
         proofSection = '<div style="margin-bottom:1rem">'
           + '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Payment Receipt</p>'
-          + '<a href="/' + App.Utils.esc(inv.paymentProof) + '" target="_blank" style="display:inline-flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;text-decoration:none;color:#374151;font-size:0.82rem;font-weight:600">'
+          + '<a href="/api/' + App.Utils.esc(inv.paymentProof) + '" target="_blank" style="display:inline-flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;text-decoration:none;color:#374151;font-size:0.82rem;font-weight:600">'
           + '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
           + 'View PDF Receipt'
           + '</a></div>';
@@ -793,12 +790,70 @@
   }
 
   async function _deleteInvoice(invoiceId) {
-    var ok = await App.Utils.showConfirm({ title: 'Delete invoice', message: 'This cannot be undone.', confirmLabel: 'Delete', danger: true });
+    var ok = await App.Utils.showConfirm({ title: 'Delete invoice', message: 'This will be voided and removed from active reports.', confirmLabel: 'Delete', danger: true });
     if (!ok) return;
-    const state = App.Store.get();
-    App.Store.set({ invoices: state.invoices.filter(function(inv) { return inv.id !== invoiceId; }) });
-    App.Utils.showToast('Invoice deleted', 'info');
+    var prev = App.Api.optimisticRemove('invoices', invoiceId);
     App.Router.refresh();
+
+    // Optimistic + undoable: defer the actual DELETE for ~6s so the user
+    // can hit Undo from the toast. Pressing Undo restores the local
+    // store and cancels the pending DELETE.
+    var cancelled = false;
+    App.Utils.showToast('Invoice deleted', 'info', 6000, {
+      action: {
+        label: 'Undo',
+        onClick: function() {
+          cancelled = true;
+          App.Store.set({ invoices: prev });
+          App.Router.refresh();
+        }
+      }
+    });
+    setTimeout(async function() {
+      if (cancelled) return;
+      try {
+        await App.Api.del('/api/invoices/' + invoiceId);
+        App.Api.loadSnapshot().catch(function(){});
+      } catch (err) {
+        App.Store.set({ invoices: prev });
+        App.Router.refresh();
+      }
+    }, 5500);
+  }
+
+  // _payOnline kicks off a hosted-checkout flow with the configured gateway
+  // (Billplz / Stripe). The server returns a redirect URL; we navigate to it
+  // and the gateway POSTs back to /api/payments/webhook/* on payment.
+  async function _payOnline(invoiceId) {
+    try {
+      var res = await App.Api.post('/api/invoices/' + invoiceId + '/checkout', {});
+      if (res && res.url) {
+        window.location.href = res.url;
+      } else {
+        App.Utils.showToast('Could not start checkout', 'error');
+      }
+    } catch (err) {
+      // App.Api auto-toasts; if the gateway is unconfigured it returns 502.
+    }
+  }
+
+  // _generateMonthly fires the manual cron — useful when admin needs to
+  // catch up after a missed window or after onboarding new students mid-month.
+  // The backend runs in a goroutine and returns 202 immediately.
+  async function _generateMonthly() {
+    var ok = await App.Utils.showConfirm({
+      title: 'Generate monthly invoices?',
+      message: 'This will create this month\'s subscription invoices + last month\'s payroll for any active student/staff that doesn\'t already have one. Safe to run multiple times — duplicates are skipped.',
+      confirmLabel: 'Run',
+    });
+    if (!ok) return;
+    try {
+      await App.Api.post('/api/admin/cron/run-monthly-invoices', {});
+      App.Utils.showToast('Generation started — refresh in ~30 seconds to see new rows', 'info');
+      setTimeout(function() { App.Api.loadSnapshot().then(function() { App.Router.refresh(); }); }, 25000);
+    } catch (err) {
+      // Auto-toasted (e.g. 409 if another run is in flight).
+    }
   }
 
   function _editModal(invoiceId) {
@@ -1357,6 +1412,8 @@
     _verifyPaid: _verifyPaid,
     _confirmVerify: _confirmVerify,
     _deleteInvoice: _deleteInvoice,
+    _generateMonthly: _generateMonthly,
+    _payOnline: _payOnline,
     _editModal: _editModal,
     _createModal: _createModal,
     checkLoginNotifications: checkLoginNotifications,

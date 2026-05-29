@@ -21,6 +21,11 @@
       _modules[pageId] = module;
     },
     navigate(pageId) {
+      // analytics.js is lazy-loaded — kick the loader before we try to
+      // render. The render will run when the module registers via
+      // _modules[pageId] once the script has parsed.
+      if (pageId === 'analytics' && window.__loadAnalytics) window.__loadAnalytics();
+
       document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
       document.querySelectorAll('.nav-btn').forEach(function(b) { b.classList.remove('active'); b.removeAttribute('aria-current'); });
 

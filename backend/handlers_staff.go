@@ -1,12 +1,56 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 )
+
+// ensureTeacherUserAccount creates a teacher login row + email if the staff
+// member doesn't already have one. Lets Add Staff produce a usable login
+// without a separate self-register-then-approve dance.
+func ensureTeacherUserAccount(db *DB, r *http.Request, tid int, email, fullName string) {
+	if email == "" {
+		return
+	}
+	var existing int
+	db.QueryRow(`SELECT id FROM users WHERE email=?`, email).Scan(&existing)
+	if existing > 0 {
+		return
+	}
+	placeholderBytes := make([]byte, 32)
+	if _, err := rand.Read(placeholderBytes); err != nil {
+		logger.Error("ensureTeacherUserAccount: rand failed", "err", err)
+		return
+	}
+	placeholderHash, err := hashPassword(hex.EncodeToString(placeholderBytes))
+	if err != nil {
+		logger.Error("ensureTeacherUserAccount: hash failed", "err", err)
+		return
+	}
+	var userID int64
+	if err := db.QueryRow(`INSERT INTO users(tenant_id,email,password_hash,role,name,status) VALUES(?,?,?,?,?,?) ON CONFLICT(email) DO NOTHING RETURNING id`,
+		tid, email, placeholderHash, "teacher", fullName, "pending_verification").Scan(&userID); err != nil {
+		return
+	}
+	tok, terr := createEmailToken(db, email, tokenPurposeSetPassword, &userID, nil, setPasswordTokenTTL)
+	if terr != nil {
+		logFromReq(r).Error("ensureTeacherUserAccount: token create failed", "err", terr, "email", email)
+		return
+	}
+	setURL := appURL() + "/set-password.html?token=" + tok
+	go func() {
+		if err := mailer.Send(email, "Welcome to The Study Hub — set your password", renderTeacherWelcomeEmail(fullName, setURL)); err != nil {
+			logger.Error("teacher welcome email failed", "err", err, "email", email)
+		}
+	}()
+	logAudit(db, "system", "teacher_user_created", "user", fmt.Sprintf("%d", userID), "via add-staff")
+}
 
 // ── Staff ─────────────────────────────────────────────────────────────────────
 
@@ -40,6 +84,22 @@ func listStaff(db *DB, c *Claims) []Staff {
 			s.Salary = 0
 			s.HourlyRate = 0
 			s.NRIC = ""
+		} else if c != nil && c.Role != "superadmin" {
+			// Admins (non-super) see a masked NRIC — last 4 only. Full value
+			// is reserved for superadmin / DPO-equivalent access. Reduces
+			// blast radius if an admin account is compromised.
+			s.NRIC = maskNRIC(s.NRIC)
+		}
+		// Parents see only what they need to recognise the teacher on
+		// the schedule: name + role. Strip personal phone, personal
+		// email, emergency contact, join date and employment metadata.
+		if c != nil && c.Role == "parent" {
+			s.Phone = ""
+			s.Email = ""
+			s.EmergencyName = ""
+			s.EmergencyPhone = ""
+			s.JoinDate = ""
+			s.EmploymentType = ""
 		}
 		out = append(out, s)
 	}
@@ -53,7 +113,7 @@ func handleStaff(db *DB) http.HandlerFunc {
 		case http.MethodGet:
 			respond(w, listStaff(db, c))
 		case http.MethodPost:
-			if c.Role != "admin" {
+			if !isAdminRole(c) {
 				respondError(w, "admin only", 403)
 				return
 			}
@@ -81,6 +141,13 @@ func handleStaff(db *DB) http.HandlerFunc {
 				respondError(w, "could not create staff", 500)
 				return
 			}
+			logAudit(db, c.Email, "staff_created", "staff", s.ID, s.FullName)
+			// If staff is a teacher (default), create login + welcome email.
+			// Admin role is created without a login here — admin users are
+			// managed via /api/users (separate flow with explicit role assignment).
+			if s.Role == "Teacher" || s.Role == "Senior Teacher" {
+				ensureTeacherUserAccount(db, r, tid, s.Email, s.FullName)
+			}
 			respond(w, s)
 		}
 	}
@@ -92,7 +159,7 @@ func handleStaffByID(db *DB) http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		switch r.Method {
 		case http.MethodPut:
-			if c == nil || c.Role != "admin" {
+			if !isAdminRole(c) {
 				respondError(w, "admin only", 403)
 				return
 			}
@@ -117,7 +184,7 @@ func handleStaffByID(db *DB) http.HandlerFunc {
 			respond(w, s)
 
 		case http.MethodDelete:
-			if c == nil || c.Role != "admin" {
+			if !isAdminRole(c) {
 				respondError(w, "admin only", 403)
 				return
 			}

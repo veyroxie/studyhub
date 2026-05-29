@@ -11,6 +11,16 @@
   // The JWT token lives in an HttpOnly cookie — JS never touches it directly.
   const OPTS = { credentials: 'include' };
 
+  // _csrfToken reads the server-issued sh_csrf cookie. The server sets this
+  // on any response where the request didn't already carry it (see the Go
+  // csrfMiddleware). State-changing requests echo it back in X-CSRF-Token
+  // as the second half of the double-submit pattern — attackers on another
+  // origin can't read the cookie, so they can't forge the header.
+  function _csrfToken() {
+    var m = document.cookie.match(/(?:^|;\s*)sh_csrf=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
   App.Api = {
     _user: null,
 
@@ -31,10 +41,40 @@
       return this._user || null;
     },
 
+    // _tryRefresh attempts a silent access-token rotation. Returns true on
+    // success. Single-flighted so concurrent 401s from a tab don't kick
+    // off N parallel rotations (which the server would treat as token
+    // reuse and burn the whole session). The first 401 starts the
+    // rotation; subsequent ones wait on the same promise.
+    _refreshInFlight: null,
+    async _tryRefresh() {
+      if (!this._refreshInFlight) {
+        const headers = {};
+        const csrf = _csrfToken();
+        if (csrf) headers['X-CSRF-Token'] = csrf;
+        this._refreshInFlight = fetch(BASE + '/api/auth/refresh', {
+          method: 'POST',
+          headers: headers,
+          credentials: 'include'
+        }).then(function(r) {
+          return r.ok;
+        }).catch(function() {
+          return false;
+        }).finally(() => { this._refreshInFlight = null; });
+      }
+      return this._refreshInFlight;
+    },
+
     async login(email, password, rememberMe) {
+      // Login is CSRF-exempt server-side (no session yet), but we still
+      // send the header if available — keeps the flow consistent and
+      // primes the cookie for the post-login session.
+      const headers = { 'Content-Type': 'application/json' };
+      const csrf = _csrfToken();
+      if (csrf) headers['X-CSRF-Token'] = csrf;
       const res = await fetch(BASE + '/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify({ email, password, rememberMe: !!rememberMe }),
         credentials: 'include'
       });
@@ -50,7 +90,32 @@
     async logout() {
       this._user = null;
       try { localStorage.removeItem('sh_remember'); } catch (e) {}
-      await fetch(BASE + '/api/auth/logout', { method: 'POST', credentials: 'include' });
+      var headers = {};
+      var csrf = _csrfToken();
+      if (csrf) headers['X-CSRF-Token'] = csrf;
+      await fetch(BASE + '/api/auth/logout', { method: 'POST', headers: headers, credentials: 'include' });
+    },
+
+    // optimisticRemove pulls a row out of the local Store immediately so
+    // the UI updates without waiting for a full snapshot round-trip.
+    // Returns the previous list so callers can restore on API failure.
+    //
+    //   collection — top-level key in App.Store ('students','invoices',...)
+    //   id         — primary key string
+    //
+    // Pattern at the call site:
+    //   var prev = App.Api.optimisticRemove('invoices', invoiceId);
+    //   try { await App.Api.del('/api/invoices/' + invoiceId); }
+    //   catch (err) { App.Store.set({invoices: prev}); throw err; }
+    //   App.Router.refresh();
+    //   App.Api.loadSnapshot();   // background reconcile, no await
+    optimisticRemove(collection, id) {
+      var state = App.Store.get();
+      var prev = state[collection] || [];
+      var next = prev.filter(function(x) { return x && x.id !== id; });
+      var patch = {}; patch[collection] = next;
+      App.Store.set(patch);
+      return prev;
     },
 
     // Load ALL data in one call and hydrate App.Store
@@ -69,9 +134,16 @@
     // when the caller wants to display the error inline in a form).
     async _request(method, path, body, opts) {
       opts = opts || {};
+      const headers = body ? { 'Content-Type': 'application/json' } : {};
+      // Attach CSRF header on state-changing requests. GET / HEAD / OPTIONS
+      // are exempt server-side so it's not required there.
+      if (method && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+        const csrf = _csrfToken();
+        if (csrf) headers['X-CSRF-Token'] = csrf;
+      }
       const init = {
         method: method,
-        headers: body ? { 'Content-Type': 'application/json' } : {},
+        headers: headers,
         credentials: 'include'
       };
       if (body !== undefined && body !== null) init.body = JSON.stringify(body);
@@ -85,6 +157,19 @@
         err.cause = networkErr;
         if (!opts.silent) this._toastError(err);
         throw err;
+      }
+
+      // Silent refresh: a 401 on the first attempt could be a freshly
+      // expired access token. Try /api/auth/refresh once; on success
+      // re-run the original request with the new cookie. If refresh
+      // itself fails (no/invalid refresh cookie), fall back to the
+      // existing logout path.
+      if (res.status === 401 && !opts._retried && path !== '/api/auth/refresh') {
+        const refreshed = await this._tryRefresh();
+        if (refreshed) {
+          opts._retried = true;
+          return this._request(method, path, body, opts);
+        }
       }
 
       if (res.status === 401) { this._handle401(); return null; }

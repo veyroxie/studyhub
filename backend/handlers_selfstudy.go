@@ -9,8 +9,16 @@ import (
 
 // ── Self-study Sessions ───────────────────────────────────────────────────────
 
-func parentStudentIDs(db *DB, email string) map[string]bool {
-	rows, err := db.Query(`SELECT id FROM students WHERE contact=? AND deleted_at IS NULL`, email)
+// parentStudentIDs returns the set of student IDs owned by the parent
+// (matched on contact email) — scoped to the parent's tenant so an email
+// shared across tenants cannot leak student ids.
+func parentStudentIDs(db *DB, c *Claims) map[string]bool {
+	if c == nil {
+		return map[string]bool{}
+	}
+	tw, twArgs := scopeTenant(c, "")
+	args := append([]any{c.Email}, twArgs...)
+	rows, err := db.Query(`SELECT id FROM students WHERE contact=? AND deleted_at IS NULL`+tw, args...)
 	if err != nil {
 		return nil
 	}
@@ -55,7 +63,7 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 		if isParent {
 			if studentID == "" {
 				all := listSelfStudy(db, c)
-				stuIDs := parentStudentIDs(db, c.Email)
+				stuIDs := parentStudentIDs(db, c)
 				filtered := []SelfStudySession{}
 				for _, s := range all {
 					if stuIDs[s.StudentID] {
@@ -65,7 +73,7 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 				respond(w, filtered)
 				return
 			}
-			stuIDs := parentStudentIDs(db, c.Email)
+			stuIDs := parentStudentIDs(db, c)
 			if !stuIDs[studentID] {
 				respond(w, []SelfStudySession{})
 				return
@@ -144,7 +152,7 @@ func handleListSelfStudy(db *DB) http.HandlerFunc {
 func handleCreateSelfStudy(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+		if !isStaffRole(c) {
 			respondError(w, "staff only", 403)
 			return
 		}
@@ -178,7 +186,7 @@ func handleCreateSelfStudy(db *DB) http.HandlerFunc {
 func handleDeleteSelfStudy(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || (c.Role != "admin" && c.Role != "teacher") {
+		if !isStaffRole(c) {
 			respondError(w, "staff only", 403)
 			return
 		}

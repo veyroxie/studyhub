@@ -12,7 +12,7 @@ import (
 
 func listHolidays(db *DB, c *Claims) []Holiday {
 	tw, twArgs := scopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,name,date,end_date,type,notes,created_by FROM holidays WHERE deleted_at IS NULL`+tw+` ORDER BY date`, twArgs...)
+	rows, err := db.Query(`SELECT id,name,date,end_date,type,notes,created_by FROM holidays WHERE deleted_at IS NULL`+tw+` ORDER BY date LIMIT 5000`, twArgs...)
 	if err != nil {
 		return []Holiday{}
 	}
@@ -45,7 +45,7 @@ func handleListHolidays(db *DB) http.HandlerFunc {
 func handleCreateHoliday(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
@@ -83,7 +83,7 @@ func handleCreateHoliday(db *DB) http.HandlerFunc {
 func handleUpdateHoliday(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
@@ -116,7 +116,7 @@ func handleUpdateHoliday(db *DB) http.HandlerFunc {
 func handleDeleteHoliday(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}

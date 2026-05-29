@@ -1,8 +1,11 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -203,7 +206,7 @@ func handleStudents(db *DB) http.HandlerFunc {
 			data, total := listStudentsPaged(db, c, p)
 			respond(w, PaginatedResponse{Data: data, Total: total, Limit: p.Limit, Offset: p.Offset})
 		case http.MethodPost:
-			if c.Role != "admin" {
+			if !isAdminRole(c) {
 				respondError(w, "admin only", 403)
 				return
 			}
@@ -254,12 +257,21 @@ func handleStudents(db *DB) http.HandlerFunc {
 			if s.PackageSelfStudyHours == 0 {
 				s.PackageSelfStudyHours = 4
 			}
+			// Siblings is derived from family membership — ignore any
+			// client-supplied value, persist an empty placeholder, then
+			// recompute the JSON for every member of this family in one pass.
 			_, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,medical_info,allergies,family_id,referred_by_family_id,package_amount,package_self_study_hours,subscription_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.ReferredByFamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.SubscriptionStatus)
+				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, jsonArr(s.EnrolledClasses), "[]", s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.ReferredByFamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.SubscriptionStatus)
 			if err != nil {
 				respondError(w, "server error", 500)
 				return
 			}
+			recomputeFamilySiblings(db, c, s.FamilyID)
+			recomputeClassEnrollment(db, c, s.EnrolledClasses)
+			// Ensure the parent (matched by contact email) has a login account.
+			// If not, create one in pending_verification status and email a
+			// set-password link so the parent can claim the account.
+			ensureParentUserAccount(db, r, tid, s.Contact, s.ParentName)
 			respond(w, s)
 		}
 	}
@@ -268,7 +280,7 @@ func handleStudents(db *DB) http.HandlerFunc {
 func handleStudent(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
@@ -285,20 +297,71 @@ func handleStudent(db *DB) http.HandlerFunc {
 			// the lowercased login email parents authenticate with.
 			s.Contact = strings.ToLower(strings.TrimSpace(s.Contact))
 			tw, twArgs := scopeTenant(c, "")
-			args := append([]any{s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), jsonArr(s.Siblings), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, id}, twArgs...)
-			if _, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,siblings=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=? WHERE id=?`+tw, args...); err != nil {
+			// Read previous family_id and enrolled_classes so we can recompute
+			// siblings + class counts on both sides when membership changes.
+			// siblings is derived — client input is ignored.
+			var oldFamilyID, oldEnrolledRaw string
+			oldArgs := append([]any{id}, twArgs...)
+			db.QueryRow(`SELECT COALESCE(family_id,''), COALESCE(enrolled_classes,'[]') FROM students WHERE id=?`+tw, oldArgs...).Scan(&oldFamilyID, &oldEnrolledRaw)
+			oldEnrolled := parseArr(oldEnrolledRaw)
+			// Capacity gate: any class the student is being ADDED to must
+			// still have room. Existing enrolments are not re-checked.
+			oldSet := map[string]bool{}
+			for _, c := range oldEnrolled {
+				oldSet[c] = true
+			}
+			for _, cid := range s.EnrolledClasses {
+				if oldSet[cid] {
+					continue
+				}
+				var enrolled, capacity int
+				capArgs := append([]any{cid}, twArgs...)
+				if err := db.QueryRow(`SELECT COALESCE(enrolled,0), COALESCE(capacity,0) FROM classes WHERE id=? AND deleted_at IS NULL`+tw, capArgs...).Scan(&enrolled, &capacity); err != nil {
+					respondError(w, "class not found: "+cid, http.StatusBadRequest)
+					return
+				}
+				if capacity > 0 && enrolled >= capacity {
+					respondError(w, "class is full: "+cid, http.StatusConflict)
+					return
+				}
+			}
+			args := append([]any{s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, jsonArr(s.EnrolledClasses), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, id}, twArgs...)
+			res, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=? WHERE id=?`+tw, args...)
+			if err != nil {
 				respondError(w, "could not update student", 500)
 				return
 			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				respondError(w, "student not found", http.StatusNotFound)
+				return
+			}
+			recomputeFamilySiblings(db, c, s.FamilyID)
+			if oldFamilyID != "" && oldFamilyID != s.FamilyID {
+				recomputeFamilySiblings(db, c, oldFamilyID)
+			}
+			recomputeClassEnrollment(db, c, append(append([]string{}, oldEnrolled...), s.EnrolledClasses...))
 			logAudit(db, c.Email, "student_updated", "student", id, s.FirstName+" "+s.LastName)
 			respond(w, s)
 		case http.MethodDelete:
 			tw, twArgs := scopeTenant(c, "")
+			// Read enrolled_classes and family_id before soft-delete so we can
+			// keep the class-enrollment counter and sibling JSON in sync.
+			var enrolledRaw, famID string
+			readArgs := append([]any{id}, twArgs...)
+			db.QueryRow(`SELECT COALESCE(enrolled_classes,'[]'), COALESCE(family_id,'') FROM students WHERE id=?`+tw, readArgs...).Scan(&enrolledRaw, &famID)
+			classIDs := parseArr(enrolledRaw)
 			args := append([]any{id}, twArgs...)
-			if _, err := db.Exec(`UPDATE students SET deleted_at=NOW() WHERE id=?`+tw, args...); err != nil {
+			res, err := db.Exec(`UPDATE students SET deleted_at=NOW() WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+			if err != nil {
 				respondError(w, "could not delete student", 500)
 				return
 			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				respondError(w, "student not found", http.StatusNotFound)
+				return
+			}
+			recomputeClassEnrollment(db, c, classIDs)
+			recomputeFamilySiblings(db, c, famID)
 			logAudit(db, c.Email, "student_deleted", "student", id, "soft deleted")
 			w.WriteHeader(http.StatusNoContent)
 		}
@@ -312,7 +375,7 @@ func handleStudent(db *DB) http.HandlerFunc {
 func handleStudentSubscription(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
@@ -353,6 +416,122 @@ func handleStudentSubscription(db *DB) http.HandlerFunc {
 		}
 		logAudit(db, c.Email, "subscription_"+body.Action, "student", id, newStatus)
 		respond(w, map[string]string{"subscriptionStatus": newStatus})
+	}
+}
+
+// ensureParentUserAccount creates a parent user for the given contact email
+// if one doesn't already exist. The user is placed in pending_verification
+// status with a discarded random password; we mint a set_password token and
+// email the link so the parent picks their own. Failures only log — the
+// student record is already created, so the admin can hit "resend" later
+// without retrying the whole operation.
+func ensureParentUserAccount(db *DB, r *http.Request, tid int, contact, parentName string) {
+	if contact == "" {
+		return
+	}
+	var existing int
+	db.QueryRow(`SELECT id FROM users WHERE email=?`, contact).Scan(&existing)
+	if existing > 0 {
+		return
+	}
+	placeholderBytes := make([]byte, 32)
+	if _, err := rand.Read(placeholderBytes); err != nil {
+		logger.Error("ensureParentUserAccount: rand failed", "err", err)
+		return
+	}
+	placeholderHash, err := hashPassword(hex.EncodeToString(placeholderBytes))
+	if err != nil {
+		logger.Error("ensureParentUserAccount: hash failed", "err", err)
+		return
+	}
+	var userID int64
+	if err := db.QueryRow(`INSERT INTO users(tenant_id,email,password_hash,role,name,status) VALUES(?,?,?,?,?,?) ON CONFLICT(email) DO NOTHING RETURNING id`,
+		tid, contact, placeholderHash, "parent", parentName, "pending_verification").Scan(&userID); err != nil {
+		return // existing row (race) or insert failed — nothing to follow up
+	}
+	tok, terr := createEmailToken(db, contact, tokenPurposeSetPassword, &userID, nil, setPasswordTokenTTL)
+	if terr != nil {
+		logFromReq(r).Error("ensureParentUserAccount: token create failed", "err", terr, "email", contact)
+		return
+	}
+	setURL := appURL() + "/set-password.html?token=" + tok
+	go func() {
+		if err := mailer.Send(contact, "Welcome to The Study Hub — set your password", renderParentWelcomeEmail(parentName, setURL)); err != nil {
+			logger.Error("parent welcome email failed", "err", err, "email", contact)
+		}
+	}()
+	logAudit(db, "system", "parent_user_created", "user", fmt.Sprintf("%d", userID), "via add-student")
+}
+
+// recomputeClassEnrollment recounts students enrolled in each given class and
+// writes the result back to classes.enrolled. The counter drifted whenever a
+// student PUT changed enrolled_classes without bumping classes.enrolled —
+// callers that mutate enrolled_classes should call this with the union of old
+// and new class IDs. Tenant-scoped so cross-tenant id collisions can't taint
+// the count.
+func recomputeClassEnrollment(db *DB, c *Claims, classIDs []string) {
+	if len(classIDs) == 0 {
+		return
+	}
+	tw, twArgs := scopeTenant(c, "")
+	seen := map[string]bool{}
+	for _, cid := range classIDs {
+		if cid == "" || seen[cid] {
+			continue
+		}
+		seen[cid] = true
+		var count int
+		countArgs := append([]any{cid}, twArgs...)
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM students WHERE deleted_at IS NULL AND enrolled_classes LIKE '%"'||?||'"%'`+tw,
+			countArgs...,
+		).Scan(&count); err != nil {
+			logger.Error("recompute class enrollment count failed", "err", err, "class_id", cid)
+			continue
+		}
+		updArgs := append([]any{count, cid}, twArgs...)
+		if _, err := db.Exec(`UPDATE classes SET enrolled=? WHERE id=?`+tw, updArgs...); err != nil {
+			logger.Error("recompute class enrollment update failed", "err", err, "class_id", cid)
+		}
+	}
+}
+
+// recomputeFamilySiblings rewrites the students.siblings JSON array for every
+// active student in the given family so each row reflects current membership.
+// This is the single source of truth: any handler that mutates family
+// membership (POST student, PUT student, relink) calls this to keep the JSON
+// in lockstep with family_id. Without it the siblings column drifted whenever
+// a new kid joined a family. Empty familyID is a no-op.
+func recomputeFamilySiblings(db *DB, c *Claims, familyID string) {
+	if familyID == "" {
+		return
+	}
+	tw, twArgs := scopeTenant(c, "")
+	args := append([]any{familyID}, twArgs...)
+	rows, err := db.Query(`SELECT id FROM students WHERE family_id=? AND deleted_at IS NULL`+tw, args...)
+	if err != nil {
+		logger.Error("recompute siblings query failed", "err", err, "family_id", familyID)
+		return
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	for _, id := range ids {
+		others := make([]string, 0, len(ids)-1)
+		for _, other := range ids {
+			if other != id {
+				others = append(others, other)
+			}
+		}
+		updArgs := append([]any{jsonArr(others), id}, twArgs...)
+		if _, err := db.Exec(`UPDATE students SET siblings=? WHERE id=?`+tw, updArgs...); err != nil {
+			logger.Error("recompute siblings update failed", "err", err, "student_id", id)
+		}
 	}
 }
 
@@ -406,7 +585,7 @@ type relinkResponse struct {
 func handleStudentRelink(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || c.Role != "admin" {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
@@ -436,10 +615,19 @@ func handleStudentRelink(db *DB) http.HandlerFunc {
 			return
 		}
 
+		// Read old family to recompute siblings on both sides.
+		var oldFamilyID string
+		oldFamArgs := append([]any{id}, twArgs...)
+		db.QueryRow(`SELECT COALESCE(family_id,'') FROM students WHERE id=?`+tw, oldFamArgs...).Scan(&oldFamilyID)
+
 		updArgs := append([]any{req.Contact, req.ParentName, famID, id}, twArgs...)
 		if _, err := db.Exec(`UPDATE students SET contact=?, parent_name=?, family_id=? WHERE id=?`+tw, updArgs...); err != nil {
 			respondError(w, "could not relink student", 500)
 			return
+		}
+		recomputeFamilySiblings(db, c, famID)
+		if oldFamilyID != "" && oldFamilyID != famID {
+			recomputeFamilySiblings(db, c, oldFamilyID)
 		}
 
 		detail := oldContact + " -> " + req.Contact

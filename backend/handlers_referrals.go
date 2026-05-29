@@ -64,7 +64,7 @@ func handleReferrals(db *DB) http.HandlerFunc {
 func handleReferralEarn(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || (c.Role != "admin" && c.Role != "superadmin") {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
@@ -88,9 +88,11 @@ func handleReferralEarn(db *DB) http.HandlerFunc {
 		// frontend tracks more (because invoices are localStorage-only) we accept
 		// the call regardless — the admin UI is the gate.
 		var paidCount int
-		db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE student_id=? AND type='Monthly' AND status='Paid' AND deleted_at IS NULL`, studentID).Scan(&paidCount)
+		countArgs := append([]any{studentID}, twArgs...)
+		db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE student_id=? AND type='Monthly' AND status='Paid' AND deleted_at IS NULL`+tw, countArgs...).Scan(&paidCount)
 
-		if _, err := db.Exec(`UPDATE referral_rewards SET status='earned', credits_remaining=3, paid_invoice_count=GREATEST(paid_invoice_count, ?), milestone_met_on=? WHERE id=?`, paidCount, today(), id); err != nil {
+		updArgs := append([]any{paidCount, today(), id}, twArgs...)
+		if _, err := db.Exec(`UPDATE referral_rewards SET status='earned', credits_remaining=3, paid_invoice_count=GREATEST(paid_invoice_count, ?), milestone_met_on=? WHERE id=?`+tw, updArgs...); err != nil {
 			respondError(w, "could not mark earned", 500)
 			return
 		}
@@ -107,7 +109,7 @@ func handleReferralEarn(db *DB) http.HandlerFunc {
 func handleReferralConsume(db *DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := claimsFrom(r)
-		if c == nil || (c.Role != "admin" && c.Role != "superadmin") {
+		if !isAdminRole(c) {
 			respondError(w, "admin only", 403)
 			return
 		}
@@ -132,7 +134,8 @@ func handleReferralConsume(db *DB) http.HandlerFunc {
 		// Read back the new state for the response.
 		var newStatus string
 		var newRemaining int
-		db.QueryRow(`SELECT status, credits_remaining FROM referral_rewards WHERE id=?`, id).Scan(&newStatus, &newRemaining)
+		readArgs := append([]any{id}, twArgs...)
+		db.QueryRow(`SELECT status, credits_remaining FROM referral_rewards WHERE id=?`+tw, readArgs...).Scan(&newStatus, &newRemaining)
 		logAudit(db, c.Email, "referral_credit_applied", "referral", id, "remaining="+itoa(newRemaining))
 		respond(w, map[string]any{"status": newStatus, "creditsRemaining": newRemaining})
 	}
@@ -162,16 +165,21 @@ func handleFamilyReferral(db *DB) http.HandlerFunc {
 		// Backfill code on read if it's somehow still empty (defence in depth).
 		if code == "" {
 			code = newReferralCode()
-			db.Exec(`UPDATE families SET referral_code=? WHERE id=? AND (referral_code IS NULL OR referral_code='')`, code, id)
+			backfillArgs := append([]any{code, id}, twArgs...)
+			db.Exec(`UPDATE families SET referral_code=? WHERE id=?`+tw+` AND (referral_code IS NULL OR referral_code='')`, backfillArgs...)
 		}
 
 		rewards := []ReferralReward{}
+		// Reuse the same tenant scope (alias r) so we don't leak rewards
+		// from another tenant should family ids ever collide.
+		rtw, rtwArgs := scopeTenant(c, "r")
+		rewArgs := append([]any{id}, rtwArgs...)
 		rows, _ := db.Query(`SELECT r.id, r.referrer_family_id, r.referred_student_id, r.status,
 		                            r.paid_invoice_count, r.credits_remaining, COALESCE(r.milestone_met_on,''),
 		                            COALESCE(s.first_name||' '||s.last_name,'')
 		                     FROM referral_rewards r
 		                     LEFT JOIN students s ON s.id = r.referred_student_id
-		                     WHERE r.referrer_family_id=? ORDER BY r.created_at DESC`, id)
+		                     WHERE r.referrer_family_id=?`+rtw+` ORDER BY r.created_at DESC`, rewArgs...)
 		if rows != nil {
 			defer rows.Close()
 			for rows.Next() {
@@ -226,25 +234,31 @@ func itoa(n int) string {
 
 // referralCheckMilestoneOnPay is called from handleInvoicePay after an invoice
 // is marked Paid. It updates paid_invoice_count and, if the count reaches 3,
-// flips the row to 'earned' state. Errors are swallowed — referral logic must
-// never break payment processing.
-func referralCheckMilestoneOnPay(db *DB, studentID string) {
+// flips the row to 'earned' state. Tenant-scoped so a paid invoice in tenant A
+// cannot accidentally settle a referral row owned by tenant B. Errors are
+// swallowed — referral logic must never break payment processing.
+func referralCheckMilestoneOnPay(db *DB, studentID string, c *Claims) {
+	tw, twArgs := scopeTenant(c, "")
 	var rrID, status string
-	if err := db.QueryRow(`SELECT id, status FROM referral_rewards WHERE referred_student_id=?`, studentID).Scan(&rrID, &status); err != nil {
+	selArgs := append([]any{studentID}, twArgs...)
+	if err := db.QueryRow(`SELECT id, status FROM referral_rewards WHERE referred_student_id=?`+tw, selArgs...).Scan(&rrID, &status); err != nil {
 		return
 	}
 	if status != "pending" {
 		return
 	}
 	var paid int
-	db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE student_id=? AND type='Monthly' AND status='Paid' AND deleted_at IS NULL`, studentID).Scan(&paid)
+	paidArgs := append([]any{studentID}, twArgs...)
+	db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE student_id=? AND type='Monthly' AND status='Paid' AND deleted_at IS NULL`+tw, paidArgs...).Scan(&paid)
 	if paid < 3 {
-		if _, err := db.Exec(`UPDATE referral_rewards SET paid_invoice_count=? WHERE id=?`, paid, rrID); err != nil {
+		updArgs := append([]any{paid, rrID}, twArgs...)
+		if _, err := db.Exec(`UPDATE referral_rewards SET paid_invoice_count=? WHERE id=?`+tw, updArgs...); err != nil {
 			logger.Error("failed to update referral paid_invoice_count", "err", err, "referral_reward_id", rrID)
 		}
 		return
 	}
-	if _, err := db.Exec(`UPDATE referral_rewards SET status='earned', credits_remaining=3, paid_invoice_count=?, milestone_met_on=? WHERE id=?`, paid, today(), rrID); err != nil {
+	milestoneArgs := append([]any{paid, today(), rrID}, twArgs...)
+	if _, err := db.Exec(`UPDATE referral_rewards SET status='earned', credits_remaining=3, paid_invoice_count=?, milestone_met_on=? WHERE id=?`+tw, milestoneArgs...); err != nil {
 		logger.Error("failed to update referral milestone", "err", err, "referral_reward_id", rrID)
 	}
 	logAudit(db, "system", "referral_milestone_met", "referral", rrID, "student="+studentID)

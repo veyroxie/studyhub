@@ -197,7 +197,10 @@
     }).sort(function(a, b) { return b.date.localeCompare(a.date); });
 
     if (myRecords.length === 0) {
-      return '<div style="background:#fff;border-radius:14px;border:2px dashed #e2e8f0;padding:3rem;text-align:center;color:#94a3b8;font-size:0.9rem">No attendance records found</div>';
+      return '<div style="background:#fff;border-radius:14px;border:1px solid var(--rule,#e2e8f0);overflow:hidden">'
+        + App.Utils.emptyState('No attendance records yet',
+            'Your child\'s check-ins for the selected date appear here once school marks them present.')
+        + '</div>';
     }
 
     var pagedRecords = myRecords.slice(_attClientPage * _ATT_PAGE_SIZE, (_attClientPage + 1) * _ATT_PAGE_SIZE);
@@ -405,7 +408,7 @@
     fb.style.opacity = '1';
     fb.innerHTML = '<div style="font-size:2rem;margin-bottom:0.5rem">' + (ok ? (scan.action === 'in' ? '✅' : '👋') : '❌') + '</div>'
       + '<div style="font-size:1.3rem;font-weight:800;color:' + (ok ? '#15803d' : '#dc2626') + '">' + App.Utils.esc(scan.name) + '</div>'
-      + '<div style="font-size:0.9rem;color:#64748b;margin-top:0.3rem">' + scan.msg + '</div>';
+      + '<div style="font-size:0.9rem;color:#64748b;margin-top:0.3rem">' + App.Utils.esc(scan.msg || '') + '</div>';
     fb.style.background = ok ? '#f0fdf4' : '#fef2f2';
     fb.style.border = '2px solid ' + (ok ? '#86efac' : '#fca5a5');
     fb.style.display = '';
@@ -984,7 +987,10 @@
   function _studentTabFiltered(myClasses) {
     const { students, attendance } = App.Store.get();
     if (myClasses.length === 0) {
-      return '<div style="padding:3rem;text-align:center;color:#94a3b8;font-size:0.85rem">No classes assigned to you yet</div>';
+      return '<div style="background:#fff;border-radius:14px;border:1px solid var(--rule,#e2e8f0);overflow:hidden">'
+        + App.Utils.emptyState('No classes assigned to you yet',
+            'Once admin assigns you to a class, the attendance roster shows here.')
+        + '</div>';
     }
     const selectedClass = myClasses.find(function(c) { return c.id === _attClassId; }) || myClasses[0];
     const enrolledStudents = selectedClass

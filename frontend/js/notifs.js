@@ -312,7 +312,14 @@
       var isRead  = !!_readIds[n.id];
       var colors  = _COLORS[n.severity] || _COLORS.info;
       var icon    = _ICONS[n.type] || _ICONS.billing;
-      return '<div onclick="App.Notifs._clickNotif(\'' + n.action + '\',\'' + n.id + '\')"'
+      // n.action and n.id are inlined into an onclick — escape both so a
+      // future contributor adding a name-derived id can't break the quoting.
+      var safeAction = App.Utils.esc(String(n.action || ''));
+      var safeId     = App.Utils.esc(String(n.id || ''));
+      // n.body is currently constructed with App.Utils.esc() at each call
+      // site, but render-time esc would double-escape. Defend the slot by
+      // requiring callers to pass safe HTML and keep the boundary explicit.
+      return '<div onclick="App.Notifs._clickNotif(\'' + safeAction + '\',\'' + safeId + '\')"'
         + ' class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors border-b border-slate-50 last:border-0' + (isRead ? ' opacity-50' : '') + '">'
         + '<div class="w-8 h-8 rounded-lg ' + colors.icon + ' flex items-center justify-center shrink-0 mt-0.5">' + icon + '</div>'
         + '<div class="flex-1 min-w-0">'
@@ -320,7 +327,7 @@
         +     '<span class="text-sm font-medium text-slate-800 leading-snug">' + App.Utils.esc(n.title) + '</span>'
         +     (!isRead ? '<span class="w-1.5 h-1.5 rounded-full ' + colors.dot + ' shrink-0"></span>' : '')
         +   '</div>'
-        +   '<div class="text-xs text-slate-500 mt-0.5 truncate">' + n.body + '</div>'
+        +   '<div class="text-xs text-slate-500 mt-0.5 truncate">' + (n.body || '') + '</div>'
         + '</div>'
         + '</div>';
     }).join('');

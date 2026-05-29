@@ -33,9 +33,11 @@ type invoicePDFData struct {
 	ReferralCredit  float64
 }
 
-func loadInvoicePDFData(db *DB, invoiceID string) (invoicePDFData, error) {
+func loadInvoicePDFData(db *DB, c *Claims, invoiceID string) (invoicePDFData, error) {
 	var d invoicePDFData
 	var paidOn sql.NullString
+	tw, twArgs := scopeTenant(c, "i")
+	args := append([]any{invoiceID}, twArgs...)
 	err := db.QueryRow(`
 		SELECT i.id, i.description, i.amount, i.due_date, i.created_on, i.paid_on, i.status,
 		       COALESCE(i.payment_method,''), COALESCE(i.reference_no,''),
@@ -44,8 +46,8 @@ func loadInvoicePDFData(db *DB, invoiceID string) (invoicePDFData, error) {
 		       COALESCE(s.parent_name,''), COALESCE(s.contact,'')
 		FROM invoices i
 		JOIN students s ON s.id = i.student_id
-		WHERE i.id = ? AND i.deleted_at IS NULL
-	`, invoiceID).Scan(
+		WHERE i.id = ? AND i.deleted_at IS NULL`+tw,
+		args...).Scan(
 		&d.InvoiceID, &d.Description, &d.Amount, &d.DueDate, &d.CreatedOn, &paidOn, &d.Status,
 		&d.PaymentMethod, &d.ReferenceNo,
 		&d.DiscountPct, &d.SiblingDiscount, &d.ReferralCredit,
@@ -71,7 +73,7 @@ func renderInvoicePDF(d invoicePDFData, paid bool) ([]byte, error) {
 
 	pdf.SetFont("Helvetica", "B", 22)
 	pdf.SetTextColor(15, 15, 15)
-	pdf.Cell(0, 10, "The Study Hub")
+	pdf.Cell(0, 10, brand().BrandName)
 	pdf.Ln(10)
 	pdf.SetFont("Helvetica", "", 10)
 	pdf.SetTextColor(120, 120, 120)
@@ -201,7 +203,7 @@ func handleInvoicePDF(db *DB, receipt bool) http.HandlerFunc {
 		c := claimsFrom(r)
 		id := chi.URLParam(r, "id")
 
-		d, err := loadInvoicePDFData(db, id)
+		d, err := loadInvoicePDFData(db, c, id)
 		if err != nil {
 			respondError(w, "invoice not found", 404)
 			return

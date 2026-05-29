@@ -68,16 +68,20 @@ func handleImport(db *DB) http.HandlerFunc {
 			}
 		}
 
+		tw, twArgs := scopeTenant(c, "")
+
 		familiesCreated := 0
 		usersCreated := 0
 		for _, p := range parents {
-			// Check if user already exists
+			// users.email is globally unique — lookup needs no tenant scope.
 			var existingID int64
 			if err := db.QueryRow(`SELECT id FROM users WHERE email=?`, p.email).Scan(&existingID); err == nil {
 				p.userID = existingID
-				// Find their family
+				// Family lookup must be tenant-scoped — contact email is
+				// not unique across tenants.
 				var fid string
-				db.QueryRow(`SELECT id FROM families WHERE contact=? AND deleted_at IS NULL`, p.email).Scan(&fid)
+				famArgs := append([]any{p.email}, twArgs...)
+				db.QueryRow(`SELECT id FROM families WHERE contact=? AND deleted_at IS NULL`+tw, famArgs...).Scan(&fid)
 				p.familyID = fid
 				continue
 			}
@@ -132,9 +136,13 @@ func handleImport(db *DB) http.HandlerFunc {
 				lastName = strings.Join(parts[1:], " ")
 			}
 
-			// Check for existing student by name match
+			// Check for existing student by case-insensitive normalised name
+			// match — scoped to caller's tenant. Without lower() / TRIM the
+			// re-import of a row with stray whitespace silently duplicated
+			// the student.
 			var existingCount int
-			db.QueryRow(`SELECT COUNT(*) FROM students WHERE first_name=? AND last_name=? AND deleted_at IS NULL`, firstName, lastName).Scan(&existingCount)
+			existsArgs := append([]any{firstName, lastName}, twArgs...)
+			db.QueryRow(`SELECT COUNT(*) FROM students WHERE lower(trim(first_name))=lower(trim(?)) AND lower(trim(last_name))=lower(trim(?)) AND deleted_at IS NULL`+tw, existsArgs...).Scan(&existingCount)
 			if existingCount > 0 {
 				studentsSkipped++
 				continue
@@ -193,9 +201,10 @@ func handleImport(db *DB) http.HandlerFunc {
 
 		classIDs := map[string]string{} // batch name → class ID
 		for _, batchName := range batchNames {
-			// Check if class already exists
+			// Tenant-scoped existence check.
 			var existingID string
-			if err := db.QueryRow(`SELECT id FROM classes WHERE name=? AND deleted_at IS NULL`, batchName).Scan(&existingID); err == nil {
+			clsArgs := append([]any{batchName}, twArgs...)
+			if err := db.QueryRow(`SELECT id FROM classes WHERE name=? AND deleted_at IS NULL`+tw, clsArgs...).Scan(&existingID); err == nil {
 				classIDs[batchName] = existingID
 				continue
 			}
@@ -229,9 +238,10 @@ func handleImport(db *DB) http.HandlerFunc {
 
 				var currentClasses string
 				var stuID string
+				lookupArgs := append([]any{firstName, lastName}, twArgs...)
 				if err := db.QueryRow(
-					`SELECT id, COALESCE(enrolled_classes,'[]') FROM students WHERE first_name=? AND last_name=? AND deleted_at IS NULL LIMIT 1`,
-					firstName, lastName,
+					`SELECT id, COALESCE(enrolled_classes,'[]') FROM students WHERE first_name=? AND last_name=? AND deleted_at IS NULL`+tw+` LIMIT 1`,
+					lookupArgs...,
 				).Scan(&stuID, &currentClasses); err != nil {
 					continue
 				}
@@ -251,7 +261,8 @@ func handleImport(db *DB) http.HandlerFunc {
 				if !found {
 					classList = append(classList, clsID)
 					classJSON, _ := json.Marshal(classList)
-					db.Exec(`UPDATE students SET enrolled_classes=? WHERE id=?`, string(classJSON), stuID)
+					updArgs := append([]any{string(classJSON), stuID}, twArgs...)
+					db.Exec(`UPDATE students SET enrolled_classes=? WHERE id=?`+tw, updArgs...)
 					enrollments++
 				}
 			}
@@ -283,13 +294,23 @@ func handleImport(db *DB) http.HandlerFunc {
 				continue
 			}
 			setURL := appURL() + "/set-password.html?token=" + token
-			if err := mailer.Send(p.email, "Welcome to The Study Hub — set your password", renderTeacherWelcomeEmail(p.name, setURL)); err != nil {
+			if err := mailer.Send(p.email, "Welcome to The Study Hub — set your password", renderParentWelcomeEmail(p.name, setURL)); err != nil {
 				l.Error("import: email failed", "err", err, "email", p.email)
 				emailsFailed++
 			} else {
 				emailsSent++
 			}
 		}
+
+		// Recount enrolled per class — pass-2 student creation didn't touch
+		// classes.enrolled, and pass-4 mutated students.enrolled_classes
+		// without bumping the counter. Without this the count drifts every
+		// re-import.
+		recomputedClassIDs := make([]string, 0, len(classIDs))
+		for _, cid := range classIDs {
+			recomputedClassIDs = append(recomputedClassIDs, cid)
+		}
+		recomputeClassEnrollment(db, c, recomputedClassIDs)
 
 		logAudit(db, c.Email, "skooly_import", "system", "import", fmt.Sprintf("students=%d families=%d users=%d classes=%d emails=%d", studentsCreated, familiesCreated, usersCreated, classesCreated, emailsSent))
 
@@ -361,10 +382,12 @@ func handleClearSeedData(db *DB) http.HandlerFunc {
 		}
 
 		deleted := map[string]int{}
+		tw, twArgs := scopeTenant(c, "")
 
 		deleteByIDs := func(table string, ids []string) {
 			for _, id := range ids {
-				res, err := db.Exec(`DELETE FROM `+table+` WHERE id=?`, id)
+				args := append([]any{id}, twArgs...)
+				res, err := db.Exec(`DELETE FROM `+table+` WHERE id=?`+tw, args...)
 				if err != nil {
 					l.Error("clear-seed: delete failed", "table", table, "id", id, "err", err)
 					continue
@@ -385,13 +408,16 @@ func handleClearSeedData(db *DB) http.HandlerFunc {
 		deleteByIDs("workshops", seedWorkshopIDs)
 		deleteByIDs("classes", seedClassIDs)
 
-		// Delete seed parent users + families (but not admin/teacher users)
+		// Delete seed parent users + families (but not admin/teacher users).
+		// users.email is globally unique so tenant scope is irrelevant there,
+		// but families.contact can collide across tenants — must be scoped.
 		for _, email := range seedParentEmails {
 			res, _ := db.Exec(`DELETE FROM users WHERE email=? AND role='parent'`, email)
 			if n, _ := res.RowsAffected(); n > 0 {
 				deleted["users"] += int(n)
 			}
-			res, _ = db.Exec(`DELETE FROM families WHERE contact=?`, email)
+			famArgs := append([]any{email}, twArgs...)
+			res, _ = db.Exec(`DELETE FROM families WHERE contact=?`+tw, famArgs...)
 			if n, _ := res.RowsAffected(); n > 0 {
 				deleted["families"] += int(n)
 			}
