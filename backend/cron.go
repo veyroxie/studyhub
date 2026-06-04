@@ -87,17 +87,20 @@ func runMonthlyInvoiceCycle(db *DB) {
 // already have a "Self-study overflow — <YYYY-MM>" invoice for the period.
 func generateSelfStudyOverflowInvoices(db *DB, now time.Time) int {
 	prev := previousMonth(now)
-	monthLabel := prev.Format("2006-01")
 	monthHuman := prev.Format("Jan 2006")
 	monthStart := prev.Format("2006-01-02")
 	monthEnd := time.Date(prev.Year(), prev.Month()+1, 1, 0, 0, 0, 0, prev.Location()).AddDate(0, 0, -1).Format("2006-01-02")
 
-	// Pre-load the set of (tenant_id|student_id) pairs that already have
-	// an overflow invoice for this month, so the per-student dedup check
+	// Pre-load the set of (tenant_id|student_id) pairs that already have an
+	// overflow invoice for the billing period, so the per-student dedup check
 	// in the loop is a map lookup instead of a SELECT COUNT(*) round-trip.
-	// 200 students × 12ms = 2.4s eliminated.
+	// The period is matched on the human month in the description (e.g.
+	// "Jan 2006") — NOT created_on, because overflow bills the PREVIOUS month
+	// but is issued in the current one, so created_on is the current date. The
+	// cron runs daily during days 1–7, so without this an unpaid student would
+	// be billed once per run (up to 7 duplicate invoices/month).
 	existingOverflow := map[string]bool{}
-	if existRows, err := db.Query(`SELECT tenant_id, student_id FROM invoices WHERE type='Self-study Overflow' AND created_on LIKE ? AND deleted_at IS NULL`, monthLabel+"%"); err == nil {
+	if existRows, err := db.Query(`SELECT tenant_id, student_id FROM invoices WHERE type='Self-study Overflow' AND description LIKE ? AND deleted_at IS NULL`, "%"+monthHuman+"%"); err == nil {
 		for existRows.Next() {
 			var t, s string
 			if err := existRows.Scan(&t, &s); err == nil {
@@ -440,18 +443,35 @@ func handleRunMonthlyCron(db *DB) http.HandlerFunc {
 			return
 		}
 		actor := c.Email
-		// Skip overlapping runs. The advisory lock is session-scoped to the
-		// goroutine's DB connection; if a previous click is still running,
-		// pg_try_advisory_lock returns false and we 409 the second click.
+		// Skip overlapping runs. A session-level advisory lock is bound to ONE
+		// connection, so we hold a dedicated *sql.Conn for the lock's lifetime —
+		// acquiring via the pool (db.QueryRow) could acquire and release on
+		// different pooled connections, so a second concurrent click would NOT
+		// see the lock and would run a duplicate batch. A concurrent request
+		// gets a different connection, so its pg_try_advisory_lock returns false
+		// and we 409 it. Closing the connection releases the lock even if the
+		// process dies mid-run.
 		lockKey := advisoryLockKey("monthly_cron")
+		ctx := context.Background()
+		conn, err := db.DB.Conn(ctx)
+		if err != nil {
+			respondError(w, "server busy, try again", http.StatusServiceUnavailable)
+			return
+		}
 		var got bool
-		db.QueryRow(`SELECT pg_try_advisory_lock(?)`, lockKey).Scan(&got)
+		if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, lockKey).Scan(&got); err != nil {
+			conn.Close()
+			respondError(w, "server error", http.StatusInternalServerError)
+			return
+		}
 		if !got {
+			conn.Close()
 			respondError(w, "monthly cron is already running — wait for it to finish", http.StatusConflict)
 			return
 		}
 		go func() {
-			defer db.Exec(`SELECT pg_advisory_unlock(?)`, lockKey)
+			defer conn.Close()
+			defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, lockKey)
 			now := time.Now()
 			invoices := generateMonthlyInvoices(db, now)
 			overflow := generateSelfStudyOverflowInvoices(db, now)
@@ -708,7 +728,31 @@ func handleRegeneratePayroll(db *DB) http.HandlerFunc {
 			target = t.AddDate(0, 1, 0)
 		}
 		actor := c.Email
+		// Serialise concurrent regenerations so two clicks can't both pre-load
+		// the dedup set before either commits and create duplicate payroll rows.
+		// Held on a dedicated connection for the lock's lifetime (see
+		// handleRunMonthlyCron for why the pool can't be used directly).
+		lockKey := advisoryLockKey("regenerate_payroll")
+		ctx := context.Background()
+		conn, err := db.DB.Conn(ctx)
+		if err != nil {
+			respondError(w, "server busy, try again", http.StatusServiceUnavailable)
+			return
+		}
+		var got bool
+		if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, lockKey).Scan(&got); err != nil {
+			conn.Close()
+			respondError(w, "server error", http.StatusInternalServerError)
+			return
+		}
+		if !got {
+			conn.Close()
+			respondError(w, "payroll regeneration is already running — wait for it to finish", http.StatusConflict)
+			return
+		}
 		go func() {
+			defer conn.Close()
+			defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, lockKey)
 			count := generateMonthlyPayroll(db, target)
 			logger.Info("payroll regenerated", "actor", actor, "month", monthArg, "created", count)
 			logAudit(db, actor, "payroll_regenerated", "system", monthArg, "")

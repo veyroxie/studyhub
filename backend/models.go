@@ -62,6 +62,11 @@ type Student struct {
 	PackageAmount         float64 `json:"packageAmount"`
 	PackageSelfStudyHours int     `json:"packageSelfStudyHours"`
 	SubscriptionStatus    string  `json:"subscriptionStatus"`
+	// DropinSelfStudy marks a casual pay-per-session student (not on the monthly
+	// package). Only these appear in the manual self-study invoice picker, so a
+	// package student — already auto-billed for overflow by the cron — can't be
+	// manually billed and double-charged.
+	DropinSelfStudy bool `json:"dropinSelfStudy"`
 	PausedAt              *string `json:"pausedAt,omitempty"`
 	ResumedAt             *string `json:"resumedAt,omitempty"`
 }

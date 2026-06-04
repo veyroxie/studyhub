@@ -257,6 +257,7 @@ func main() {
 		r.Route("/api/invoices", func(r chi.Router) {
 			r.Get("/", handleInvoices(db))
 			r.Post("/", handleInvoices(db))
+			r.Put("/{id}", handleInvoiceUpdate(db))
 			r.Put("/{id}/pay", handleInvoicePay(db))
 			r.Post("/{id}/checkout", handlePaymentCheckout(db))
 			r.Delete("/{id}", handleInvoiceDelete(db))

@@ -41,13 +41,22 @@ func runFileMigrations(db *DB) error {
 	}
 
 	// Acquire a PostgreSQL advisory lock so two instances starting
-	// simultaneously don't race on the same migration. The lock is
-	// session-scoped and released when the connection returns to the pool.
+	// simultaneously don't race on the same migration. Session-level locks
+	// are bound to ONE connection, so we must hold a dedicated *sql.Conn for
+	// the lock's lifetime — acquiring via the pool (db.Exec) could acquire and
+	// release on different pooled connections, leaking the lock. Closing the
+	// connection releases the lock even if the explicit unlock is missed.
 	// Key 20260411 is arbitrary — just needs to be unique across the app.
-	if _, err := db.Exec(`SELECT pg_advisory_lock(20260411)`); err != nil {
+	ctx := context.Background()
+	conn, err := db.DB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire migration lock conn: %w", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(20260411)`); err != nil {
 		return fmt.Errorf("advisory lock: %w", err)
 	}
-	defer db.Exec(`SELECT pg_advisory_unlock(20260411)`)
+	defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock(20260411)`)
 
 	entries, err := migrationFiles.ReadDir("migrations")
 	if err != nil {

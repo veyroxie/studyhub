@@ -589,6 +589,7 @@
       + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="' + (s.packageAmount || 0) + '">')
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="' + (s.packageSelfStudyHours == null ? 4 : s.packageSelfStudyHours) + '">')
       + '</div>'
+      + _dropinField(s.dropinSelfStudy)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" value="' + App.Utils.esc(s.emergency2Name||'') + '" placeholder="e.g. Uncle David">')
       + _field('Emergency Contact Phone', '<input name="emergency2Phone" class="form-input" value="' + App.Utils.esc(s.emergency2Phone||'') + '" placeholder="60123456789">')
@@ -625,7 +626,8 @@
         medicalInfo: fd.get('medicalInfo') || '',
         allergies: fd.get('allergies') || '',
         packageAmount: parseFloat(fd.get('packageAmount')) || 0,
-        packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4
+        packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4,
+        dropinSelfStudy: !!fd.get('dropinSelfStudy')
       });
 
       var submitBtn = e.target.querySelector('button[type="submit"]');
@@ -667,6 +669,7 @@
       + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="0" placeholder="e.g. 380">')
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="4">')
       + '</div>'
+      + _dropinField(false)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" placeholder="e.g. Uncle David">')
       + _field('Emergency Contact Phone', '<input name="emergency2Phone" class="form-input" placeholder="60123456789">')
@@ -712,6 +715,7 @@
         allergies: fd.get('allergies') || '',
         packageAmount: parseFloat(fd.get('packageAmount')) || 0,
         packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4,
+        dropinSelfStudy: !!fd.get('dropinSelfStudy'),
         subscriptionStatus: 'active'
       };
       var submitBtn = e.target.querySelector('button[type="submit"]');
@@ -919,6 +923,17 @@
   }
   function _field(label, inputHtml) {
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
+  }
+
+  // _dropinField renders the "pay-per-session drop-in" toggle. Drop-in students
+  // are the only ones billable via the manual self-study invoice option (package
+  // students are auto-billed by the cron), so this tag gates that picker.
+  function _dropinField(checked) {
+    return '<label style="display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.8rem;background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;cursor:pointer">'
+      + '<input type="checkbox" name="dropinSelfStudy"' + (checked ? ' checked' : '') + ' style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">'
+      + '<span style="font-size:0.83rem;color:#374151"><strong>Pay-per-session drop-in</strong>'
+      + '<br><span style="font-size:0.74rem;color:#94a3b8">Self-study billed manually per session — not on the monthly package</span></span>'
+      + '</label>';
   }
 
   function _downloadCSV(csv, filename) {

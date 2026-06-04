@@ -7,6 +7,7 @@
   let _selectedInv = {};
   let _billingPage = 0;
   var _PAGE_SIZE = 15;
+  var SELF_STUDY_SESSION_RATE = 10; // RM per self-study session (manual drop-in billing)
 
   function _paginationControls(page, total, moduleFn) {
     var totalPages = Math.ceil(total / _PAGE_SIZE);
@@ -861,6 +862,15 @@
     const inv = state.invoices.find(function(i) { return i.id === invoiceId; });
     if (!inv) return;
     const stu = state.students.find(function(s) { return s.id === inv.studentId; });
+    // Preserve the invoice's existing type. The picker offers Monthly/Adhoc, but
+    // system types (e.g. "Self-study", "Self-study Overflow") must stay intact —
+    // otherwise editing such an invoice's date/amount would silently reclassify
+    // it as Monthly and corrupt billing reports + the overflow dedup.
+    const editTypes = ['Monthly', 'Adhoc'];
+    if (inv.type && editTypes.indexOf(inv.type) === -1) editTypes.push(inv.type);
+    const typeOptions = editTypes.map(function(t) {
+      return '<option' + (inv.type === t ? ' selected' : '') + '>' + App.Utils.esc(t) + '</option>';
+    }).join('');
     App.Utils.showModal(
       '<div class="p-6">'
       + '<h2 class="text-xl font-bold mb-1">Edit Invoice</h2>'
@@ -868,10 +878,13 @@
       + '<form id="edit-invoice-form" class="space-y-4">'
       + _field('Description', '<input name="description" class="form-input" value="' + App.Utils.esc(inv.description) + '" required>')
       + '<div class="grid grid-cols-2 gap-4">'
-      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input"><option' + (inv.type==='Monthly'?' selected':'') + '>Monthly</option><option' + (inv.type==='Adhoc'?' selected':'') + '>Adhoc</option></select></div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input">' + typeOptions + '</select></div>'
       + _field('Amount (RM)', '<input name="amount" type="number" min="0" step="0.01" class="form-input" value="' + inv.amount + '" required>')
       + '</div>'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Invoice Date', '<input name="invoiceDate" type="date" class="form-input" value="' + (inv.createdOn || '') + '" required>')
       + _field('Due Date', '<input name="dueDate" type="date" class="form-input" value="' + inv.dueDate + '" required>')
+      + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>'
@@ -882,25 +895,32 @@
     document.getElementById('edit-invoice-form').addEventListener('submit', function(e) {
       e.preventDefault();
       const fd = new FormData(e.target);
-      const st = App.Store.get();
-      App.Store.set({ invoices: st.invoices.map(function(i) {
-        if (i.id !== invoiceId) return i;
-        return Object.assign({}, i, {
-          description: fd.get('description'),
-          type: fd.get('type'),
-          amount: parseFloat(fd.get('amount')),
-          dueDate: fd.get('dueDate')
-        });
-      })});
+      const payload = {
+        description: fd.get('description'),
+        type: fd.get('type'),
+        amount: parseFloat(fd.get('amount')),
+        dueDate: fd.get('dueDate'),
+        createdOn: fd.get('invoiceDate')
+      };
       App.Utils.hideModal(true);
-      App.Utils.showToast('Invoice updated', 'success');
-      App.Router.refresh();
+      App.Api.put('/api/invoices/' + invoiceId, payload).then(function() {
+        return App.Api.loadSnapshot();
+      }).then(function() {
+        App.Utils.showToast('Invoice updated', 'success');
+        App.Router.refresh();
+      }).catch(function() {
+        // Error already toasted by App.Api wrapper.
+      });
     });
   }
 
   function _createModal() {
     var state = App.Store.get();
     var students = state.students || [];
+    // Manual self-study billing is only for casual drop-ins. Package students are
+    // auto-billed for overflow by the cron, so excluding them here makes manual
+    // double-charging impossible.
+    var dropInStudents = students.filter(function(s) { return s.dropinSelfStudy; });
     var now = new Date();
     var defaultMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2,'0');
     var lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -927,6 +947,7 @@
       + (families.length > 0
           ? '<button type="button" data-mode="sibling" onclick="App.Billing._setInvMode(\'sibling\')" style="' + modeTabStyle + modeInactiveStyle + '">Sibling</button>'
           : '')
+      + '<button type="button" data-mode="selfstudy" onclick="App.Billing._setInvMode(\'selfstudy\')" style="' + modeTabStyle + modeInactiveStyle + '">Self-Study</button>'
       + '</div>'
 
       + '<form id="create-invoice-form" class="space-y-4">'
@@ -981,6 +1002,25 @@
       + '<div id="sibling-total-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem;font-size:0.82rem;color:#166534;display:none"></div>'
       + '</div>'
 
+      // ── SELF-STUDY (flat per-session, drop-ins only) fields ──
+      + '<div id="inv-selfstudy-fields" style="display:none">'
+      + '<p class="text-xs text-slate-500 mb-3">Flat rate per session for drop-in self-study. Package students are auto-billed for extra hours, so only pay-per-session drop-ins appear here.</p>'
+      + (dropInStudents.length === 0
+          ? '<div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:10px;padding:0.85rem;font-size:0.82rem;color:#92400e">No drop-in students yet — tick <strong>"Pay-per-session drop-in"</strong> on a student\'s profile to bill them here.</div>'
+          : '<div><label class="block text-sm font-medium text-slate-700 mb-1">Student</label>'
+            + '<select name="ssStudentId" class="form-input">'
+            + '<option value="">Select student...</option>'
+            + dropInStudents.map(function(s) {
+                return '<option value="' + s.id + '"' + (s.id === _studentFilter ? ' selected' : '') + '>' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</option>';
+              }).join('')
+            + '</select></div>'
+            + '<div class="grid grid-cols-2 gap-4" style="margin-top:0.5rem">'
+            + _field('Number of sessions', '<input name="ssVisits" type="number" min="1" step="1" class="form-input" value="1" oninput="App.Billing._updateSelfStudyAmount()">')
+            + _field('Rate per session (RM)', '<input name="ssRate" type="number" min="0" step="0.01" class="form-input" value="' + SELF_STUDY_SESSION_RATE + '" oninput="App.Billing._updateSelfStudyAmount()">')
+            + '</div>'
+            + '<div id="selfstudy-amount-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem;font-size:0.82rem;color:#166534;margin-top:0.5rem"></div>')
+      + '</div>'
+
       // ── Shared: early bird + due date ──
       + '<div id="inv-early-bird-section" style="background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;padding:0.85rem">'
       +   '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem">'
@@ -996,7 +1036,10 @@
       +   '</div>'
       + '</div>'
 
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Invoice Date', '<input name="invoiceDate" type="date" class="form-input" value="' + App.Utils.today() + '" required>')
       + _field('Due Date', '<input name="dueDate" type="date" class="form-input" value="' + defaultDue + '" required>')
+      + '</div>'
 
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -1020,6 +1063,7 @@
       var mode = _currentInvMode || 'single';
       if (mode === 'monthly') { _doGenerateMonthly(new FormData(e.target)); return; }
       if (mode === 'sibling') { _doSiblingInvoice(new FormData(e.target)); return; }
+      if (mode === 'selfstudy') { _doSelfStudyInvoice(new FormData(e.target)); return; }
       // Single invoice
       var fd = new FormData(e.target);
       var st = App.Store.get();
@@ -1039,7 +1083,7 @@
         earlyBirdCutoff: fd.get('earlyBirdCutoff') || undefined,
         dueDate: fd.get('dueDate'),
         status: 'Unpaid',
-        createdOn: App.Utils.today(),
+        createdOn: fd.get('invoiceDate') || App.Utils.today(),
         paidOn: null
       };
       App.Utils.hideModal(true);
@@ -1065,18 +1109,25 @@
       btn.style.color = m === mode ? '#0a0a0a' : '#64748b';
       btn.style.borderColor = m === mode ? 'var(--gold)' : '#e2e8f0';
     });
-    var single  = document.getElementById('inv-single-fields');
-    var monthly = document.getElementById('inv-monthly-fields');
-    var sibling = document.getElementById('inv-sibling-fields');
-    if (single)  single.style.display  = mode === 'single'  ? 'block' : 'none';
-    if (monthly) monthly.style.display = mode === 'monthly' ? 'block' : 'none';
-    if (sibling) sibling.style.display = mode === 'sibling' ? 'block' : 'none';
+    var single    = document.getElementById('inv-single-fields');
+    var monthly   = document.getElementById('inv-monthly-fields');
+    var sibling   = document.getElementById('inv-sibling-fields');
+    var selfstudy = document.getElementById('inv-selfstudy-fields');
+    if (single)    single.style.display    = mode === 'single'    ? 'block' : 'none';
+    if (monthly)   monthly.style.display   = mode === 'monthly'   ? 'block' : 'none';
+    if (sibling)   sibling.style.display   = mode === 'sibling'   ? 'block' : 'none';
+    if (selfstudy) selfstudy.style.display = mode === 'selfstudy' ? 'block' : 'none';
+
+    // Early bird discount is irrelevant for flat-rate self-study.
+    var earlyBird = document.getElementById('inv-early-bird-section');
+    if (earlyBird) earlyBird.style.display = mode === 'selfstudy' ? 'none' : 'block';
 
     var btn = document.getElementById('inv-submit-btn');
     if (btn) {
       btn.textContent = mode === 'monthly' ? 'Generate Invoices' : mode === 'sibling' ? 'Create Sibling Invoice' : 'Create Invoice';
     }
     if (mode === 'monthly') _updateGenPreview();
+    if (mode === 'selfstudy') _updateSelfStudyAmount();
   }
 
   function _toggleEarlyBird() {
@@ -1099,6 +1150,42 @@
     } else {
       preview.textContent = '';
     }
+  }
+
+  function _updateSelfStudyAmount() {
+    var visits = parseInt((document.querySelector('#create-invoice-form [name="ssVisits"]') || {}).value) || 0;
+    var rate = parseFloat((document.querySelector('#create-invoice-form [name="ssRate"]') || {}).value) || 0;
+    var preview = document.getElementById('selfstudy-amount-preview');
+    if (!preview) return;
+    preview.innerHTML = '<strong>Total: RM ' + (visits * rate).toFixed(2) + '</strong> (' + visits + ' session' + (visits !== 1 ? 's' : '') + ' × RM ' + rate.toFixed(2) + ')';
+  }
+
+  function _doSelfStudyInvoice(fd) {
+    var studentId = fd.get('ssStudentId');
+    var visits = parseInt(fd.get('ssVisits')) || 0;
+    var rate = parseFloat(fd.get('ssRate')) || 0;
+    if (!studentId) { App.Utils.showToast('Select a student', 'warning'); return; }
+    if (visits < 1) { App.Utils.showToast('Enter number of sessions', 'warning'); return; }
+    if (rate <= 0) { App.Utils.showToast('Enter a rate per session', 'warning'); return; }
+    var newInvoice = {
+      studentId: studentId,
+      description: 'Self-study — ' + visits + ' session' + (visits !== 1 ? 's' : '') + ' @ RM' + rate,
+      type: 'Self-study',
+      amount: parseFloat((visits * rate).toFixed(2)),
+      dueDate: fd.get('dueDate'),
+      status: 'Unpaid',
+      createdOn: fd.get('invoiceDate') || App.Utils.today(),
+      paidOn: null
+    };
+    App.Utils.hideModal(true);
+    App.Api.post('/api/invoices', newInvoice).then(function() {
+      return App.Api.loadSnapshot();
+    }).then(function() {
+      App.Utils.showToast('Self-study invoice created', 'success');
+      App.Router.refresh();
+    }).catch(function() {
+      // Error already toasted by App.Api wrapper.
+    });
   }
 
   // _generateMonthlyModal merged into _createModal (Monthly Batch tab)
@@ -1427,6 +1514,7 @@
     _updateGenPreview: _updateGenPreview,
     _toggleEarlyBird: _toggleEarlyBird,
     _updateNetAmount: _updateNetAmount,
+    _updateSelfStudyAmount: _updateSelfStudyAmount,
     _updateSiblingChildren: _updateSiblingChildren,
     _updateSiblingTotal: _updateSiblingTotal,
     _exportCSV: _exportCSV,

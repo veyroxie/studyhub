@@ -157,6 +157,48 @@ func handleInvoices(db *DB) http.HandlerFunc {
 	}
 }
 
+// handleInvoiceUpdate edits the safe, admin-facing fields of an invoice:
+// description, type, amount, due date and the issue date (created_on). It does
+// NOT touch status/paid_on/referral — those have dedicated payment flows.
+// Admin-only. Replaces the old frontend-only edit that never persisted.
+func handleInvoiceUpdate(db *DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := claimsFrom(r)
+		if !isAdminRole(c) {
+			respondError(w, "admin only", http.StatusForbidden)
+			return
+		}
+		var inv Invoice
+		if err := json.NewDecoder(r.Body).Decode(&inv); err != nil {
+			respondError(w, "bad body", http.StatusBadRequest)
+			return
+		}
+		if msg := validationError("description", inv.Description, "dueDate", inv.DueDate); msg != "" {
+			respondError(w, msg, http.StatusBadRequest)
+			return
+		}
+		if !validAmount(inv.Amount) {
+			respondError(w, "amount must be greater than 0", http.StatusBadRequest)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		tw, twArgs := scopeTenant(c, "")
+		args := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn, id}, twArgs...)
+		res, err := db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+		if err != nil {
+			respondError(w, "could not update invoice", http.StatusInternalServerError)
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			respondError(w, "invoice not found", http.StatusNotFound)
+			return
+		}
+		inv.ID = id
+		logAudit(db, c.Email, "invoice_updated", "invoice", id, inv.Description+" RM"+fmt.Sprintf("%.2f", inv.Amount))
+		respond(w, inv)
+	}
+}
+
 // handleInvoiceDelete soft-deletes an invoice. Admin-only. Used by the admin
 // UI when an invoice was created in error or needs voiding — refund logic
 // (returning money to the parent) is out of scope and handled by admin
