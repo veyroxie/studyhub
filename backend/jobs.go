@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"html"
+	"os"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -37,9 +41,16 @@ func startJobs(ctx context.Context, wg *sync.WaitGroup, db *DB) {
 		{1 * time.Hour, "overdue-reminders", func() { sendOverdueInvoiceReminders(db) }},
 		// Hourly: re-evaluate pending referral_rewards rows.
 		{1 * time.Hour, "referral-recheck", func() { recheckReferralMilestones(db) }},
+		// Hourly: expire the early-bird discount on monthly invoices left unpaid
+		// past their cutoff (the 10th) — restore full price.
+		{1 * time.Hour, "early-bird-expiry", func() { applyEarlyBirdExpiry(db) }},
 		// Daily: prune email_tokens rows that are either used or expired and
 		// older than 30 days.
 		{24 * time.Hour, "email-tokens-purge", func() { purgeExpiredEmailTokens(db) }},
+		// Hourly: self-check (disk, backup freshness, stuck email queue) and
+		// alert the operator. Complements an external uptime monitor (which
+		// catches "app down") by catching "app up but degraded".
+		{1 * time.Hour, "health-selfcheck", func() { runHealthSelfCheck(db) }},
 		// Every 30s: drain the email queue (send + retry with backoff).
 		{30 * time.Second, "email-queue-worker", func() { processEmailQueue(db) }},
 		// Daily: prune long-since-sent/failed email rows.
@@ -48,6 +59,124 @@ func startJobs(ctx context.Context, wg *sync.WaitGroup, db *DB) {
 	for _, j := range jobs {
 		wg.Add(1)
 		go runEvery(ctx, wg, j.every, j.name, j.fn)
+	}
+}
+
+// alertOnce throttles a given alert category to at most once per 24h so the
+// hourly self-check doesn't spam the operator. In-memory is fine: a restart
+// just re-arms alerts, which is the safe direction.
+var (
+	alertMu       sync.Mutex
+	alertLastSent = map[string]time.Time{}
+)
+
+func alertOnce(key string) bool {
+	alertMu.Lock()
+	defer alertMu.Unlock()
+	if last, ok := alertLastSent[key]; ok && time.Since(last) < 24*time.Hour {
+		return false
+	}
+	alertLastSent[key] = time.Now()
+	return true
+}
+
+// backupIsStale reports whether the newest file in dir is older than maxAge
+// (or missing/unreadable) — a proxy for "nightly DB backup stopped running".
+func backupIsStale(dir string, maxAge time.Duration) (bool, string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return true, "backups directory unreadable: " + err.Error()
+	}
+	var newest time.Time
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+	}
+	if newest.IsZero() {
+		return true, "no backup files found in " + dir
+	}
+	if age := time.Since(newest); age > maxAge {
+		return true, fmt.Sprintf("newest backup is %s old", age.Round(time.Hour))
+	}
+	return false, ""
+}
+
+// runHealthSelfCheck looks for "up but degraded" conditions (low disk, stale
+// backups, a wedged email queue) and notifies ALERT_EMAIL. If ALERT_EMAIL is
+// unset it still logs at ERROR so a log-based alerting pipeline can catch it.
+// Each category is throttled to once per 24h.
+func runHealthSelfCheck(db *DB) {
+	var alerts []string
+
+	var st syscall.Statfs_t
+	if err := syscall.Statfs("/app", &st); err == nil && st.Blocks > 0 {
+		freePct := float64(st.Bavail) / float64(st.Blocks) * 100
+		if freePct < 15 && alertOnce("disk") {
+			alerts = append(alerts, fmt.Sprintf("Low disk space: %.1f%% free on the app volume.", freePct))
+		}
+	}
+
+	if stale, detail := backupIsStale("/app/backups", 36*time.Hour); stale && alertOnce("backup") {
+		alerts = append(alerts, "Database backup looks stale — "+detail+".")
+	}
+
+	var stuck int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM email_queue WHERE status='pending' AND next_attempt_at < NOW() - INTERVAL '2 hours'`).Scan(&stuck); err == nil && stuck > 0 && alertOnce("email_queue") {
+		alerts = append(alerts, fmt.Sprintf("%d email(s) stuck in the send queue for over 2 hours.", stuck))
+	}
+
+	if len(alerts) == 0 {
+		return
+	}
+	joined := strings.Join(alerts, "; ")
+	logger.Error("health self-check found issues", "issues", joined)
+
+	to := os.Getenv("ALERT_EMAIL")
+	if to == "" {
+		return // logged above; set ALERT_EMAIL to also receive an email
+	}
+	items := make([]string, len(alerts))
+	for i, a := range alerts {
+		items[i] = "<li>" + html.EscapeString(a) + "</li>"
+	}
+	body := "<p>StudyHub health check found the following issue(s):</p><ul>" + strings.Join(items, "") + "</ul>"
+	if err := mailer.Send(to, fmt.Sprintf("StudyHub alert: %d issue(s)", len(alerts)), body); err != nil {
+		logger.Error("health alert email failed", "err", err)
+	}
+}
+
+// applyEarlyBirdExpiry restores full price on monthly invoices whose early-bird
+// cutoff (the 10th) has passed while still unpaid. It adds the exact discount
+// back to amount and clears the early-bird fields, so it runs once per invoice
+// and is safe to call repeatedly. Pending-Verification and Paid invoices are
+// left alone (the parent already paid in time). Mutating amount keeps it the
+// single source of truth for every payment path (admin/parent/online).
+func applyEarlyBirdExpiry(db *DB) {
+	res, err := db.Exec(`UPDATE invoices
+		SET amount = amount + early_bird_discount,
+		    status = 'Overdue',
+		    early_bird_discount = 0,
+		    early_bird_cutoff = ''
+		WHERE type = 'Monthly'
+		  AND status IN ('Unpaid','Overdue')
+		  AND early_bird_cutoff <> ''
+		  AND early_bird_cutoff < ?
+		  AND deleted_at IS NULL`, today())
+	if err != nil {
+		logger.Error("early-bird-expiry failed", "err", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		logger.Info("early-bird discount expired on unpaid invoices", "count", n)
+		snapshotCacheInvalidateAll()
 	}
 }
 

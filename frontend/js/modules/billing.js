@@ -70,7 +70,7 @@
 
     // ── Early bird check ──────────────────────────────────────────────────────
     const todayDay = new Date().getDate();
-    const isEarlyBirdPeriod = todayDay <= 7;
+    const isEarlyBirdPeriod = todayDay <= 10;
 
     // ── Notification banners ──────────────────────────────────────────────────
     let notifBanner = '';
@@ -88,7 +88,7 @@
       } else if (isEarlyBirdPeriod) {
         notifBanner = '<div class="mb-4 px-4 py-3 rounded-xl flex items-center gap-3" style="background:#fffbeb;border:1px solid #C9A227">'
           + '<div style="width:8px;height:8px;border-radius:50%;background:var(--gold);flex-shrink:0"></div>'
-          + '<div class="text-sm" style="color:#92400e"><span class="font-semibold">Early bird discount active</span> — pay your invoice before the 7th and get <strong>10% off</strong> automatically.</div>'
+          + '<div class="text-sm" style="color:#92400e"><span class="font-semibold">Early bird discount active</span> — pay by the <strong>10th</strong> to keep your <strong>RM10 off</strong>; unpaid invoices return to full price after.</div>'
           + '</div>';
       } else if (myDueSoon.length > 0) {
         notifBanner = '<div class="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">'
@@ -943,7 +943,6 @@
       // ── Mode tabs ──
       + '<div id="inv-mode-tabs" style="display:flex;gap:0.5rem;margin-bottom:1.25rem;">'
       + '<button type="button" data-mode="single" onclick="App.Billing._setInvMode(\'single\')" style="' + modeTabStyle + modeActiveStyle + '">Single</button>'
-      + '<button type="button" data-mode="monthly" onclick="App.Billing._setInvMode(\'monthly\')" style="' + modeTabStyle + modeInactiveStyle + '">Monthly Batch</button>'
       + (families.length > 0
           ? '<button type="button" data-mode="sibling" onclick="App.Billing._setInvMode(\'sibling\')" style="' + modeTabStyle + modeInactiveStyle + '">Sibling</button>'
           : '')
@@ -966,16 +965,6 @@
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input"><option>Monthly</option><option>Adhoc</option></select></div>'
       + _field('Amount (RM)', '<input id="inv-base-amount" name="amount" type="number" min="0" step="0.01" class="form-input" oninput="App.Billing._updateNetAmount()">')
       + '</div>'
-      + '</div>'
-
-      // ── MONTHLY BATCH fields ──
-      + '<div id="inv-monthly-fields" style="display:none">'
-      + '<p class="text-xs text-slate-500 mb-3">Creates one invoice per active student for the selected month. Already-invoiced students are skipped.</p>'
-      + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Month', '<input name="month" type="month" class="form-input" value="' + defaultMonth + '" onchange="App.Billing._previewMonthly(this.value)">')
-      + _field('Amount per student (RM)', '<input id="gen-amount" name="genAmount" type="number" min="0" step="0.01" class="form-input" value="150" oninput="App.Billing._updateGenPreview()">')
-      + '</div>'
-      + '<div id="gen-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.75rem;font-size:0.82rem;color:#166534;margin-top:0.5rem"></div>'
       + '</div>'
 
       // ── SIBLING fields ──
@@ -1029,7 +1018,7 @@
       +   '</div>'
       +   '<div id="early-bird-fields" style="display:none;margin-top:0.5rem">'
       +     '<div class="grid grid-cols-2 gap-3">'
-      +       _field('Discount %', '<input id="discount-pct" name="discountPct" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateNetAmount();App.Billing._updateGenPreview()">')
+      +       _field('Discount %', '<input id="discount-pct" name="discountPct" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateNetAmount()">')
       +       _field('Pay by (cutoff)', '<input name="earlyBirdCutoff" type="date" class="form-input">')
       +     '</div>'
       +     '<div id="net-amount-preview" style="margin-top:0.5rem;font-size:0.82rem;color:#6b7280"></div>'
@@ -1049,19 +1038,17 @@
       + '</div>'
     );
 
-    // Auto-enable early bird if within first 7 days
+    // Auto-enable early bird if within the early-bird window (1st–10th)
     (function() {
-      if (new Date().getDate() <= 7) {
+      if (new Date().getDate() <= 10) {
         var cb = document.getElementById('early-bird-cb');
         if (cb) { cb.checked = true; _toggleEarlyBird(); }
       }
     })();
-    _updateGenPreview();
 
     document.getElementById('create-invoice-form').addEventListener('submit', function(e) {
       e.preventDefault();
       var mode = _currentInvMode || 'single';
-      if (mode === 'monthly') { _doGenerateMonthly(new FormData(e.target)); return; }
       if (mode === 'sibling') { _doSiblingInvoice(new FormData(e.target)); return; }
       if (mode === 'selfstudy') { _doSelfStudyInvoice(new FormData(e.target)); return; }
       // Single invoice
@@ -1110,11 +1097,9 @@
       btn.style.borderColor = m === mode ? 'var(--gold)' : '#e2e8f0';
     });
     var single    = document.getElementById('inv-single-fields');
-    var monthly   = document.getElementById('inv-monthly-fields');
     var sibling   = document.getElementById('inv-sibling-fields');
     var selfstudy = document.getElementById('inv-selfstudy-fields');
     if (single)    single.style.display    = mode === 'single'    ? 'block' : 'none';
-    if (monthly)   monthly.style.display   = mode === 'monthly'   ? 'block' : 'none';
     if (sibling)   sibling.style.display   = mode === 'sibling'   ? 'block' : 'none';
     if (selfstudy) selfstudy.style.display = mode === 'selfstudy' ? 'block' : 'none';
 
@@ -1124,9 +1109,8 @@
 
     var btn = document.getElementById('inv-submit-btn');
     if (btn) {
-      btn.textContent = mode === 'monthly' ? 'Generate Invoices' : mode === 'sibling' ? 'Create Sibling Invoice' : 'Create Invoice';
+      btn.textContent = mode === 'sibling' ? 'Create Sibling Invoice' : 'Create Invoice';
     }
-    if (mode === 'monthly') _updateGenPreview();
     if (mode === 'selfstudy') _updateSelfStudyAmount();
   }
 
@@ -1186,164 +1170,6 @@
     }).catch(function() {
       // Error already toasted by App.Api wrapper.
     });
-  }
-
-  // _generateMonthlyModal merged into _createModal (Monthly Batch tab)
-
-  function _updateGenPreview() {
-    var monthInput = document.querySelector('#create-invoice-form [name="month"]');
-    var month = monthInput ? monthInput.value : '';
-    _previewMonthly(month);
-  }
-
-  function _previewMonthly(month) {
-    var preview = document.getElementById('gen-preview');
-    if (!preview || !month) return;
-    var state = App.Store.get();
-    var parts = month.split('-');
-    var yr = parseInt(parts[0]), mo = parseInt(parts[1]);
-    var monthLabel = new Date(yr, mo - 1, 1).toLocaleDateString('en-MY', { month:'long', year:'numeric' });
-    var activeStudents = state.students.filter(function(s) { return s.status === 'Active' || s.status === 'New'; });
-    var alreadyHas = {};
-    state.invoices.forEach(function(i) {
-      if (i.type === 'Monthly' && i.createdOn && i.createdOn.startsWith(month)) alreadyHas[i.studentId] = true;
-    });
-    var toCreate = activeStudents.filter(function(s) { return !alreadyHas[s.id]; });
-    var skipped  = activeStudents.filter(function(s) { return  alreadyHas[s.id]; });
-
-    var baseAmount = parseFloat((document.getElementById('gen-amount') || {}).value) || 0;
-    var ebCb = document.getElementById('early-bird-cb');
-    var pctEl = document.getElementById('discount-pct');
-    var discountPct = (ebCb && ebCb.checked && pctEl) ? (parseFloat(pctEl.value) || 0) : 0;
-    var net = parseFloat((baseAmount * (1 - discountPct / 100)).toFixed(2));
-
-    preview.innerHTML = '<strong>' + toCreate.length + ' invoice' + (toCreate.length !== 1 ? 's' : '') + ' will be created</strong> for ' + monthLabel
-      + ' · RM ' + net.toFixed(2) + ' each'
-      + (discountPct > 0 ? ' <span style="color:#92400e">(' + discountPct + '% early bird)</span>' : '')
-      + (skipped.length > 0 ? '<br><span style="color:#94a3b8">' + skipped.length + ' student' + (skipped.length !== 1 ? 's' : '') + ' skipped (already invoiced)</span>' : '');
-  }
-
-  function _doGenerateMonthly(fd) {
-    var month = fd.get('month');
-    var baseAmount = parseFloat(fd.get('genAmount')) || 0;
-    var dueDate = fd.get('dueDate');
-    var ebCb = document.getElementById('early-bird-cb');
-    var discountPct = (ebCb && ebCb.checked) ? (parseFloat(fd.get('discountPct')) || 0) : 0;
-    var earlyBirdCutoff = (ebCb && ebCb.checked) ? (fd.get('earlyBirdCutoff') || undefined) : undefined;
-    var finalAmount = parseFloat((baseAmount * (1 - discountPct / 100)).toFixed(2));
-
-    var state = App.Store.get();
-    var [yr, mo] = month.split('-');
-    var monthLabel = new Date(parseInt(yr), parseInt(mo) - 1, 1).toLocaleDateString('en-MY', { month:'long', year:'numeric' });
-
-    var activeStudents = state.students.filter(function(s) { return s.status === 'Active' || s.status === 'New'; });
-    var alreadyHas = {};
-    state.invoices.forEach(function(i) {
-      if (i.type === 'Monthly' && i.createdOn && i.createdOn.startsWith(month)) alreadyHas[i.studentId] = true;
-    });
-    var toCreate = activeStudents.filter(function(s) { return !alreadyHas[s.id]; });
-
-    if (toCreate.length === 0) {
-      App.Utils.showToast('All active students already have invoices for ' + monthLabel, 'info');
-      App.Utils.hideModal(true);
-      return;
-    }
-
-    var existing = state.invoices;
-
-    // ── Referral credit auto-apply ────────────────────────────────────────
-    // For each family with an 'earned' referral_reward that still has credits
-    // remaining, apply -RM10 to ONE invoice per cycle (oldest reward first)
-    // and remember which reward ID to consume server-side after creation.
-    var rewards = (state.referralRewards || []).slice()
-      .filter(function(r) { return r.status === 'earned' && r.creditsRemaining > 0; })
-      .sort(function(a, b) { return (a.milestoneMetOn || '').localeCompare(b.milestoneMetOn || ''); });
-    var creditByFamily = {}; // familyId -> rewardId (one credit per family per cycle)
-    rewards.forEach(function(r) {
-      if (!creditByFamily[r.referrerFamilyId]) creditByFamily[r.referrerFamilyId] = r.id;
-    });
-    var rewardConsumeQueue = []; // rewardIds to POST consume on after generation
-
-    var newInvoices = toCreate.map(function(s, idx) {
-      var fam = (state.families || []).find(function(f) { return f.id === s.familyId; });
-      var rewardId = fam ? creditByFamily[fam.id] : null;
-      var referralCredit = 0;
-      if (rewardId) {
-        referralCredit = 10;
-        rewardConsumeQueue.push(rewardId);
-        delete creditByFamily[fam.id]; // only one invoice per family per cycle
-      }
-      return {
-        id: App.Utils.generateId('INV'),
-        studentId: s.id,
-        description: monthLabel + ' Tuition' + (discountPct > 0 ? ' (' + discountPct + '% early bird)' : '') + (referralCredit > 0 ? ' (RM10 referral credit)' : ''),
-        type: 'Monthly',
-        amount: parseFloat((finalAmount - referralCredit).toFixed(2)),
-        discountPct: discountPct || undefined,
-        referralCredit: referralCredit || undefined,
-        earlyBirdCutoff: earlyBirdCutoff,
-        dueDate: dueDate,
-        status: 'Unpaid',
-        createdOn: month + '-01',
-        paidOn: null
-      };
-    });
-
-    // Persist each new invoice to the backend so the DB is the source of
-    // truth, not localStorage. This is the fix for the long-standing
-    // localStorage-only inconsistency. We POST sequentially (low volume,
-    // and serial errors are easier to surface) and update the local store
-    // with the server-returned rows so IDs match.
-    App.Utils.hideModal(true);
-    _persistGeneratedInvoices(newInvoices, rewardConsumeQueue, monthLabel);
-  }
-
-  // _persistGeneratedInvoices is the async tail of _doGenerateMonthly. It
-  // POSTs every freshly-built invoice to /api/invoices, fires referral
-  // consume calls in parallel, then reloads the snapshot so all modules
-  // pick up the persisted rows.
-  async function _persistGeneratedInvoices(newInvoices, rewardConsumeQueue, monthLabel) {
-    var savedCount = 0;
-    var failed = [];
-    for (var i = 0; i < newInvoices.length; i++) {
-      var inv = newInvoices[i];
-      try {
-        // Backend assigns its own ID, so we drop our local one to avoid
-        // collisions. Server returns the persisted row.
-        var payload = Object.assign({}, inv);
-        delete payload.id;
-        await App.Api.post('/api/invoices', payload, { silent: true });
-        savedCount++;
-      } catch(err) {
-        console.error('invoice persist failed', inv.studentId, err);
-        failed.push(inv.studentId);
-      }
-    }
-
-    // Referral credit consume calls — fire-and-forget. The backend tolerates
-    // races and the next snapshot reload will reflect any drift.
-    rewardConsumeQueue.forEach(function(rid) {
-      App.Api.post('/api/referrals/' + rid + '/consume', {}, { silent: true }).catch(function() {});
-    });
-
-    // Reload the snapshot so the local store reflects the persisted truth.
-    // Without this we'd be staring at our locally-generated rows that have
-    // no DB representation — exactly the bug we're fixing.
-    try {
-      await App.Api.loadSnapshot();
-    } catch(e) {
-      console.error('snapshot reload after generate failed', e);
-    }
-
-    var creditMsg = rewardConsumeQueue.length > 0
-      ? ' (' + rewardConsumeQueue.length + ' referral credit' + (rewardConsumeQueue.length !== 1 ? 's' : '') + ' applied)'
-      : '';
-    if (failed.length > 0) {
-      App.Utils.showToast('Saved ' + savedCount + '/' + newInvoices.length + ' invoices for ' + monthLabel + ' — ' + failed.length + ' failed (see console)', 'warning', 8000);
-    } else {
-      App.Utils.showToast('Generated ' + savedCount + ' invoices for ' + monthLabel + creditMsg, 'success');
-    }
-    App.Router.refresh();
   }
 
   // _siblingInvoiceModal merged into _createModal (Sibling tab)
@@ -1510,8 +1336,6 @@
     _bulkMarkPaid: _bulkMarkPaid,
     _bulkConfirmPaid: _bulkConfirmPaid,
     _setInvMode: _setInvMode,
-    _previewMonthly: _previewMonthly,
-    _updateGenPreview: _updateGenPreview,
     _toggleEarlyBird: _toggleEarlyBird,
     _updateNetAmount: _updateNetAmount,
     _updateSelfStudyAmount: _updateSelfStudyAmount,

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -182,12 +183,27 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 	// suppress a real invoice for the other tenant.
 	existing := loadExistingMonthlyInvoiceStudentIDs(db, monthPrefix)
 
+	// Pre-load classID → subject monthly_fee so a student's tuition can be
+	// summed from the classes they're enrolled in. Class IDs are unique, so a
+	// flat map keyed by class id is enough (the cron spans all tenants).
+	feeByClass := map[string]float64{}
+	if frows, ferr := db.Query(`SELECT c.id, COALESCE(sub.monthly_fee,0) FROM classes c LEFT JOIN subjects sub ON sub.id = c.subject_id AND sub.deleted_at IS NULL WHERE c.deleted_at IS NULL`); ferr == nil {
+		for frows.Next() {
+			var cid string
+			var fee float64
+			if err := frows.Scan(&cid, &fee); err == nil {
+				feeByClass[cid] = fee
+			}
+		}
+		frows.Close()
+	}
+
 	rows, err := db.Query(`
-		SELECT s.id, s.tenant_id, s.first_name, s.last_name, s.family_id, s.package_amount
+		SELECT s.id, s.tenant_id, s.first_name, s.last_name, s.family_id, s.package_amount,
+		       COALESCE(s.contact,''), COALESCE(s.parent_name,''), COALESCE(s.enrolled_classes,'[]')
 		FROM students s
 		WHERE s.deleted_at IS NULL
 		  AND COALESCE(s.subscription_status,'active') = 'active'
-		  AND COALESCE(s.package_amount,0) > 0
 	`)
 	if err != nil {
 		logger.Error("monthly invoice cron query failed", "err", err)
@@ -196,11 +212,12 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 	type row struct {
 		id, tenantID, firstName, lastName, familyID string
 		packageAmount                               float64
+		contact, parentName, enrolledClasses        string
 	}
 	var pending []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.tenantID, &r.firstName, &r.lastName, &r.familyID, &r.packageAmount); err != nil {
+		if err := rows.Scan(&r.id, &r.tenantID, &r.firstName, &r.lastName, &r.familyID, &r.packageAmount, &r.contact, &r.parentName, &r.enrolledClasses); err != nil {
 			continue
 		}
 		if existing[r.tenantID+"|"+r.id] {
@@ -263,13 +280,37 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 		return 0
 	}
 
-	earlyBird := EarlyBirdRM
-	dueDate := time.Date(now.Year(), now.Month(), 7, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	// Issued on the 1st (catch-up window to the 7th), due the 10th. The
+	// early-bird discount is kept only if paid by the cutoff (= due date);
+	// applyEarlyBirdExpiry restores full price on unpaid invoices afterwards.
+	dueDate := time.Date(now.Year(), now.Month(), 10, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	earlyBirdCutoff := dueDate
 	createdOn := now.Format("2006-01-02")
 	monthLabel := now.Format("Jan 2006")
 
+	// Invoice emails are queued AFTER commit so a rollback never emails a
+	// parent about an invoice that doesn't exist.
+	type issuedEmail struct {
+		tid                            int
+		to, parentName, studentName    string
+		amount, dueDate, earlyBirdNote string
+	}
+	var emails []issuedEmail
+
 	created := 0
 	for _, s := range pending {
+		// Base tuition: a manual package_amount (>0) overrides; otherwise sum
+		// the subject fees of the student's enrolled classes.
+		base := s.packageAmount
+		if base <= 0 {
+			for _, cid := range parseArr(s.enrolledClasses) {
+				base += feeByClass[cid]
+			}
+		}
+		if base <= 0 {
+			continue // no classes priced and no manual amount — nothing to bill
+		}
+
 		referralCredit := 0.0
 		creditKey := s.tenantID + "|" + s.familyID
 		if s.familyID != "" && familyCredits[creditKey] > 0 {
@@ -291,22 +332,47 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 			}
 			siblingIDsJSON = jsonArr(others)
 		}
-		total := s.packageAmount - earlyBird - referralCredit - siblingDiscount
-		if total < 0 {
-			total = 0
+		// Full price (after sibling/referral); early-bird is applied now but
+		// clawed back later if unpaid past the cutoff. earlyBirdApplied is the
+		// exact RM removed, so the clawback restores precisely the full price.
+		full := base - referralCredit - siblingDiscount
+		if full < 0 {
+			full = 0
 		}
+		discounted := full - EarlyBirdRM
+		if discounted < 0 {
+			discounted = 0
+		}
+		earlyBirdApplied := full - discounted
+
 		invID := generateID("INV")
 		desc := "Monthly tuition — " + monthLabel + " — " + s.firstName + " " + s.lastName
 
 		_, err := tx.Exec(`
-			INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			invID, s.tenantID, s.id, desc, "Monthly", total, dueDate, "Unpaid",
+			INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,early_bird_cutoff,early_bird_discount)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			invID, s.tenantID, s.id, desc, "Monthly", discounted, dueDate, "Unpaid",
 			createdOn, nil, "", 0.0, false, siblingIDsJSON, siblingDiscount, referralCredit, "",
+			earlyBirdCutoff, earlyBirdApplied,
 		)
 		if err != nil {
 			logger.Error("could not insert monthly invoice", "err", err, "student_id", s.id)
 			continue
+		}
+		if s.contact != "" {
+			note := ""
+			if earlyBirdApplied > 0 {
+				note = fmt.Sprintf("Pay by %s to keep the RM%.0f early-bird discount (RM%.2f after).", dueDate, earlyBirdApplied, full)
+			}
+			tid := 1
+			if n, convErr := strconv.Atoi(s.tenantID); convErr == nil {
+				tid = n
+			}
+			emails = append(emails, issuedEmail{
+				tid: tid, to: s.contact, parentName: s.parentName,
+				studentName: s.firstName + " " + s.lastName,
+				amount:      fmt.Sprintf("%.2f", discounted), dueDate: dueDate, earlyBirdNote: note,
+			})
 		}
 		if referralCredit > 0 && s.familyID != "" {
 			// Decrement the oldest earned referral_rewards row that still has
@@ -332,6 +398,12 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 	if err := tx.Commit(); err != nil {
 		logger.Error("monthly invoice cron tx commit failed", "err", err)
 		return 0
+	}
+	for _, e := range emails {
+		body := renderInvoiceIssuedEmail(e.parentName, e.studentName, "Monthly tuition — "+monthLabel, e.amount, e.dueDate, e.earlyBirdNote)
+		if _, err := queueEmail(db, e.tid, e.to, "Invoice for "+monthLabel+" — "+e.studentName, body); err != nil {
+			logger.Error("could not queue invoice email", "err", err, "to", e.to)
+		}
 	}
 	if created > 0 {
 		snapshotCacheInvalidateAll()

@@ -95,6 +95,7 @@ type Class struct {
 	Enrolled   int      `json:"enrolled"`
 	Color      string   `json:"color"`
 	Category   string   `json:"category"`
+	SubjectID  string   `json:"subjectId"`
 }
 
 type Staff struct {
@@ -133,6 +134,8 @@ type Invoice struct {
 	SiblingDiscount   float64 `json:"siblingDiscount"`
 	ReferralCredit    float64 `json:"referralCredit"`
 	ReferenceNo       string  `json:"referenceNo"`
+	EarlyBirdCutoff   string  `json:"earlyBirdCutoff"`
+	EarlyBirdDiscount float64 `json:"earlyBirdDiscount"`
 	DeletedAt         *string `json:"deletedAt,omitempty"`
 }
 

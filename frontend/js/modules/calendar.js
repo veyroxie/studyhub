@@ -516,7 +516,20 @@
 
   function _setView(v) { _view = v; App.Router.refresh(); }
 
+  // _subjectOptions builds <option>s for the class Subject picker. A class's
+  // subject sets its monthly fee (from the Subjects catalogue), which the
+  // billing cron sums per student. "No subject" = the class isn't auto-billed.
+  function _subjectOptions(selectedId) {
+    var subjects = App.Store.get().subjects || [];
+    return '<option value="">No subject (not billed)</option>'
+      + subjects.map(function(s) {
+          return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>'
+            + App.Utils.esc(s.name) + ' — RM' + (s.monthlyFee || 0) + '</option>';
+        }).join('');
+  }
+
   function _addClassModal() {
+    var subjectOpts = _subjectOptions('');
     App.Utils.showModal(
       '<div class="p-6">'
       + '<h2 class="text-xl font-bold mb-4">Add New Class</h2>'
@@ -548,6 +561,7 @@
       + _field('Capacity', '<input id="cap-input" name="capacity" type="number" min="1" max="5" class="form-input" value="5" readonly style="background:#f8fafc;color:#64748b">')
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Category</label><select name="category" class="form-input"><option>Academic</option><option>Non-academic</option><option>Workshop</option></select></div>'
       + '</div>'
+      + _field('Subject (sets monthly fee)', '<select name="subjectId" class="form-input">' + subjectOpts + '</select>')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Class</button>'
@@ -586,7 +600,8 @@
         capacity: capacity,
         enrolled: 0,
         color: classType === 'Private' ? 'purple' : 'blue',
-        category: fd.get('category') || 'Academic'
+        category: fd.get('category') || 'Academic',
+        subjectId: fd.get('subjectId') || ''
       };
 
       // Send in-app announcement to notify parents of the new class
@@ -925,6 +940,7 @@
       + _field('Category', '<select name="category" class="form-input">' + catOpts + '</select>')
       + '</div>'
       + _field('Color', '<select name="color" class="form-input">' + colorOpts + '</select>')
+      + _field('Subject (sets monthly fee)', '<select name="subjectId" class="form-input">' + _subjectOptions(c.subjectId || '') + '</select>')
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Teacher(s)</label>' + teacherCheckboxes + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -949,7 +965,8 @@
         capacity: parseInt(fd.get('capacity')) || 5,
         enrolled: c.enrolled,
         color: fd.get('color'),
-        category: fd.get('category') || 'Academic'
+        category: fd.get('category') || 'Academic',
+        subjectId: fd.get('subjectId') || ''
       };
       App.Api.put('/api/classes/' + classId, updated).then(function() {
         var classes = state.classes.map(function(x) { return x.id === classId ? updated : x; });

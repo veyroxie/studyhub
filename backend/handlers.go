@@ -248,6 +248,7 @@ func handleSnapshot(db *DB) http.HandlerFunc {
 		run(func() { snap.Payroll = listPayroll(db, c) })
 		run(func() { snap.Feedback = listFeedbackRecent(db, c) })
 		run(func() { snap.Workshops = listWorkshops(db, c) })
+		run(func() { snap.Subjects = listSubjects(db, c) })
 		run(func() { snap.SelfStudySessions = listSelfStudyRecent(db, c) })
 		run(func() { snap.PerformanceReviews = listPerformanceReviews(db, c) })
 		run(func() { snap.CancelledClasses = listCancelledClasses(db, c) })

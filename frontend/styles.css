@@ -1186,6 +1186,26 @@ button[disabled]:hover,
 }
 
 /* ==============================
+   SKIP LINK (a11y: keyboard users jump past nav to content)
+   ============================== */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 200; /* above the login overlay (z-100) and app chrome */
+  background: var(--gold, #C9A227);
+  color: #0a0a0a;
+  padding: 0.6rem 1rem;
+  border-radius: 0 0 8px 0;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.skip-link:focus {
+  left: 0;
+}
+
+/* ==============================
    FOCUS-VISIBLE STYLES
    ============================== */
 :focus-visible {

@@ -343,6 +343,36 @@ func renderInvoiceReminderEmail(parentName, studentName, description, amountRM, 
 		emailLayoutClose()
 }
 
+// renderInvoiceIssuedEmail is sent when the monthly cron generates a new
+// invoice, so parents are notified the moment it's issued (not only when it
+// goes overdue). earlyBirdNote is the optional "pay by X to keep the discount"
+// line — empty when no early-bird applies.
+func renderInvoiceIssuedEmail(parentName, studentName, description, amountRM, dueDate, earlyBirdNote string) string {
+	greeting := "Hi"
+	if strings.TrimSpace(parentName) != "" {
+		greeting = "Hi " + safeName(parentName)
+	}
+	noteHTML := ""
+	if strings.TrimSpace(earlyBirdNote) != "" {
+		noteHTML = `<p style="margin:0 0 16px;font-size:13px;color:#92400e"><strong>` + html.EscapeString(earlyBirdNote) + `</strong></p>`
+	}
+	return emailLayoutOpen() +
+		`<p style="margin:0 0 16px;font-size:16px;color:#0a0a0a">` + greeting + `,</p>
+<p style="margin:0 0 16px">A new invoice has been issued for ` + safeName(studentName) + `.</p>
+<table cellpadding="0" cellspacing="0" style="margin:18px 0;background:#fafaf8;border:1px solid #f0eee8;border-radius:10px;width:100%">
+<tr><td style="padding:14px 18px;font-size:13px;color:#64748b">
+  <div style="margin-bottom:6px"><strong style="color:#0a0a0a">` + html.EscapeString(description) + `</strong></div>
+  <div>Amount: <strong style="color:#0a0a0a">RM ` + html.EscapeString(amountRM) + `</strong></div>
+  <div>Due date: ` + html.EscapeString(dueDate) + `</div>
+</td></tr>
+</table>` + noteHTML + `
+<p style="margin:18px 0;text-align:center">
+  <a href="` + appURL() + `/#billing" style="display:inline-block;padding:12px 28px;background:#C9A227;color:#0a0a0a;font-weight:700;text-decoration:none;border-radius:8px;font-size:15px">View &amp; pay</a>
+</p>
+<p style="margin:0 0 12px;font-size:13px;color:#64748b">Already paid? You can ignore this email. Questions about the invoice? Just reply and we'll sort it out.</p>` +
+		emailLayoutClose()
+}
+
 // renderResetPasswordEmail builds the HTML body for a password reset email.
 func renderResetPasswordEmail(name, resetURL string) string {
 	greeting := "Hi"

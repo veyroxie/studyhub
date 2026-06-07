@@ -34,7 +34,7 @@ func (e errClassTeacherNotFound) Error() string { return "teacher not found in t
 
 func listClasses(db *DB, c *Claims) []Class {
 	tw, twArgs := scopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category FROM classes WHERE deleted_at IS NULL`+tw, twArgs...)
+	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,COALESCE(subject_id,'') FROM classes WHERE deleted_at IS NULL`+tw, twArgs...)
 	if err != nil {
 		return []Class{}
 	}
@@ -43,11 +43,33 @@ func listClasses(db *DB, c *Claims) []Class {
 	for rows.Next() {
 		var c Class
 		var tids string
-		if err := rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color, &c.Category); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color, &c.Category, &c.SubjectID); err != nil {
 			continue
 		}
 		c.TeacherIDs = parseArr(tids)
 		out = append(out, c)
+	}
+	return out
+}
+
+// listSubjects loads the subject catalogue (name + monthly_fee by category/level)
+// for the snapshot, so the class form can offer them and the frontend can show
+// pricing. The monthly invoice cron joins classes.subject_id → subjects to price
+// each student, so the IDs here are the same ones a class stores.
+func listSubjects(db *DB, c *Claims) []Subject {
+	tw, twArgs := scopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,name,COALESCE(category,''),COALESCE(level,''),COALESCE(description,''),COALESCE(monthly_fee,0),COALESCE(color,'') FROM subjects WHERE deleted_at IS NULL`+tw+` ORDER BY name`, twArgs...)
+	if err != nil {
+		return []Subject{}
+	}
+	defer rows.Close()
+	out := []Subject{}
+	for rows.Next() {
+		var s Subject
+		if err := rows.Scan(&s.ID, &s.Name, &s.Category, &s.Level, &s.Description, &s.MonthlyFee, &s.Color); err != nil {
+			continue
+		}
+		out = append(out, s)
 	}
 	return out
 }
@@ -125,8 +147,8 @@ func handleClasses(db *DB) http.HandlerFunc {
 				c.Category = "Academic"
 			}
 			tid := tenantID(cl)
-			if _, err := db.Exec(`INSERT INTO classes(id,tenant_id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-				c.ID, tid, c.Name, jsonArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color, c.Category); err != nil {
+			if _, err := db.Exec(`INSERT INTO classes(id,tenant_id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,subject_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				c.ID, tid, c.Name, jsonArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color, c.Category, c.SubjectID); err != nil {
 				respondError(w, "could not create class", 500)
 				return
 			}
@@ -188,8 +210,8 @@ func handleClassByID(db *DB) http.HandlerFunc {
 			}
 
 
-			args := append([]any{cl.Name, jsonArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Enrolled, cl.Color, cl.Category, id}, twArgs...)
-			db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,enrolled=?,color=?,category=? WHERE id=?`+tw, args...)
+			args := append([]any{cl.Name, jsonArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Enrolled, cl.Color, cl.Category, cl.SubjectID, id}, twArgs...)
+			db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,enrolled=?,color=?,category=?,subject_id=? WHERE id=?`+tw, args...)
 			if c != nil {
 				logAudit(db, c.Email, "class_updated", "class", id, cl.Name)
 			}

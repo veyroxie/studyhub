@@ -1,0 +1,75 @@
+name: Deploy
+
+# Deploys to the DigitalOcean droplet over SSH. Removes the "manual SSH +
+# docker compose" step and adds an automatic health-checked rollback.
+#
+# Triggers:
+#   - manually (workflow_dispatch), or
+#   - when release-please publishes a version tag (v*).
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   DEPLOY_HOST     droplet IP/host          (e.g. 167.99.64.149)
+#   DEPLOY_USER     ssh user                 (e.g. root, or a deploy user)
+#   DEPLOY_SSH_KEY  PRIVATE key for that user (the matching public key must be
+#                   in the droplet's ~/.ssh/authorized_keys)
+#   DEPLOY_PATH     path to the repo on the droplet (e.g. /root/studyhub)
+#
+# Until these secrets exist this workflow is inert (it only runs on dispatch/tag).
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH (build, health-check, rollback on failure)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.DEPLOY_PATH }}"
+
+            echo "==> Pulling latest prod"
+            git fetch --all --tags
+            git checkout prod
+            git pull --ff-only origin prod
+
+            echo "==> Saving current image for rollback"
+            docker image tag studyhub-api studyhub-api:rollback 2>/dev/null || echo "no existing image to tag (first deploy)"
+
+            echo "==> Building + starting api"
+            docker compose build api
+            docker compose up -d api
+
+            echo "==> Health check"
+            ok=0
+            for i in $(seq 1 20); do
+              if curl -fsS http://localhost:8080/api/health >/dev/null 2>&1; then ok=1; break; fi
+              sleep 3
+            done
+
+            if [ "$ok" != "1" ]; then
+              echo "!! Health check FAILED — rolling back to previous image"
+              if docker image inspect studyhub-api:rollback >/dev/null 2>&1; then
+                docker image tag studyhub-api:rollback studyhub-api
+                docker compose up -d api
+                echo "Rolled back."
+              else
+                echo "No rollback image available."
+              fi
+              exit 1
+            fi
+
+            echo "==> Deployed OK ($(curl -fsS http://localhost:8080/api/health))"
