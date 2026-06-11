@@ -306,6 +306,8 @@ func main() {
 			r.Delete("/{id}", handleDeleteWorkshop(db))
 		})
 
+		r.Put("/api/pricing/{id}", handleUpdatePricingTier(db))
+
 		r.Route("/api/self-study", func(r chi.Router) {
 			r.Get("/", handleListSelfStudy(db))
 			r.Post("/", handleCreateSelfStudy(db))

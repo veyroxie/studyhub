@@ -111,6 +111,21 @@ func generateSelfStudyOverflowInvoices(db *DB, now time.Time) int {
 		existRows.Close()
 	}
 
+	// Same idea for the leftover-minutes that get banked as self-study credits:
+	// the note carries the billing month so a re-run during the 1–7 window
+	// doesn't bank the same rollover twice. A student with only a partial hour
+	// over quota has no invoice to dedup against, so this guard is essential.
+	existingRollover := map[string]bool{}
+	if rcRows, err := db.Query(`SELECT tenant_id, student_id FROM replacement_credits WHERE category='self-study' AND type='earned' AND note LIKE ?`, "%"+rolloverNote(monthHuman)+"%"); err == nil {
+		for rcRows.Next() {
+			var t, s string
+			if err := rcRows.Scan(&t, &s); err == nil {
+				existingRollover[t+"|"+s] = true
+			}
+		}
+		rcRows.Close()
+	}
+
 	rows, err := db.Query(`
 		SELECT s.id, s.tenant_id, s.first_name, s.last_name,
 		       COALESCE(s.package_self_study_hours,4),
@@ -129,38 +144,60 @@ func generateSelfStudyOverflowInvoices(db *DB, now time.Time) int {
 
 	created := 0
 	createdOn := now.Format("2006-01-02")
-	dueDate := time.Date(now.Year(), now.Month(), 7, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	dueDate := time.Date(now.Year(), now.Month(), 10, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
 	for rows.Next() {
 		var stuID, tid, firstName, lastName string
 		var quotaHours, usedMin int
 		if err := rows.Scan(&stuID, &tid, &firstName, &lastName, &quotaHours, &usedMin); err != nil {
 			continue
 		}
-		// Round usage UP to whole hours.
-		usedHours := usedMin / 60
-		if usedMin%60 != 0 {
-			usedHours++
-		}
-		overflowHours := usedHours - quotaHours
-		if overflowHours <= 0 {
+		// Minutes used beyond the free quota. Always billed in whole hours at
+		// RM10/hr, rounding UP (no fractional charge). The unused slice of that
+		// rounded-up hour is credited back to the student's self-study ledger so
+		// they don't lose what they paid for. e.g. 45m over → bill 1 hr (RM10),
+		// credit 15m; 1h30m over → bill 2 hr (RM20), credit 30m.
+		overflowMin := usedMin - quotaHours*60
+		if overflowMin <= 0 {
 			continue
 		}
-		// Skip if an overflow invoice for this student/month already exists.
-		if existingOverflow[tid+"|"+stuID] {
-			continue
+		billHours := overflowMin / 60
+		if overflowMin%60 != 0 {
+			billHours++
 		}
-		amount := float64(overflowHours) * SelfStudyOverflowRatePerHour
-		desc := "Self-study overflow — " + monthHuman + " — " + firstName + " " + lastName +
-			" (" + fmt.Sprintf("%d", overflowHours) + " hr over quota)"
-		invID := generateID("INV")
-		if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			invID, tid, stuID, desc, "Self-study Overflow", amount, dueDate, "Unpaid", createdOn, nil, "", 0.0, false, "[]", 0.0, 0.0, ""); err != nil {
-			logger.Error("self-study overflow insert failed", "err", err, "student_id", stuID)
-			continue
+		creditMin := billHours*60 - overflowMin
+
+		if !existingOverflow[tid+"|"+stuID] {
+			amount := float64(billHours) * SelfStudyOverflowRatePerHour
+			desc := "Self-study overflow — " + monthHuman + " — " + firstName + " " + lastName +
+				" (" + fmt.Sprintf("%d", billHours) + " hr over quota)"
+			invID := generateID("INV")
+			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				invID, tid, stuID, desc, "Self-study Overflow", amount, dueDate, "Unpaid", createdOn, nil, "", 0.0, false, "[]", 0.0, 0.0, ""); err != nil {
+				logger.Error("self-study overflow insert failed", "err", err, "student_id", stuID)
+				continue
+			}
+			created++
 		}
-		created++
+
+		// Credit back the unused slice of the rounded-up hour (1 credit = 15 min,
+		// stored as raw minutes). Skipped if already banked for this month.
+		if creditMin > 0 && !existingRollover[tid+"|"+stuID] {
+			note := rolloverNote(monthHuman)
+			rcID := generateID("RC")
+			if _, err := db.Exec(`INSERT INTO replacement_credits(id,tenant_id,student_id,type,minutes,note,class_id,date,created_by,category) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+				rcID, tid, stuID, "earned", creditMin, note, "", createdOn, "system", "self-study"); err != nil {
+				logger.Error("self-study rollover credit insert failed", "err", err, "student_id", stuID)
+			}
+		}
 	}
 	return created
+}
+
+// rolloverNote is the marker stored on a banked self-study credit so the cron
+// can tell, on a later same-month run, that this student's leftover minutes
+// were already banked (preventing double-banking during the 1–7 day window).
+func rolloverNote(monthHuman string) string {
+	return "Self-study rollover — " + monthHuman
 }
 
 func previousMonth(now time.Time) time.Time {
@@ -183,11 +220,11 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 	// suppress a real invoice for the other tenant.
 	existing := loadExistingMonthlyInvoiceStudentIDs(db, monthPrefix)
 
-	// Pre-load classID → subject monthly_fee so a student's tuition can be
-	// summed from the classes they're enrolled in. Class IDs are unique, so a
-	// flat map keyed by class id is enough (the cron spans all tenants).
+	// Pre-load classID → monthly fee, derived from the type×level pricing matrix
+	// (a class joins pricing_tiers on its class_type + level_band). Class IDs are
+	// unique, so a flat map keyed by class id is enough (cron spans all tenants).
 	feeByClass := map[string]float64{}
-	if frows, ferr := db.Query(`SELECT c.id, COALESCE(sub.monthly_fee,0) FROM classes c LEFT JOIN subjects sub ON sub.id = c.subject_id AND sub.deleted_at IS NULL WHERE c.deleted_at IS NULL`); ferr == nil {
+	if frows, ferr := db.Query(`SELECT c.id, COALESCE(pt.monthly_fee,0) FROM classes c LEFT JOIN pricing_tiers pt ON pt.class_type = c.class_type AND pt.level_band = c.level_band AND pt.tenant_id = c.tenant_id AND pt.deleted_at IS NULL WHERE c.deleted_at IS NULL`); ferr == nil {
 		for frows.Next() {
 			var cid string
 			var fee float64

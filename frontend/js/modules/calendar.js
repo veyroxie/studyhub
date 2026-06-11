@@ -516,20 +516,17 @@
 
   function _setView(v) { _view = v; App.Router.refresh(); }
 
-  // _subjectOptions builds <option>s for the class Subject picker. A class's
-  // subject sets its monthly fee (from the Subjects catalogue), which the
-  // billing cron sums per student. "No subject" = the class isn't auto-billed.
-  function _subjectOptions(selectedId) {
-    var subjects = App.Store.get().subjects || [];
-    return '<option value="">No subject (not billed)</option>'
-      + subjects.map(function(s) {
-          return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>'
-            + App.Utils.esc(s.name) + ' — RM' + (s.monthlyFee || 0) + '</option>';
+  // _levelBandOptions builds <option>s for a class's level band. The band, with
+  // the class type, picks the price from the pricing matrix. "—" = unpriced
+  // (the class won't be auto-billed until a band is set).
+  function _levelBandOptions(selected) {
+    return '<option value="">— (not billed)</option>'
+      + [['1-3', 'Level 1–3'], ['4-6', 'Level 4–6']].map(function(b) {
+          return '<option value="' + b[0] + '"' + (b[0] === selected ? ' selected' : '') + '>' + b[1] + '</option>';
         }).join('');
   }
 
   function _addClassModal() {
-    var subjectOpts = _subjectOptions('');
     App.Utils.showModal(
       '<div class="p-6">'
       + '<h2 class="text-xl font-bold mb-4">Add New Class</h2>'
@@ -561,7 +558,7 @@
       + _field('Capacity', '<input id="cap-input" name="capacity" type="number" min="1" max="5" class="form-input" value="5" readonly style="background:#f8fafc;color:#64748b">')
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Category</label><select name="category" class="form-input"><option>Academic</option><option>Non-academic</option><option>Workshop</option></select></div>'
       + '</div>'
-      + _field('Subject (sets monthly fee)', '<select name="subjectId" class="form-input">' + subjectOpts + '</select>')
+      + _field('Level band (sets monthly fee)', '<select name="levelBand" class="form-input">' + _levelBandOptions('') + '</select>')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Class</button>'
@@ -601,7 +598,7 @@
         enrolled: 0,
         color: classType === 'Private' ? 'purple' : 'blue',
         category: fd.get('category') || 'Academic',
-        subjectId: fd.get('subjectId') || ''
+        levelBand: fd.get('levelBand') || ''
       };
 
       // Send in-app announcement to notify parents of the new class
@@ -813,7 +810,39 @@
         + '</div>';
     }).join('');
 
+    // Pricing matrix (class type × level band) that drives monthly billing.
+    const tiers = (state.pricingTiers || []).slice();
+    const tierFee = function(type, band) {
+      var t = tiers.find(function(x) { return x.classType === type && x.levelBand === band; });
+      return t ? t : null;
+    };
+    const priceCell = function(type, band) {
+      var t = tierFee(type, band);
+      if (!t) return '<td style="padding:0.7rem 1rem;text-align:center;color:#cbd5e1">—</td>';
+      return '<td style="padding:0.7rem 1rem;text-align:center">'
+        + '<span style="font-weight:800;color:#111">RM ' + (t.monthlyFee || 0) + '</span>'
+        + (isAdmin ? ' <button onclick="App.Calendar._editPricingModal(\'' + t.id + '\')" style="font-size:0.68rem;color:#64748b;background:none;border:none;cursor:pointer" title="Edit">&#9998;</button>' : '')
+        + '</td>';
+    };
+    const pricingTable = '<table style="width:100%;border-collapse:collapse;font-size:0.85rem">'
+      + '<thead><tr style="color:#94a3b8;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.04em">'
+      +   '<th style="padding:0.6rem 1rem;text-align:left"></th><th style="padding:0.6rem 1rem;text-align:center">Level 1–3</th><th style="padding:0.6rem 1rem;text-align:center">Level 4–6</th>'
+      + '</tr></thead><tbody>'
+      + '<tr style="border-top:1px solid #f4f4f2"><td style="padding:0.7rem 1rem;font-weight:700;color:#111">Group</td>' + priceCell('Group','1-3') + priceCell('Group','4-6') + '</tr>'
+      + '<tr style="border-top:1px solid #f4f4f2"><td style="padding:0.7rem 1rem;font-weight:700;color:#111">Private</td>' + priceCell('Private','1-3') + priceCell('Private','4-6') + '</tr>'
+      + '</tbody></table>';
+
     return '<div>'
+      // Pricing matrix
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
+      +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Pricing <span style="font-size:0.72rem;font-weight:500;color:#94a3b8">(monthly fee by type × level)</span></h2>'
+      + '</div>'
+      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden;margin-bottom:2rem">'
+      + (tiers.length === 0
+          ? '<div style="padding:2rem;text-align:center;color:#94a3b8;font-size:0.84rem">Pricing not set up yet.</div>'
+          : pricingTable)
+      + '</div>'
+
       // Workshops
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
       +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Workshops</h2>'
@@ -836,6 +865,39 @@
           : holidayRows)
       + '</div>'
       + '</div>';
+  }
+
+  // _editPricingModal edits one cell of the type×level fee matrix. The tiers
+  // themselves are fixed (seeded), so this only changes the fee.
+  function _editPricingModal(tierId) {
+    var t = (App.Store.get().pricingTiers || []).find(function(x) { return x.id === tierId; });
+    if (!t) return;
+    var label = (t.classType || '') + ' · Level ' + (t.levelBand || '');
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:380px">'
+      + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 0.35rem">Edit Price</h2>'
+      + '<p style="font-size:0.8rem;color:#94a3b8;margin:0 0 1.25rem">' + App.Utils.esc(label) + '</p>'
+      + '<form id="pricing-form" class="space-y-3">'
+      + _field('Monthly Fee (RM)', '<input name="monthlyFee" type="number" min="0" step="0.01" class="form-input" value="' + (t.monthlyFee != null ? t.monthlyFee : '') + '" required autofocus>')
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save</button>'
+      + '</div></form></div>'
+    );
+    document.getElementById('pricing-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fee = parseFloat(new FormData(e.target).get('monthlyFee'));
+      if (isNaN(fee) || fee < 0) { App.Utils.showToast('Enter a valid fee', 'warning'); return; }
+      App.Utils.hideModal(true);
+      App.Api.put('/api/pricing/' + tierId, { monthlyFee: fee }).then(function() {
+        return App.Api.loadSnapshot();
+      }).then(function() {
+        App.Utils.showToast('Price updated', 'success');
+        App.Router.refresh();
+      }).catch(function() {
+        // Error already toasted by App.Api wrapper.
+      });
+    });
   }
 
   function _addWorkshopModal() {
@@ -940,7 +1002,10 @@
       + _field('Category', '<select name="category" class="form-input">' + catOpts + '</select>')
       + '</div>'
       + _field('Color', '<select name="color" class="form-input">' + colorOpts + '</select>')
-      + _field('Subject (sets monthly fee)', '<select name="subjectId" class="form-input">' + _subjectOptions(c.subjectId || '') + '</select>')
+      + '<div class="grid grid-cols-2 gap-3">'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Class Type</label><select name="classType" class="form-input"><option' + ((c.classType||'Group')==='Group'?' selected':'') + '>Group</option><option' + ((c.classType||'Group')==='Private'?' selected':'') + '>Private</option></select></div>'
+      + _field('Level band (sets fee)', '<select name="levelBand" class="form-input">' + _levelBandOptions(c.levelBand || '') + '</select>')
+      + '</div>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Teacher(s)</label>' + teacherCheckboxes + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -966,7 +1031,8 @@
         enrolled: c.enrolled,
         color: fd.get('color'),
         category: fd.get('category') || 'Academic',
-        subjectId: fd.get('subjectId') || ''
+        classType: fd.get('classType') || 'Group',
+        levelBand: fd.get('levelBand') || ''
       };
       App.Api.put('/api/classes/' + classId, updated).then(function() {
         var classes = state.classes.map(function(x) { return x.id === classId ? updated : x; });
@@ -1131,5 +1197,5 @@
     });
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday };
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal };
 })();

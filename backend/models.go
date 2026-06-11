@@ -95,7 +95,17 @@ type Class struct {
 	Enrolled   int      `json:"enrolled"`
 	Color      string   `json:"color"`
 	Category   string   `json:"category"`
-	SubjectID  string   `json:"subjectId"`
+	ClassType  string   `json:"classType"`  // 'Group' | 'Private' — drives pricing tier + capacity
+	LevelBand  string   `json:"levelBand"`  // '1-3' | '4-6' — drives pricing tier
+}
+
+// PricingTier is one cell of the type×level fee matrix. The monthly cron looks
+// up a class's (classType, levelBand) here to price each enrolled student.
+type PricingTier struct {
+	ID         string  `json:"id"`
+	ClassType  string  `json:"classType"`
+	LevelBand  string  `json:"levelBand"`
+	MonthlyFee float64 `json:"monthlyFee"`
 }
 
 type Staff struct {
@@ -244,16 +254,6 @@ type Feedback struct {
 	StudentNotes []StudentNote `json:"studentNotes"`
 }
 
-type Subject struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Category    string  `json:"category"`
-	Level       string  `json:"level"`
-	Description string  `json:"description"`
-	MonthlyFee  float64 `json:"monthlyFee"`
-	Color       string  `json:"color"`
-}
-
 type Workshop struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
@@ -359,7 +359,7 @@ type Snapshot struct {
 	Payroll            []Payroll           `json:"payroll"`
 	Registrations      []Registration      `json:"registrations,omitempty"`
 	Feedback           []Feedback          `json:"feedback"`
-	Subjects           []Subject           `json:"subjects"`
+	PricingTiers       []PricingTier       `json:"pricingTiers"`
 	Workshops          []Workshop          `json:"workshops"`
 	SelfStudySessions  []SelfStudySession  `json:"selfStudySessions"`
 	PerformanceReviews []PerformanceReview `json:"performanceReviews"`

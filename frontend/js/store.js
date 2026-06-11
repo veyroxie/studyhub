@@ -66,7 +66,7 @@
   }
 
   const ARRAY_DEFAULTS = {
-    feedback: [], subjects: [], workshops: [], selfStudySessions: [],
+    feedback: [], pricingTiers: [], workshops: [], selfStudySessions: [],
     performanceReviews: [], cancelledClasses: [], messages: [], holidays: [],
     replacementCredits: [],
     families: [],

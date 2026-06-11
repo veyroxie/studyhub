@@ -207,17 +207,8 @@ func seedIfEmpty(db *DB) {
 		db.Exec(`INSERT INTO feedback(id,class_id,teacher_id,date,topic,mood,notes,student_notes) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, f...)
 	}
 
-	// ── Subjects ──────────────────────────────────────────────────────────────
-	subjects := [][]any{
-		{"sub1", "Japanese Level 1 & 2", "Academic", "Beginner", "Foundational Japanese reading, writing and conversation for young learners.", 150.0, "green"},
-		{"sub2", "Japanese Level 3 & 4", "Academic", "Intermediate", "Intermediate Japanese with expanded vocabulary and grammar.", 150.0, "teal"},
-		{"sub3", "Japanese Level 5 & 6", "Academic", "Advanced", "Advanced Japanese for fluency and JLPT preparation.", 150.0, "purple"},
-		{"sub4", "English", "Academic", "All Levels", "English language skills covering reading, writing and comprehension.", 150.0, "blue"},
-		{"sub5", "TSH Members Club", "Non-academic", "All Ages", "Creative arts, games and social activities for members.", 80.0, "orange"},
-	}
-	for _, s := range subjects {
-		db.Exec(`INSERT INTO subjects(id,name,category,level,description,monthly_fee,color) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, s...)
-	}
+	// Subjects removed — pricing is now the type×level matrix (pricing_tiers),
+	// seeded by migration 0016.
 
 	// ── Workshops ─────────────────────────────────────────────────────────────
 	workshops := [][]any{
