@@ -53,7 +53,7 @@
       // Teacher filter
       + '<select onchange="App.Analytics._setTeacher(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#374151">'
       +   '<option value="">All Tutors</option>'
-      +   staff.map(function(s) { return '<option value="' + s.id + '"' + (_filterTeacher === s.id ? ' selected' : '') + '>' + App.Utils.esc(s.name) + '</option>'; }).join('')
+      +   staff.map(function(s) { return '<option value="' + s.id + '"' + (_filterTeacher === s.id ? ' selected' : '') + '>' + App.Utils.esc(s.fullName || s.name) + '</option>'; }).join('')
       + '</select>'
       // Category filter
       + '<select onchange="App.Analytics._setCategory(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#374151">'
