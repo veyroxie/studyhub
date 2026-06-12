@@ -70,7 +70,7 @@
 
     // ── Early bird check ──────────────────────────────────────────────────────
     const todayDay = new Date().getDate();
-    const isEarlyBirdPeriod = todayDay <= 10;
+    const isEarlyBirdPeriod = todayDay <= 7;
 
     // ── Notification banners ──────────────────────────────────────────────────
     let notifBanner = '';
@@ -88,7 +88,7 @@
       } else if (isEarlyBirdPeriod) {
         notifBanner = '<div class="mb-4 px-4 py-3 rounded-xl flex items-center gap-3" style="background:#fffbeb;border:1px solid #C9A227">'
           + '<div style="width:8px;height:8px;border-radius:50%;background:var(--gold);flex-shrink:0"></div>'
-          + '<div class="text-sm" style="color:#92400e"><span class="font-semibold">Early bird discount active</span> — pay by the <strong>10th</strong> to keep your <strong>RM10 off</strong>; unpaid invoices return to full price after.</div>'
+          + '<div class="text-sm" style="color:#92400e"><span class="font-semibold">Early bird discount active</span> — pay by the <strong>7th</strong> to keep your <strong>RM10 off</strong>; unpaid invoices return to full price after.</div>'
           + '</div>';
       } else if (myDueSoon.length > 0) {
         notifBanner = '<div class="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3">'
@@ -1038,9 +1038,9 @@
       + '</div>'
     );
 
-    // Auto-enable early bird if within the early-bird window (1st–10th)
+    // Auto-enable early bird if within the early-bird window (1st–7th)
     (function() {
-      if (new Date().getDate() <= 10) {
+      if (new Date().getDate() <= 7) {
         var cb = document.getElementById('early-bird-cb');
         if (cb) { cb.checked = true; _toggleEarlyBird(); }
       }

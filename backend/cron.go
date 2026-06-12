@@ -144,7 +144,7 @@ func generateSelfStudyOverflowInvoices(db *DB, now time.Time) int {
 
 	created := 0
 	createdOn := now.Format("2006-01-02")
-	dueDate := time.Date(now.Year(), now.Month(), 10, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	dueDate := time.Date(now.Year(), now.Month(), 7, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
 	for rows.Next() {
 		var stuID, tid, firstName, lastName string
 		var quotaHours, usedMin int
@@ -317,10 +317,10 @@ func generateMonthlyInvoices(db *DB, now time.Time) int {
 		return 0
 	}
 
-	// Issued on the 1st (catch-up window to the 7th), due the 10th. The
+	// Issued on the 1st (catch-up window to the 7th), due the 7th. The
 	// early-bird discount is kept only if paid by the cutoff (= due date);
 	// applyEarlyBirdExpiry restores full price on unpaid invoices afterwards.
-	dueDate := time.Date(now.Year(), now.Month(), 10, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	dueDate := time.Date(now.Year(), now.Month(), 7, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
 	earlyBirdCutoff := dueDate
 	createdOn := now.Format("2006-01-02")
 	monthLabel := now.Format("Jan 2006")

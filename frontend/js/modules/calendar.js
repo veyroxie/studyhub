@@ -108,7 +108,7 @@
       + '<button onclick="App.Calendar._setView(\'week\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='week'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='week'?'#0a0a0a':'#94a3b8') + '">Week</button>'
       + '<button onclick="App.Calendar._setView(\'month\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='month'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='month'?'#0a0a0a':'#94a3b8') + '">Month</button>'
       + '<button onclick="App.Calendar._setView(\'timetable\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='timetable'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='timetable'?'#0a0a0a':'#94a3b8') + '">Timetable</button>'
-      + (isAdmin ? '<button onclick="App.Calendar._setView(\'programs\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='programs'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='programs'?'#0a0a0a':'#94a3b8') + '">Programs</button>' : '')
+      + (isAdmin ? '<button onclick="App.Calendar._setView(\'programs\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='programs'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='programs'?'#0a0a0a':'#94a3b8') + '">Settings</button>' : '')
       + '</div>';
 
     const headerHtml = ''
@@ -428,8 +428,8 @@
       + '<div class="grid grid-cols-2 gap-3 mb-5 text-sm">'
       +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Teacher(s)</div><div class="font-medium">' + App.Utils.esc(teachers) + '</div></div>'
       +   (isClient ? '' : '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Enrolled</div><div class="font-medium">' + c.enrolled + '/' + c.capacity + '</div></div>')
-      +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Category</div><div class="font-medium">' + (c.category || 'Academic') + '</div></div>'
       +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Type</div><div class="font-medium">' + (c.classType || 'Group') + '</div></div>'
+      +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Level band</div><div class="font-medium">' + (c.levelBand ? 'Level ' + c.levelBand : '—') + '</div></div>'
       + '</div>'
       // Enrolled students roster (admin/teacher only — parents see their
       // own kids via Students panel, not other families' kids).
@@ -556,9 +556,8 @@
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Capacity', '<input id="cap-input" name="capacity" type="number" min="1" max="5" class="form-input" value="5" readonly style="background:#f8fafc;color:#64748b">')
-      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Category</label><select name="category" class="form-input"><option>Academic</option><option>Non-academic</option><option>Workshop</option></select></div>'
-      + '</div>'
       + _field('Level band (sets monthly fee)', '<select name="levelBand" class="form-input">' + _levelBandOptions('') + '</select>')
+      + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Class</button>'
@@ -597,7 +596,7 @@
         capacity: capacity,
         enrolled: 0,
         color: classType === 'Private' ? 'purple' : 'blue',
-        category: fd.get('category') || 'Academic',
+        category: '',
         levelBand: fd.get('levelBand') || ''
       };
 
@@ -976,9 +975,6 @@
     var dayOpts = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(function(d) {
       return '<option' + (c.day === d ? ' selected' : '') + '>' + d + '</option>';
     }).join('');
-    var catOpts = ['Academic','Non-academic','Workshop'].map(function(cat) {
-      return '<option' + (c.category === cat ? ' selected' : '') + '>' + cat + '</option>';
-    }).join('');
     var teacherCheckboxes = state.staff.map(function(s) {
       var checked = (c.teacherIds || []).indexOf(s.id) > -1 ? ' checked' : '';
       return '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem"><input type="checkbox" name="teacherIds" value="' + s.id + '"' + checked + ' style="accent-color:var(--gold)">' + App.Utils.esc(s.name) + '</label>';
@@ -999,9 +995,8 @@
       + '</div>'
       + '<div class="grid grid-cols-2 gap-3">'
       + _field('Capacity', '<input name="capacity" type="number" min="1" class="form-input" value="' + c.capacity + '">')
-      + _field('Category', '<select name="category" class="form-input">' + catOpts + '</select>')
-      + '</div>'
       + _field('Color', '<select name="color" class="form-input">' + colorOpts + '</select>')
+      + '</div>'
       + '<div class="grid grid-cols-2 gap-3">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Class Type</label><select name="classType" class="form-input"><option' + ((c.classType||'Group')==='Group'?' selected':'') + '>Group</option><option' + ((c.classType||'Group')==='Private'?' selected':'') + '>Private</option></select></div>'
       + _field('Level band (sets fee)', '<select name="levelBand" class="form-input">' + _levelBandOptions(c.levelBand || '') + '</select>')
@@ -1030,7 +1025,7 @@
         capacity: parseInt(fd.get('capacity')) || 5,
         enrolled: c.enrolled,
         color: fd.get('color'),
-        category: fd.get('category') || 'Academic',
+        category: c.category || '',
         classType: fd.get('classType') || 'Group',
         levelBand: fd.get('levelBand') || ''
       };
