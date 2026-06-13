@@ -115,7 +115,7 @@
       +   '<h1 class="text-2xl font-bold text-slate-800">Billing</h1>'
       +   (isAdmin
           ? '<div class="flex gap-2">'
-          + '<button onclick="App.Billing._generateMonthly()" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700" title="Run the monthly invoice + payroll job for this month">Generate Monthly</button>'
+          + '<button onclick="App.Billing._generateMonthly()" class="px-4 py-2 text-sm text-white rounded-lg" style="background:#4f46e5" title="Run the monthly invoice + payroll job for this month">Generate Monthly</button>'
           + '<button onclick="App.Billing._exportCSV()" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Export CSV</button>'
           + '<button onclick="App.Billing._createModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Create Invoice</button>'
           + '</div>'
