@@ -10,7 +10,7 @@
 // Versioned cache name so a deploy invalidates the old shell. Bump SW_VERSION
 // on every release (release-please can wire this).
 
-const SW_VERSION = 'v2026-05-25-1';
+const SW_VERSION = 'v2026-06-14-1';
 const SHELL_CACHE = 'sh-shell-' + SW_VERSION;
 
 // Files that must be available offline for the app to render its empty shell.
@@ -64,24 +64,22 @@ self.addEventListener('fetch', (event) => {
     return; // default network behavior
   }
 
-  // Same-origin GETs: cache-first, then network. If both fail, return a
-  // minimal offline notice.
+  // Same-origin GETs: NETWORK-FIRST so a deploy is picked up immediately —
+  // cache-first previously served stale JS/CSS until the SW version changed,
+  // which silently hid deploys. Fall back to cache only when the network fails
+  // (offline). API/ws already bypass this above.
   if (url.origin === self.location.origin) {
     event.respondWith(
-      caches.match(req).then((cached) => {
-        const fetchPromise = fetch(req).then((res) => {
-          // Cache successful responses only.
-          if (res && res.status === 200) {
-            const copy = res.clone();
-            caches.open(SHELL_CACHE).then((c) => c.put(req, copy));
-          }
-          return res;
-        }).catch(() => cached || new Response(
-          'You appear to be offline.',
-          { status: 503, headers: { 'Content-Type': 'text/plain' } }
-        ));
-        return cached || fetchPromise;
-      })
+      fetch(req).then((res) => {
+        if (res && res.status === 200) {
+          const copy = res.clone();
+          caches.open(SHELL_CACHE).then((c) => c.put(req, copy));
+        }
+        return res;
+      }).catch(() => caches.match(req).then((cached) => cached || new Response(
+        'You appear to be offline.',
+        { status: 503, headers: { 'Content-Type': 'text/plain' } }
+      )))
     );
   }
 });
