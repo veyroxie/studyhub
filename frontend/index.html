@@ -92,6 +92,17 @@
     // localhost over plain HTTP (file://) and during register.html / verify.html
     // flows where the parent shouldn't get an installed app prompt mid-signup.
     if ('serviceWorker' in navigator && location.protocol === 'https:') {
+      // Auto-reload once when a newly-deployed service worker takes control, so
+      // a deploy reaches every device with no manual cache-clear. Guarded so it
+      // only fires for clients that already had an old SW (not first install),
+      // and only once (no reload loop).
+      var _hadController = !!navigator.serviceWorker.controller;
+      var _swRefreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (_swRefreshing || !_hadController) return;
+        _swRefreshing = true;
+        window.location.reload();
+      });
       window.addEventListener('load', function() {
         navigator.serviceWorker.register('/sw.js').catch(function(err) {
           console.warn('SW register failed:', err);
