@@ -170,7 +170,10 @@
   function _syncDockActive() {
     var current = App.Router ? App.Router.current() : null;
     document.querySelectorAll('.dock-btn').forEach(function(btn) {
-      btn.classList.toggle('active', btn.dataset.page === current);
+      var isActive = btn.dataset.page === current;
+      btn.classList.toggle('active', isActive);
+      // If the dock overflows (many items), bring the active one into view.
+      if (isActive && btn.scrollIntoView) btn.scrollIntoView({ block: 'nearest', inline: 'center' });
     });
   }
 

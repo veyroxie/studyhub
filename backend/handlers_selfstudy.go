@@ -178,6 +178,12 @@ func handleCreateSelfStudy(db *DB) http.HandlerFunc {
 		if c != nil {
 			logAudit(db, c.Email, "self_study_created", "self_study", s.ID, "student="+s.StudentID)
 		}
+		// Notify the parent only for a live arrival — a session logged with a
+		// start but no end yet. A fully backfilled session (end already set) is
+		// historical data entry, so a real-time "checked in" would be wrong.
+		if s.StartTime != "" && s.EndTime == "" {
+			go notifySelfStudyCheckIn(db, tid, s.StudentID, s.StartTime)
+		}
 		w.WriteHeader(http.StatusCreated)
 		respond(w, s)
 	}

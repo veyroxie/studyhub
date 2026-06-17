@@ -24,24 +24,44 @@ type studentNotify struct {
 	parentName string
 }
 
-// notifyParentOnCheck sends the parent push + (opt-in) email for one check
-// event. isCheckIn distinguishes arrival from departure.
+// notifyParentOnCheck sends the parent push + (opt-in) email for one class
+// attendance check event. isCheckIn distinguishes arrival from departure.
 func notifyParentOnCheck(db *DB, tenantID int, a Attendance, isCheckIn bool) {
-	stu, ok := lookupStudentForNotify(db, tenantID, a.PersonID)
+	verb := "checked out"
+	eventTime := timeOrEmpty(a.CheckOut)
+	if isCheckIn {
+		verb = "checked in"
+		eventTime = timeOrEmpty(a.CheckIn)
+	}
+	context := classNameByID(db, tenantID, a.ClassID)
+	dispatchParentNotify(db, tenantID, a.PersonID, verb, context, eventTime)
+}
+
+// notifySelfStudyCheckIn pings the parent when a live self-study session starts
+// (logged with a start time but no end yet). Reuses the same billing gate and
+// channels as class check-ins, labelled "Self-study" so the parent has context.
+func notifySelfStudyCheckIn(db *DB, tenantID int, studentID, startTime string) {
+	dispatchParentNotify(db, tenantID, studentID, "checked in", "Self-study", startTime)
+}
+
+// dispatchParentNotify is the shared core: resolve student + parent, apply the
+// billing gate, then push + (opt-in) email. context is the class name or
+// "Self-study"; eventTime is the HH:MM of the event.
+func dispatchParentNotify(db *DB, tenantID int, studentID, verb, context, eventTime string) {
+	stu, ok := lookupStudentForNotify(db, tenantID, studentID)
 	if !ok || stu.contact == "" {
 		return
 	}
 	if hasUnpaidMonthly(db, tenantID, stu.contact) {
 		return
 	}
-	className := classNameByID(db, tenantID, a.ClassID)
-	fullName := strings.TrimSpace(stu.firstName + " " + stu.lastName)
-	title, detail := checkEventMessage(fullName, className, a, isCheckIn)
+	title := strings.TrimSpace(stu.firstName+" "+stu.lastName) + " " + verb
+	detail := eventTime
+	if context != "" {
+		detail = context + " · " + eventTime
+	}
 	sendPushToParent(db, tenantID, stu.contact, pushPayload{
-		Title: title,
-		Body:  detail,
-		URL:   checkinActionURL,
-		Tag:   "checkin-" + a.PersonID,
+		Title: title, Body: detail, URL: checkinActionURL, Tag: "checkin-" + studentID,
 	})
 	maybeEmailParent(db, stu.contact, stu.parentName, title, detail)
 }
@@ -86,22 +106,6 @@ func hasUnpaidMonthly(db *DB, tenantID int, parentEmail string) bool {
 		return false
 	}
 	return exists
-}
-
-// checkEventMessage builds the notification title + detail line.
-func checkEventMessage(studentName, className string, a Attendance, isCheckIn bool) (string, string) {
-	verb := "checked out"
-	t := timeOrEmpty(a.CheckOut)
-	if isCheckIn {
-		verb = "checked in"
-		t = timeOrEmpty(a.CheckIn)
-	}
-	title := strings.TrimSpace(studentName) + " " + verb
-	detail := t
-	if className != "" {
-		detail = className + " · " + t
-	}
-	return title, detail
 }
 
 func timeOrEmpty(t *string) string {
