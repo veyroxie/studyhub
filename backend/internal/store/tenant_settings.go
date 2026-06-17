@@ -29,6 +29,14 @@ type TenantSettings struct {
 	Currency          string `json:"currency"`
 	Timezone          string `json:"timezone"`
 	InvoiceFooterHTML string `json:"invoiceFooterHtml"`
+
+	// Bank + payment details for the invoice/receipt PDF payment section.
+	// Fully configurable per tenant — never hardcoded into the renderer.
+	BankName            string `json:"bankName"`
+	BankAccountNo       string `json:"bankAccountNo"`
+	BankAccountHolder   string `json:"bankAccountHolder"`
+	PaymentInstructions string `json:"paymentInstructions"`
+	InvoiceTerms        string `json:"invoiceTerms"`
 }
 
 type tenantSettingsCacheEntry struct {
@@ -76,7 +84,9 @@ func LoadTenantSettings(db *DB, tenantID int) *TenantSettings {
 		COALESCE(address_line1,''), COALESCE(address_line2,''), COALESCE(tax_id,''),
 		COALESCE(support_email,''), COALESCE(support_phone,''),
 		COALESCE(locale,'en-MY'), COALESCE(currency,'MYR'),
-		COALESCE(timezone,'Asia/Kuala_Lumpur'), COALESCE(invoice_footer_html,'')
+		COALESCE(timezone,'Asia/Kuala_Lumpur'), COALESCE(invoice_footer_html,''),
+		COALESCE(bank_name,''), COALESCE(bank_account_no,''), COALESCE(bank_account_holder,''),
+		COALESCE(payment_instructions,''), COALESCE(invoice_terms,'')
 		FROM tenants WHERE id=?`, tenantID).Scan(
 		&s.Slug, &s.BrandName, &s.BrandTagline,
 		&s.LogoPath, &s.PrimaryColor,
@@ -84,6 +94,8 @@ func LoadTenantSettings(db *DB, tenantID int) *TenantSettings {
 		&s.SupportEmail, &s.SupportPhone,
 		&s.Locale, &s.Currency,
 		&s.Timezone, &s.InvoiceFooterHTML,
+		&s.BankName, &s.BankAccountNo, &s.BankAccountHolder,
+		&s.PaymentInstructions, &s.InvoiceTerms,
 	)
 	if err == sql.ErrNoRows || err != nil {
 		s = DefaultTenantSettings
@@ -214,6 +226,12 @@ func HandleAdminSettings(db *DB) http.HandlerFunc {
 				Timezone          *string `json:"timezone"`
 				InvoiceFooterHTML *string `json:"invoiceFooterHtml"`
 				Slug              *string `json:"slug"`
+
+				BankName            *string `json:"bankName"`
+				BankAccountNo       *string `json:"bankAccountNo"`
+				BankAccountHolder   *string `json:"bankAccountHolder"`
+				PaymentInstructions *string `json:"paymentInstructions"`
+				InvoiceTerms        *string `json:"invoiceTerms"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				core.RespondError(w, "bad body", 400)
@@ -246,6 +264,11 @@ func HandleAdminSettings(db *DB) http.HandlerFunc {
 			add("timezone", body.Timezone)
 			add("invoice_footer_html", body.InvoiceFooterHTML)
 			add("slug", body.Slug)
+			add("bank_name", body.BankName)
+			add("bank_account_no", body.BankAccountNo)
+			add("bank_account_holder", body.BankAccountHolder)
+			add("payment_instructions", body.PaymentInstructions)
+			add("invoice_terms", body.InvoiceTerms)
 			if len(parts) == 0 {
 				core.Respond(w, LoadTenantSettings(db, tid))
 				return

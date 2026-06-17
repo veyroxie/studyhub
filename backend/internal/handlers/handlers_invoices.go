@@ -347,6 +347,17 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "could not update invoice", 500)
 			return
 		}
+
+		// Assign a receipt number the first time an invoice becomes Paid. Drawn
+		// from receipt_no_seq so numbers are monotonic (RCPT-000001, ...). The
+		// guard on status='Paid' AND empty receipt_no makes this idempotent —
+		// re-paying an already-paid invoice keeps the original receipt number.
+		if newStatus == "Paid" {
+			rcptArgs := append([]any{id}, twArgs...)
+			if _, err := db.Exec(`UPDATE invoices SET receipt_no='RCPT-'||lpad(nextval('receipt_no_seq')::text,6,'0') WHERE id=? AND status='Paid' AND (receipt_no IS NULL OR receipt_no='')`+tw, rcptArgs...); err != nil {
+				core.LogFromReq(r).Error("failed to assign receipt number", "err", err, "invoice_id", id)
+			}
+		}
 		detailBytes, _ := json.Marshal(map[string]any{
 			"studentId": studentID,
 			"amount":    amount,

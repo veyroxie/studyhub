@@ -153,7 +153,8 @@ func createSchema(db *sql.DB) error {
 		discount_pct          REAL DEFAULT 0,
 		submitted_by_parent   BOOLEAN DEFAULT FALSE,
 		sibling_ids           TEXT DEFAULT '[]',
-		sibling_discount      REAL DEFAULT 0
+		sibling_discount      REAL DEFAULT 0,
+		receipt_no            TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS audit_logs (
