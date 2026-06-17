@@ -8,8 +8,8 @@ COPY backend/ .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
-    -ldflags="-s -w -X main.buildVersion=${VERSION}" \
-    -o studyhub .
+    -ldflags="-s -w -X studyhub/internal/core.BuildVersion=${VERSION}" \
+    -o studyhub ./cmd/api
 
 # Build a purged + minified tailwind.css from the current frontend sources,
 # plus minify every .js file in place so the final image ships ~280KB of
