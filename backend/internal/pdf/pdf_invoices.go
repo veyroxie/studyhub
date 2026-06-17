@@ -162,7 +162,9 @@ func renderTitleBlock(pdf *gofpdf.Fpdf, d invoicePDFData, paid bool) {
 	infoBlock(pdf, "Invoice No", d.InvoiceID)
 	infoBlock(pdf, "Invoice Date", d.CreatedOn)
 	infoBlock(pdf, "Due Date", d.DueDate)
-	infoBlock(pdf, "Reference", d.InvoiceID)
+	if d.ReferenceNo != "" {
+		infoBlock(pdf, "Reference", d.ReferenceNo)
+	}
 	pdf.Ln(3)
 }
 
