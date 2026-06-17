@@ -266,6 +266,11 @@
   }
 
   function start() {
+    // Never run the tour over the login screen — autoStart fires on a 800ms
+    // timer after login, so a session expiry (which re-shows login) in that
+    // window would otherwise render the tour on top of the login page.
+    var loginEl = document.getElementById('login-screen');
+    if (loginEl && !loginEl.classList.contains('hidden')) return;
     _step = 0;
     _steps = _getSteps();
     _createOverlay();
