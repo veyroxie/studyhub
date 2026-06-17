@@ -362,7 +362,8 @@
     App.Router.register('staff',         App.Staff);
     App.Router.register('attendance',    App.Attendance);
     App.Router.register('progress',      App.Progress);
-    App.Router.register('analytics',     App.Analytics);
+    // analytics is lazy-loaded (see the loader in index.html) and registers
+    // itself with the router on load — registering here would store undefined.
     App.Router.register('profile',       App.Profile);
 
     // Init router (sets up nav button click handlers)

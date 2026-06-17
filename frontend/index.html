@@ -645,6 +645,15 @@
       var s = document.createElement('script');
       s.src = 'js/modules/analytics.js';
       s.async = false;
+      // analytics.js is lazy-injected AFTER main.js already ran its module
+      // registration, so it must register itself with the router on load —
+      // otherwise the page div stays blank ("can't see stats").
+      s.onload = function() {
+        if (window.App && App.Router && App.Analytics) {
+          App.Router.register('analytics', App.Analytics);
+          if (App.Router.current() === 'analytics') App.Router.refresh();
+        }
+      };
       document.body.appendChild(s);
     }
     // Watch for hash navigation; the router publishes the active page id

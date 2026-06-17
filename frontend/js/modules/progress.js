@@ -161,7 +161,7 @@
     var rows = filtered.length === 0
       ? App.Utils.emptyState('No progress reports yet',
           canEdit ? 'Click below to create the first one for the current term.' : 'Reports will appear here once published.',
-          canEdit ? '<button class="sh-btn-primary" onclick="App.Progress._newReport()">+ New report</button>' : '')
+          canEdit ? '<button class="sh-btn-primary" onclick="App.Progress._newModal()">+ New report</button>' : '')
       : filtered.map(function(pr) {
           var st = students.find(function(x) { return x.id === pr.studentId; });
           var teacher = staff.find(function(x) { return x.id === pr.teacherId; });
