@@ -19,13 +19,13 @@ This is a one-developer project, so "contributing" mostly means "future-you in
 
 - **New REST endpoint:** add the handler to the existing `handlers_<domain>.go`
   if it fits. Create a new `handlers_<newdomain>.go` if it's a new concern.
-  Wire the route in `main.go` under the right group (public / authenticated /
-  admin-only).
-- **New entity:** add the struct to `models.go`, the table to `database.go`'s
-  `createSchema`, columns to `runMigrations` if extending an existing table.
-  For brand-new tables, prefer `backend/migrations/NNNN_*.sql` over editing
-  `database.go`.
-- **New email template:** add to `mailer.go` as a `render*Email(...)` function.
+  Wire the route in `internal/server` under the right group (public /
+  authenticated / admin-only).
+- **New entity:** add the struct to `internal/models`, the table to
+  `internal/store/database.go`'s `createSchema`, columns to `runMigrations` if
+  extending an existing table. For brand-new tables, prefer
+  `backend/internal/store/migrations/NNNN_*.sql` over editing `database.go`.
+- **New email template:** add to `internal/mailer/mailer.go` as a `Render*Email(...)` function.
   Inline HTML with the existing layout constants — no templating engine.
 - **New background job:** none of these exist yet. When you need one, the
   pattern will be `time.NewTicker` in a goroutine started from `main.go`.
@@ -110,10 +110,10 @@ has shifted.
 
 ```bash
 # Pick the next number after the highest existing file
-ls backend/migrations/*.sql
+ls backend/internal/store/migrations/*.sql
 
 # Create the new file
-$EDITOR backend/migrations/0007_add_late_fee_column.sql
+$EDITOR backend/internal/store/migrations/0007_add_late_fee_column.sql
 ```
 
 ```sql

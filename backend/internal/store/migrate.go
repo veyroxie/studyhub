@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// Migrations are numbered SQL files under backend/migrations/, embedded into
+// Migrations are numbered SQL files under backend/internal/store/migrations/, embedded into
 // the binary at build time. On startup, runFileMigrations() applies any that
 // haven't been recorded in the schema_migrations table yet.
 //
@@ -20,7 +20,7 @@ import (
 //     production databases provisioned before this system existed. It's
 //     idempotent and harmless to keep running.
 //   - runFileMigrations() is the path forward: every NEW schema change goes
-//     into backend/migrations/NNNN_<name>.sql and is tracked properly.
+//     into backend/internal/store/migrations/NNNN_<name>.sql and is tracked properly.
 //
 // Why not the Atlas CLI? It requires installing a separate binary and shipping
 // it in the Docker image. A pure-stdlib applier is simpler, has zero deps,

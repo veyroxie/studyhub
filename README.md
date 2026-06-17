@@ -98,10 +98,11 @@ There are two migration paths, both run on every startup:
 1. **Legacy** (`runMigrations` in `database.go`) — idempotent
    `ALTER TABLE ... IF NOT EXISTS` blocks. Existing prod databases were
    provisioned this way. Do **not** add new ones here.
-2. **Atlas-style** (`runFileMigrations` in `migrate.go` + `backend/migrations/`)
-   — numbered `.sql` files applied in order, tracked by checksum in the
-   `schema_migrations` table. **All new schema changes go here.** See
-   [`backend/migrations/README.md`](backend/migrations/README.md).
+2. **Atlas-style** (`runFileMigrations` in `internal/store/migrate.go` +
+   `backend/internal/store/migrations/`) — numbered `.sql` files applied in
+   order, tracked by checksum in the `schema_migrations` table. **All new schema
+   changes go here.** See
+   [`backend/internal/store/migrations/README.md`](backend/internal/store/migrations/README.md).
 
 ## Deploy
 
