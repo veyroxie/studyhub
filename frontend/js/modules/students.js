@@ -664,6 +664,7 @@
       + _field('Parent Email', '<input name="contact" type="email" class="form-input" required>')
       + _field('Phone (with country code)', '<input name="phone" class="form-input" placeholder="60123456789">')
       + '</div>'
+      + '<p style="font-size:0.72rem;color:#94a3b8;margin:-0.35rem 0 0.5rem;line-height:1.45">A parent account is created (or linked) from this email automatically — they get a set-password link to claim it.</p>'
       + _multiClassField([], classes)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="0" placeholder="e.g. 380">')

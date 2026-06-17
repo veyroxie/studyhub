@@ -131,6 +131,9 @@
       + _notificationsCard(profile, isParent)
       + _securityCard(profile)
       + (isParent ? _helpCard() : '')
+      + '<div style="text-align:center;padding:0.25rem 0 0.5rem">'
+      +   '<button type="button" id="pf-replay-tour" style="font-size:0.78rem;color:#64748b;background:none;border:none;cursor:pointer;text-decoration:underline">Replay the product tour</button>'
+      + '</div>'
       + '</div>';
   }
 
@@ -139,6 +142,8 @@
     _wirePassword();
     _wireToggles(profile);
     _wirePush();
+    var replay = document.getElementById('pf-replay-tour');
+    if (replay) replay.addEventListener('click', function() { if (App.Tutorial) App.Tutorial.start(); });
     if (App.currentRole === 'admin' || App.currentRole === 'superadmin') {
       App.Dashboard._renderMFASection(profile.mfaEnabled);
     }
