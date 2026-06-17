@@ -42,7 +42,7 @@ func handlePushSubscribe(db *DB) http.HandlerFunc {
 		}
 		_, err := db.Exec(`INSERT INTO push_subscriptions(tenant_id,parent_email,endpoint,p256dh,auth)
 			VALUES(?,?,?,?,?)
-			ON CONFLICT(endpoint) DO UPDATE SET parent_email=EXCLUDED.parent_email, p256dh=EXCLUDED.p256dh, auth=EXCLUDED.auth`,
+			ON CONFLICT(endpoint) DO UPDATE SET tenant_id=EXCLUDED.tenant_id, parent_email=EXCLUDED.parent_email, p256dh=EXCLUDED.p256dh, auth=EXCLUDED.auth`,
 			tenantID(c), c.Email, body.Endpoint, body.P256dh, body.Auth)
 		if err != nil {
 			respondError(w, "could not save subscription", http.StatusInternalServerError)

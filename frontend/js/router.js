@@ -10,7 +10,8 @@
     staff:         'Staff',
     attendance:    'Attendance',
     progress:      'Progress Reports',
-    analytics:     'Analytics'
+    analytics:     'Analytics',
+    profile:       'My Profile'
   };
 
   const _modules = {};

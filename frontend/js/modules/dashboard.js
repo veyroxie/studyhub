@@ -301,7 +301,7 @@
       +     '<h1 style="font-family:var(--serif);font-size:1.7rem;font-weight:700;letter-spacing:-0.04em;color:#1a1a1a;line-height:1.2;margin:0">Good ' + _tod + (childNames ? ', ' + childNames + '\'s family' : '') + '</h1>'
       +     '<p style="font-size:0.82rem;color:#64748b;margin:4px 0 0">' + myStudents.length + ' child' + (myStudents.length !== 1 ? 'ren' : '') + ' enrolled</p>'
       +   '</div>'
-      +   '<button onclick="App.Dashboard._profileModal()" title="Edit profile" style="padding:0.45rem 0.9rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:0.4rem;transition:all 0.15s" onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'#374151\'" onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#64748b\'">'
+      +   '<button onclick="App.Router.navigate(\'profile\')" title="Edit profile" style="padding:0.45rem 0.9rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:0.4rem;transition:all 0.15s" onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'#374151\'" onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#64748b\'">'
       +     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
       +     'My Profile'
       +   '</button>'
@@ -1205,108 +1205,13 @@
     return new Date().toLocaleDateString('en-MY', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
   }
 
-  // ── Profile modal (parent self-service) ──────────────────────────────────
-  async function _profileModal() {
-    var profile;
-    try {
-      profile = await App.Api.get('/api/auth/profile');
-    } catch(e) { return; }
-    if (!profile) return;
-
-    App.Utils.showModal(
-      '<div class="p-6" style="min-width:380px">'
-      + '<h2 style="font-size:1.15rem;font-weight:700;color:#111;margin:0 0 0.25rem">My Profile</h2>'
-      + '<p style="font-size:0.78rem;color:#94a3b8;margin:0 0 1.25rem">' + App.Utils.esc(profile.email) + '</p>'
-
-      + '<form id="profile-form" style="display:flex;flex-direction:column;gap:0.85rem">'
-      + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Name</label>'
-      +   '<input name="name" value="' + App.Utils.esc(profile.name || '') + '" class="form-input" required></div>'
-      + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Phone</label>'
-      +   '<input name="phone" value="' + App.Utils.esc(profile.phone || '') + '" class="form-input"></div>'
-      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save changes</button>'
-      + '</form>'
-
-      + '<div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid #f1f5f9">'
-      + '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.75rem">Change password</h3>'
-      + '<form id="change-pw-form" style="display:flex;flex-direction:column;gap:0.75rem">'
-      + '<input name="currentPassword" type="password" placeholder="Current password" class="form-input" required>'
-      + '<input name="newPassword" type="password" placeholder="New password (min 8 chars)" class="form-input" required minlength="8">'
-      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.8rem;font-weight:600;background:#fff;color:#374151;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer">Update password</button>'
-      + '</form>'
-      + '</div>'
-
-      + (App.currentRole === 'client'
-        ? '<div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid #f1f5f9">'
-          + '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.4rem">Check-in alerts</h3>'
-          + '<p style="font-size:0.75rem;color:#64748b;margin:0 0 0.85rem">Get notified the moment your child checks in or out.</p>'
-          + '<button type="button" id="push-enable-btn" style="padding:0.5rem 1rem;font-size:0.8rem;font-weight:600;background:#fff;color:#374151;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer">Enable push alerts</button>'
-          + '<label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.9rem;font-size:0.82rem;color:#374151;cursor:pointer">'
-          +   '<input type="checkbox" id="notify-checkin-email"' + (profile.notifyCheckinEmail ? ' checked' : '') + '> Also email me</label>'
-          + '<p style="font-size:0.7rem;color:#94a3b8;margin:0.7rem 0 0;line-height:1.5">Push works even when the app is closed. In-app pop-ups only appear while StudyHub is open.</p>'
-          + '</div>'
-        : '')
-
-      + (App.currentRole === 'admin' || App.currentRole === 'superadmin'
-        ? '<div id="mfa-section" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid #f1f5f9"></div>'
-        : '')
-
-      + '<div style="margin-top:1rem;text-align:right">'
-      + '<button onclick="App.Utils.hideModal()" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Close</button>'
-      + '</div>'
-      + '</div>'
-    );
-    if (App.currentRole === 'admin' || App.currentRole === 'superadmin') {
-      _renderMFASection(profile.mfaEnabled);
-    }
-
-    document.getElementById('profile-form').addEventListener('submit', async function(e) {
-      e.preventDefault();
-      var fd = new FormData(e.target);
-      try {
-        await App.Api.put('/api/auth/profile', { name: fd.get('name'), phone: fd.get('phone') });
-        App.Utils.showToast('Profile updated', 'success');
-        await App.Api.loadSnapshot();
-      } catch(err) {}
-    });
-
-    document.getElementById('change-pw-form').addEventListener('submit', async function(e) {
-      e.preventDefault();
-      var fd = new FormData(e.target);
-      try {
-        await App.Api.post('/api/auth/change-password', {
-          currentPassword: fd.get('currentPassword'),
-          newPassword: fd.get('newPassword')
-        });
-        App.Utils.showToast('Password changed', 'success');
-        e.target.reset();
-      } catch(err) {}
-    });
-
-    var pushBtn = document.getElementById('push-enable-btn');
-    if (pushBtn) {
-      if (App.Push && App.Push.isGranted()) {
-        pushBtn.textContent = 'Push alerts enabled';
-        pushBtn.disabled = true;
-      }
-      pushBtn.addEventListener('click', async function() {
-        if (!App.Push) return;
-        var ok = await App.Push.enable();
-        if (ok) { pushBtn.textContent = 'Push alerts enabled'; pushBtn.disabled = true; }
-      });
-    }
-
-    var emailToggle = document.getElementById('notify-checkin-email');
-    if (emailToggle) {
-      emailToggle.addEventListener('change', async function() {
-        try {
-          await App.Api.put('/api/auth/profile', { name: profile.name, notifyCheckinEmail: emailToggle.checked });
-          App.Utils.showToast(emailToggle.checked ? 'Email alerts on' : 'Email alerts off', 'success');
-        } catch(err) {}
-      });
-    }
+  // Profile is now a full page (js/modules/profile.js). Kept as a thin
+  // delegator so any lingering caller still lands on the new page.
+  function _profileModal() {
+    App.Router.navigate('profile');
   }
 
-  // ── MFA enrolment (inside profile modal) ────────────────────────────────
+  // ── MFA enrolment (reused by the Profile page via App.Dashboard) ─────────
   // Two states: not-enrolled (show "Enable" → setup → QR → confirm → codes)
   // and enrolled (show "Disable" with confirmation). The /api/auth/profile
   // payload carries mfaEnabled so we render the right state without a
@@ -1444,6 +1349,7 @@
     _resendVerification: _resendVerification,
     _mfaStart: _mfaStart,
     _mfaDisable: _mfaDisable,
-    _mfaCopyCodes: _mfaCopyCodes
+    _mfaCopyCodes: _mfaCopyCodes,
+    _renderMFASection: _renderMFASection
   };
 })();

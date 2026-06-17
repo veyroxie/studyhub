@@ -70,13 +70,21 @@ func classNameByID(db *DB, tenantID int, classID *string) string {
 
 // hasUnpaidMonthly mirrors the frontend gate: any Monthly invoice still
 // Unpaid/Overdue for one of the parent's children blocks check-in alerts.
+//
+// On a query error we log and return false (let the alert through). A check-in
+// notification is a safety signal — suppressing it because a query hiccuped is
+// worse than the rare case of one alert slipping past the billing gate.
 func hasUnpaidMonthly(db *DB, tenantID int, parentEmail string) bool {
 	var exists bool
-	db.QueryRow(`SELECT EXISTS(
+	err := db.QueryRow(`SELECT EXISTS(
 		SELECT 1 FROM invoices i JOIN students s ON s.id=i.student_id
 		WHERE s.contact=? AND i.tenant_id=? AND i.type='Monthly'
 		  AND (i.status='Unpaid' OR i.status='Overdue') AND i.deleted_at IS NULL
 	)`, parentEmail, tenantID).Scan(&exists)
+	if err != nil {
+		logger.Error("check-in billing gate query failed; allowing alert", "err", err, "email", parentEmail)
+		return false
+	}
 	return exists
 }
 

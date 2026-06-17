@@ -1032,21 +1032,29 @@
     var now = App.Utils.nowTime();
     var today = _attDate || App.Utils.today();
     var newAtt = state.attendance.slice();
-    var count = 0;
+    var toCheckIn = [];
     enrolledStudents.forEach(function(s) {
       var existing = newAtt.find(function(a) { return a.personId === s.id && a.classId === _attClassId && a.date === today; });
       if (!existing) {
         newAtt.push({ id: App.Utils.generateId('ATT'), personId: s.id, personType: 'student', date: today, classId: _attClassId, checkIn: now, checkOut: null, status: 'Present' });
-        count++;
+        toCheckIn.push(s.id);
       }
     });
-    if (count === 0) {
+    if (toCheckIn.length === 0) {
       App.Utils.showToast('All students already checked in', 'info');
       return;
     }
     App.Store.set({ attendance: newAtt });
-    App.Utils.showToast(count + ' student' + (count !== 1 ? 's' : '') + ' checked in', 'success');
+    App.Utils.showToast(toCheckIn.length + ' student' + (toCheckIn.length !== 1 ? 's' : '') + ' checked in', 'success');
     App.Router.refresh();
+    // Persist each row so the bulk check-in survives a reload AND fires the
+    // parent notifications (push/email/in-app) — the optimistic store update
+    // above does neither on its own. Independent POSTs run together.
+    Promise.all(toCheckIn.map(function(id) {
+      return App.Api.post('/api/attendance', { personId: id, personType: 'student', date: today, classId: _attClassId, checkIn: now, status: 'Present' }, { silent: true });
+    })).catch(function() {
+      App.Utils.showToast('Some check-ins did not sync — please retry', 'warning');
+    });
   }
 
   async function _markAbsentNoCredit(studentId) {

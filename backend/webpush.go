@@ -71,7 +71,7 @@ func sendPushToParent(db *DB, tenantID int, parentEmail string, payload pushPayl
 	}
 	subs := listParentSubs(db, tenantID, parentEmail)
 	for i := range subs {
-		deliverPush(db, &subs[i], body)
+		deliverPush(db, tenantID, &subs[i], body)
 	}
 }
 
@@ -96,7 +96,7 @@ func listParentSubs(db *DB, tenantID int, parentEmail string) []webpush.Subscrip
 
 // deliverPush sends to a single subscription and prunes it if the push service
 // reports it gone (404/410) — browsers rotate endpoints on reinstall.
-func deliverPush(db *DB, sub *webpush.Subscription, body []byte) {
+func deliverPush(db *DB, tenantID int, sub *webpush.Subscription, body []byte) {
 	resp, err := webpush.SendNotification(body, sub, &webpush.Options{
 		Subscriber:      pushSubscriber,
 		VAPIDPublicKey:  pushCfg.publicKey,
@@ -109,7 +109,9 @@ func deliverPush(db *DB, sub *webpush.Subscription, body []byte) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
-		db.Exec(`DELETE FROM push_subscriptions WHERE endpoint=?`, sub.Endpoint)
+		if _, derr := db.Exec(`DELETE FROM push_subscriptions WHERE tenant_id=? AND endpoint=?`, tenantID, sub.Endpoint); derr != nil {
+			logger.Error("push subscription prune failed", "err", derr, "endpoint", sub.Endpoint)
+		}
 		return
 	}
 	if resp.StatusCode >= 300 {

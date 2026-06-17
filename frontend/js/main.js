@@ -167,7 +167,7 @@
         App.Notifs.updateBadge();
         if (App.Billing && App.Billing.checkLoginNotifications) App.Billing.checkLoginNotifications();
         App.IdleTimeout.start();
-        if (App.Push) App.Push.init();
+        if (App.Push) { App.Push.init(); App.Push.maybeNudge(); }
         if (App.Tutorial) App.Tutorial.autoStart();
       } catch(err) {
         _hideLoading();
@@ -363,6 +363,7 @@
     App.Router.register('attendance',    App.Attendance);
     App.Router.register('progress',      App.Progress);
     App.Router.register('analytics',     App.Analytics);
+    App.Router.register('profile',       App.Profile);
 
     // Init router (sets up nav button click handlers)
     App.Router.init();
@@ -501,7 +502,7 @@
           App.Notifs.updateBadge();
           App.Api.connectWS();
           App.IdleTimeout.start();
-          if (App.Push) App.Push.init();
+          if (App.Push) { App.Push.init(); App.Push.maybeNudge(); }
           if (App.Tutorial) App.Tutorial.autoStart();
         });
       } else {

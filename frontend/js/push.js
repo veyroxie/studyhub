@@ -96,5 +96,19 @@
     return _isSupported() && Notification.permission === 'granted';
   }
 
-  App.Push = { init: init, enable: enable, isGranted: isGranted };
+  // maybeNudge: one-time, per-device prompt for parents who haven't enabled
+  // push — parents shouldn't have to discover the setting on their own. Shown
+  // once (localStorage), only when push is actually available and not blocked.
+  async function maybeNudge() {
+    if (App.currentRole !== 'client' || !_isSupported() || isGranted()) return;
+    if (Notification.permission === 'denied') return;
+    try { if (localStorage.getItem('sh_push_nudged')) return; } catch (e) {}
+    if (!await _ensureKey()) return;
+    try { localStorage.setItem('sh_push_nudged', '1'); } catch (e) {}
+    App.Utils.showToast('Get notified the moment your child checks in or out', 'info', 9000, {
+      action: { label: 'Enable', onClick: function() { enable(); } }
+    });
+  }
+
+  App.Push = { init: init, enable: enable, isGranted: isGranted, maybeNudge: maybeNudge };
 })();
