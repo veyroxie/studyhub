@@ -249,6 +249,7 @@ func TestInvoices_CreateMarkPaidAndPersist(t *testing.T) {
 	// Mark it paid.
 	w = authedJSON(t, r, "PUT", "/api/invoices/"+invID+"/pay", tok, map[string]string{
 		"paymentMethod": "Bank Transfer",
+		"referenceNo":   "TXN-TEST-12345",
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("mark paid failed: %d %s", w.Code, w.Body.String())

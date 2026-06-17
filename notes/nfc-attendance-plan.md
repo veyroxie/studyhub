@@ -91,20 +91,62 @@ Tenant-scoped **Devices tab** in the existing admin (NOT a separate site):
 Confirm the **classes / schedule schema** (how a class stores day/time/room, how
 `students.enrolled_classes` links to it) — `matchScheduledClass` depends on it.
 
-## Build order
+## Build order — detailed checklist
 
-1. Set up Arduino IDE + M5Stack board package + M5Unified + M5Unit-NFC libraries.
-2. Plug NFC Unit into StickS3 Grove port.
-3. **Prove hardware**: flash a UID-to-screen/serial test sketch, tap a band → see the
-   UID. Do not proceed until this works.
-4. Backend (ME): migration (`nfc_uid` + `readers`) → `handleAttendanceTap` (reuse upsert
-   + matchScheduledClass + broadcast + audit) → public route → curl test with
-   `{deviceId, uid, secret}` (expect `{"status":"unknown"}` until enrolled).
-5. Firmware: add WiFi + POST + screen feedback; edit the 4 config values; flash.
-6. Register reader in Devices tab → get device_id/secret → put in firmware → re-flash.
-7. Enrol: NFC Tools Android app reads UID → paste into student's nfc_uid field (or use
-   the unknown-UID queue after first tap).
-8. Mount at kid wrist-height near entrance, power from USB-C wall adapter.
+Phases A–D are user-only and need no backend. Trigger for backend work (E) = a UID
+printing in Serial Monitor at end of D. From E onward Claude writes code, user flashes/tests.
+
+Parts to confirm received: StickS3, NFC Unit (PN532) + Grove cable, NTAG213 bands,
+USB-C **data** cable + 5V adapter, computer with Arduino IDE 2.x.
+
+### PHASE A — Software setup (computer, ~20 min, nothing plugged in)
+1. Arduino IDE → File → Preferences → Additional Boards Manager URLs, add:
+   `https://static-cdn.m5stack.com/resource/arduino/package_m5stack_index.json`
+2. Boards Manager → search "M5Stack" → Install (large download).
+3. Manage Libraries → install **M5Unified** (Install All deps incl. M5GFX) + **M5Unit-NFC**.
+
+### PHASE B — Assemble (no tools)
+4. Grove cable → NFC Unit → StickS3 Grove port. Done.
+
+### PHASE C — Prove board talks to PC (before NFC)
+5. Plug StickS3 via USB-C. Tools → Board → StickS3 (or "ESP32S3 Dev Module").
+6. Tools → Port → select it.
+7. ⚠️ Tools → **"USB CDC On Boot" → Enabled** (else Serial Monitor stays blank — #1 gotcha).
+8. File → Examples → M5Unified → Basic → Upload. Screen lights up = toolchain/cable/port OK.
+   Upload fails → hold side button while uploading, or try another USB-C cable (charge-only = common culprit).
+
+### PHASE D — Read a UID (real first milestone)
+9. File → Examples → M5Unit-NFC → "Detect" → Upload.
+10. Serial Monitor @ **115200**. Tap a band → UID prints.
+    ✅ prints → start backend. ❌ → check Grove seated, baud, USB CDC. Fallback: Seeed/Adafruit
+    PN532 over I2C (only if M5Unit-NFC misbehaves).
+
+### PHASE E — Backend (CLAUDE writes; user tests)
+11. Migration (`students.nfc_uid` + `readers`), public `/api/attendance/tap` (device-token
+    auth, matchScheduledClass, in/out toggle, ~5s debounce), Devices admin tab.
+12. User runs one `curl` to confirm server (expect `{"status":"unknown"}` pre-enrolment).
+    Claude may ask 1-2 Qs about the classes/schedule schema.
+
+### PHASE F — Full firmware (user flashes Claude's code)
+13. Edit 4 values: WiFi SSID, WiFi password, server URL, device secret. Upload.
+    ⚠️ StickS3 is 2.4GHz WiFi only — ensure a 2.4GHz band is enabled.
+
+### PHASE G — Register reader
+14. Devices tab → Add reader → get device_id/secret → put in firmware → re-flash.
+15. Tap → confirm appears in live tap log (as "unknown" until enrolled).
+
+### PHASE H — Enrol bands (~5 sec each)
+16. NFC Tools (Android) read UID → paste into student's nfc_uid field; OR use the
+    unknown-UID queue (tap → click "assign to student").
+
+### PHASE I — Test real flow
+17. Tap during scheduled class → green "Welcome <name>" + beep, check-in logged.
+    Tap later → green "Goodbye <name>", check-out. Unknown band → red + double beep.
+    Confirm parent browser updates live (WebSocket).
+
+### PHASE J — Mount & go live
+18. Mount at wrist-height near entrance, NFC face out. Power via USB-C adapter (battery backup).
+    Watch Devices "last-seen" heartbeat. Hand out remaining bands.
 
 ## Known limitations (accepted)
 
