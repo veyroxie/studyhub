@@ -373,6 +373,23 @@ func renderInvoiceIssuedEmail(parentName, studentName, description, amountRM, du
 		emailLayoutClose()
 }
 
+// renderCheckEventEmail is sent — only when the parent has opted in — the
+// moment their child is checked in or out. Deliberately short: it's a real-time
+// safety ping, not a marketing mail. `headline` is e.g. "Aisyah checked in",
+// `detail` the class + time line.
+func renderCheckEventEmail(parentName, headline, detail string) string {
+	greeting := "Hi"
+	if strings.TrimSpace(parentName) != "" {
+		greeting = "Hi " + safeName(parentName)
+	}
+	return emailLayoutOpen() +
+		`<p style="margin:0 0 16px;font-size:16px;color:#0a0a0a">` + greeting + `,</p>
+<p style="margin:0 0 6px;font-size:18px;font-weight:700;color:#0a0a0a">` + safeName(headline) + `</p>
+<p style="margin:0 0 18px;font-size:14px;color:#64748b">` + safeName(detail) + `</p>
+<p style="margin:0;font-size:13px;color:#94a3b8">You're getting this because you turned on check-in alerts. Turn them off any time from your profile.</p>` +
+		emailLayoutClose()
+}
+
 // renderResetPasswordEmail builds the HTML body for a password reset email.
 func renderResetPasswordEmail(name, resetURL string) string {
 	greeting := "Hi"

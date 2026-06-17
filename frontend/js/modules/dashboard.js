@@ -1235,6 +1235,17 @@
       + '</form>'
       + '</div>'
 
+      + (App.currentRole === 'client'
+        ? '<div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid #f1f5f9">'
+          + '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.4rem">Check-in alerts</h3>'
+          + '<p style="font-size:0.75rem;color:#64748b;margin:0 0 0.85rem">Get notified the moment your child checks in or out.</p>'
+          + '<button type="button" id="push-enable-btn" style="padding:0.5rem 1rem;font-size:0.8rem;font-weight:600;background:#fff;color:#374151;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer">Enable push alerts</button>'
+          + '<label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.9rem;font-size:0.82rem;color:#374151;cursor:pointer">'
+          +   '<input type="checkbox" id="notify-checkin-email"' + (profile.notifyCheckinEmail ? ' checked' : '') + '> Also email me</label>'
+          + '<p style="font-size:0.7rem;color:#94a3b8;margin:0.7rem 0 0;line-height:1.5">Push works even when the app is closed. In-app pop-ups only appear while StudyHub is open.</p>'
+          + '</div>'
+        : '')
+
       + (App.currentRole === 'admin' || App.currentRole === 'superadmin'
         ? '<div id="mfa-section" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid #f1f5f9"></div>'
         : '')
@@ -1270,6 +1281,29 @@
         e.target.reset();
       } catch(err) {}
     });
+
+    var pushBtn = document.getElementById('push-enable-btn');
+    if (pushBtn) {
+      if (App.Push && App.Push.isGranted()) {
+        pushBtn.textContent = 'Push alerts enabled';
+        pushBtn.disabled = true;
+      }
+      pushBtn.addEventListener('click', async function() {
+        if (!App.Push) return;
+        var ok = await App.Push.enable();
+        if (ok) { pushBtn.textContent = 'Push alerts enabled'; pushBtn.disabled = true; }
+      });
+    }
+
+    var emailToggle = document.getElementById('notify-checkin-email');
+    if (emailToggle) {
+      emailToggle.addEventListener('change', async function() {
+        try {
+          await App.Api.put('/api/auth/profile', { name: profile.name, notifyCheckinEmail: emailToggle.checked });
+          App.Utils.showToast(emailToggle.checked ? 'Email alerts on' : 'Email alerts off', 'success');
+        } catch(err) {}
+      });
+    }
   }
 
   // ── MFA enrolment (inside profile modal) ────────────────────────────────

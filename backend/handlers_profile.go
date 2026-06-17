@@ -24,12 +24,13 @@ func handleProfile(db *DB) http.HandlerFunc {
 			var phone string
 			phoneArgs := append([]any{c.Email}, twArgs...)
 			db.QueryRow(`SELECT COALESCE(phone,'') FROM families WHERE contact=? AND deleted_at IS NULL`+tw+` LIMIT 1`, phoneArgs...).Scan(&phone)
-			var mfaEnabled, notifyReminders, notifyAnnouncements, notifyReceipts bool
+			var mfaEnabled, notifyReminders, notifyAnnouncements, notifyReceipts, notifyCheckin bool
 			db.QueryRow(`SELECT COALESCE(mfa_enabled,false),
 			                    COALESCE(notify_invoice_reminders,true),
 			                    COALESCE(notify_announcements,true),
-			                    COALESCE(notify_payment_receipts,true)
-			             FROM users WHERE email=?`, c.Email).Scan(&mfaEnabled, &notifyReminders, &notifyAnnouncements, &notifyReceipts)
+			                    COALESCE(notify_payment_receipts,true),
+			                    COALESCE(notify_checkin_email,false)
+			             FROM users WHERE email=?`, c.Email).Scan(&mfaEnabled, &notifyReminders, &notifyAnnouncements, &notifyReceipts, &notifyCheckin)
 			respond(w, map[string]any{
 				"name":                  c.Name,
 				"email":                 c.Email,
@@ -39,6 +40,7 @@ func handleProfile(db *DB) http.HandlerFunc {
 				"notifyInvoiceReminders": notifyReminders,
 				"notifyAnnouncements":    notifyAnnouncements,
 				"notifyPaymentReceipts":  notifyReceipts,
+				"notifyCheckinEmail":     notifyCheckin,
 			})
 		case http.MethodPut:
 			var body struct {
@@ -47,6 +49,7 @@ func handleProfile(db *DB) http.HandlerFunc {
 				NotifyInvoiceReminders *bool  `json:"notifyInvoiceReminders"`
 				NotifyAnnouncements    *bool  `json:"notifyAnnouncements"`
 				NotifyPaymentReceipts  *bool  `json:"notifyPaymentReceipts"`
+				NotifyCheckinEmail     *bool  `json:"notifyCheckinEmail"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				respondError(w, "bad body", 400)
@@ -87,6 +90,9 @@ func handleProfile(db *DB) http.HandlerFunc {
 			}
 			if body.NotifyPaymentReceipts != nil {
 				db.Exec(`UPDATE users SET notify_payment_receipts=? WHERE email=?`, *body.NotifyPaymentReceipts, c.Email)
+			}
+			if body.NotifyCheckinEmail != nil {
+				db.Exec(`UPDATE users SET notify_checkin_email=? WHERE email=?`, *body.NotifyCheckinEmail, c.Email)
 			}
 
 			logAudit(db, c.Email, "profile_updated", "user", c.Email, body.Name)

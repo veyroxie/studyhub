@@ -10,7 +10,7 @@
 // Versioned cache name so a deploy invalidates the old shell. Bump SW_VERSION
 // on every release (release-please can wire this).
 
-const SW_VERSION = 'v2026-06-14-1';
+const SW_VERSION = 'v2026-06-17-1';
 const SHELL_CACHE = 'sh-shell-' + SW_VERSION;
 
 // Files that must be available offline for the app to render its empty shell.
@@ -49,6 +49,40 @@ self.addEventListener('activate', (event) => {
         .map((k) => caches.delete(k))
       )
     ).then(() => self.clients.claim())
+  );
+});
+
+// Web push — backend sends a JSON payload on student check-in/out. Show it as
+// a system notification so parents are alerted even with the app closed.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = {}; }
+  const title = data.title || 'The Study Hub';
+  const options = {
+    body: data.body || '',
+    tag: data.tag || 'studyhub',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    data: { url: data.url || '/' },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Clicking a notification focuses an existing tab (navigating it to the target)
+// or opens a new one.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const c of clients) {
+        if ('focus' in c) {
+          if ('navigate' in c) c.navigate(target);
+          return c.focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target);
+    })
   );
 });
 

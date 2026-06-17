@@ -243,14 +243,28 @@
             action: 'attendance'
           });
         } else {
+          var childName = App.Utils.esc(stu ? stu.firstName : 'Your child');
           notifs.push({
             id: 'att-checkin-' + rec.id,
             type: 'attendance',
             severity: 'info',
-            title: App.Utils.esc(stu ? stu.firstName : 'Your child') + ' checked in',
-            body: (clsName ? App.Utils.esc(clsName) + ' · ' : '') + App.Utils.formatTime(rec.checkIn) + (rec.checkOut ? ' — out ' + App.Utils.formatTime(rec.checkOut) : ''),
+            title: childName + ' checked in',
+            body: (clsName ? App.Utils.esc(clsName) + ' · ' : '') + App.Utils.formatTime(rec.checkIn),
             action: 'attendance'
           });
+          // Check-out gets its own entry (distinct id) so it surfaces as a
+          // fresh unread alert when the child leaves, not just an edit to the
+          // check-in line.
+          if (rec.checkOut) {
+            notifs.push({
+              id: 'att-checkout-' + rec.id,
+              type: 'attendance',
+              severity: 'info',
+              title: childName + ' checked out',
+              body: (clsName ? App.Utils.esc(clsName) + ' · ' : '') + App.Utils.formatTime(rec.checkOut),
+              action: 'attendance'
+            });
+          }
         }
       });
     }

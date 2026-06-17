@@ -96,6 +96,7 @@ func main() {
 	defer db.Close()
 	seedIfEmpty(db)
 	initMailer()
+	initPush()
 	initEmailBrand(db)
 	initUploads()
 
@@ -186,6 +187,9 @@ func main() {
 	// Public branding — login / register pages fetch this before there's
 	// any session to render the correct centre name + colour.
 	r.Get("/api/branding", handleBranding(db))
+	// Public VAPID key — the browser needs it to create a push subscription.
+	// The public key is not a secret.
+	r.Get("/api/push/vapid-key", handleVapidKey())
 	// iCal feed is auth'd via a signed token in the URL — calendar apps
 	// don't speak cookies, so this lives outside the JWT middleware group.
 	r.Get("/api/calendar/{userID}/{token}", handleParentCalendarFeed(db))
@@ -229,6 +233,7 @@ func main() {
 		r.Get("/api/auth/profile", handleProfile(db))
 		r.Put("/api/auth/profile", handleProfile(db))
 		r.Post("/api/auth/change-password", handleChangePassword(db))
+		r.Post("/api/push/subscribe", handlePushSubscribe(db))
 		r.Get("/api/snapshot", handleSnapshot(db))
 
 		r.Route("/api/students", func(r chi.Router) {

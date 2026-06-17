@@ -190,21 +190,28 @@ func handleAttendance(db *DB, hub *WSHub) http.HandlerFunc {
 				logAudit(db, c.Email, "attendance_created", "attendance", a.ID, a.PersonID+" "+a.Date+" "+a.Status)
 			}
 
-			// Broadcast check-in/out event only to clients in the same tenant.
-			// Status-only updates (e.g. marking absent) are skipped so the
-			// parent's toast never reads "checked in at " with no time.
-			if hub != nil && a.PersonType == "student" && (a.CheckIn != nil || a.CheckOut != nil) {
-				eventType := "CHECK_IN"
-				if a.CheckOut != nil {
-					eventType = "CHECK_OUT"
+			// Notify the parent on check-in/out across every channel: in-app
+			// toast (WebSocket broadcast below), web push and opt-in email
+			// (notifyParentOnCheck). Status-only updates (e.g. marking absent)
+			// carry no time, so they're skipped — the parent toast must never
+			// read "checked in at " with no time.
+			if a.PersonType == "student" && (a.CheckIn != nil || a.CheckOut != nil) {
+				isCheckIn := a.CheckOut == nil
+				tid := tenantID(c)
+				if hub != nil {
+					eventType := "CHECK_IN"
+					if !isCheckIn {
+						eventType = "CHECK_OUT"
+					}
+					hub.broadcastTenant(tid, map[string]any{
+						"type":     eventType,
+						"personId": a.PersonID,
+						"checkIn":  a.CheckIn,
+						"checkOut": a.CheckOut,
+						"date":     a.Date,
+					})
 				}
-				hub.broadcastTenant(tenantID(c), map[string]any{
-					"type":     eventType,
-					"personId": a.PersonID,
-					"checkIn":  a.CheckIn,
-					"checkOut": a.CheckOut,
-					"date":     a.Date,
-				})
+				go notifyParentOnCheck(db, tid, a, isCheckIn)
 			}
 			respond(w, a)
 		}
