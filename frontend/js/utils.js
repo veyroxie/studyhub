@@ -4,6 +4,7 @@
   let _modalDirtyListeners = [];
   let _previousFocus = null;
   let _trapFocusHandler = null;
+  let _modalExitTimer = null; // pending hideModal fade-out cleanup; cancelled if a new modal opens first
 
   /* ── Toast Container (created once) ── */
   function _getToastContainer() {
@@ -52,11 +53,15 @@
 
   App.Utils = {
     showModal(html) {
+      // Cancel a still-pending hideModal fade-out so its delayed cleanup can't
+      // wipe the modal we're about to show (open-right-after-close race).
+      if (_modalExitTimer) { clearTimeout(_modalExitTimer); _modalExitTimer = null; }
       _previousFocus = document.activeElement;
       document.getElementById('modal-content').innerHTML = html;
       const overlay = document.getElementById('modal-overlay');
       const content = document.getElementById('modal-content');
       overlay.classList.remove('hidden');
+      overlay.classList.remove('sh-modal-exit');
       overlay.classList.add('flex');
       document.body.style.overflow = 'hidden';
 
@@ -116,7 +121,8 @@
       document.body.style.overflow = '';
       var prev = _previousFocus;
       _previousFocus = null;
-      setTimeout(function() {
+      _modalExitTimer = setTimeout(function() {
+        _modalExitTimer = null;
         overlay.classList.remove('sh-modal-exit');
         overlay.classList.add('hidden');
         overlay.classList.remove('flex');
