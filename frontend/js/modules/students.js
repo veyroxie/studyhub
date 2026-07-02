@@ -68,7 +68,7 @@
 
     var paged = filtered.slice(_studentPage * _PAGE_SIZE, (_studentPage + 1) * _PAGE_SIZE);
 
-    const colCount = isAdmin ? 6 : 5;
+    const colCount = isAdmin ? 7 : 5;
 
     container.innerHTML = ''
       + '<div class="flex items-center justify-between mb-6">'
@@ -125,6 +125,7 @@
       +         (isAdmin ? '<th scope="col" class="th" style="width:36px"><input type="checkbox" id="select-all-cb" onchange="App.Students._toggleSelectAll(this.checked)" style="cursor:pointer"></th>' : '')
       +         '<th scope="col" class="th">Student</th><th scope="col" class="th">Classes</th><th scope="col" class="th">DOB</th>'
       +         '<th scope="col" class="th">Parent / Contact</th><th scope="col" class="th">Status</th>'
+      +         (isAdmin ? '<th scope="col" class="th">Auto-bill</th>' : '')
       +       '</tr></thead>'
       +       '<tbody class="divide-y divide-slate-50">'
       +       (filtered.length === 0
@@ -174,13 +175,12 @@
                 + '</div></td>'
                 + '<td class="td text-sm text-slate-600">' + App.Utils.formatDate(s.dob) + '</td>'
                 + '<td class="td text-sm"><div class="text-slate-700">' + App.Utils.esc(s.parentName) + '</div><div class="text-slate-400 text-xs">' + App.Utils.esc(s.contact) + '</div></td>'
-                + '<td class="td">' + App.Utils.statusBadge(s.status)
-                + (isAdmin ? '<span style="margin-left:0.5rem;font-size:0.58rem;font-weight:700;color:#cbd5e1;text-transform:uppercase;letter-spacing:0.04em;vertical-align:middle">Billing</span>'
-                +   '<div onclick="event.stopPropagation()" style="display:inline-flex;margin-left:0.3rem;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;font-size:0.62rem;font-weight:700;vertical-align:middle">'
-                +   '<button onclick="App.Students._activateStudent(\'' + s.id + '\')" title="Billing on — include in monthly invoices" style="padding:0.15rem 0.45rem;border:none;cursor:pointer;background:' + (rowSubStatus === 'active' ? '#22c55e' : '#fff') + ';color:' + (rowSubStatus === 'active' ? '#fff' : '#94a3b8') + '">On</button>'
-                +   '<button onclick="App.Students._deactivateStudent(\'' + s.id + '\')" title="Billing off — pause invoices (student stays visible)" style="padding:0.15rem 0.45rem;border:none;border-left:1px solid #e2e8f0;cursor:pointer;background:' + (rowSubStatus !== 'active' ? '#f59e0b' : '#fff') + ';color:' + (rowSubStatus !== 'active' ? '#fff' : '#94a3b8') + '">Off</button>'
-                + '</div>' : '')
-                + '</td>'
+                + '<td class="td">' + App.Utils.statusBadge(s.status) + '</td>'
+                + (isAdmin ? '<td class="td" onclick="event.stopPropagation()">'
+                +   '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;font-size:0.62rem;font-weight:700">'
+                +   '<button onclick="App.Students._activateStudent(\'' + s.id + '\')" title="Auto-bill on — include in monthly invoices" style="padding:0.15rem 0.45rem;border:none;cursor:pointer;background:' + (rowSubStatus === 'active' ? '#22c55e' : '#fff') + ';color:' + (rowSubStatus === 'active' ? '#fff' : '#94a3b8') + '">On</button>'
+                +   '<button onclick="App.Students._deactivateStudent(\'' + s.id + '\')" title="Auto-bill off — pause invoices (student stays visible)" style="padding:0.15rem 0.45rem;border:none;border-left:1px solid #e2e8f0;cursor:pointer;background:' + (rowSubStatus !== 'active' ? '#f59e0b' : '#fff') + ';color:' + (rowSubStatus !== 'active' ? '#fff' : '#94a3b8') + '">Off</button>'
+                + '</div></td>' : '')
                 + '</tr>';
             }).join('');
             })())
@@ -328,7 +328,7 @@
   // _applyActive flips a student's BILLING state only (subscription_status via
   // resume/freeze): freezing stops the monthly invoice cron but hides the student
   // from nothing. This is independent of the lifecycle `status` tab (Active/
-  // Inactive/New/Waitlist) — hence the "Billing On/Off" labels, not Active/Inactive.
+  // Inactive/New/Waitlist) — hence the "Auto-bill On/Off" labels, not Active/Inactive.
   // No confirm: a one-tap toggle that's trivially reversible.
   async function _applyActive(studentId, action) {
     try {
@@ -337,7 +337,7 @@
       App.Store.set({ students: state.students.map(function(s) {
         return s.id === studentId ? Object.assign({}, s, { subscriptionStatus: res.subscriptionStatus }) : s;
       }) });
-      App.Utils.showToast(action === 'resume' ? 'Billing on — monthly invoices resumed' : 'Billing off — monthly invoices paused (student stays visible)', 'success');
+      App.Utils.showToast(action === 'resume' ? 'Auto-bill on — monthly invoices resumed' : 'Auto-bill off — monthly invoices paused (student stays visible)', 'success');
       var modalOpen = !!document.getElementById('student-tabs');
       App.Router.refresh();
       if (modalOpen) _viewModal(studentId);
@@ -439,7 +439,7 @@
       +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.statusBadge(s.status) + '<span class="text-xs text-slate-400">' + s.id + '</span></div>'
       +   '</div>'
       +   (isAdmin ? '<div style="margin-left:auto;text-align:right">'
-      +     '<div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem">Billing</div>'
+      +     '<div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem">Auto-bill</div>'
       +     '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;font-size:0.72rem;font-weight:700">'
       +       '<button onclick="App.Students._activateStudent(\'' + studentId + '\')" style="padding:0.32rem 0.72rem;border:none;cursor:pointer;background:' + (subStatus === 'active' ? '#22c55e' : '#fff') + ';color:' + (subStatus === 'active' ? '#fff' : '#64748b') + '">On</button>'
       +       '<button onclick="App.Students._deactivateStudent(\'' + studentId + '\')" style="padding:0.32rem 0.72rem;border:none;border-left:1px solid #e2e8f0;cursor:pointer;background:' + (subStatus !== 'active' ? '#f59e0b' : '#fff') + ';color:' + (subStatus !== 'active' ? '#fff' : '#64748b') + '">Off</button>'
