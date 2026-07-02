@@ -5,10 +5,14 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"studyhub/internal/core"
+	"studyhub/internal/models"
 	"studyhub/internal/store"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jung-kurt/gofpdf"
@@ -35,17 +39,21 @@ type invoicePDFData struct {
 	DiscountPct     float64
 	SiblingDiscount float64
 	ReferralCredit  float64
+	LineItems       []models.InvoiceLineItem
+	LogoPath        string
 }
 
 func loadInvoicePDFData(db *store.DB, c *core.Claims, invoiceID string) (invoicePDFData, error) {
 	var d invoicePDFData
 	var paidOn sql.NullString
+	var lineItems string
 	tw, twArgs := store.ScopeTenant(c, "i")
 	args := append([]any{invoiceID}, twArgs...)
 	err := db.QueryRow(`
 		SELECT i.id, COALESCE(i.receipt_no,''), i.description, i.amount, i.due_date, i.created_on, i.paid_on, i.status,
 		       COALESCE(i.payment_method,''), COALESCE(i.reference_no,''),
 		       COALESCE(i.discount_pct,0), COALESCE(i.sibling_discount,0), COALESCE(i.referral_credit,0),
+		       COALESCE(i.line_items,'[]'),
 		       s.id, s.first_name || ' ' || s.last_name,
 		       COALESCE(s.parent_name,''), COALESCE(s.contact,'')
 		FROM invoices i
@@ -55,6 +63,7 @@ func loadInvoicePDFData(db *store.DB, c *core.Claims, invoiceID string) (invoice
 		&d.InvoiceID, &d.ReceiptNo, &d.Description, &d.Amount, &d.DueDate, &d.CreatedOn, &paidOn, &d.Status,
 		&d.PaymentMethod, &d.ReferenceNo,
 		&d.DiscountPct, &d.SiblingDiscount, &d.ReferralCredit,
+		&lineItems,
 		&d.StudentID, &d.StudentName,
 		&d.ParentName, &d.ParentEmail,
 	)
@@ -64,6 +73,7 @@ func loadInvoicePDFData(db *store.DB, c *core.Claims, invoiceID string) (invoice
 	if paidOn.Valid {
 		d.PaidOn = paidOn.String
 	}
+	d.LineItems = models.ParseLineItems(lineItems)
 	return d, nil
 }
 
@@ -80,23 +90,55 @@ func stripHTML(s string) string {
 	return strings.TrimSpace(htmlTagRE.ReplaceAllString(s, ""))
 }
 
-// renderInvoicePDF lays out an A4 invoice (or receipt) following Malaysian
-// convention: letterhead with registered name + SSM no + address, document
-// title, party block, a line-item table, totals, amount in words, bank /
-// payment details, terms, and footer. Discounts stored on the row are
-// reversed so the gross line + discount lines sum back to the stored total.
+// fmtDMY renders an ISO date (2006-01-02) as "02 Jan 2006", the format the
+// reference invoice uses. Falls back to the raw string if it doesn't parse.
+func fmtDMY(iso string) string {
+	t, err := time.Parse("2006-01-02", iso)
+	if err != nil {
+		return iso
+	}
+	return t.Format("02 Jan 2006")
+}
+
+const (
+	pageLeft  = 15.0
+	pageRight = 195.0
+	amountCol = 45.0 // right-hand "Amount (RM)" column width
+)
+
+// renderInvoicePDF lays out an A4 invoice (or receipt) in the centre's
+// Skooly-style format: centered letterhead with logo, a two-column
+// Items | Amount table where each item carries a descriptor and a qty sub-line,
+// a totals block, a payment note, and numbered terms. Legacy flat invoices
+// (no stored line items) are rendered via a synthesized single line so nothing
+// created before this format still prints correctly.
 func renderInvoicePDF(d invoicePDFData, s *store.TenantSettings, paid bool) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
-	pdf.SetMargins(15, 15, 15)
+	pdf.SetMargins(pageLeft, 15, 15)
 	pdf.AddPage()
 
-	renderLetterhead(pdf, s)
+	// gofpdf's core fonts are cp1252-encoded, so UTF-8 text (em-dashes from the
+	// cron descriptions, accented names) must be translated or it prints as
+	// mojibake. Translate every data string once, up front, so the render
+	// helpers can stay encoding-agnostic. LogoPath is a real filesystem path and
+	// must NOT be translated.
+	tr := pdf.UnicodeTranslatorFromDescriptor("")
+	d = translateInvoiceData(d, tr)
+	s = translateSettings(s, tr)
+
+	items := d.LineItems
+	if len(items) == 0 {
+		items = synthesizeLineItems(d)
+	}
+
+	renderLetterhead(pdf, s, d.LogoPath)
 	renderTitleBlock(pdf, d, paid)
-	renderBillTo(pdf, d)
-	gross, discounts := renderLineItems(pdf, d)
-	renderTotals(pdf, d, gross, discounts)
-	renderPaymentSection(pdf, d, s, paid)
-	renderTerms(pdf, s)
+	renderPartyRef(pdf, d)
+	renderInfoRows(pdf, d, paid)
+	renderItemsTable(pdf, items)
+	renderTotalsBlock(pdf, d, items)
+	renderNoteBlock(pdf, d, s, paid)
+	renderTermsNumbered(pdf, s)
 	renderFooter(pdf, s)
 
 	var buf bytes.Buffer
@@ -106,119 +148,78 @@ func renderInvoicePDF(d invoicePDFData, s *store.TenantSettings, paid bool) ([]b
 	return buf.Bytes(), nil
 }
 
-func renderLetterhead(pdf *gofpdf.Fpdf, s *store.TenantSettings) {
-	pdf.SetFont("Helvetica", "B", 20)
-	pdf.SetTextColor(15, 15, 15)
-	pdf.Cell(0, 9, s.BrandName)
-	pdf.Ln(8)
-	pdf.SetFont("Helvetica", "", 9)
-	pdf.SetTextColor(110, 110, 110)
-	if s.BrandTagline != "" {
-		pdf.Cell(0, 5, s.BrandTagline)
-		pdf.Ln(5)
-	}
-	if s.AddressLine1 != "" {
-		pdf.Cell(0, 5, s.AddressLine1)
-		pdf.Ln(5)
-	}
-	if s.AddressLine2 != "" {
-		pdf.Cell(0, 5, s.AddressLine2)
-		pdf.Ln(5)
-	}
-	contact := joinNonEmpty([]string{s.SupportPhone, s.SupportEmail}, "  |  ")
-	if contact != "" {
-		pdf.Cell(0, 5, contact)
-		pdf.Ln(5)
-	}
-	if s.TaxID != "" {
-		pdf.Cell(0, 5, "SSM/Co. Reg. No: "+s.TaxID)
-		pdf.Ln(5)
-	}
-	pdf.Ln(2)
-	pdf.SetDrawColor(220, 220, 215)
-	pdf.Line(15, pdf.GetY(), 195, pdf.GetY())
-	pdf.Ln(4)
-}
-
-func renderTitleBlock(pdf *gofpdf.Fpdf, d invoicePDFData, paid bool) {
-	title := "INVOICE"
-	if paid {
-		title = "OFFICIAL RECEIPT"
-	}
-	pdf.SetFont("Helvetica", "B", 16)
-	pdf.SetTextColor(15, 15, 15)
-	pdf.Cell(0, 9, title)
-	if paid {
-		pdf.SetFont("Helvetica", "B", 24)
-		pdf.SetTextColor(34, 197, 94)
-		pdf.CellFormat(0, 9, "PAID", "", 0, "R", false, 0, "")
-	}
-	pdf.Ln(11)
-
-	pdf.SetTextColor(60, 60, 60)
-	if paid && d.ReceiptNo != "" {
-		infoBlock(pdf, "Receipt No", d.ReceiptNo)
-	}
-	infoBlock(pdf, "Invoice No", d.InvoiceID)
-	infoBlock(pdf, "Invoice Date", d.CreatedOn)
-	infoBlock(pdf, "Due Date", d.DueDate)
-	if d.ReferenceNo != "" {
-		infoBlock(pdf, "Reference", d.ReferenceNo)
-	}
-	pdf.Ln(3)
-}
-
-func renderBillTo(pdf *gofpdf.Fpdf, d invoicePDFData) {
-	pdf.SetFont("Helvetica", "B", 10)
-	pdf.SetTextColor(15, 15, 15)
-	pdf.Cell(0, 6, "Bill To")
-	pdf.Ln(6)
-	pdf.SetFont("Helvetica", "", 10)
-	pdf.SetTextColor(60, 60, 60)
-	pdf.Cell(0, 5, d.ParentName)
-	pdf.Ln(5)
-	if d.ParentEmail != "" {
-		pdf.Cell(0, 5, d.ParentEmail)
-		pdf.Ln(5)
-	}
-	pdf.Cell(0, 5, "Student: "+d.StudentName+" ("+d.StudentID+")")
-	pdf.Ln(9)
-}
-
-// renderLineItems draws the Description | Qty | Unit Price | Tax% | Amount
-// table. Current invoices carry a single gross figure, so we render one item
-// row at the reconstructed gross price, then discount rows beneath it.
-// Returns the gross subtotal and the total discount applied.
-func renderLineItems(pdf *gofpdf.Fpdf, d invoicePDFData) (float64, float64) {
-	pdf.SetFillColor(248, 248, 245)
-	pdf.SetFont("Helvetica", "B", 9)
-	pdf.SetTextColor(15, 15, 15)
-	itemTableHeader(pdf)
-
+// synthesizeLineItems reconstructs a single item line plus discount lines for
+// legacy invoices that pre-date the line_items column, so they render in the
+// same two-column table as modern multi-line invoices.
+func synthesizeLineItems(d invoicePDFData) []models.InvoiceLineItem {
 	gross := reconstructGross(d)
-	earlyBird := earlyBirdDiscount(d, gross)
-
-	itemRow(pdf, d.Description, 1, gross, 0, gross)
-
-	discounts := 0.0
-	if earlyBird > 0 {
-		discountRow(pdf, "Early bird discount", -earlyBird)
-		discounts += earlyBird
+	items := []models.InvoiceLineItem{{
+		Kind: models.LineItemKindItem, Name: d.Description,
+		Qty: 1, UnitPrice: gross, Amount: gross,
+	}}
+	if earlyBird := earlyBirdDiscount(d, gross); earlyBird > 0 {
+		items = appendDiscountLine(items, "Early bird discount", earlyBird)
 	}
 	if d.DiscountPct > 0 {
-		amt := gross * d.DiscountPct / 100
-		discountRow(pdf, fmt.Sprintf("Discount (%g%%)", d.DiscountPct), -amt)
-		discounts += amt
+		items = appendDiscountLine(items, fmt.Sprintf("Discount (%g%%)", d.DiscountPct), gross*d.DiscountPct/100)
 	}
-	if d.SiblingDiscount > 0 {
-		discountRow(pdf, "Sibling discount", -d.SiblingDiscount)
-		discounts += d.SiblingDiscount
+	items = appendDiscountLine(items, "Sibling discount", d.SiblingDiscount)
+	items = appendDiscountLine(items, "Referral discount", d.ReferralCredit)
+	return items
+}
+
+// translateInvoiceData returns a copy of d with every printed string mapped
+// through the cp1252 translator. LogoPath is deliberately left untranslated.
+func translateInvoiceData(d invoicePDFData, tr func(string) string) invoicePDFData {
+	d.Description = tr(d.Description)
+	d.StudentName = tr(d.StudentName)
+	d.StudentID = tr(d.StudentID)
+	d.ParentName = tr(d.ParentName)
+	d.ParentEmail = tr(d.ParentEmail)
+	d.ReceiptNo = tr(d.ReceiptNo)
+	d.ReferenceNo = tr(d.ReferenceNo)
+	d.PaymentMethod = tr(d.PaymentMethod)
+	items := make([]models.InvoiceLineItem, len(d.LineItems))
+	for i, it := range d.LineItems {
+		it.Name = tr(it.Name)
+		it.Descriptor = tr(it.Descriptor)
+		details := make([]string, len(it.Details))
+		for j, line := range it.Details {
+			details[j] = tr(line)
+		}
+		it.Details = details
+		items[i] = it
 	}
-	if d.ReferralCredit > 0 {
-		discountRow(pdf, "Referral discount", -d.ReferralCredit)
-		discounts += d.ReferralCredit
+	d.LineItems = items
+	return d
+}
+
+// translateSettings returns a copy of the tenant settings with printed strings
+// mapped through the cp1252 translator. LogoPath is left untranslated so the
+// image file still resolves on disk.
+func translateSettings(s *store.TenantSettings, tr func(string) string) *store.TenantSettings {
+	c := *s
+	c.BrandName = tr(c.BrandName)
+	c.BrandTagline = tr(c.BrandTagline)
+	c.AddressLine1 = tr(c.AddressLine1)
+	c.AddressLine2 = tr(c.AddressLine2)
+	c.SupportEmail = tr(c.SupportEmail)
+	c.SupportPhone = tr(c.SupportPhone)
+	c.TaxID = tr(c.TaxID)
+	c.BankName = tr(c.BankName)
+	c.BankAccountNo = tr(c.BankAccountNo)
+	c.BankAccountHolder = tr(c.BankAccountHolder)
+	c.PaymentInstructions = tr(c.PaymentInstructions)
+	c.InvoiceTerms = tr(c.InvoiceTerms)
+	c.InvoiceFooterHTML = tr(c.InvoiceFooterHTML)
+	return &c
+}
+
+func appendDiscountLine(items []models.InvoiceLineItem, name string, amt float64) []models.InvoiceLineItem {
+	if amt <= 0 {
+		return items
 	}
-	return gross, discounts
+	return append(items, models.InvoiceLineItem{Kind: models.LineItemKindDiscount, Name: name, Amount: -amt})
 }
 
 // reconstructGross reverses the stored discounts to recover the pre-discount
@@ -242,60 +243,201 @@ func earlyBirdDiscount(d invoicePDFData, gross float64) float64 {
 	return 0
 }
 
-func renderTotals(pdf *gofpdf.Fpdf, d invoicePDFData, gross, discounts float64) {
-	pdf.Ln(1)
-	pdf.SetDrawColor(220, 220, 215)
-	pdf.Line(110, pdf.GetY(), 195, pdf.GetY())
-	pdf.Ln(1)
+// ── letterhead ───────────────────────────────────────────────────────────────
 
-	totalRow(pdf, "Subtotal", rmFmt(gross), false)
-	if discounts > 0 {
-		totalRow(pdf, "Discount", "-"+rmFmt(discounts), false)
-	}
-	totalRow(pdf, "Total", rmFmt(d.Amount), true)
-	pdf.Ln(4)
-
-	pdf.SetFont("Helvetica", "I", 9)
-	pdf.SetTextColor(60, 60, 60)
-	pdf.MultiCell(0, 5, amountInWords(d.Amount), "", "L", false)
-	pdf.Ln(4)
-}
-
-func renderPaymentSection(pdf *gofpdf.Fpdf, d invoicePDFData, s *store.TenantSettings, paid bool) {
-	if paid {
-		renderReceiptDetails(pdf, d)
-		return
-	}
-	renderBankDetails(pdf, s)
-}
-
-func renderReceiptDetails(pdf *gofpdf.Fpdf, d invoicePDFData) {
-	sectionHeading(pdf, "Payment Received")
-	if d.ReceiptNo != "" {
-		labelValue(pdf, "Receipt No", d.ReceiptNo)
-	}
-	labelValue(pdf, "Paid On", d.PaidOn)
-	labelValue(pdf, "Method", d.PaymentMethod)
-	if d.ReferenceNo != "" {
-		labelValue(pdf, "Reference", d.ReferenceNo)
+func renderLetterhead(pdf *gofpdf.Fpdf, s *store.TenantSettings, logoPath string) {
+	renderLogo(pdf, logoPath)
+	pdf.SetFont("Helvetica", "B", 18)
+	pdf.SetTextColor(15, 15, 15)
+	centeredLine(pdf, s.BrandName, 8)
+	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetTextColor(90, 90, 90)
+	centeredLine(pdf, s.BrandTagline, 5)
+	centeredLine(pdf, joinNonEmpty([]string{prefixed("Email: ", s.SupportEmail), prefixed("Contact: ", s.SupportPhone)}, "   "), 5)
+	centeredLine(pdf, joinNonEmpty([]string{s.AddressLine1, s.AddressLine2}, ", "), 5)
+	if s.TaxID != "" {
+		centeredLine(pdf, "SSM/Co. Reg. No: "+s.TaxID, 5)
 	}
 	pdf.Ln(3)
 }
 
-func renderBankDetails(pdf *gofpdf.Fpdf, s *store.TenantSettings) {
+// renderLogo embeds the tenant logo centered above the letterhead. A missing or
+// malformed file must never abort the render, so the image error state is
+// cleared and the logo silently skipped.
+func renderLogo(pdf *gofpdf.Fpdf, logoPath string) {
+	if logoPath == "" {
+		return
+	}
+	if _, err := os.Stat(logoPath); err != nil {
+		return
+	}
+	imgType := strings.TrimPrefix(strings.ToLower(filepath.Ext(logoPath)), ".")
+	if imgType == "jpeg" {
+		imgType = "jpg"
+	}
+	if imgType != "png" && imgType != "jpg" {
+		return
+	}
+	const logoW = 18.0
+	opts := gofpdf.ImageOptions{ImageType: imgType, ReadDpi: true}
+	pdf.RegisterImageOptions(logoPath, opts)
+	if !pdf.Ok() {
+		pdf.ClearError()
+		return
+	}
+	x := (pageLeft + pageRight - logoW) / 2
+	pdf.ImageOptions(logoPath, x, pdf.GetY(), logoW, 0, true, opts, 0, "")
+	if !pdf.Ok() {
+		pdf.ClearError()
+		return
+	}
+	pdf.Ln(2)
+}
+
+// ── title + info ─────────────────────────────────────────────────────────────
+
+func renderTitleBlock(pdf *gofpdf.Fpdf, d invoicePDFData, paid bool) {
+	title := "INVOICE"
+	if paid {
+		title = "OFFICIAL RECEIPT"
+	}
+	pdf.SetFont("Helvetica", "B", 16)
+	pdf.SetTextColor(15, 15, 15)
+	centeredLine(pdf, title, 10)
+	if paid {
+		pdf.SetFont("Helvetica", "B", 13)
+		pdf.SetTextColor(34, 197, 94)
+		centeredLine(pdf, "PAID", 7)
+	}
+	pdf.Ln(2)
+}
+
+// renderPartyRef prints the "<student> — <id> — <parent>" reference line the
+// reference invoice shows directly under the title.
+func renderPartyRef(pdf *gofpdf.Fpdf, d invoicePDFData) {
+	pdf.SetFont("Helvetica", "B", 10)
+	pdf.SetTextColor(15, 15, 15)
+	ref := joinNonEmpty([]string{d.StudentName, d.StudentID, d.ParentName}, " - ")
+	pdf.MultiCell(0, 6, ref, "", "L", false)
+	pdf.Ln(2)
+}
+
+func renderInfoRows(pdf *gofpdf.Fpdf, d invoicePDFData, paid bool) {
+	if paid && d.ReceiptNo != "" {
+		infoRow(pdf, "Receipt number", d.ReceiptNo)
+	}
+	infoRow(pdf, "Invoice number", d.InvoiceID)
+	infoRow(pdf, "Due date", fmtDMY(d.DueDate))
+	infoRow(pdf, "Invoice date", fmtDMY(d.CreatedOn))
+	if d.ReferenceNo != "" {
+		infoRow(pdf, "Reference", d.ReferenceNo)
+	}
+	pdf.Ln(4)
+}
+
+// ── items table ──────────────────────────────────────────────────────────────
+
+func renderItemsTable(pdf *gofpdf.Fpdf, items []models.InvoiceLineItem) {
+	pdf.SetDrawColor(210, 210, 205)
+	pdf.SetFont("Helvetica", "B", 10)
+	pdf.SetTextColor(15, 15, 15)
+	pdf.CellFormat(pageRight-pageLeft-amountCol, 8, "Items", "", 0, "L", false, 0, "")
+	pdf.CellFormat(amountCol, 8, "Amount (RM)", "", 0, "R", false, 0, "")
+	pdf.Ln(8)
+	pdf.Line(pageLeft, pdf.GetY(), pageRight, pdf.GetY())
+	pdf.Ln(2)
+	// Only positive item rows appear in the table; discount lines are shown in
+	// the totals block below (matching the reference invoice layout).
+	for _, it := range items {
+		if it.Kind == models.LineItemKindDiscount {
+			continue
+		}
+		renderItemBlock(pdf, it)
+	}
+}
+
+func renderItemBlock(pdf *gofpdf.Fpdf, it models.InvoiceLineItem) {
+	const nameW = 120.0
+	y0 := pdf.GetY()
+	pdf.SetFont("Helvetica", "B", 10)
+	pdf.SetTextColor(20, 20, 20)
+	pdf.SetXY(pageRight-amountCol, y0)
+	pdf.CellFormat(amountCol, 6, rmFmt(it.Amount), "", 0, "R", false, 0, "")
+	pdf.SetXY(pageLeft, y0)
+	pdf.MultiCell(nameW, 6, itemHeading(it), "", "L", false)
+	pdf.SetFont("Helvetica", "", 8)
+	pdf.SetTextColor(120, 120, 120)
+	if it.Descriptor != "" {
+		pdf.SetX(pageLeft)
+		pdf.MultiCell(nameW, 5, it.Descriptor, "", "L", false)
+	}
+	for _, line := range it.Details {
+		pdf.SetX(pageLeft)
+		pdf.MultiCell(nameW, 5, line, "", "L", false)
+	}
+	if it.Kind == models.LineItemKindItem && it.Qty > 0 {
+		pdf.SetX(pageLeft)
+		pdf.MultiCell(nameW, 5, fmt.Sprintf("%s x %s", models.FormatQty(it.Qty), rmFmt(it.UnitPrice)), "", "L", false)
+	}
+	pdf.Ln(2)
+	pdf.SetDrawColor(230, 230, 225)
+	pdf.Line(pageLeft, pdf.GetY(), pageRight, pdf.GetY())
+	pdf.Ln(2)
+}
+
+// itemHeading is the bold first line: the item name plus its billing period.
+func itemHeading(it models.InvoiceLineItem) string {
+	if it.PeriodStart == "" {
+		return it.Name
+	}
+	return it.Name + " (" + fmtDMY(it.PeriodStart) + " to " + fmtDMY(it.PeriodEnd) + ")"
+}
+
+// ── totals ───────────────────────────────────────────────────────────────────
+
+func renderTotalsBlock(pdf *gofpdf.Fpdf, d invoicePDFData, items []models.InvoiceLineItem) {
+	subtotal := 0.0
+	for _, it := range items {
+		if it.Amount > 0 {
+			subtotal += it.Amount
+		}
+	}
+	pdf.Ln(1)
+	totalRow(pdf, "Subtotal", rmFmt(subtotal), false)
+	totalRow(pdf, "Total Tax", rmFmt(0), false)
+	for _, it := range items {
+		if it.Kind == models.LineItemKindDiscount && it.Amount < 0 {
+			totalRow(pdf, it.Name, "- "+rmFmt(-it.Amount), false)
+		}
+	}
+	totalRow(pdf, "Total Due", rmFmt(d.Amount), true)
+	pdf.Ln(3)
+	pdf.SetFont("Helvetica", "I", 9)
+	pdf.SetTextColor(90, 90, 90)
+	pdf.MultiCell(0, 5, amountInWords(d.Amount), "", "L", false)
+	pdf.Ln(3)
+}
+
+// ── payment note ─────────────────────────────────────────────────────────────
+
+func renderNoteBlock(pdf *gofpdf.Fpdf, d invoicePDFData, s *store.TenantSettings, paid bool) {
+	if paid {
+		renderReceiptDetails(pdf, d)
+		return
+	}
 	hasBank := s.BankName != "" || s.BankAccountNo != "" || s.BankAccountHolder != ""
 	if !hasBank && s.PaymentInstructions == "" {
 		return
 	}
-	sectionHeading(pdf, "Payment Details")
+	sectionHeading(pdf, "Note")
 	if s.BankName != "" {
 		labelValue(pdf, "Bank", s.BankName)
 	}
 	if s.BankAccountHolder != "" {
-		labelValue(pdf, "Account Name", s.BankAccountHolder)
+		labelValue(pdf, "Bank name", s.BankAccountHolder)
 	}
 	if s.BankAccountNo != "" {
-		labelValue(pdf, "Account No", s.BankAccountNo)
+		labelValue(pdf, "Bank account", s.BankAccountNo)
 	}
 	if s.PaymentInstructions != "" {
 		pdf.Ln(1)
@@ -306,14 +448,35 @@ func renderBankDetails(pdf *gofpdf.Fpdf, s *store.TenantSettings) {
 	pdf.Ln(3)
 }
 
-func renderTerms(pdf *gofpdf.Fpdf, s *store.TenantSettings) {
+func renderReceiptDetails(pdf *gofpdf.Fpdf, d invoicePDFData) {
+	sectionHeading(pdf, "Payment Received")
+	if d.ReceiptNo != "" {
+		labelValue(pdf, "Receipt No", d.ReceiptNo)
+	}
+	labelValue(pdf, "Paid On", fmtDMY(d.PaidOn))
+	labelValue(pdf, "Method", d.PaymentMethod)
+	if d.ReferenceNo != "" {
+		labelValue(pdf, "Reference", d.ReferenceNo)
+	}
+	pdf.Ln(3)
+}
+
+func renderTermsNumbered(pdf *gofpdf.Fpdf, s *store.TenantSettings) {
 	if s.InvoiceTerms == "" {
 		return
 	}
-	sectionHeading(pdf, "Terms & Conditions")
+	sectionHeading(pdf, "Terms and conditions")
 	pdf.SetFont("Helvetica", "", 8)
 	pdf.SetTextColor(110, 110, 110)
-	pdf.MultiCell(0, 4, s.InvoiceTerms, "", "L", false)
+	n := 0
+	for _, raw := range strings.Split(s.InvoiceTerms, "\n") {
+		term := strings.TrimSpace(raw)
+		if term == "" {
+			continue
+		}
+		n++
+		pdf.MultiCell(0, 4, fmt.Sprintf("%d. %s", n, term), "", "L", false)
+	}
 	pdf.Ln(3)
 }
 
@@ -323,7 +486,7 @@ func renderFooter(pdf *gofpdf.Fpdf, s *store.TenantSettings) {
 		return
 	}
 	pdf.SetDrawColor(230, 230, 225)
-	pdf.Line(15, pdf.GetY(), 195, pdf.GetY())
+	pdf.Line(pageLeft, pdf.GetY(), pageRight, pdf.GetY())
 	pdf.Ln(3)
 	pdf.SetFont("Helvetica", "I", 8)
 	pdf.SetTextColor(140, 140, 140)
@@ -332,14 +495,31 @@ func renderFooter(pdf *gofpdf.Fpdf, s *store.TenantSettings) {
 
 // ── low-level cell helpers ───────────────────────────────────────────────────
 
-func infoBlock(pdf *gofpdf.Fpdf, label, value string) {
+// centeredLine prints one full-width centered line, skipping empty text.
+func centeredLine(pdf *gofpdf.Fpdf, text string, h float64) {
+	if text == "" {
+		return
+	}
+	pdf.CellFormat(0, h, text, "", 1, "C", false, 0, "")
+}
+
+// prefixed returns "<prefix><value>" or "" when value is empty, so a label
+// never prints with a missing value.
+func prefixed(prefix, value string) string {
+	if value == "" {
+		return ""
+	}
+	return prefix + value
+}
+
+func infoRow(pdf *gofpdf.Fpdf, label, value string) {
+	pdf.SetFont("Helvetica", "B", 9)
+	pdf.SetTextColor(40, 40, 40)
+	pdf.CellFormat(45, 6, label, "", 0, "L", false, 0, "")
 	pdf.SetFont("Helvetica", "", 9)
-	pdf.SetTextColor(120, 120, 120)
-	pdf.CellFormat(30, 5, label, "", 0, "L", false, 0, "")
-	pdf.SetFont("Helvetica", "B", 10)
-	pdf.SetTextColor(20, 20, 20)
-	pdf.CellFormat(0, 5, value, "", 0, "L", false, 0, "")
-	pdf.Ln(5)
+	pdf.SetTextColor(60, 60, 60)
+	pdf.CellFormat(0, 6, value, "", 0, "L", false, 0, "")
+	pdf.Ln(6)
 }
 
 func sectionHeading(pdf *gofpdf.Fpdf, label string) {
@@ -351,45 +531,9 @@ func sectionHeading(pdf *gofpdf.Fpdf, label string) {
 
 func labelValue(pdf *gofpdf.Fpdf, label, value string) {
 	pdf.SetFont("Helvetica", "", 9)
-	pdf.SetTextColor(120, 120, 120)
-	pdf.CellFormat(32, 5, label, "", 0, "L", false, 0, "")
-	pdf.SetFont("Helvetica", "B", 9)
-	pdf.SetTextColor(40, 40, 40)
-	pdf.CellFormat(0, 5, value, "", 0, "L", false, 0, "")
+	pdf.SetTextColor(70, 70, 70)
+	pdf.Cell(0, 5, label+" : "+value)
 	pdf.Ln(5)
-}
-
-// itemTableHeader / itemRow / discountRow share this column layout:
-// Description 90 | Qty 15 | Unit Price 30 | Tax% 15 | Amount 30 (= 180mm).
-func itemTableHeader(pdf *gofpdf.Fpdf) {
-	pdf.CellFormat(90, 8, " Description", "", 0, "L", true, 0, "")
-	pdf.CellFormat(15, 8, "Qty", "", 0, "C", true, 0, "")
-	pdf.CellFormat(30, 8, "Unit Price (RM)", "", 0, "R", true, 0, "")
-	pdf.CellFormat(15, 8, "Tax %", "", 0, "C", true, 0, "")
-	pdf.CellFormat(30, 8, "Amount (RM) ", "", 0, "R", true, 0, "")
-	pdf.Ln(8)
-}
-
-func itemRow(pdf *gofpdf.Fpdf, desc string, qty int, unitPrice, taxPct, amount float64) {
-	pdf.SetFont("Helvetica", "", 9)
-	pdf.SetTextColor(40, 40, 40)
-	pdf.CellFormat(90, 7, " "+desc, "", 0, "L", false, 0, "")
-	pdf.CellFormat(15, 7, fmt.Sprintf("%d", qty), "", 0, "C", false, 0, "")
-	pdf.CellFormat(30, 7, fmt.Sprintf("%.2f", unitPrice), "", 0, "R", false, 0, "")
-	pdf.CellFormat(15, 7, fmt.Sprintf("%g", taxPct), "", 0, "C", false, 0, "")
-	pdf.CellFormat(30, 7, fmt.Sprintf("%.2f ", amount), "", 0, "R", false, 0, "")
-	pdf.Ln(7)
-}
-
-func discountRow(pdf *gofpdf.Fpdf, label string, amount float64) {
-	pdf.SetFont("Helvetica", "", 9)
-	pdf.SetTextColor(90, 90, 90)
-	pdf.CellFormat(90, 7, " "+label, "", 0, "L", false, 0, "")
-	pdf.CellFormat(15, 7, "", "", 0, "C", false, 0, "")
-	pdf.CellFormat(30, 7, "", "", 0, "R", false, 0, "")
-	pdf.CellFormat(15, 7, "", "", 0, "C", false, 0, "")
-	pdf.CellFormat(30, 7, fmt.Sprintf("%.2f ", amount), "", 0, "R", false, 0, "")
-	pdf.Ln(7)
 }
 
 func totalRow(pdf *gofpdf.Fpdf, label, value string, emphasise bool) {
@@ -403,10 +547,10 @@ func totalRow(pdf *gofpdf.Fpdf, label, value string, emphasise bool) {
 		pdf.SetTextColor(70, 70, 70)
 	}
 	pdf.SetFont("Helvetica", style, size)
-	pdf.CellFormat(110, 8, "", "", 0, "L", false, 0, "")
-	pdf.CellFormat(45, 8, label, "", 0, "R", false, 0, "")
-	pdf.CellFormat(25, 8, value+" ", "", 0, "R", false, 0, "")
-	pdf.Ln(8)
+	pdf.CellFormat(110, 7, "", "", 0, "L", false, 0, "")
+	pdf.CellFormat(45, 7, label, "", 0, "R", false, 0, "")
+	pdf.CellFormat(25, 7, value+" ", "", 0, "R", false, 0, "")
+	pdf.Ln(7)
 }
 
 func joinNonEmpty(parts []string, sep string) string {
@@ -512,6 +656,7 @@ func HandleInvoicePDF(db *store.DB, receipt bool) http.HandlerFunc {
 		}
 
 		s := store.LoadTenantSettings(db, store.TenantID(c))
+		d.LogoPath = s.LogoPath
 		bytes, err := renderInvoicePDF(d, s, receipt)
 		if err != nil {
 			core.RespondError(w, "could not render PDF", 500)

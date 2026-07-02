@@ -32,6 +32,46 @@ const SiblingMonthlyRM = 10.0
 // quota is generous and overflow is a soft nudge, not a profit centre.
 const SelfStudyOverflowRatePerHour = 10.0
 
+// classMeta carries the per-class detail the monthly cron needs to render one
+// invoice line item per enrolled class (name, type and band for the label,
+// plus the monthly fee from the pricing matrix).
+type classMeta struct {
+	fee       float64
+	name      string
+	classType string
+	band      string
+}
+
+// appendDiscount adds a negative "discount" line item when amt > 0. Keeps the
+// invoice builder flat instead of nesting an if around every discount append.
+func appendDiscount(items []models.InvoiceLineItem, name string, amt float64) []models.InvoiceLineItem {
+	if amt <= 0 {
+		return items
+	}
+	return append(items, models.InvoiceLineItem{Kind: models.LineItemKindDiscount, Name: name, Amount: -amt})
+}
+
+// monthlyClassLineName renders the bold line-item heading for an enrolled
+// class, e.g. "Singapore Math - Group".
+func monthlyClassLineName(m classMeta) string {
+	if m.classType == "" {
+		return m.name
+	}
+	return m.name + " - " + m.classType
+}
+
+// monthlyClassDescriptor renders the gray sub-line, e.g. "Group class, Level 1-3".
+func monthlyClassDescriptor(m classMeta) string {
+	parts := []string{}
+	if m.classType != "" {
+		parts = append(parts, m.classType+" class")
+	}
+	if m.band != "" {
+		parts = append(parts, "Level "+m.band)
+	}
+	return strings.Join(parts, ", ")
+}
+
 // startCron launches the background scheduler. It wakes up daily at 00:05
 // local time and, on days 1–7 of the month, ensures every active student
 // has a Monthly invoice for the current month. Idempotent: skips students
@@ -138,6 +178,7 @@ func generateSelfStudyOverflowInvoices(db *store.DB, now time.Time) int {
 		  LEFT JOIN self_study_sessions ss ON ss.student_id = s.id AND ss.deleted_at IS NULL AND ss.date BETWEEN ? AND ?
 		 WHERE s.deleted_at IS NULL
 		   AND COALESCE(s.subscription_status,'active') = 'active'
+		   AND COALESCE(s.status,'Active') NOT IN ('Inactive','Waitlisted')
 		 GROUP BY s.id, s.tenant_id, s.first_name, s.last_name, s.package_self_study_hours
 	`, monthStart, monthEnd)
 	if err != nil {
@@ -174,9 +215,15 @@ func generateSelfStudyOverflowInvoices(db *store.DB, now time.Time) int {
 			amount := float64(billHours) * SelfStudyOverflowRatePerHour
 			desc := "Self-study overflow — " + monthHuman + " — " + firstName + " " + lastName +
 				" (" + fmt.Sprintf("%d", billHours) + " hr over quota)"
+			overflowItems := []models.InvoiceLineItem{{
+				Kind: models.LineItemKindItem, Name: "Self-study overflow — " + monthHuman,
+				Descriptor:  fmt.Sprintf("%d hours over the included quota", billHours),
+				PeriodStart: monthStart, PeriodEnd: monthEnd,
+				Qty: float64(billHours), UnitPrice: SelfStudyOverflowRatePerHour, Amount: amount,
+			}}
 			invID := core.GenerateID("INV")
-			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				invID, tid, stuID, desc, "Self-study Overflow", amount, dueDate, "Unpaid", createdOn, nil, "", 0.0, false, "[]", 0.0, 0.0, ""); err != nil {
+			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,line_items) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				invID, tid, stuID, desc, "Self-study Overflow", amount, dueDate, "Unpaid", createdOn, nil, "", 0.0, false, "[]", 0.0, 0.0, "", models.MarshalLineItems(overflowItems)); err != nil {
 				core.Logger.Error("self-study overflow insert failed", "err", err, "student_id", stuID)
 				continue
 			}
@@ -227,13 +274,13 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	// Pre-load classID → monthly fee, derived from the type×level pricing matrix
 	// (a class joins pricing_tiers on its class_type + level_band). Class IDs are
 	// unique, so a flat map keyed by class id is enough (cron spans all tenants).
-	feeByClass := map[string]float64{}
-	if frows, ferr := db.Query(`SELECT c.id, COALESCE(pt.monthly_fee,0) FROM classes c LEFT JOIN pricing_tiers pt ON pt.class_type = c.class_type AND pt.level_band = c.level_band AND pt.tenant_id = c.tenant_id AND pt.deleted_at IS NULL WHERE c.deleted_at IS NULL`); ferr == nil {
+	classByID := map[string]classMeta{}
+	if frows, ferr := db.Query(`SELECT c.id, COALESCE(pt.monthly_fee,0), COALESCE(c.name,''), COALESCE(c.class_type,''), COALESCE(c.level_band,'') FROM classes c LEFT JOIN pricing_tiers pt ON pt.class_type = c.class_type AND pt.level_band = c.level_band AND pt.tenant_id = c.tenant_id AND pt.deleted_at IS NULL WHERE c.deleted_at IS NULL`); ferr == nil {
 		for frows.Next() {
 			var cid string
-			var fee float64
-			if err := frows.Scan(&cid, &fee); err == nil {
-				feeByClass[cid] = fee
+			var m classMeta
+			if err := frows.Scan(&cid, &m.fee, &m.name, &m.classType, &m.band); err == nil {
+				classByID[cid] = m
 			}
 		}
 		frows.Close()
@@ -241,10 +288,12 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 
 	rows, err := db.Query(`
 		SELECT s.id, s.tenant_id, s.first_name, s.last_name, s.family_id, s.package_amount,
-		       COALESCE(s.contact,''), COALESCE(s.parent_name,''), COALESCE(s.enrolled_classes,'[]')
+		       COALESCE(s.contact,''), COALESCE(s.parent_name,''), COALESCE(s.enrolled_classes,'[]'),
+		       COALESCE(s.package_self_study_hours,4)
 		FROM students s
 		WHERE s.deleted_at IS NULL
 		  AND COALESCE(s.subscription_status,'active') = 'active'
+		  AND COALESCE(s.status,'Active') NOT IN ('Inactive','Waitlisted')
 	`)
 	if err != nil {
 		core.Logger.Error("monthly invoice cron query failed", "err", err)
@@ -254,11 +303,12 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		id, tenantID, firstName, lastName, familyID string
 		packageAmount                               float64
 		contact, parentName, enrolledClasses        string
+		selfStudyHours                              int
 	}
 	var pending []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.tenantID, &r.firstName, &r.lastName, &r.familyID, &r.packageAmount, &r.contact, &r.parentName, &r.enrolledClasses); err != nil {
+		if err := rows.Scan(&r.id, &r.tenantID, &r.firstName, &r.lastName, &r.familyID, &r.packageAmount, &r.contact, &r.parentName, &r.enrolledClasses, &r.selfStudyHours); err != nil {
 			continue
 		}
 		if existing[r.tenantID+"|"+r.id] {
@@ -289,7 +339,8 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	familyCredits := loadFamilyReferralCredits(db, pairs)
 
 	// Build family → [sibling student IDs] map. The 2+-kids threshold is
-	// based on the WHOLE family (any active subscribed student counts),
+	// based on the WHOLE family (any billable student counts: active
+	// subscription and lifecycle status not Inactive/Waitlisted),
 	// not just kids with package_amount > 0 — a family with one paying
 	// kid and one free trial kid still qualifies for the sibling discount.
 	// Query the full family roster up front to avoid the case where the
@@ -303,7 +354,7 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 			fph[i] = "?"
 			fargs[i] = id
 		}
-		rows, err := db.Query(`SELECT id, family_id FROM students WHERE deleted_at IS NULL AND COALESCE(subscription_status,'active')='active' AND family_id IN (`+strings.Join(fph, ",")+`)`, fargs...)
+		rows, err := db.Query(`SELECT id, family_id FROM students WHERE deleted_at IS NULL AND COALESCE(subscription_status,'active')='active' AND COALESCE(status,'Active') NOT IN ('Inactive','Waitlisted') AND family_id IN (`+strings.Join(fph, ",")+`)`, fargs...)
 		if err == nil {
 			for rows.Next() {
 				var sid, fid string
@@ -328,6 +379,9 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	earlyBirdCutoff := dueDate
 	createdOn := now.Format("2006-01-02")
 	monthLabel := now.Format("Jan 2006")
+	// Billing period shown on each line item: the 1st to the last day of the month.
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	periodEnd := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location()).AddDate(0, 0, -1).Format("2006-01-02")
 
 	// Invoice emails are queued AFTER commit so a rollback never emails a
 	// parent about an invoice that doesn't exist.
@@ -341,11 +395,28 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	created := 0
 	for _, s := range pending {
 		// Base tuition: a manual package_amount (>0) overrides; otherwise sum
-		// the subject fees of the student's enrolled classes.
+		// the subject fees of the student's enrolled classes. Each priced class
+		// becomes its own invoice line item; the manual override is one line.
 		base := s.packageAmount
-		if base <= 0 {
+		var items []models.InvoiceLineItem
+		if base > 0 {
+			items = append(items, models.InvoiceLineItem{
+				Kind: models.LineItemKindItem, Name: "Monthly tuition — " + monthLabel,
+				PeriodStart: periodStart, PeriodEnd: periodEnd,
+				Qty: 1, UnitPrice: base, Amount: base,
+			})
+		} else {
 			for _, cid := range models.ParseArr(s.enrolledClasses) {
-				base += feeByClass[cid]
+				m := classByID[cid]
+				if m.fee <= 0 {
+					continue
+				}
+				base += m.fee
+				items = append(items, models.InvoiceLineItem{
+					Kind: models.LineItemKindItem, Name: monthlyClassLineName(m),
+					Descriptor: monthlyClassDescriptor(m), PeriodStart: periodStart, PeriodEnd: periodEnd,
+					Qty: 1, UnitPrice: m.fee, Amount: m.fee,
+				})
 			}
 		}
 		if base <= 0 {
@@ -386,15 +457,31 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		}
 		earlyBirdApplied := full - discounted
 
+		// Included self-study: shown as a membership line then fully waived by a
+		// matching FOC discount, so it nets to zero and never moves the total.
+		if s.selfStudyHours > 0 {
+			ssValue := float64(s.selfStudyHours) * SelfStudyOverflowRatePerHour
+			items = append(items, models.InvoiceLineItem{
+				Kind: models.LineItemKindItem, Name: "TSH Membership",
+				Descriptor:  fmt.Sprintf("%d self-study hours included", s.selfStudyHours),
+				PeriodStart: periodStart, PeriodEnd: periodEnd,
+				Qty: 1, UnitPrice: ssValue, Amount: ssValue,
+			})
+			items = appendDiscount(items, "Special pass FOC (self-study included)", ssValue)
+		}
+		items = appendDiscount(items, "Referral discount", referralCredit)
+		items = appendDiscount(items, "Sibling discount", siblingDiscount)
+		items = appendDiscount(items, "Early bird discount", earlyBirdApplied)
+
 		invID := core.GenerateID("INV")
 		desc := "Monthly tuition — " + monthLabel + " — " + s.firstName + " " + s.lastName
 
 		_, err := tx.Exec(`
-			INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,early_bird_cutoff,early_bird_discount)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,early_bird_cutoff,early_bird_discount,line_items)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			invID, s.tenantID, s.id, desc, "Monthly", discounted, dueDate, "Unpaid",
 			createdOn, nil, "", 0.0, false, siblingIDsJSON, siblingDiscount, referralCredit, "",
-			earlyBirdCutoff, earlyBirdApplied,
+			earlyBirdCutoff, earlyBirdApplied, models.MarshalLineItems(items),
 		)
 		if err != nil {
 			core.Logger.Error("could not insert monthly invoice", "err", err, "student_id", s.id)

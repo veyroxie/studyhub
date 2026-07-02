@@ -9,6 +9,12 @@
   let _studentsTab = 'families'; // default to families for admin
   let _familySearch = '';
 
+  // Status tabs: [display label, _statusFilter value]. Value matches the
+  // student.status string so _onFilter works unchanged ('Waitlist' shows as
+  // the label, 'Waitlisted' is the stored status).
+  var _STATUS_TABS = [['All','All'],['Active','Active'],['Inactive','Inactive'],['New','New'],['Waitlist','Waitlisted']];
+  var _STATUS_DOT = { All:'#2563eb', Active:'#059669', Inactive:'#ef4444', New:'#3b82f6', Waitlisted:'#f59e0b' };
+
   function _paginationControls(page, total, moduleFn) {
     var totalPages = Math.ceil(total / _PAGE_SIZE);
     if (total <= _PAGE_SIZE) return '';
@@ -88,16 +94,21 @@
 
     container.innerHTML += (isTeacher
       ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-3 mb-6 text-sm text-slate-600 inline-block"><span class="font-semibold text-slate-800">' + displayStudents.length + '</span> of your students</div>'
-      : '<div class="grid grid-cols-5 gap-4 mb-6">'
-        + ['Total','Active','Inactive','New','Waitlisted'].map(function(k) {
-            const colors = { Total:'text-blue-600', Active:'text-emerald-600', Inactive:'text-red-500', New:'text-blue-500', Waitlisted:'text-amber-500' };
-            var filterVal = (k === 'Total') ? 'All' : k;
+      : '<div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-bottom:1.5rem">'
+        + _STATUS_TABS.map(function(t) {
+            var label = t[0], filterVal = t[1];
+            var count = (filterVal === 'All') ? counts.Total : counts[filterVal];
+            var dot = _STATUS_DOT[filterVal] || '#94a3b8';
             var isActive = (filterVal === _statusFilter);
-            var activeStyle = isActive ? 'border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-dim, rgba(201,162,39,0.18));' : '';
-            return '<div onclick="App.Students._onFilter(\'' + filterVal + '\')" class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-center cursor-pointer hover:border-slate-200 transition-colors" style="' + activeStyle + '">'
-              + '<div class="text-3xl font-bold ' + (colors[k]||'text-slate-700') + '">' + counts[k] + '</div>'
-              + '<div class="text-xs text-slate-500 mt-1">' + k + '</div>'
-              + '</div>';
+            var bg = isActive ? 'var(--gold)' : '#fff';
+            var fg = isActive ? '#0a0a0a' : '#475569';
+            var bd = isActive ? 'var(--gold)' : '#e2e8f0';
+            var countColor = isActive ? '#0a0a0a' : dot;
+            return '<button onclick="App.Students._onFilter(\'' + filterVal + '\')" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.45rem 0.9rem;font-size:0.8rem;font-weight:600;border:1px solid ' + bd + ';border-radius:999px;cursor:pointer;background:' + bg + ';color:' + fg + '">'
+              + '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + '"></span>'
+              + label
+              + '<span style="font-weight:700;color:' + countColor + '">' + count + '</span>'
+              + '</button>';
         }).join('')
         + '</div>')
 
@@ -163,7 +174,13 @@
                 + '</div></td>'
                 + '<td class="td text-sm text-slate-600">' + App.Utils.formatDate(s.dob) + '</td>'
                 + '<td class="td text-sm"><div class="text-slate-700">' + App.Utils.esc(s.parentName) + '</div><div class="text-slate-400 text-xs">' + App.Utils.esc(s.contact) + '</div></td>'
-                + '<td class="td">' + App.Utils.statusBadge(s.status) + '</td>'
+                + '<td class="td">' + App.Utils.statusBadge(s.status)
+                + (isAdmin ? '<span style="margin-left:0.5rem;font-size:0.58rem;font-weight:700;color:#cbd5e1;text-transform:uppercase;letter-spacing:0.04em;vertical-align:middle">Billing</span>'
+                +   '<div onclick="event.stopPropagation()" style="display:inline-flex;margin-left:0.3rem;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;font-size:0.62rem;font-weight:700;vertical-align:middle">'
+                +   '<button onclick="App.Students._activateStudent(\'' + s.id + '\')" title="Billing on — include in monthly invoices" style="padding:0.15rem 0.45rem;border:none;cursor:pointer;background:' + (rowSubStatus === 'active' ? '#22c55e' : '#fff') + ';color:' + (rowSubStatus === 'active' ? '#fff' : '#94a3b8') + '">On</button>'
+                +   '<button onclick="App.Students._deactivateStudent(\'' + s.id + '\')" title="Billing off — pause invoices (student stays visible)" style="padding:0.15rem 0.45rem;border:none;border-left:1px solid #e2e8f0;cursor:pointer;background:' + (rowSubStatus !== 'active' ? '#f59e0b' : '#fff') + ';color:' + (rowSubStatus !== 'active' ? '#fff' : '#94a3b8') + '">Off</button>'
+                + '</div>' : '')
+                + '</td>'
                 + '</tr>';
             }).join('');
             })())
@@ -288,8 +305,8 @@
     var ok = await App.Utils.showConfirm({
       title: label.charAt(0).toUpperCase() + label.slice(1) + ' subscription',
       message: action === 'resume'
-        ? 'Resume monthly invoicing and re-include this student in class rosters?'
-        : 'Stop monthly invoice generation. The student will be hidden from class rosters until resumed.',
+        ? 'Resume monthly invoicing for this student?'
+        : 'Stop monthly invoice generation for this student. They stay visible in lists and the schedule until resumed.',
       confirmLabel: label.charAt(0).toUpperCase() + label.slice(1),
       danger: action !== 'resume'
     });
@@ -306,6 +323,68 @@
     } catch (err) {
       App.Utils.showToast(err.message || 'Could not update subscription', 'error');
     }
+  }
+
+  // _applyActive flips a student's BILLING state only (subscription_status via
+  // resume/freeze): freezing stops the monthly invoice cron but hides the student
+  // from nothing. This is independent of the lifecycle `status` tab (Active/
+  // Inactive/New/Waitlist) — hence the "Billing On/Off" labels, not Active/Inactive.
+  // No confirm: a one-tap toggle that's trivially reversible.
+  async function _applyActive(studentId, action) {
+    try {
+      var res = await App.Api.post('/api/students/' + studentId + '/subscription', { action: action });
+      var state = App.Store.get();
+      App.Store.set({ students: state.students.map(function(s) {
+        return s.id === studentId ? Object.assign({}, s, { subscriptionStatus: res.subscriptionStatus }) : s;
+      }) });
+      App.Utils.showToast(action === 'resume' ? 'Billing on — monthly invoices resumed' : 'Billing off — monthly invoices paused (student stays visible)', 'success');
+      var modalOpen = !!document.getElementById('student-tabs');
+      App.Router.refresh();
+      if (modalOpen) _viewModal(studentId);
+    } catch (err) {
+      App.Utils.showToast(err.message || 'Could not update', 'error');
+    }
+  }
+  function _activateStudent(studentId) { return _applyActive(studentId, 'resume'); }
+  function _deactivateStudent(studentId) { return _applyActive(studentId, 'freeze'); }
+
+  // _enrollClassesModal is the discoverable class-enrollment picker, opened from
+  // the profile's Classes tab. Reuses the same checkbox field as Add/Edit and
+  // persists via PUT /api/students (which validates + recomputes class counts).
+  function _enrollClassesModal(studentId) {
+    var state = App.Store.get();
+    var s = state.students.find(function(x) { return x.id === studentId; });
+    if (!s) return;
+    App.Utils.hideModal(true);
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:360px;max-width:480px">'
+      + '<h2 class="text-lg font-bold mb-1">Enrol classes</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</p>'
+      + '<form id="enroll-classes-form" class="space-y-4">'
+      + _multiClassField(s.enrolledClasses || [], state.classes || [])
+      + '<div class="flex justify-end gap-3 pt-1">'
+      + '<button type="button" onclick="App.Students._viewModal(\'' + studentId + '\')" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>'
+      + '</div>'
+      + '</form>'
+      + '</div>'
+    );
+    document.getElementById('enroll-classes-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var newClasses = new FormData(e.target).getAll('classIds');
+      var updated = Object.assign({}, s, { enrolledClasses: newClasses });
+      var submitBtn = e.target.querySelector('button[type="submit"]');
+      try {
+        await App.Utils.withLoading(submitBtn, async function() {
+          await App.Api.put('/api/students/' + studentId, updated);
+          await App.Api.loadSnapshot();
+        });
+        App.Utils.showToast('Classes updated', 'success');
+        App.Router.refresh();
+        _viewModal(studentId);
+        _switchTab('classes');
+      } catch (err) { /* auto-toasted */ }
+    });
   }
 
   function _onSearch(val) {
@@ -359,6 +438,13 @@
       +     '<h2 class="text-xl font-bold text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName) + subChip + '</h2>'
       +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.statusBadge(s.status) + '<span class="text-xs text-slate-400">' + s.id + '</span></div>'
       +   '</div>'
+      +   (isAdmin ? '<div style="margin-left:auto;text-align:right">'
+      +     '<div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem">Billing</div>'
+      +     '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;font-size:0.72rem;font-weight:700">'
+      +       '<button onclick="App.Students._activateStudent(\'' + studentId + '\')" style="padding:0.32rem 0.72rem;border:none;cursor:pointer;background:' + (subStatus === 'active' ? '#22c55e' : '#fff') + ';color:' + (subStatus === 'active' ? '#fff' : '#64748b') + '">On</button>'
+      +       '<button onclick="App.Students._deactivateStudent(\'' + studentId + '\')" style="padding:0.32rem 0.72rem;border:none;border-left:1px solid #e2e8f0;cursor:pointer;background:' + (subStatus !== 'active' ? '#f59e0b' : '#fff') + ';color:' + (subStatus !== 'active' ? '#fff' : '#64748b') + '">Off</button>'
+      +     '</div>'
+      +   '</div>' : '')
       + '</div>'
 
       + '<div class="flex border-b border-slate-100 mb-4 gap-1" id="student-tabs">'
@@ -478,7 +564,14 @@
       + '</div>'
 
       + '<div id="tab-panel-classes" class="hidden">'
-      + (enrolledClasses.length === 0 ? '<p class="text-sm text-slate-400 text-center py-6">Not enrolled in any class</p>' : '')
+      + (isAdmin ? '<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem">'
+      +   '<button onclick="App.Students._enrollClassesModal(\'' + studentId + '\')" style="padding:0.4rem 0.9rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Enrol / manage classes</button>'
+      + '</div>' : '')
+      + (enrolledClasses.length === 0
+          ? '<p class="text-sm text-slate-400 text-center py-6">Not enrolled in any class'
+            + (isAdmin ? ' &middot; <a href="#" onclick="event.preventDefault();App.Students._enrollClassesModal(\'' + studentId + '\')" style="color:var(--gold);font-weight:600;text-decoration:none">Enrol now</a>' : '')
+            + '</p>'
+          : '')
       + enrolledClasses.map(function(c) {
           const { staff } = App.Store.get();
           const colors = App.Utils.colorClasses(c.color);
@@ -1503,6 +1596,9 @@
     _viewModal: _viewModal,
     _editModal: _editModal,
     _subscriptionAction: _subscriptionAction,
+    _activateStudent: _activateStudent,
+    _deactivateStudent: _deactivateStudent,
+    _enrollClassesModal: _enrollClassesModal,
     _switchTab: _switchTab,
     _addModal: _addModal,
     _pendingModal: _pendingModal,

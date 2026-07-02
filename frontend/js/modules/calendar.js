@@ -272,6 +272,10 @@
           return true;
         });
         var cellDateStr = d.toISOString().slice(0,10);
+        // Local YYYY-MM-DD (toISOString shifts a day back in UTC+8); used for the
+        // day-schedule modal so its header and cancellation match line up with
+        // how the week view stores dates.
+        var cellLocalDate = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
         var cellHol = isHolidayDate(cellDateStr, allHolidays);
         weekCells += '<td style="border:1px solid #f0ede8;vertical-align:top;width:' + (100/7) + '%;min-height:90px;padding:0.35rem;background:' + (cellHol ? (cellHol.type === 'closure' ? '#fef2f2' : '#fffbeb') : !inMonth ? '#fafaf8' : '#fff') + '">'
           + '<div style="font-size:0.72rem;font-weight:' + (isToday ? '800' : '500') + ';color:' + (isToday ? 'var(--gold, #f59e0b)' : inMonth ? '#374151' : '#cbd5e1') + ';margin-bottom:3px;width:1.4rem;height:1.4rem;display:flex;align-items:center;justify-content:center;border-radius:50%;background:' + (isToday ? 'var(--gold-dim, #fef3c7)' : 'transparent') + '">' + d.getDate() + '</div>'
@@ -290,7 +294,7 @@
                 + (enrolled.length > 0 ? ' — ' + enrolled.length + ' enrolled: ' + tipNames : ' — no students enrolled');
               return '<div onclick="App.Calendar._classModal(\'' + c.id + '\')" title="' + App.Utils.esc(tipText) + '" style="font-size:0.65rem;font-weight:600;border-radius:4px;padding:1px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer" class="' + colors.pill + '">' + App.Utils.formatTime(c.time) + ' ' + App.Utils.esc(c.name) + monthChildTags + '</div>';
             }).join('')
-          + (dayCls.length > 3 ? '<div style="font-size:0.63rem;color:#94a3b8">+' + (dayCls.length - 3) + ' more</div>' : '')
+          + (dayCls.length > 3 ? '<div onclick="App.Calendar._dayScheduleModal(\'' + cellLocalDate + '\',\'' + dayCls.map(function(c){return c.id;}).join(',') + '\')" title="View all ' + dayCls.length + ' classes" style="font-size:0.63rem;color:#64748b;font-weight:700;cursor:pointer;margin-top:1px">+' + (dayCls.length - 3) + ' more</div>' : '')
           + '</td>';
         d.setDate(d.getDate() + 1);
       }
@@ -315,6 +319,56 @@
       +   '<tbody>' + cells + '</tbody>'
       + '</table>'
       + '</div>';
+  }
+
+  // _dayScheduleModal lists every class for a day, opened from the month view's
+  // "+N more" link. IDs are passed in from the already-filtered cell so the
+  // modal shows exactly what that day's cell represents (role + filters).
+  function _dayScheduleModal(dateStr, idsCsv) {
+    var ids = idsCsv ? idsCsv.split(',') : [];
+    var state = App.Store.get();
+    var byId = {};
+    (state.classes || []).forEach(function(c) { byId[c.id] = c; });
+    var classes = ids.map(function(id) { return byId[id]; }).filter(Boolean);
+    classes.sort(function(a, b) { return (a.time || '').localeCompare(b.time || ''); });
+    var staff = state.staff || [];
+    var students = state.students || [];
+    var cancelled = state.cancelledClasses || [];
+    var isClient = App.currentRole === 'client';
+    var header = new Date(dateStr + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+    var rows = classes.map(function(c) {
+      var colors = App.Utils.colorClasses(c.color);
+      var teachers = c.teacherIds.map(function(tid) {
+        var s = staff.find(function(x) { return x.id === tid; });
+        return s ? s.name : tid;
+      }).join(', ');
+      var isCancelled = cancelled.some(function(cc) { return cc.classId === c.id && cc.date === dateStr; });
+      var childTags = '';
+      if (isClient && App.clientParent) {
+        var kids = students.filter(function(st) { return st.contact === App.clientParent && (st.enrolledClasses || []).indexOf(c.id) > -1; });
+        if (kids.length > 0) childTags = '<span style="font-size:0.62rem;font-weight:700;color:#92400e;margin-left:0.35rem">(' + kids.map(function(st) { return App.Utils.esc(st.firstName); }).join(', ') + ')</span>';
+      }
+      var meta = isClient ? App.Utils.esc(teachers) : App.Utils.esc(teachers) + ' · ' + c.enrolled + '/' + c.capacity + ' enrolled';
+      return '<button type="button" onclick="App.Utils.hideModal(true);App.Calendar._classModal(\'' + c.id + '\')" '
+        + 'style="display:flex;align-items:center;gap:0.6rem;width:100%;text-align:left;padding:0.6rem 0.7rem;margin-bottom:0.4rem;border:1px solid #eceae5;border-radius:10px;background:#fff;cursor:pointer' + (isCancelled ? ';opacity:0.55' : '') + '">'
+        + '<span style="width:0.32rem;align-self:stretch;border-radius:4px" class="' + colors.bg + '"></span>'
+        + '<span style="flex:1;min-width:0">'
+        +   '<span style="display:block;font-size:0.85rem;font-weight:700;color:#111">' + App.Utils.formatTime(c.time) + ' ' + App.Utils.esc(c.name) + childTags + (isCancelled ? ' <span style="color:#dc2626;font-size:0.7rem">(Cancelled)</span>' : '') + '</span>'
+        +   '<span style="display:block;font-size:0.72rem;color:#94a3b8;margin-top:1px">' + meta + '</span>'
+        + '</span>'
+        + '<span style="color:#cbd5e1;font-size:0.95rem">&#8250;</span>'
+        + '</button>';
+    }).join('');
+
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:340px;max-width:460px">'
+      + '<h2 class="text-lg font-bold mb-1">' + header + '</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">' + classes.length + ' class' + (classes.length !== 1 ? 'es' : '') + ' scheduled</p>'
+      + (rows || '<div class="text-sm text-slate-400">No classes.</div>')
+      + '<div class="flex justify-end mt-4"><button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Close</button></div>'
+      + '</div>'
+    );
   }
 
   function _statCard(label, value, colorClass, action) {
@@ -527,6 +581,25 @@
         }).join('');
   }
 
+  // Half-hour time slots (7 AM–10 PM) as <option>s. Value stays 24h HH:MM so
+  // storage / clash check / grid are unchanged; label uses the friendly 12h format.
+  var TIME_SLOT_START_HOUR = 7;
+  var TIME_SLOT_END_HOUR = 22;
+  function _timeOptions(selected) {
+    var slots = [];
+    for (var h = TIME_SLOT_START_HOUR; h <= TIME_SLOT_END_HOUR; h++) {
+      [0, 30].forEach(function(m) { slots.push((h < 10 ? '0' + h : h) + ':' + (m === 0 ? '00' : '30')); });
+    }
+    var isOffGrid = selected && slots.indexOf(selected) === -1;
+    var opts = selected ? '' : '<option value="" disabled selected>Select…</option>';
+    // Preserve an existing off-grid time so editing never silently snaps it to a slot.
+    if (isOffGrid) opts += '<option value="' + selected + '" selected>' + App.Utils.formatTime(selected) + '</option>';
+    slots.forEach(function(val) {
+      opts += '<option value="' + val + '"' + (val === selected ? ' selected' : '') + '>' + App.Utils.formatTime(val) + '</option>';
+    });
+    return opts;
+  }
+
   function _addClassModal() {
     App.Utils.showModal(
       '<div class="p-6">'
@@ -552,8 +625,8 @@
       + _field('Classroom', '<input name="classroom" class="form-input" placeholder="Classroom 1">')
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Start Time', '<input name="time" type="time" class="form-input" required>')
-      + _field('End Time', '<input name="endTime" type="time" class="form-input" required>')
+      + _field('Start Time', '<select name="time" class="form-input" required>' + _timeOptions('') + '</select>')
+      + _field('End Time', '<select name="endTime" class="form-input" required>' + _timeOptions('') + '</select>')
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Capacity', '<input id="cap-input" name="capacity" type="number" min="1" max="5" class="form-input" value="5" readonly style="background:#f8fafc;color:#64748b">')
@@ -577,26 +650,37 @@
       const time   = fd.get('time');
       const endTime = fd.get('endTime');
       const classroom = fd.get('classroom') || 'Classroom 1';
+      if (endTime <= time) {
+        App.Utils.showToast('End time must be after start time', 'error');
+        return;
+      }
       const overlaps = function(c) { return time < c.endTime && endTime > c.time; };
       const roomClash = state.classes.find(function(c) {
         return c.day === day && c.classroom === classroom && overlaps(c);
       });
+      const commit = _makeAddClassCommit(fd, state, { classType: classType, capacity: capacity, day: day, time: time, endTime: endTime, classroom: classroom });
       if (roomClash) {
-        App.Utils.showToast('Room clash: ' + classroom + ' already booked ' + App.Utils.formatTime(roomClash.time) + '–' + App.Utils.formatTime(roomClash.endTime) + ' on ' + day, 'error');
+        App.Utils.showToast('Room clash: ' + classroom + ' already booked ' + App.Utils.formatTime(roomClash.time) + '–' + App.Utils.formatTime(roomClash.endTime) + ' on ' + day, 'error', 8000, { action: { label: 'Add anyway', onClick: commit } });
         return;
       }
+      commit();
+    });
+  }
+
+  function _makeAddClassCommit(fd, state, ctx) {
+    return function() {
       const newClass = {
         id: App.Utils.generateId('c'),
         name: fd.get('name'),
-        classType: classType,
+        classType: ctx.classType,
         teacherIds: [],
-        classroom: classroom,
-        day: day,
-        time: time,
-        endTime: endTime,
-        capacity: capacity,
+        classroom: ctx.classroom,
+        day: ctx.day,
+        time: ctx.time,
+        endTime: ctx.endTime,
+        capacity: ctx.capacity,
         enrolled: 0,
-        color: classType === 'Private' ? 'purple' : 'blue',
+        color: ctx.classType === 'Private' ? 'purple' : 'blue',
         category: '',
         levelBand: fd.get('levelBand') || ''
       };
@@ -627,7 +711,7 @@
         App.Utils.showToast('Saved locally (offline)', 'warning');
         App.Router.refresh();
       });
-    });
+    };
   }
 
   // Called when Private/Group radio changes — update the capacity field
@@ -662,9 +746,15 @@
   function _renderTimetableView(displayClasses, staff) {
     const DAYS_TT = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
     const DAYS_SHORT_TT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-    // Time slots: 8:00 to 20:00, every hour
+    // Time slots: 7:00 to 22:30, every half hour — matches the class-form
+    // time dropdown (_timeOptions) so no scheduled class falls outside the grid.
+    const GRID_START_MIN = TIME_SLOT_START_HOUR * 60;
+    const GRID_END_MIN = TIME_SLOT_END_HOUR * 60 + 30;
+    const SLOT_MIN = 30;
+    const toMin = function(t) { var p = (t || '08:00').split(':'); return parseInt(p[0], 10) * 60 + (parseInt(p[1], 10) || 0); };
+    const slotKey = function(t) { var mins = Math.floor(toMin(t) / SLOT_MIN) * SLOT_MIN; var h = Math.floor(mins / 60), m = mins % 60; return (h < 10 ? '0' + h : h) + ':' + (m === 0 ? '00' : '30'); };
     const slots = [];
-    for (var h = 8; h <= 20; h++) { slots.push(h < 10 ? '0' + h + ':00' : h + ':00'); }
+    for (var mn = GRID_START_MIN; mn <= GRID_END_MIN; mn += SLOT_MIN) { var sh = Math.floor(mn / 60), sm = mn % 60; slots.push((sh < 10 ? '0' + sh : sh) + ':' + (sm === 0 ? '00' : '30')); }
 
     // Color map for classes
     const COLOR_MAP = {
@@ -676,26 +766,25 @@
       red:    { bg:'#fee2e2', border:'#fca5a5', text:'#b91c1c' }
     };
 
-    // Build lookup: { day: { slotHour: [class, ...] } }
+    // Build lookup: { day: { 'HH:MM' slot: [class, ...] } } — bucket by start half-hour
     var grid = {};
     DAYS_TT.forEach(function(d) { grid[d] = {}; });
     displayClasses.forEach(function(c) {
-      var hour = parseInt((c.time || '08:00').split(':')[0], 10);
+      var key = slotKey(c.time);
       if (!grid[c.day]) return;
-      if (!grid[c.day][hour]) grid[c.day][hour] = [];
-      grid[c.day][hour].push(c);
+      if (!grid[c.day][key]) grid[c.day][key] = [];
+      grid[c.day][key].push(c);
     });
 
-    // Determine which rows to show (only slots that have at least one class or ±1 buffer)
-    var activeHours = {};
+    // Determine which rows to show (only slots covering a class, ±1 slot buffer)
+    var activeMins = {};
     displayClasses.forEach(function(c) {
-      var h = parseInt((c.time||'08:00').split(':')[0], 10);
-      var eh = parseInt((c.endTime||c.time||'08:00').split(':')[0], 10);
-      for (var x = Math.max(8, h - 1); x <= Math.min(20, eh + 1); x++) activeHours[x] = true;
+      var from = Math.max(GRID_START_MIN, Math.floor(toMin(c.time) / SLOT_MIN) * SLOT_MIN - SLOT_MIN);
+      var to = Math.min(GRID_END_MIN, Math.floor(toMin(c.endTime || c.time) / SLOT_MIN) * SLOT_MIN + SLOT_MIN);
+      for (var x = from; x <= to; x += SLOT_MIN) activeMins[x] = true;
     });
     var showSlots = slots.filter(function(s) {
-      var h = parseInt(s.split(':')[0], 10);
-      return activeHours[h] || displayClasses.length === 0;
+      return activeMins[toMin(s)] || displayClasses.length === 0;
     });
     if (showSlots.length === 0) showSlots = slots;
 
@@ -708,12 +797,15 @@
 
     var body = '<div style="border:1px solid #e2e8f0;border-radius:0 0 14px 14px;overflow:hidden;background:#fff">';
     showSlots.forEach(function(slot, si) {
-      var h = parseInt(slot.split(':')[0], 10);
-      var timeLabel = (h > 12 ? h - 12 : h) + ':00' + (h >= 12 ? ' PM' : ' AM');
-      body += '<div style="display:grid;grid-template-columns:60px repeat(7,1fr);border-bottom:' + (si < showSlots.length - 1 ? '1px solid #f0ede8' : 'none') + ';min-height:64px">'
-        + '<div style="padding:0.5rem 0.35rem;font-size:0.68rem;font-weight:700;color:#94a3b8;text-align:right;border-right:1px solid #e2e8f0;display:flex;align-items:flex-start;justify-content:flex-end">' + timeLabel + '</div>'
+      var sp = slot.split(':'), h = parseInt(sp[0], 10), m = parseInt(sp[1], 10);
+      var isHalf = m === 30;
+      var hh = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+      var timeLabel = hh + ':' + (isHalf ? '30' : '00') + (h >= 12 ? ' PM' : ' AM');
+      var labelColor = isHalf ? '#cbd5e1' : '#94a3b8';
+      body += '<div style="display:grid;grid-template-columns:60px repeat(7,1fr);border-bottom:' + (si < showSlots.length - 1 ? '1px solid #f0ede8' : 'none') + ';min-height:46px">'
+        + '<div style="padding:0.5rem 0.35rem;font-size:0.68rem;font-weight:700;color:' + labelColor + ';text-align:right;border-right:1px solid #e2e8f0;display:flex;align-items:flex-start;justify-content:flex-end">' + timeLabel + '</div>'
         + DAYS_TT.map(function(d, di) {
-            var cellClasses = (grid[d] && grid[d][h]) || [];
+            var cellClasses = (grid[d] && grid[d][slot]) || [];
             var borderStyle = di < 6 ? 'border-right:1px solid #f0ede8;' : '';
             if (cellClasses.length === 0) return '<div style="padding:0.35rem;' + borderStyle + '"></div>';
             return '<div style="padding:0.3rem;' + borderStyle + 'display:flex;flex-direction:column;gap:0.2rem">'
@@ -999,8 +1091,8 @@
       +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Classroom</label><input name="classroom" class="form-input" placeholder="Classroom 1"></div>'
       + '</div>'
       + '<div class="grid grid-cols-2 gap-3">'
-      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Start Time</label><input name="time" type="time" class="form-input" required></div>'
-      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">End Time</label><input name="endTime" type="time" class="form-input" required></div>'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Start Time</label><select name="time" class="form-input" required>' + _timeOptions('') + '</select></div>'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">End Time</label><select name="endTime" class="form-input" required>' + _timeOptions('') + '</select></div>'
       + '</div>'
       + '<div class="grid grid-cols-2 gap-3">'
       +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Capacity</label><input name="capacity" type="number" min="1" class="form-input" value="15" required></div>'
@@ -1077,8 +1169,8 @@
       + _field('Classroom', '<input name="classroom" class="form-input" value="' + App.Utils.esc(c.classroom || '') + '">')
       + '</div>'
       + '<div class="grid grid-cols-2 gap-3">'
-      + _field('Start Time', '<input name="time" type="time" class="form-input" value="' + (c.time || '') + '" required>')
-      + _field('End Time', '<input name="endTime" type="time" class="form-input" value="' + (c.endTime || '') + '" required>')
+      + _field('Start Time', '<select name="time" class="form-input" required>' + _timeOptions(c.time || '') + '</select>')
+      + _field('End Time', '<select name="endTime" class="form-input" required>' + _timeOptions(c.endTime || '') + '</select>')
       + '</div>'
       + '<div class="grid grid-cols-2 gap-3">'
       + _field('Capacity', '<input name="capacity" type="number" min="1" class="form-input" value="' + c.capacity + '">')
@@ -1101,6 +1193,10 @@
       var teacherIds = [];
       var checkboxes = e.target.querySelectorAll('input[name="teacherIds"]:checked');
       checkboxes.forEach(function(cb) { teacherIds.push(cb.value); });
+      if (fd.get('endTime') <= fd.get('time')) {
+        App.Utils.showToast('End time must be after start time', 'error');
+        return;
+      }
       var updated = {
         id: classId,
         name: fd.get('name'),
@@ -1279,5 +1375,5 @@
     });
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _saveBusinessSettings: _saveBusinessSettings };
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _saveBusinessSettings: _saveBusinessSettings };
 })();

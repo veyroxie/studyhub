@@ -8,6 +8,137 @@
   let _billingPage = 0;
   var _PAGE_SIZE = 15;
   var SELF_STUDY_SESSION_RATE = 10; // RM per self-study session (manual drop-in billing)
+  var SELF_STUDY_HOUR_RATE = 10;    // RM per self-study hour (member included value / add-on)
+
+  // ── Package line-item builder (Create Invoice → Single tab) ──────────────────
+  // Line items selected for the invoice under construction. The server derives
+  // the invoice total from these, so the client only tracks display state.
+  var _lineItems = [];
+  var _lineSeq = 0;
+
+  // _packageCatalog builds the selectable packages: Group/Private by level
+  // (priced from the pricing matrix) plus self-study packages and the hourly
+  // add-on. `foc` marks a member package whose included hours are waived.
+  function _packageCatalog() {
+    var tiers = App.Store.get().pricingTiers || [];
+    var feeFor = function(type, band) {
+      var t = tiers.find(function(x) { return x.classType === type && x.levelBand === band; });
+      return t ? (t.monthlyFee || 0) : 0;
+    };
+    var bandOf = function(level) { return level <= 3 ? '1-3' : '4-6'; };
+    var cat = [];
+    ['Group', 'Private'].forEach(function(type) {
+      for (var lvl = 1; lvl <= 6; lvl++) {
+        cat.push({ key: type + '-' + lvl, group: type, label: type + ' — Level ' + lvl,
+          name: type + ' Class — Level ' + lvl, descriptor: type + ' tuition, Level ' + lvl,
+          qty: 1, unitPrice: feeFor(type, bandOf(lvl)), kind: 'item', editableQty: false });
+      }
+    });
+    [4, 8].forEach(function(hrs) {
+      cat.push({ key: 'ss-' + hrs, group: 'Self-study', label: 'Self-study — ' + hrs + ' hours (member)',
+        name: 'TSH Membership', descriptor: hrs + ' self-study hours included',
+        qty: 1, unitPrice: hrs * SELF_STUDY_HOUR_RATE, kind: 'item', editableQty: false, foc: true });
+    });
+    cat.push({ key: 'ss-addon', group: 'Self-study', label: 'Self-study add-on (extra hours)',
+      name: 'Self-study add-on', descriptor: 'Extra self-study hours',
+      qty: 1, unitPrice: SELF_STUDY_HOUR_RATE, kind: 'item', editableQty: true });
+    return cat;
+  }
+
+  function _packageCatalogOptions() {
+    var cat = _packageCatalog();
+    var groups = ['Group', 'Private', 'Self-study'];
+    var html = '<option value="">Select a package…</option>';
+    groups.forEach(function(g) {
+      html += '<optgroup label="' + g + '">';
+      cat.filter(function(c) { return c.group === g; }).forEach(function(c) {
+        html += '<option value="' + c.key + '">' + App.Utils.esc(c.label) + ' — RM ' + (c.unitPrice || 0) + '</option>';
+      });
+      html += '</optgroup>';
+    });
+    return html;
+  }
+
+  // _lineItemAmount returns the signed amount: positive for items, negative for
+  // discount lines (matching how the backend stores them).
+  function _lineItemAmount(li) {
+    var raw = (parseFloat(li.qty) || 0) * (parseFloat(li.unitPrice) || 0);
+    return li.kind === 'discount' ? -Math.abs(raw) : raw;
+  }
+
+  function _addLineItem(key) {
+    if (!key) return;
+    var c = _packageCatalog().find(function(x) { return x.key === key; });
+    if (!c) return;
+    _lineSeq++;
+    _lineItems.push({ id: _lineSeq, kind: c.kind, name: c.name, descriptor: c.descriptor,
+      qty: c.qty, unitPrice: c.unitPrice, editableQty: !!c.editableQty });
+    if (c.foc) {
+      _lineSeq++;
+      _lineItems.push({ id: _lineSeq, kind: 'discount', name: 'Special pass FOC (self-study included)',
+        descriptor: '', qty: 1, unitPrice: c.unitPrice, editableQty: false });
+    }
+    _renderLineItems();
+  }
+
+  function _removeLineItem(id) {
+    _lineItems = _lineItems.filter(function(li) { return li.id !== id; });
+    _renderLineItems();
+  }
+
+  function _editLineItem(id, field, value) {
+    var li = _lineItems.find(function(x) { return x.id === id; });
+    if (!li) return;
+    li[field] = value;
+    _updateLineItemsTotal();
+  }
+
+  function _renderLineItems() {
+    var list = document.getElementById('line-items-list');
+    if (!list) return;
+    if (_lineItems.length === 0) {
+      list.innerHTML = '<div style="background:#fafaf8;border:1px dashed #e2ded7;border-radius:10px;padding:0.75rem;font-size:0.82rem;color:#94a3b8;text-align:center">No packages added yet.</div>';
+      _updateLineItemsTotal();
+      return;
+    }
+    list.innerHTML = _lineItems.map(_lineItemRow).join('');
+    _updateLineItemsTotal();
+  }
+
+  function _lineItemRow(li) {
+    var isDiscount = li.kind === 'discount';
+    var priceInput = isDiscount
+      ? ''
+      : '<input type="number" min="0" step="0.01" value="' + (li.unitPrice || 0)
+        + '" oninput="App.Billing._editLineItem(' + li.id + ',\'unitPrice\',this.value)" style="width:74px;padding:0.25rem 0.4rem;border:1px solid #e2e8f0;border-radius:6px;font-size:0.78rem" title="Unit price (RM)">';
+    var qtyInput = (!isDiscount && li.editableQty)
+      ? '<input type="number" min="1" step="1" value="' + (li.qty || 1)
+        + '" oninput="App.Billing._editLineItem(' + li.id + ',\'qty\',this.value)" style="width:48px;padding:0.25rem 0.4rem;border:1px solid #e2e8f0;border-radius:6px;font-size:0.78rem" title="Quantity"> ×'
+      : '';
+    return '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0;border-bottom:1px solid #f2efea">'
+      + '<div style="flex:1;min-width:0">'
+      +   '<div style="font-size:0.84rem;font-weight:600;color:' + (isDiscount ? '#166534' : '#111') + '">' + App.Utils.esc(li.name) + '</div>'
+      +   (li.descriptor ? '<div style="font-size:0.72rem;color:#94a3b8">' + App.Utils.esc(li.descriptor) + '</div>' : '')
+      + '</div>'
+      + qtyInput
+      + priceInput
+      + '<div id="li-amt-' + li.id + '" style="width:88px;text-align:right;font-size:0.82rem;font-weight:600;color:' + (isDiscount ? '#166534' : '#111') + '"></div>'
+      + '<button type="button" onclick="App.Billing._removeLineItem(' + li.id + ')" title="Remove" style="background:none;border:none;color:#cbd5e1;cursor:pointer;font-size:1rem;line-height:1">&#10005;</button>'
+      + '</div>';
+  }
+
+  function _updateLineItemsTotal() {
+    var total = 0;
+    _lineItems.forEach(function(li) {
+      var amt = _lineItemAmount(li);
+      total += amt;
+      var el = document.getElementById('li-amt-' + li.id);
+      if (el) el.textContent = (amt < 0 ? '- RM ' : 'RM ') + Math.abs(amt).toFixed(2);
+    });
+    var t = document.getElementById('line-items-total');
+    if (t) t.innerHTML = '<strong>Total: RM ' + total.toFixed(2) + '</strong>';
+    _updateNetAmount();
+  }
 
   function _paginationControls(page, total, moduleFn) {
     var totalPages = Math.ceil(total / _PAGE_SIZE);
@@ -915,6 +1046,8 @@
   }
 
   function _createModal() {
+    _lineItems = [];
+    _lineSeq = 0;
     var state = App.Store.get();
     var students = state.students || [];
     // Manual self-study billing is only for casual drop-ins. Package students are
@@ -960,11 +1093,15 @@
           return '<option value="' + s.id + '"' + (s.id === _studentFilter ? ' selected' : '') + '>' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</option>';
         }).join('')
       + '</select></div>'
-      + _field('Description', '<input name="description" class="form-input" placeholder="e.g. Mar 2026 Tuition">')
-      + '<div class="grid grid-cols-2 gap-4">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input"><option>Monthly</option><option>Adhoc</option></select></div>'
-      + _field('Amount (RM)', '<input id="inv-base-amount" name="amount" type="number" min="0" step="0.01" class="form-input" oninput="App.Billing._updateNetAmount()">')
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Add package</label>'
+      +   '<select id="pkg-catalog" class="form-input" onchange="App.Billing._addLineItem(this.value); this.selectedIndex=0;">'
+      +   _packageCatalogOptions()
+      +   '</select>'
+      +   '<p class="text-xs text-slate-400 mt-1">Pick Group/Private by level, or self-study. Self-study within the free hours is added as an FOC line; use the add-on for extra hours.</p>'
       + '</div>'
+      + '<div id="line-items-list" style="margin-top:0.25rem"></div>'
+      + '<div id="line-items-total" style="text-align:right;font-size:0.9rem;color:#111;margin-top:0.35rem"></div>'
       + '</div>'
 
       // ── SIBLING fields ──
@@ -1038,6 +1175,8 @@
       + '</div>'
     );
 
+    _renderLineItems();
+
     // Auto-enable early bird if within the early-bird window (1st–7th)
     (function() {
       if (new Date().getDate() <= 7) {
@@ -1051,22 +1190,28 @@
       var mode = _currentInvMode || 'single';
       if (mode === 'sibling') { _doSiblingInvoice(new FormData(e.target)); return; }
       if (mode === 'selfstudy') { _doSelfStudyInvoice(new FormData(e.target)); return; }
-      // Single invoice
+      // Single invoice — built from selected package line items. The server
+      // derives the total from the items, so no amount is sent.
       var fd = new FormData(e.target);
-      var st = App.Store.get();
       if (!fd.get('studentId')) { App.Utils.showToast('Select a student', 'warning'); return; }
-      if (!fd.get('description')) { App.Utils.showToast('Enter a description', 'warning'); return; }
-      if (!fd.get('amount') || parseFloat(fd.get('amount')) <= 0) { App.Utils.showToast('Enter an amount', 'warning'); return; }
-      var baseAmount = parseFloat(fd.get('amount')) || 0;
-      var discountPct = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked
-        ? (parseFloat(fd.get('discountPct')) || 0) : 0;
-      var finalAmount = parseFloat((baseAmount * (1 - discountPct / 100)).toFixed(2));
+      if (_lineItems.length === 0) { App.Utils.showToast('Add at least one package', 'warning'); return; }
+      var lineItems = _lineItems.map(function(li) {
+        return { kind: li.kind, name: li.name, descriptor: li.descriptor || '',
+          qty: parseFloat(li.qty) || 0, unitPrice: parseFloat(li.unitPrice) || 0, amount: _lineItemAmount(li) };
+      });
+      var earlyBirdOn = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked;
+      var discountPct = earlyBirdOn ? (parseFloat(fd.get('discountPct')) || 0) : 0;
+      if (discountPct > 0) {
+        var posSubtotal = lineItems.reduce(function(a, li) { return a + (li.amount > 0 ? li.amount : 0); }, 0);
+        var eb = parseFloat((posSubtotal * discountPct / 100).toFixed(2));
+        if (eb > 0) {
+          lineItems.push({ kind: 'discount', name: 'Early bird discount (' + discountPct + '%)', descriptor: '', qty: 1, unitPrice: eb, amount: -eb });
+        }
+      }
       var newInvoice = {
         studentId: fd.get('studentId'),
-        description: fd.get('description') + (discountPct > 0 ? ' (' + discountPct + '% early bird)' : ''),
         type: fd.get('type'),
-        amount: finalAmount,
-        discountPct: discountPct || undefined,
+        lineItems: lineItems,
         earlyBirdCutoff: fd.get('earlyBirdCutoff') || undefined,
         dueDate: fd.get('dueDate'),
         status: 'Unpaid',
@@ -1077,7 +1222,7 @@
       App.Api.post('/api/invoices', newInvoice).then(function() {
         return App.Api.loadSnapshot();
       }).then(function() {
-        App.Utils.showToast('Invoice created' + (discountPct > 0 ? ' with ' + discountPct + '% early bird discount' : ''), 'success');
+        App.Utils.showToast('Invoice created', 'success');
         App.Router.refresh();
       }).catch(function() {
         // Error already toasted by App.Api wrapper.
@@ -1122,15 +1267,20 @@
   }
 
   function _updateNetAmount() {
-    var base = parseFloat((document.getElementById('inv-base-amount') || {}).value) || 0;
-    var cb = document.getElementById('early-bird-cb');
-    var pctEl = document.getElementById('discount-pct');
     var preview = document.getElementById('net-amount-preview');
     if (!preview) return;
+    // Base is the positive subtotal — from the package line items in single
+    // mode, or the legacy amount field if one is present.
+    var base = parseFloat((document.getElementById('inv-base-amount') || {}).value) || 0;
+    if (base === 0) {
+      base = _lineItems.reduce(function(a, li) { var amt = _lineItemAmount(li); return a + (amt > 0 ? amt : 0); }, 0);
+    }
+    var cb = document.getElementById('early-bird-cb');
+    var pctEl = document.getElementById('discount-pct');
     if (cb && cb.checked && pctEl && base > 0) {
       var pct = parseFloat(pctEl.value) || 0;
       var net = (base * (1 - pct / 100)).toFixed(2);
-      preview.textContent = 'Net amount: RM ' + net + ' (saving RM ' + (base - parseFloat(net)).toFixed(2) + ')';
+      preview.textContent = 'After early bird: RM ' + net + ' (saving RM ' + (base - parseFloat(net)).toFixed(2) + ')';
     } else {
       preview.textContent = '';
     }
@@ -1338,6 +1488,9 @@
     _setInvMode: _setInvMode,
     _toggleEarlyBird: _toggleEarlyBird,
     _updateNetAmount: _updateNetAmount,
+    _addLineItem: _addLineItem,
+    _removeLineItem: _removeLineItem,
+    _editLineItem: _editLineItem,
     _updateSelfStudyAmount: _updateSelfStudyAmount,
     _updateSiblingChildren: _updateSiblingChildren,
     _updateSiblingTotal: _updateSiblingTotal,

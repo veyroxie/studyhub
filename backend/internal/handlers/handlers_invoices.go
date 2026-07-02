@@ -102,6 +102,15 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "bad body", 400)
 				return
 			}
+			// Multi-line invoices: the total is derived server-side from the
+			// items (the client's amount is ignored) so it can't be tampered
+			// with. Legacy single-amount posts skip this and keep the old path.
+			if len(inv.LineItems) > 0 {
+				inv.Amount = models.NormalizeLineItems(inv.LineItems)
+				if inv.Description == "" {
+					inv.Description = models.LineItemsSummary(inv.LineItems)
+				}
+			}
 			if msg := validationError("studentId", inv.StudentID, "description", inv.Description, "dueDate", inv.DueDate); msg != "" {
 				core.RespondError(w, msg, 400)
 				return
@@ -150,8 +159,8 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 				}
 			}
 
-			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount, inv.ReferralCredit, inv.ReferenceNo); err != nil {
+			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,line_items) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount, inv.ReferralCredit, inv.ReferenceNo, models.MarshalLineItems(inv.LineItems)); err != nil {
 				core.RespondError(w, "could not create invoice", 500)
 				return
 			}
@@ -187,8 +196,11 @@ func HandleInvoiceUpdate(db *store.DB) http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		tw, twArgs := store.ScopeTenant(c, "")
+		// Clear any stored line items: a manual amount edit makes them
+		// inconsistent with the new total, so the invoice reverts to a single
+		// synthesized line at the edited amount when rendered.
 		args := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn, id}, twArgs...)
-		res, err := db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+		res, err := db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, line_items='[]' WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 		if err != nil {
 			core.RespondError(w, "could not update invoice", http.StatusInternalServerError)
 			return

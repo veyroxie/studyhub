@@ -154,7 +154,8 @@ func createSchema(db *sql.DB) error {
 		submitted_by_parent   BOOLEAN DEFAULT FALSE,
 		sibling_ids           TEXT DEFAULT '[]',
 		sibling_discount      REAL DEFAULT 0,
-		receipt_no            TEXT
+		receipt_no            TEXT,
+		line_items            TEXT DEFAULT '[]'
 	);
 
 	CREATE TABLE IF NOT EXISTS audit_logs (

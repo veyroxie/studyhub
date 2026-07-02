@@ -8,6 +8,24 @@ dated section when you cut a deploy.
 
 ## [Unreleased]
 
+### Added — Package line items on invoices (Skooly-format)
+
+- **Invoice PDF redesigned** to the centre's Skooly-style layout: centered
+  letterhead with logo, a two-column **Items | Amount (RM)** table where each
+  line shows its billing period, a descriptor, and a `qty x unit` sub-line,
+  then `Subtotal` / `Total Tax` / named discount lines / `Total Due`, a payment
+  **Note** block, and numbered terms.
+- **Package picker in Create Invoice** — admins build an invoice by adding
+  packages from a dropdown (Group/Private Level 1–6 priced from the matrix,
+  Self-study 4h/8h, and an hourly add-on) instead of typing a free-text amount.
+  Included self-study is auto-added as an FOC discount line that nets to zero;
+  extra hours use the add-on. The total is derived server-side from the items.
+- **Monthly & self-study cron invoices are now itemized** — one line per
+  enrolled class, the included self-study membership with its FOC line, and
+  named referral/sibling/early-bird discount lines.
+- Invoices gained a `line_items` JSON column (migration `0021`). Invoices
+  created before this render unchanged via a single synthesized line.
+
 ### Changed — Production hardening (greenre standard audit)
 
 - **`.dockerignore` added** — excludes `.git/`, docs, tests, IDE files from

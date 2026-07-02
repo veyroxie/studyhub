@@ -3,6 +3,16 @@ package models
 import (
 	"database/sql"
 	"encoding/json"
+	"math"
+	"strconv"
+	"strings"
+)
+
+// Invoice line-item kinds. "item" is a positive charge; "discount" is a
+// negative line (included-self-study FOC, sibling, referral, early-bird).
+const (
+	LineItemKindItem     = "item"
+	LineItemKindDiscount = "discount"
 )
 
 // nullStr safely scans a nullable SQL string
@@ -33,6 +43,77 @@ func ParseArr(s string) []string {
 		return []string{}
 	}
 	return out
+}
+
+// MarshalLineItems serialises invoice line items to the JSON stored in
+// invoices.line_items. Mirrors JSONArr — never fails the caller, empty array
+// on nil or marshal error.
+func MarshalLineItems(items []InvoiceLineItem) string {
+	if items == nil {
+		return "[]"
+	}
+	b, err := json.Marshal(items)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// ParseLineItems reads the invoices.line_items JSON back into line items.
+// Tolerates "" and "[]" for legacy flat invoices. Mirrors ParseArr.
+func ParseLineItems(s string) []InvoiceLineItem {
+	if s == "" {
+		return []InvoiceLineItem{}
+	}
+	var out []InvoiceLineItem
+	_ = json.Unmarshal([]byte(s), &out)
+	if out == nil {
+		return []InvoiceLineItem{}
+	}
+	return out
+}
+
+// round2 rounds a ringgit amount to the sen (2 dp) so line totals don't drift.
+func round2(v float64) float64 {
+	return math.Round(v*100) / 100
+}
+
+// NormalizeLineItems recomputes each item's Amount server-side so the client
+// can never dictate the invoice total: "item" lines become Qty*UnitPrice;
+// "discount" lines keep their Amount clamped to <= 0. Returns the summed total,
+// which the caller stores as the authoritative invoices.amount.
+func NormalizeLineItems(items []InvoiceLineItem) float64 {
+	total := 0.0
+	for i := range items {
+		if items[i].Kind == LineItemKindDiscount {
+			items[i].Amount = round2(math.Min(0, items[i].Amount))
+		} else {
+			items[i].Amount = round2(items[i].Qty * items[i].UnitPrice)
+		}
+		total += items[i].Amount
+	}
+	return round2(total)
+}
+
+// LineItemsSummary builds a one-line description from the item names, used when
+// a multi-line invoice arrives without an explicit description.
+func LineItemsSummary(items []InvoiceLineItem) string {
+	names := make([]string, 0, len(items))
+	for _, it := range items {
+		if it.Kind == LineItemKindItem && it.Name != "" {
+			names = append(names, it.Name)
+		}
+	}
+	if len(names) == 0 {
+		return "Invoice"
+	}
+	return strings.Join(names, ", ")
+}
+
+// FormatQty renders a line-item quantity without a trailing ".00" for whole
+// numbers (e.g. "5" not "5.00", but "1.5" stays).
+func FormatQty(qty float64) string {
+	return strconv.FormatFloat(qty, 'f', -1, 64)
 }
 
 // ─── Domain models (JSON tags match frontend App.DATA shape exactly) ──────────
@@ -126,27 +207,44 @@ type Staff struct {
 	HourlyRate     float64 `json:"hourlyRate,omitempty"`
 }
 
+// InvoiceLineItem is one row of a multi-line invoice, stored as a JSON array in
+// invoices.line_items. The invoice's Amount stays the authoritative total,
+// derived server-side from the sum of these items. Kind "discount" carries a
+// negative Amount (e.g. an included-self-study FOC line or early-bird).
+type InvoiceLineItem struct {
+	Kind        string   `json:"kind"`        // "item" | "discount"
+	Name        string   `json:"name"`        // bold heading, e.g. "Group Level 1-3 Tuition"
+	Descriptor  string   `json:"descriptor"`  // gray sub-line under the name
+	PeriodStart string   `json:"periodStart"` // "2026-07-01", optional
+	PeriodEnd   string   `json:"periodEnd"`   // "2026-07-31", optional
+	Qty         float64  `json:"qty"`
+	UnitPrice   float64  `json:"unitPrice"`
+	Amount      float64  `json:"amount"`            // qty*unitPrice; negative for a discount line
+	Details     []string `json:"details,omitempty"` // extra gray detail sub-lines
+}
+
 type Invoice struct {
-	ID                string  `json:"id"`
-	StudentID         string  `json:"studentId"`
-	Description       string  `json:"description"`
-	Type              string  `json:"type"`
-	Amount            float64 `json:"amount"`
-	DueDate           string  `json:"dueDate"`
-	Status            string  `json:"status"`
-	CreatedOn         string  `json:"createdOn"`
-	PaidOn            *string `json:"paidOn"`
-	PaymentProof      string  `json:"paymentProof"`
-	PaymentMethod     string  `json:"paymentMethod"`
-	DiscountPct       float64 `json:"discountPct"`
-	SubmittedByParent bool    `json:"submittedByParent"`
-	SiblingIds        string  `json:"siblingIds"`
-	SiblingDiscount   float64 `json:"siblingDiscount"`
-	ReferralCredit    float64 `json:"referralCredit"`
-	ReferenceNo       string  `json:"referenceNo"`
-	EarlyBirdCutoff   string  `json:"earlyBirdCutoff"`
-	EarlyBirdDiscount float64 `json:"earlyBirdDiscount"`
-	DeletedAt         *string `json:"deletedAt,omitempty"`
+	ID                string            `json:"id"`
+	StudentID         string            `json:"studentId"`
+	Description       string            `json:"description"`
+	Type              string            `json:"type"`
+	Amount            float64           `json:"amount"`
+	DueDate           string            `json:"dueDate"`
+	Status            string            `json:"status"`
+	CreatedOn         string            `json:"createdOn"`
+	PaidOn            *string           `json:"paidOn"`
+	PaymentProof      string            `json:"paymentProof"`
+	PaymentMethod     string            `json:"paymentMethod"`
+	DiscountPct       float64           `json:"discountPct"`
+	SubmittedByParent bool              `json:"submittedByParent"`
+	SiblingIds        string            `json:"siblingIds"`
+	SiblingDiscount   float64           `json:"siblingDiscount"`
+	ReferralCredit    float64           `json:"referralCredit"`
+	ReferenceNo       string            `json:"referenceNo"`
+	EarlyBirdCutoff   string            `json:"earlyBirdCutoff"`
+	EarlyBirdDiscount float64           `json:"earlyBirdDiscount"`
+	LineItems         []InvoiceLineItem `json:"lineItems"`
+	DeletedAt         *string           `json:"deletedAt,omitempty"`
 }
 
 type Announcement struct {
