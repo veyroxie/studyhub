@@ -361,7 +361,7 @@
       + '<h2 class="text-lg font-bold mb-1">Enrol classes</h2>'
       + '<p class="text-sm text-slate-500 mb-4">' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</p>'
       + '<form id="enroll-classes-form" class="space-y-4">'
-      + _multiClassField(s.enrolledClasses || [], state.classes || [])
+      + _multiClassField(s.enrolledClasses || [], state.classes || [], state.staff || [])
       + '<div class="flex justify-end gap-3 pt-1">'
       + '<button type="button" onclick="App.Students._viewModal(\'' + studentId + '\')" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>'
@@ -677,7 +677,7 @@
       + '<select name="status" class="form-input">'
       + ['Active','Inactive','New','Waitlisted'].map(function(st) { return '<option' + (s.status===st?' selected':'') + '>' + st + '</option>'; }).join('')
       + '</select></div>'
-      + _multiClassField(s.enrolledClasses, state.classes)
+      + _multiClassField(s.enrolledClasses, state.classes, state.staff)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="' + (s.packageAmount || 0) + '">')
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="' + (s.packageSelfStudyHours == null ? 4 : s.packageSelfStudyHours) + '">')
@@ -737,7 +737,7 @@
   }
 
   function _addModal() {
-    const { classes } = App.Store.get();
+    const { classes, staff } = App.Store.get();
     var suggestedId = App.Utils.generateId('STU');
     App.Utils.showModal(
       '<div class="p-6">'
@@ -758,7 +758,7 @@
       + _field('Phone (with country code)', '<input name="phone" class="form-input" placeholder="60123456789">')
       + '</div>'
       + '<p style="font-size:0.72rem;color:#94a3b8;margin:-0.35rem 0 0.5rem;line-height:1.45">A parent account is created (or linked) from this email automatically — they get a set-password link to claim it.</p>'
-      + _multiClassField([], classes)
+      + _multiClassField([], classes, staff)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="0" placeholder="e.g. 380">')
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="4">')
@@ -828,19 +828,99 @@
   }
 
   // Multi-select class field — renders checkboxes for each class
-  function _multiClassField(selected, classes) {
-    return '<div><label class="block text-sm font-medium text-slate-700 mb-1">Enrolled Classes <span class="text-slate-400 font-normal">(select one or more)</span></label>'
-      + '<div class="border border-slate-200 rounded-xl p-3 space-y-1.5 max-h-48 overflow-y-auto bg-white">'
-      + (classes.length === 0 ? '<p class="text-xs text-slate-400">No classes yet</p>' : '')
-      + classes.map(function(c) {
-          const checked = selected.indexOf(c.id) > -1 ? ' checked' : '';
-          return '<label class="flex items-center gap-2.5 cursor-pointer group">'
-            + '<input type="checkbox" name="classIds" value="' + c.id + '"' + checked + ' class="w-3.5 h-3.5 rounded accent-blue-600">'
-            + '<span class="text-sm text-slate-700 group-hover:text-blue-600 transition-colors">' + App.Utils.esc(c.name) + '</span>'
-            + '<span class="text-xs text-slate-400 ml-auto">' + c.day + ' ' + App.Utils.formatTime(c.time) + '</span>'
-            + '</label>';
-        }).join('')
+  var _DAY_ORDER = { Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6, Sunday:7 };
+
+  // Enrollment picker: three dropdowns (slot, type, teacher) resolve to an
+  // existing class, and "Add class" appends it as a removable chip. Each chip
+  // carries a hidden classIds input so the surrounding form's FormData.getAll
+  // ('classIds') keeps working unchanged.
+  function _multiClassField(selected, classes, staff) {
+    staff = staff || [];
+    var chips = (selected || []).map(function(cid) {
+      var c = classes.find(function(x) { return x.id === cid; });
+      return c ? _enrollChip(c) : '';
+    }).join('');
+    return '<div><label class="block text-sm font-medium text-slate-700 mb-1">Enrolled Classes</label>'
+      + '<div class="border border-slate-200 rounded-xl p-3 bg-white">'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">'
+      + '<select id="enr-slot" class="form-input">' + _slotOptions(classes) + '</select>'
+      + '<select id="enr-type" class="form-input"><option value="Group">Group</option><option value="Private">Private</option></select>'
+      + '<select id="enr-teacher" class="form-input"><option value="">Any teacher</option>'
+      +   staff.map(function(s) { return '<option value="' + s.id + '">' + App.Utils.esc(s.name || s.fullName || s.id) + '</option>'; }).join('')
+      + '</select>'
+      + '<button type="button" onclick="App.Students._addEnrollment()" style="padding:0.5rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add class</button>'
+      + '</div>'
+      + '<div id="enr-list" style="margin-top:0.6rem;display:flex;flex-direction:column;gap:0.35rem">'
+      +   (chips || '<p class="text-xs text-slate-400" data-empty>No classes added yet</p>')
+      + '</div>'
       + '</div></div>';
+  }
+
+  function _slotOptions(classes) {
+    var seen = {};
+    var slots = [];
+    (classes || []).forEach(function(c) {
+      var key = c.day + '|' + c.time + '|' + (c.endTime || '');
+      if (seen[key]) return;
+      seen[key] = true;
+      slots.push({ key: key, day: c.day, time: c.time, endTime: c.endTime });
+    });
+    slots.sort(function(a, b) { return (_DAY_ORDER[a.day] || 9) - (_DAY_ORDER[b.day] || 9) || a.time.localeCompare(b.time); });
+    if (slots.length === 0) return '<option value="" disabled>No class slots yet</option>';
+    return slots.map(function(s) {
+      var range = App.Utils.formatTime(s.time) + (s.endTime ? '–' + App.Utils.formatTime(s.endTime) : '');
+      return '<option value="' + s.key + '">' + s.day + ' ' + range + '</option>';
+    }).join('');
+  }
+
+  function _enrollChip(c) {
+    var label = App.Utils.esc(c.name) + ' · ' + c.day + ' ' + App.Utils.formatTime(c.time);
+    return '<div data-cid="' + c.id + '" style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.6rem;border:1px solid #eceae5;border-radius:8px;background:#faf9f7">'
+      + '<input type="hidden" name="classIds" value="' + c.id + '">'
+      + '<span style="flex:1;font-size:0.82rem;color:#334155">' + label + '</span>'
+      + '<button type="button" onclick="App.Students._removeEnrollment(\'' + c.id + '\')" title="Remove" style="border:none;background:none;color:#94a3b8;cursor:pointer;font-size:1.05rem;line-height:1">×</button>'
+      + '</div>';
+  }
+
+  function _addEnrollment() {
+    var slotEl = document.getElementById('enr-slot');
+    if (!slotEl || !slotEl.value) { App.Utils.showToast('Pick a slot first', 'error'); return; }
+    var parts = slotEl.value.split('|');
+    var type = document.getElementById('enr-type').value;
+    var teacher = document.getElementById('enr-teacher').value;
+    var classes = App.Store.get().classes || [];
+    var matches = classes.filter(function(c) {
+      var slotOk = c.day === parts[0] && c.time === parts[1] && (c.endTime || '') === parts[2];
+      var teacherOk = !teacher || (c.teacherIds || []).indexOf(teacher) > -1;
+      return slotOk && c.classType === type && teacherOk;
+    });
+    if (matches.length === 0) { App.Utils.showToast('No class matches that slot, type and teacher. Create it in Calendar first.', 'error'); return; }
+    _appendEnrollments(matches);
+  }
+
+  function _appendEnrollments(matches) {
+    var list = document.getElementById('enr-list');
+    if (!list) return;
+    var existing = {};
+    list.querySelectorAll('input[name="classIds"]').forEach(function(i) { existing[i.value] = true; });
+    var added = 0;
+    matches.forEach(function(c) {
+      if (existing[c.id]) return;
+      var emptyMsg = list.querySelector('[data-empty]');
+      if (emptyMsg) emptyMsg.remove();
+      list.insertAdjacentHTML('beforeend', _enrollChip(c));
+      existing[c.id] = true;
+      added++;
+    });
+    if (added === 0) App.Utils.showToast('That class is already added', 'info');
+  }
+
+  function _removeEnrollment(cid) {
+    var list = document.getElementById('enr-list');
+    if (!list) return;
+    var chip = list.querySelector('[data-cid="' + cid + '"]');
+    if (chip) chip.remove();
+    if (list.children.length === 0) list.innerHTML = '<p class="text-xs text-slate-400" data-empty>No classes added yet</p>';
   }
 
   function _switchTab(tab) {
@@ -1599,6 +1679,8 @@
     _activateStudent: _activateStudent,
     _deactivateStudent: _deactivateStudent,
     _enrollClassesModal: _enrollClassesModal,
+    _addEnrollment: _addEnrollment,
+    _removeEnrollment: _removeEnrollment,
     _switchTab: _switchTab,
     _addModal: _addModal,
     _pendingModal: _pendingModal,
