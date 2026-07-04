@@ -410,6 +410,29 @@ func HandleCreateFeedbackReply(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "feedbackId and message are required", 400)
 			return
 		}
+		// Resolve the thread's class tenant-scoped, then authorize: admins may
+		// reply to any thread; teachers only to classes they teach; parents only
+		// to classes a child of theirs is enrolled in. Without this any
+		// authenticated user could post into any thread.
+		tw, twArgs := store.ScopeTenant(c, "")
+		fbArgs := append([]any{reply.FeedbackID}, twArgs...)
+		var classID string
+		if err := db.QueryRow(`SELECT class_id FROM feedback WHERE id=? AND deleted_at IS NULL`+tw, fbArgs...).Scan(&classID); err != nil {
+			core.RespondError(w, "feedback not found", 404)
+			return
+		}
+		if !core.IsAdminRole(c) {
+			var allowed map[string]bool
+			if c.Role == "teacher" {
+				allowed = teacherClassIDSet(db, c)
+			} else if c.Role == "parent" {
+				allowed = store.ParentClassIDs(db, c)
+			}
+			if !allowed[classID] {
+				core.RespondError(w, "not allowed to reply to this thread", 403)
+				return
+			}
+		}
 		reply.ID = core.GenerateID("FR")
 		reply.AuthorEmail = c.Email
 		reply.AuthorName = c.Name

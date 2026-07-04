@@ -61,7 +61,7 @@ func ensureTeacherUserAccount(db *store.DB, r *http.Request, tid int, email, ful
 
 func listStaff(db *store.DB, c *core.Claims) []models.Staff {
 	tw, twArgs := store.ScopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type,hourly_rate FROM staff WHERE deleted_at IS NULL`+tw, twArgs...)
+	rows, err := db.Query(`SELECT id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type,hourly_rate,performance_notes FROM staff WHERE deleted_at IS NULL`+tw, twArgs...)
 	if err != nil {
 		return []models.Staff{}
 	}
@@ -69,9 +69,9 @@ func listStaff(db *store.DB, c *core.Claims) []models.Staff {
 	out := []models.Staff{}
 	for rows.Next() {
 		var s models.Staff
-		var spec, nric, eName, ePhone, empType sql.NullString
+		var spec, nric, eName, ePhone, empType, perfNotes sql.NullString
 		var hourlyRate sql.NullFloat64
-		if err := rows.Scan(&s.ID, &s.Name, &s.FullName, &s.Role, &s.Email, &s.Phone, &s.Salary, &s.JoinDate, &s.Status, &spec, &nric, &eName, &ePhone, &empType, &hourlyRate); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.FullName, &s.Role, &s.Email, &s.Phone, &s.Salary, &s.JoinDate, &s.Status, &spec, &nric, &eName, &ePhone, &empType, &hourlyRate, &perfNotes); err != nil {
 			continue
 		}
 		s.Specialization = models.NullStr(spec)
@@ -79,6 +79,7 @@ func listStaff(db *store.DB, c *core.Claims) []models.Staff {
 		s.EmergencyName = models.NullStr(eName)
 		s.EmergencyPhone = models.NullStr(ePhone)
 		s.EmploymentType = models.NullStr(empType)
+		s.PerformanceNotes = models.NullStr(perfNotes)
 		if hourlyRate.Valid {
 			s.HourlyRate = hourlyRate.Float64
 		}
@@ -89,6 +90,8 @@ func listStaff(db *store.DB, c *core.Claims) []models.Staff {
 			s.Salary = 0
 			s.HourlyRate = 0
 			s.NRIC = ""
+			// Internal performance notes are admin-facing only.
+			s.PerformanceNotes = ""
 		} else if c != nil && c.Role != "superadmin" {
 			// Admins (non-super) see a masked NRIC — last 4 only. Full value
 			// is reserved for superadmin / DPO-equivalent access. Reduces
@@ -178,8 +181,8 @@ func HandleStaffByID(db *store.DB) http.HandlerFunc {
 				s.EmploymentType = "Full-time"
 			}
 			tw, twArgs := store.ScopeTenant(c, "")
-			args := append([]any{s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate, id}, twArgs...)
-			if _, err := db.Exec(`UPDATE staff SET name=?,full_name=?,role=?,email=?,phone=?,salary=?,join_date=?,status=?,specialization=?,nric=?,emergency_name=?,emergency_phone=?,employment_type=?,hourly_rate=? WHERE id=?`+tw, args...); err != nil {
+			args := append([]any{s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate, s.PerformanceNotes, id}, twArgs...)
+			if _, err := db.Exec(`UPDATE staff SET name=?,full_name=?,role=?,email=?,phone=?,salary=?,join_date=?,status=?,specialization=?,nric=?,emergency_name=?,emergency_phone=?,employment_type=?,hourly_rate=?,performance_notes=? WHERE id=?`+tw, args...); err != nil {
 				core.RespondError(w, "could not update staff", 500)
 				return
 			}

@@ -6,18 +6,21 @@ import (
 	"studyhub/internal/core"
 )
 
-// rlsScope sets the per-request app.tenant_id GUC so the RLS policies in
-// migration 0004 can filter rows automatically. Acts as defense-in-depth
-// behind the explicit scopeTenant() WHERE clauses.
+// rlsScope sets the app.tenant_id GUC that the RLS policies in migration 0004
+// read.
 //
-// The setting is applied via `SET` (session-wide) rather than `SET LOCAL`
-// (transaction-scoped) because database/sql connection pooling means a
-// transaction wrapper would require routing every query through the same
-// txn. Setting it session-wide is acceptable because:
-//   - We reset on every request entry, so a recycled connection is
-//     re-bound to the new tenant before any query runs.
-//   - Connections returning to the pool aren't queried again until the
-//     next request enters this middleware.
+// IMPORTANT — this is NOT a reliable per-request safety net. `db.Exec` borrows
+// an arbitrary connection from the pool, runs the `SET` on it, and returns it.
+// The request's subsequent queries are served by *other* pooled connections
+// where the GUC is unset, so RLS does not filter them. RLS therefore only
+// actually guards queries that run on the same connection that executed the
+// SET (e.g. a superadmin tool that pins one conn). For normal request handling
+// the ONLY thing enforcing tenant isolation is the explicit ScopeTenant() WHERE
+// clauses — treat those as mandatory, not belt-and-braces.
+//
+// TODO(rls-binding): bind the GUC to the request by routing all of a request's
+// queries through a single *sql.Conn (or a per-request tx). Needs a dedicated
+// plan — do not attempt a piecemeal conn-routing change here.
 //
 // Mounted AFTER jwtMiddleware so Claims are available.
 func RLSScope(db *DB) func(http.Handler) http.Handler {

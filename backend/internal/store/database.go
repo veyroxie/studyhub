@@ -133,6 +133,7 @@ func createSchema(db *sql.DB) error {
 		emergency_phone TEXT,
 		employment_type TEXT DEFAULT 'Full-time',
 		hourly_rate     DOUBLE PRECISION DEFAULT 0,
+		performance_notes TEXT DEFAULT '',
 		deleted_at      TIMESTAMPTZ
 	);
 
@@ -204,7 +205,8 @@ func createSchema(db *sql.DB) error {
 		deductions  DOUBLE PRECISION DEFAULT 0,
 		total       DOUBLE PRECISION DEFAULT 0,
 		status      TEXT DEFAULT 'Pending',
-		paid_on     TEXT
+		paid_on     TEXT,
+		manually_edited BOOLEAN DEFAULT FALSE
 	);
 
 	CREATE TABLE IF NOT EXISTS feedback (

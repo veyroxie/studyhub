@@ -201,6 +201,12 @@ func HandleBillplzWebhook(db *store.DB) http.HandlerFunc {
 		if n, _ := res.RowsAffected(); n > 0 {
 			core.Logger.Info("billplz webhook: invoice marked paid", "invoice_id", invoiceID, "bill_id", billID)
 			core.LogAudit(db, "billplz", "invoice_paid", "invoice", invoiceID, "via webhook")
+			// Assign a receipt number now that the invoice is Paid — same
+			// idempotent guard as the admin/parent pay paths. No tenant scope
+			// here (system webhook, no Claims); the invoice id is unique.
+			if _, err := db.Exec(`UPDATE invoices SET receipt_no='RCPT-'||lpad(nextval('receipt_no_seq')::text,6,'0') WHERE id=? AND status='Paid' AND (receipt_no IS NULL OR receipt_no='')`, invoiceID); err != nil {
+				core.Logger.Error("billplz webhook: receipt number assign failed", "err", err, "invoice_id", invoiceID)
+			}
 			var studentID string
 			db.QueryRow(`SELECT student_id FROM invoices WHERE id=?`, invoiceID).Scan(&studentID)
 			if studentID != "" {
@@ -357,6 +363,12 @@ func HandleStripeWebhook(db *store.DB) http.HandlerFunc {
 		if n, _ := res.RowsAffected(); n > 0 {
 			core.Logger.Info("stripe webhook: invoice marked paid", "invoice_id", invoiceID, "session_id", evt.Data.Object.ID)
 			core.LogAudit(db, "stripe", "invoice_paid", "invoice", invoiceID, "via webhook")
+			// Assign a receipt number now that the invoice is Paid — same
+			// idempotent guard as the admin/parent pay paths. No tenant scope
+			// here (system webhook, no Claims); the invoice id is unique.
+			if _, err := db.Exec(`UPDATE invoices SET receipt_no='RCPT-'||lpad(nextval('receipt_no_seq')::text,6,'0') WHERE id=? AND status='Paid' AND (receipt_no IS NULL OR receipt_no='')`, invoiceID); err != nil {
+				core.Logger.Error("stripe webhook: receipt number assign failed", "err", err, "invoice_id", invoiceID)
+			}
 			var studentID string
 			db.QueryRow(`SELECT student_id FROM invoices WHERE id=?`, invoiceID).Scan(&studentID)
 			if studentID != "" {

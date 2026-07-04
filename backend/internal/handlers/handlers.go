@@ -125,8 +125,9 @@ func logAudit(db execer, actorEmail, action, entityType, entityID, detail string
 
 // listPendingUsers returns users with status=pending_verification.
 // Admin-only — included in the snapshot for dashboard attention items.
-func listPendingUsers(db *store.DB) []models.PendingUser {
-	rows, err := db.Query(`SELECT id, email, name, role FROM users WHERE status='pending_verification' ORDER BY id DESC`)
+func listPendingUsers(db *store.DB, c *core.Claims) []models.PendingUser {
+	tw, twArgs := store.ScopeTenant(c, "")
+	rows, err := db.Query(`SELECT id, email, name, role FROM users WHERE status='pending_verification'`+tw+` ORDER BY id DESC`, twArgs...)
 	if err != nil {
 		return []models.PendingUser{}
 	}
@@ -262,7 +263,7 @@ func HandleSnapshot(db *store.DB) http.HandlerFunc {
 		run(func() { snap.ProgressReports = listProgressReports(db, c) })
 		if isAdmin {
 			run(func() { snap.Registrations = listRegistrations(db, c) })
-			run(func() { snap.PendingUsers = listPendingUsers(db) })
+			run(func() { snap.PendingUsers = listPendingUsers(db, c) })
 		} else if c != nil && c.Role == "parent" {
 			// Parents see only their own enrollment requests so the dashboard
 			// can show pending enrolments and the "register your child" form.

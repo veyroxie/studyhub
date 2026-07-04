@@ -705,7 +705,7 @@
           + '</div>';
       });
     }
-    html += '<button onclick="App.Router.navigate(\'feedback\')" class="dash-link" style="display:block;margin-top:0.5rem">View all feedback →</button>'
+    html += '<button onclick="App.Router.navigate(\'progress\')" class="dash-link" style="display:block;margin-top:0.5rem">View progress reports →</button>'
       + '</div>';
 
     // ── Announcements (compact, last 3) ─────────────────────────────────────

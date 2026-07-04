@@ -97,7 +97,15 @@ func LoadTenantSettings(db *DB, tenantID int) *TenantSettings {
 		&s.BankName, &s.BankAccountNo, &s.BankAccountHolder,
 		&s.PaymentInstructions, &s.InvoiceTerms,
 	)
-	if err == sql.ErrNoRows || err != nil {
+	// A generic DB error must NOT be cached — otherwise a transient blip pins
+	// the default fallback for the whole TTL. Only cache a real row (err==nil)
+	// or a confirmed absence (ErrNoRows). Any other error returns the default
+	// without writing the cache, so the next call retries.
+	if err != nil && err != sql.ErrNoRows {
+		core.Logger.Error("tenant settings load failed", "err", err, "tenant_id", tenantID)
+		return DefaultTenantSettings
+	}
+	if err == sql.ErrNoRows {
 		s = DefaultTenantSettings
 	}
 	tenantSettingsCacheMu.Lock()

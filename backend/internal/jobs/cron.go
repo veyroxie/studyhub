@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,8 +20,12 @@ import (
 // before the 7th of the month. Replaces the previous 10% logic.
 const EarlyBirdRM = 10.0
 
-// ReferralMonthlyRM is the per-month referral discount granted for 3 months
-// when a new family registers using an existing family's referral code.
+// ReferralMonthlyRM is the referral discount applied PER ENROLLED CHILD: each
+// child's monthly invoice consumes one credit from the family's referral_rewards
+// balance (so a family with N billable children uses N credits per month). This
+// is intended per-child behaviour, not one-credit-per-family. In the final month
+// where the remaining balance is less than the child count, only some siblings
+// get the discount that month — accepted.
 const ReferralMonthlyRM = 10.0
 
 // SiblingMonthlyRM is the per-month per-child sibling discount applied when
@@ -58,6 +63,13 @@ func monthlyClassLineName(m classMeta) string {
 		return m.name
 	}
 	return m.name + " - " + m.classType
+}
+
+// isPartTime tolerates the two encodings in the wild: the staff form saves
+// 'parttime' while the backend default is 'Full-time'. Comparing normalized
+// keeps part-time teachers from being silently paid a flat salary.
+func isPartTime(employmentType string) bool {
+	return strings.EqualFold(strings.ReplaceAll(employmentType, "-", ""), "parttime")
 }
 
 // monthlyClassDescriptor renders the gray sub-line, e.g. "Group class, Level 1-3".
@@ -111,6 +123,25 @@ func runMonthlyInvoiceCycle(db *store.DB) {
 	if now.Day() > 7 {
 		return
 	}
+	// Take the SAME advisory lock the manual "Run monthly" endpoint uses, on a
+	// dedicated connection held for the run's lifetime. Without this the 00:05
+	// tick / boot run could overlap a manual admin run (both preload dedup sets
+	// before either inserts) and issue duplicate invoices + double referral
+	// decrements. A concurrent holder → skip this run.
+	lockKey := core.AdvisoryLockKey("monthly_cron")
+	ctx := context.Background()
+	conn, err := db.DB.Conn(ctx)
+	if err != nil {
+		core.Logger.Error("cron lock conn", "err", err)
+		return
+	}
+	defer conn.Close()
+	var got bool
+	if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock($1)`, lockKey).Scan(&got); err != nil || !got {
+		core.Logger.Info("monthly cron skipped — another run holds the lock")
+		return
+	}
+	defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, lockKey)
 	created := generateMonthlyInvoices(db, now)
 	if created > 0 {
 		core.Logger.Info("monthly invoice cron created invoices", "count", created, "month", now.Format("2006-01"))
@@ -122,6 +153,11 @@ func runMonthlyInvoiceCycle(db *store.DB) {
 	payrolls := generateMonthlyPayroll(db, now)
 	if payrolls > 0 {
 		core.Logger.Info("monthly payroll cron created rows", "count", payrolls, "month", previousMonth(now).Format("2006-01"))
+	}
+	// Invalidate once for the whole cycle — the individual generators no longer
+	// each invalidate, so overflow/payroll-only runs also refresh the snapshot.
+	if created+overflow+payrolls > 0 {
+		store.SnapshotCacheInvalidateAll()
 	}
 }
 
@@ -144,38 +180,46 @@ func generateSelfStudyOverflowInvoices(db *store.DB, now time.Time) int {
 	// but is issued in the current one, so created_on is the current date. The
 	// cron runs daily during days 1–7, so without this an unpaid student would
 	// be billed once per run (up to 7 duplicate invoices/month).
+	// Fail closed: an empty map on error would re-bill every over-quota student
+	// on each of the 1–7 daily runs, so abort the run if the preload fails.
 	existingOverflow := map[string]bool{}
-	if existRows, err := db.Query(`SELECT tenant_id, student_id FROM invoices WHERE type='Self-study Overflow' AND description LIKE ? AND deleted_at IS NULL`, "%"+monthHuman+"%"); err == nil {
-		for existRows.Next() {
-			var t, s string
-			if err := existRows.Scan(&t, &s); err == nil {
-				existingOverflow[t+"|"+s] = true
-			}
-		}
-		existRows.Close()
+	existRows, err := db.Query(`SELECT tenant_id, student_id FROM invoices WHERE type='Self-study Overflow' AND description LIKE ? AND deleted_at IS NULL`, "%"+monthHuman+"%")
+	if err != nil {
+		core.Logger.Error("self-study overflow dedup preload failed", "err", err)
+		return 0
 	}
+	for existRows.Next() {
+		var t, s string
+		if err := existRows.Scan(&t, &s); err == nil {
+			existingOverflow[t+"|"+s] = true
+		}
+	}
+	existRows.Close()
 
 	// Same idea for the leftover-minutes that get banked as self-study credits:
 	// the note carries the billing month so a re-run during the 1–7 window
 	// doesn't bank the same rollover twice. A student with only a partial hour
 	// over quota has no invoice to dedup against, so this guard is essential.
 	existingRollover := map[string]bool{}
-	if rcRows, err := db.Query(`SELECT tenant_id, student_id FROM replacement_credits WHERE category='self-study' AND type='earned' AND note LIKE ?`, "%"+rolloverNote(monthHuman)+"%"); err == nil {
-		for rcRows.Next() {
-			var t, s string
-			if err := rcRows.Scan(&t, &s); err == nil {
-				existingRollover[t+"|"+s] = true
-			}
-		}
-		rcRows.Close()
+	rcRows, err := db.Query(`SELECT tenant_id, student_id FROM replacement_credits WHERE category='self-study' AND type='earned' AND note LIKE ?`, "%"+rolloverNote(monthHuman)+"%")
+	if err != nil {
+		core.Logger.Error("self-study rollover dedup preload failed", "err", err)
+		return 0
 	}
+	for rcRows.Next() {
+		var t, s string
+		if err := rcRows.Scan(&t, &s); err == nil {
+			existingRollover[t+"|"+s] = true
+		}
+	}
+	rcRows.Close()
 
 	rows, err := db.Query(`
 		SELECT s.id, s.tenant_id, s.first_name, s.last_name,
 		       COALESCE(s.package_self_study_hours,4),
 		       COALESCE(SUM(ss.duration_min),0) AS used_min
 		  FROM students s
-		  LEFT JOIN self_study_sessions ss ON ss.student_id = s.id AND ss.deleted_at IS NULL AND ss.date BETWEEN ? AND ?
+		  LEFT JOIN self_study_sessions ss ON ss.student_id = s.id AND ss.tenant_id = s.tenant_id AND ss.deleted_at IS NULL AND ss.date BETWEEN ? AND ?
 		 WHERE s.deleted_at IS NULL
 		   AND COALESCE(s.subscription_status,'active') = 'active'
 		   AND COALESCE(s.status,'Active') NOT IN ('Inactive','Waitlisted')
@@ -190,6 +234,11 @@ func generateSelfStudyOverflowInvoices(db *store.DB, now time.Time) int {
 	created := 0
 	createdOn := now.Format("2006-01-02")
 	dueDate := time.Date(now.Year(), now.Month(), 7, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	// Mirror the monthly clamp: a manual run after the 7th bills due in 7 days
+	// rather than a due date already in the past.
+	if now.Day() > 7 {
+		dueDate = now.AddDate(0, 0, 7).Format("2006-01-02")
+	}
 	for rows.Next() {
 		var stuID, tid, firstName, lastName string
 		var quotaHours, usedMin int
@@ -269,7 +318,14 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	// Key by (tenant_id, student_id) so a colliding STU_<ts> across tenants
 	// (unlikely under millisecond timestamps but not impossible) cannot
 	// suppress a real invoice for the other tenant.
-	existing := loadExistingMonthlyInvoiceStudentIDs(db, monthPrefix)
+	//
+	// Fail closed: a transient error here would leave `existing` empty and
+	// re-issue an invoice to every active student, so abort the run instead.
+	existing, err := loadExistingMonthlyInvoiceStudentIDs(db, monthPrefix)
+	if err != nil {
+		core.Logger.Error("monthly invoice dedup preload failed", "err", err)
+		return 0
+	}
 
 	// Pre-load classID → monthly fee, derived from the type×level pricing matrix
 	// (a class joins pricing_tiers on its class_type + level_band). Class IDs are
@@ -377,6 +433,15 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	// applyEarlyBirdExpiry restores full price on unpaid invoices afterwards.
 	dueDate := time.Date(now.Year(), now.Month(), 7, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
 	earlyBirdCutoff := dueDate
+	// A manual admin run after the 7th (the scheduler is day-gated, but
+	// HandleRunMonthlyCron isn't) must not issue born-overdue invoices carrying
+	// an already-expired early-bird discount. Bill full price, due in 7 days,
+	// no early bird anywhere on the invoice.
+	isLateRun := now.Day() > 7
+	if isLateRun {
+		dueDate = now.AddDate(0, 0, 7).Format("2006-01-02")
+		earlyBirdCutoff = ""
+	}
 	createdOn := now.Format("2006-01-02")
 	monthLabel := now.Format("Jan 2006")
 	// Billing period shown on each line item: the 1st to the last day of the month.
@@ -423,6 +488,8 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 			continue // no classes priced and no manual amount — nothing to bill
 		}
 
+		// One referral credit per child-invoice: each enrolled child consumes a
+		// credit from the family balance while any remain (see ReferralMonthlyRM).
 		referralCredit := 0.0
 		creditKey := s.tenantID + "|" + s.familyID
 		if s.familyID != "" && familyCredits[creditKey] > 0 {
@@ -456,6 +523,12 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 			discounted = 0
 		}
 		earlyBirdApplied := full - discounted
+		if isLateRun {
+			// No early bird on a late manual run — full price, and the
+			// appendDiscount below is a no-op with a zero amount.
+			discounted = full
+			earlyBirdApplied = 0
+		}
 
 		// Included self-study: shown as a membership line then fully waived by a
 		// matching FOC discount, so it nets to zero and never moves the total.
@@ -533,22 +606,19 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 			core.Logger.Error("could not queue invoice email", "err", err, "to", e.to)
 		}
 	}
-	if created > 0 {
-		store.SnapshotCacheInvalidateAll()
-	}
 	return created
 }
 
 // loadExistingMonthlyInvoiceStudentIDs returns the set of (tenant_id|student_id)
 // pairs that already have a Monthly invoice for the given YYYY-MM prefix.
-func loadExistingMonthlyInvoiceStudentIDs(db *store.DB, monthPrefix string) map[string]bool {
+func loadExistingMonthlyInvoiceStudentIDs(db *store.DB, monthPrefix string) (map[string]bool, error) {
 	out := map[string]bool{}
 	rows, err := db.Query(`
 		SELECT DISTINCT tenant_id, student_id FROM invoices
 		WHERE type='Monthly' AND created_on LIKE ? AND deleted_at IS NULL`,
 		monthPrefix+"%")
 	if err != nil {
-		return out
+		return out, err
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -557,7 +627,7 @@ func loadExistingMonthlyInvoiceStudentIDs(db *store.DB, monthPrefix string) map[
 			out[tid+"|"+sid] = true
 		}
 	}
-	return out
+	return out, nil
 }
 
 // loadFamilyReferralCredits returns a map of family_id → remaining credits
@@ -676,6 +746,9 @@ func HandleRunMonthlyCron(db *store.DB) http.HandlerFunc {
 			invoices := generateMonthlyInvoices(db, now)
 			overflow := generateSelfStudyOverflowInvoices(db, now)
 			payrolls := generateMonthlyPayroll(db, now)
+			if invoices+overflow+payrolls > 0 {
+				store.SnapshotCacheInvalidateAll()
+			}
 			core.Logger.Info("monthly cron manual run finished", "actor", actor, "invoices", invoices, "overflow", overflow, "payrolls", payrolls)
 			core.LogAudit(db, actor, "monthly_cron_manual_run", "system", "", "")
 		}()
@@ -686,11 +759,13 @@ func HandleRunMonthlyCron(db *store.DB) http.HandlerFunc {
 }
 
 // generateMonthlyPayroll builds payroll rows for the previous month for
-// every active staff member. Idempotent — skips a (staff_id, month) row
-// that already exists. Full-time staff get a flat base_salary row; part-
-// time staff get a row built from their teacher check-in records (hours
-// worked × hourly_rate). Returns the number of rows created. Status is
-// always Pending so admin reviews/confirms via the existing UI.
+// every active staff member. Full-time staff get a flat base_salary row;
+// part-time staff get a row built from their teacher check-in records
+// (hours worked × hourly_rate). Existing Pending rows that were NOT hand-
+// edited are refreshed in place when the recomputed base differs — so a
+// teacher who checks in after the first cron run still gets counted. Paid
+// and manually_edited rows are frozen. Returns rows created + refreshed.
+// Status starts Pending so admin reviews/confirms via the existing UI.
 func generateMonthlyPayroll(db *store.DB, now time.Time) int {
 	prev := previousMonth(now)
 	monthLabel := prev.Format("2006-01")
@@ -722,38 +797,48 @@ func generateMonthlyPayroll(db *store.DB, now time.Time) int {
 		staff = append(staff, s)
 	}
 
-	// Pre-load (staff_id, month, tenant_id) triples that already have a
-	// payroll row → map lookup instead of N×SELECT COUNT(*).
-	existingPayroll := map[string]bool{}
-	if er, err := db.Query(`SELECT staff_id, tenant_id FROM payroll WHERE month=?`, monthLabel); err == nil {
-		for er.Next() {
-			var sid, tid string
-			if err := er.Scan(&sid, &tid); err == nil {
-				existingPayroll[sid+"|"+tid] = true
-			}
-		}
-		er.Close()
+	// Pre-load the month's existing payroll rows → map lookup instead of
+	// N×SELECT COUNT(*). The full row state is kept so stale rows can be
+	// recomputed in place (late check-ins) while Paid or hand-edited rows
+	// stay frozen.
+	type payRow struct {
+		id, status        string
+		baseSalary        float64
+		bonus, deductions float64
+		manuallyEdited    bool
 	}
+	// Fail closed: an empty map on error would re-insert payroll for everyone
+	// on each of the 1–7 daily runs, so abort the run if the preload fails.
+	existingPayroll := map[string]payRow{}
+	er, err := db.Query(`SELECT staff_id, tenant_id, id, status, base_salary, bonus, deductions, COALESCE(manually_edited,false) FROM payroll WHERE month=?`, monthLabel)
+	if err != nil {
+		core.Logger.Error("payroll dedup preload failed", "err", err)
+		return 0
+	}
+	for er.Next() {
+		var sid, tid string
+		var p payRow
+		if err := er.Scan(&sid, &tid, &p.id, &p.status, &p.baseSalary, &p.bonus, &p.deductions, &p.manuallyEdited); err == nil {
+			existingPayroll[sid+"|"+tid] = p
+		}
+	}
+	er.Close()
 
 	// Pre-compute hours for every part-time staff member in one grouped
 	// query — replaces N×JOIN against attendance+classes.
 	partTimeIDs := []string{}
 	for _, s := range staff {
-		if s.employmentType == "Part-time" && s.hourlyRate > 0 {
+		if isPartTime(s.employmentType) && s.hourlyRate > 0 {
 			partTimeIDs = append(partTimeIDs, s.id)
 		}
 	}
 	hoursByStaff := teacherHoursWorkedAll(db, partTimeIDs, monthStart, monthEnd)
 
 	created := 0
+	refreshed := 0
 	for _, s := range staff {
-		if existingPayroll[s.id+"|"+s.tenantID] {
-			continue
-		}
-
 		var total float64
-		switch s.employmentType {
-		case "Part-time":
+		if isPartTime(s.employmentType) {
 			if s.hourlyRate <= 0 {
 				continue
 			}
@@ -762,11 +847,34 @@ func generateMonthlyPayroll(db *store.DB, now time.Time) int {
 				continue
 			}
 			total = hours * s.hourlyRate
-		default: // Full-time
+		} else { // Full-time
 			if s.salary <= 0 {
 				continue
 			}
 			total = s.salary
+		}
+
+		if ex, isExisting := existingPayroll[s.id+"|"+s.tenantID]; isExisting {
+			// Refresh a stale row in place so a late check-in still lands in
+			// the month's pay. Paid rows and hand-edited rows are frozen —
+			// admin corrections and settled amounts must never be overwritten.
+			isFrozen := ex.status != "Pending" || ex.manuallyEdited
+			isUnchanged := math.Abs(ex.baseSalary-total) < 0.005
+			if isFrozen || isUnchanged {
+				continue
+			}
+			// Recompute total from the LIVE bonus/deductions (not the preloaded
+			// copy) and re-assert Pending + not-manually-edited in the WHERE so
+			// an admin edit landing between preload and update is never clobbered.
+			res, err := db.Exec(`UPDATE payroll SET base_salary=?, total=? + bonus - deductions WHERE id=? AND status='Pending' AND COALESCE(manually_edited,false)=FALSE`, total, total, ex.id)
+			if err != nil {
+				core.Logger.Error("could not refresh payroll row", "err", err, "staff_id", s.id)
+				continue
+			}
+			if n, _ := res.RowsAffected(); n == 1 {
+				refreshed++
+			}
+			continue
 		}
 
 		id := core.GenerateID("PAY")
@@ -781,7 +889,10 @@ func generateMonthlyPayroll(db *store.DB, now time.Time) int {
 		}
 		created++
 	}
-	return created
+	if refreshed > 0 {
+		core.Logger.Info("payroll rows refreshed from latest check-ins", "count", refreshed, "month", monthLabel)
+	}
+	return created + refreshed
 }
 
 // teacherHoursWorkedAll computes hours-worked for every staff_id in the

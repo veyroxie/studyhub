@@ -68,7 +68,7 @@
 
     var paged = filtered.slice(_studentPage * _PAGE_SIZE, (_studentPage + 1) * _PAGE_SIZE);
 
-    const colCount = isAdmin ? 7 : 5;
+    const colCount = isAdmin ? 7 : (isTeacher ? 4 : 5);
 
     container.innerHTML = ''
       + '<div class="flex items-center justify-between mb-6">'
@@ -124,7 +124,7 @@
       +       '<thead class="bg-slate-50 border-b border-slate-100"><tr>'
       +         (isAdmin ? '<th scope="col" class="th" style="width:36px"><input type="checkbox" id="select-all-cb" onchange="App.Students._toggleSelectAll(this.checked)" style="cursor:pointer"></th>' : '')
       +         '<th scope="col" class="th">Student</th><th scope="col" class="th">Classes</th><th scope="col" class="th">DOB</th>'
-      +         '<th scope="col" class="th">Parent / Contact</th><th scope="col" class="th">Status</th>'
+      +         (isTeacher ? '' : '<th scope="col" class="th">Parent / Contact</th>') + '<th scope="col" class="th">Status</th>'
       +         (isAdmin ? '<th scope="col" class="th">Auto-bill</th>' : '')
       +       '</tr></thead>'
       +       '<tbody class="divide-y divide-slate-50">'
@@ -174,7 +174,7 @@
                   : enrolledNames.map(function(n) { return '<span class="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full border border-blue-100">' + App.Utils.esc(n) + '</span>'; }).join(''))
                 + '</div></td>'
                 + '<td class="td text-sm text-slate-600">' + App.Utils.formatDate(s.dob) + '</td>'
-                + '<td class="td text-sm"><div class="text-slate-700">' + App.Utils.esc(s.parentName) + '</div><div class="text-slate-400 text-xs">' + App.Utils.esc(s.contact) + '</div></td>'
+                + (isTeacher ? '' : '<td class="td text-sm"><div class="text-slate-700">' + App.Utils.esc(s.parentName) + '</div><div class="text-slate-400 text-xs">' + App.Utils.esc(s.contact) + '</div></td>')
                 + '<td class="td">' + App.Utils.statusBadge(s.status) + '</td>'
                 + (isAdmin ? '<td class="td" onclick="event.stopPropagation()">'
                 +   '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;font-size:0.62rem;font-weight:700">'
@@ -547,7 +547,7 @@
             const now2 = new Date();
             const thisMonth2 = now2.getFullYear() + '-' + String(now2.getMonth() + 1).padStart(2,'0');
             const monthMin = sessions.filter(function(ss) { return ss.date.startsWith(thisMonth2); })
-              .reduce(function(acc, ss) { return acc + (ss.duration || 0); }, 0);
+              .reduce(function(acc, ss) { return acc + (ss.durationMin || 0); }, 0);
             const monthHr = monthMin / 60;
             const freeRem = Math.max(0, 4 - monthHr);
             const billable = Math.max(0, monthHr - 4);
@@ -1078,18 +1078,17 @@
     if (!textarea) return;
     var text = textarea.value.trim();
     if (!text) { App.Utils.showToast('Please enter a note', 'error'); return; }
-    var state = App.Store.get();
     var now = new Date();
     var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    var prefix = '[' + months[now.getMonth()] + ' ' + now.getDate() + '] ';
-    var newNote = prefix + text;
-    App.Store.set({ students: state.students.map(function(s) {
-      if (s.id !== studentId) return s;
-      var existing = s.notes ? s.notes.trim() : '';
-      return Object.assign({}, s, { notes: existing ? existing + '\n' + newNote : newNote });
-    })});
-    textarea.value = '';
-    App.Utils.showToast('Note saved', 'success');
+    var newNote = '[' + months[now.getMonth()] + ' ' + now.getDate() + '] ' + text;
+    // Persist server-side — the note is appended to the admin-facing notes.
+    // Teachers can't see notes in their redacted snapshot, so no local write.
+    App.Api.post('/api/students/' + studentId + '/note', { note: newNote }).then(function() {
+      return App.Api.loadSnapshot();
+    }).then(function() {
+      textarea.value = '';
+      App.Utils.showToast('Note sent to admin', 'success');
+    });
   }
 
   function _infoRow(label, value) {

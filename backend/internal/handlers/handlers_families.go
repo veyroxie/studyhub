@@ -167,8 +167,13 @@ func HandleFamilyByID(db *store.DB) http.HandlerFunc {
 			core.Respond(w, f)
 		case http.MethodDelete:
 			args := append([]any{id}, twArgs...)
-			if _, err := db.Exec(`UPDATE families SET deleted_at=NOW() WHERE id=?`+tw, args...); err != nil {
+			res, err := db.Exec(`UPDATE families SET deleted_at=NOW() WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+			if err != nil {
 				core.RespondError(w, "could not delete family", 500)
+				return
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				core.RespondError(w, "family not found", http.StatusNotFound)
 				return
 			}
 			core.LogAudit(db, c.Email, "family_deleted", "family", id, "soft deleted")

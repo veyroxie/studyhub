@@ -96,12 +96,29 @@ func listStudents(db *store.DB, c *core.Claims) []models.Student {
 		if resumedAt.Valid {
 			s.ResumedAt = &resumedAt.String
 		}
-		if isTeacher && !studentInClassSet(s, classIDs) {
-			continue
+		if isTeacher {
+			if !studentInClassSet(s, classIDs) {
+				continue
+			}
+			redactContactForTeacher(&s)
 		}
 		out = append(out, s)
 	}
 	return out
+}
+
+// redactContactForTeacher strips contact + internal-notes fields a teacher must
+// not see. Teachers keep health (medical/allergies), DOB, classes and status;
+// parent name/email/phone, emergency contact and admin notes are cleared. This
+// runs in listStudents, which feeds BOTH /api/students and the snapshot, so the
+// data never reaches a teacher's browser.
+func redactContactForTeacher(s *models.Student) {
+	s.ParentName = ""
+	s.Contact = ""
+	s.Phone = ""
+	s.Emergency2Name = ""
+	s.Emergency2Phone = ""
+	s.Notes = ""
 }
 
 func listStudentsPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]models.Student, int) {
@@ -622,4 +639,79 @@ func HandleStudentRelink(db *store.DB) http.HandlerFunc {
 		})
 
 	}
+}
+
+// noteMaxLen caps a single appended note so a teacher can't balloon the
+// students.notes column with one request.
+const noteMaxLen = 2000
+
+type studentNoteRequest struct {
+	Note string `json:"note"`
+}
+
+// HandleStudentNote appends a single note to a student's admin-facing notes.
+// Admin and teacher may call it; a teacher may only note a student enrolled in
+// one of their own classes. The note is appended server-side (never a full-row
+// PUT) so a teacher can't overwrite other student fields.
+func HandleStudentNote(db *store.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := core.ClaimsFrom(r)
+		if !core.IsStaffRole(c) {
+			core.RespondError(w, "staff only", 403)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var req studentNoteRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			core.RespondError(w, "bad body", 400)
+			return
+		}
+		note := strings.TrimSpace(req.Note)
+		if note == "" {
+			core.RespondError(w, "note is required", 400)
+			return
+		}
+		if len(note) > noteMaxLen {
+			note = note[:noteMaxLen]
+		}
+		// Teachers can only note a student in one of their own classes.
+		if c.Role == "teacher" && !teacherOwnsStudent(db, c, id) {
+			core.RespondError(w, "not your student", 403)
+			return
+		}
+		tw, twArgs := store.ScopeTenant(c, "")
+		args := append([]any{note, note, id}, twArgs...)
+		res, err := db.Exec(`UPDATE students SET notes = CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || E'\n' || ? END WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+		if err != nil {
+			core.RespondError(w, "could not save note", 500)
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			core.RespondError(w, "student not found", 404)
+			return
+		}
+		core.LogAudit(db, c.Email, "student_note_added", "student", id, note)
+		core.Respond(w, map[string]any{"ok": true})
+	}
+}
+
+// teacherOwnsStudent reports whether the student is enrolled in one of the
+// teacher's classes — the same class-set check listStudents uses.
+func teacherOwnsStudent(db *store.DB, c *core.Claims, studentID string) bool {
+	classIDs := teacherClassIDSet(db, c)
+	if len(classIDs) == 0 {
+		return false
+	}
+	tw, twArgs := store.ScopeTenant(c, "")
+	args := append([]any{studentID}, twArgs...)
+	var enrolledRaw string
+	if err := db.QueryRow(`SELECT COALESCE(enrolled_classes,'[]') FROM students WHERE id=?`+tw+` AND deleted_at IS NULL`, args...).Scan(&enrolledRaw); err != nil {
+		return false
+	}
+	for _, cid := range models.ParseArr(enrolledRaw) {
+		if classIDs[cid] {
+			return true
+		}
+	}
+	return false
 }

@@ -66,6 +66,22 @@ func listProgressReports(db *store.DB, c *core.Claims) []models.ProgressReport {
 		}
 		out = append(out, pr)
 	}
+	// Teachers may only see reports for students in their own classes. The staff
+	// query above is tenant-wide, so scope it down here (listStudents already
+	// returns only a teacher's students).
+	if c != nil && c.Role == "teacher" {
+		allowed := map[string]bool{}
+		for _, s := range listStudents(db, c) {
+			allowed[s.ID] = true
+		}
+		scoped := []models.ProgressReport{}
+		for _, pr := range out {
+			if allowed[pr.StudentID] {
+				scoped = append(scoped, pr)
+			}
+		}
+		return scoped
+	}
 	return out
 }
 
@@ -178,6 +194,8 @@ func HandleProgressReportPDF(db *store.DB) http.HandlerFunc {
 			teacherName string
 			deletedAt   sql.NullString
 		)
+		tw, twArgs := store.ScopeTenant(c, "pr")
+		pdfArgs := append([]any{id}, twArgs...)
 		err := db.QueryRow(`
 			SELECT pr.id, pr.student_id, pr.term, COALESCE(pr.teacher_id,''),
 			       COALESCE(pr.subject,''), COALESCE(pr.grade,''),
@@ -190,7 +208,7 @@ func HandleProgressReportPDF(db *store.DB) http.HandlerFunc {
 			FROM progress_reports pr
 			JOIN students s ON s.id = pr.student_id
 			LEFT JOIN staff t ON t.id = pr.teacher_id
-			WHERE pr.id = ?`, id).Scan(
+			WHERE pr.id = ?`+tw, pdfArgs...).Scan(
 			&pr.ID, &pr.StudentID, &pr.Term, &pr.TeacherID,
 			&pr.Subject, &pr.Grade, &pr.Strengths, &pr.AreasToImprove,
 			&pr.TeacherComment, &pr.NextTermFocus, &pr.Published,
@@ -217,7 +235,23 @@ func HandleProgressReportPDF(db *store.DB) http.HandlerFunc {
 			}
 		}
 
-		bytes, err := pdf.RenderProgressReportPDF(pr, studentName, teacherName)
+		if c != nil && c.Role == "teacher" {
+			// Teachers may only download reports for their own students.
+			isOwnStudent := false
+			for _, s := range listStudents(db, c) {
+				if s.ID == pr.StudentID {
+					isOwnStudent = true
+					break
+				}
+			}
+			if !isOwnStudent {
+				core.RespondError(w, "not your student", 403)
+				return
+			}
+		}
+
+		settings := store.LoadTenantSettings(db, store.TenantID(c))
+		bytes, err := pdf.RenderProgressReportPDF(pr, studentName, teacherName, settings)
 		if err != nil {
 			core.RespondError(w, "could not render PDF", 500)
 			return

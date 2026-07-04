@@ -1,3 +1,6 @@
+// ARCHIVED — replaced by progress.js (Progress Reports). This module is no
+// longer loaded (no <script> tag in index.html, not registered in main.js).
+// Kept on disk for history; do not wire it back up without a migration plan.
 (function() {
   window.App = window.App || {};
 

@@ -14,7 +14,7 @@ from enum import StrEnum
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 app = FastAPI(title="StudyHub Analytics Service", version="1.0.0")
@@ -119,7 +119,7 @@ def generate_report(req: ReportRequest) -> ReportResponse:
     return ReportResponse(
         tenantId=req.tenantId,
         reportType=req.reportType,
-        generatedAt=datetime.utcnow().isoformat() + "Z",
+        generatedAt=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         data=data,
     )
 

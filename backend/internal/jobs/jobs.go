@@ -8,6 +8,7 @@ import (
 	"strings"
 	"studyhub/internal/core"
 	"studyhub/internal/mailer"
+	"studyhub/internal/models"
 	"studyhub/internal/store"
 	"sync"
 	"syscall"
@@ -157,28 +158,73 @@ func runHealthSelfCheck(db *store.DB) {
 }
 
 // applyEarlyBirdExpiry restores full price on monthly invoices whose early-bird
-// cutoff (the 10th) has passed while still unpaid. It adds the exact discount
-// back to amount and clears the early-bird fields, so it runs once per invoice
-// and is safe to call repeatedly. Pending-Verification and Paid invoices are
-// left alone (the parent already paid in time). Mutating amount keeps it the
-// single source of truth for every payment path (admin/parent/online).
+// cutoff (the 7th) has passed while still unpaid. It adds the exact discount
+// back to amount, removes the matching "Early bird discount" line item so the
+// customer-facing PDF still balances (Subtotal − discounts = Total Due), and
+// clears the early-bird fields — so it runs once per invoice and is safe to
+// call repeatedly. Pending-Verification and Paid invoices are left alone (the
+// parent already paid in time). Mutating amount keeps it the single source of
+// truth for every payment path (admin/parent/online).
 func applyEarlyBirdExpiry(db *store.DB) {
-	res, err := db.Exec(`UPDATE invoices
-		SET amount = amount + early_bird_discount,
-		    status = 'Overdue',
-		    early_bird_discount = 0,
-		    early_bird_cutoff = ''
+	tx, err := db.BeginTx(context.Background())
+	if err != nil {
+		core.Logger.Error("early-bird-expiry tx begin failed", "err", err)
+		return
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`SELECT id, COALESCE(line_items,'[]') FROM invoices
 		WHERE type = 'Monthly'
 		  AND status IN ('Unpaid','Overdue')
 		  AND early_bird_cutoff <> ''
 		  AND early_bird_cutoff < ?
 		  AND deleted_at IS NULL`, core.Today())
 	if err != nil {
-		core.Logger.Error("early-bird-expiry failed", "err", err)
+		core.Logger.Error("early-bird-expiry select failed", "err", err)
 		return
 	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		core.Logger.Info("early-bird discount expired on unpaid invoices", "count", n)
+	type expired struct {
+		id        string
+		lineItems string
+	}
+	var toExpire []expired
+	for rows.Next() {
+		var e expired
+		var raw string
+		if err := rows.Scan(&e.id, &raw); err != nil {
+			continue
+		}
+		items := models.ParseLineItems(raw)
+		kept := items[:0]
+		for _, it := range items {
+			if it.Kind == models.LineItemKindDiscount && strings.HasPrefix(it.Name, "Early bird") {
+				continue
+			}
+			kept = append(kept, it)
+		}
+		e.lineItems = models.MarshalLineItems(kept)
+		toExpire = append(toExpire, e)
+	}
+	rows.Close()
+
+	for _, e := range toExpire {
+		if _, err := tx.Exec(`UPDATE invoices
+			SET amount = amount + early_bird_discount,
+			    status = 'Overdue',
+			    early_bird_discount = 0,
+			    early_bird_cutoff = '',
+			    line_items = ?
+			WHERE id = ?`, e.lineItems, e.id); err != nil {
+			core.Logger.Error("early-bird-expiry update failed", "err", err, "invoice_id", e.id)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		core.Logger.Error("early-bird-expiry tx commit failed", "err", err)
+		return
+	}
+	if len(toExpire) > 0 {
+		core.Logger.Info("early-bird discount expired on unpaid invoices", "count", len(toExpire))
 		store.SnapshotCacheInvalidateAll()
 	}
 }

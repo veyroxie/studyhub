@@ -87,7 +87,7 @@ func HandleAnnouncements(db *store.DB) http.HandlerFunc {
 			data, total := listAnnouncementsPaged(db, c, p)
 			core.Respond(w, core.PaginatedResponse{Data: data, Total: total, Limit: p.Limit, Offset: p.Offset})
 		case http.MethodPost:
-			if c.Role != "admin" && c.Role != "teacher" {
+			if !core.IsAdminRole(c) && c.Role != "teacher" {
 				core.RespondError(w, "admin or teacher only", 403)
 				return
 			}

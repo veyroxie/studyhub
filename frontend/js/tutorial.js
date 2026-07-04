@@ -69,9 +69,9 @@
 
     if (isAdmin || isTeacher) {
       steps.push({
-        title: 'Classroom Feedback',
-        text: 'Log session notes per class — topic, mood, and per-student feedback for parents to see.',
-        target: '[data-page="feedback"]'
+        title: 'Progress Reports',
+        text: 'Write and share per-student progress reports for parents to see.',
+        target: '[data-page="progress"]'
       });
     }
 

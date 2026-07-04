@@ -540,7 +540,7 @@
       const myMonth = sessions.filter(function(ss) {
         return ss.studentId === s.id && ss.date.startsWith(thisMonth);
       });
-      const usedMin  = myMonth.reduce(function(acc, ss) { return acc + (ss.duration || 0); }, 0);
+      const usedMin  = myMonth.reduce(function(acc, ss) { return acc + (ss.durationMin || 0); }, 0);
       const usedHr   = usedMin / 60;
       const freeRem  = Math.max(0, SELF_STUDY_FREE_H - usedHr);
       const billable = Math.max(0, usedHr - SELF_STUDY_FREE_H);
@@ -573,12 +573,12 @@
     // Month total summary
     const monthTotal = eligible.reduce(function(acc, s) {
       const myMin = sessions.filter(function(ss) { return ss.studentId === s.id && ss.date.startsWith(thisMonth); })
-        .reduce(function(a, ss) { return a + (ss.duration || 0); }, 0);
+        .reduce(function(a, ss) { return a + (ss.durationMin || 0); }, 0);
       return acc + myMin;
     }, 0);
     const billableTotal = eligible.reduce(function(acc, s) {
       const myHr = sessions.filter(function(ss) { return ss.studentId === s.id && ss.date.startsWith(thisMonth); })
-        .reduce(function(a, ss) { return a + (ss.duration || 0); }, 0) / 60;
+        .reduce(function(a, ss) { return a + (ss.durationMin || 0); }, 0) / 60;
       return acc + Math.max(0, myHr - SELF_STUDY_FREE_H);
     }, 0);
 
@@ -644,7 +644,7 @@
         id: App.Utils.generateId('SS'),
         studentId: studentId,
         date: fd.get('date'),
-        duration: duration,
+        durationMin: duration,
         notes: (fd.get('notes') || '').trim()
       };
       App.Utils.hideModal(true);
@@ -652,11 +652,6 @@
         var existing = App.Store.get().selfStudySessions || [];
         App.Store.set({ selfStudySessions: [result || newSession].concat(existing) });
         App.Utils.showToast('Session logged: ' + (duration >= 60 ? (duration / 60).toFixed(1) + 'hr' : duration + 'min'), 'success');
-        App.Router.refresh();
-      }).catch(function(err) {
-        var existing = App.Store.get().selfStudySessions || [];
-        App.Store.set({ selfStudySessions: [newSession].concat(existing) });
-        App.Utils.showToast('Saved locally (offline)', 'warning');
         App.Router.refresh();
       });
     });
@@ -725,72 +720,51 @@
       + '<p class="text-sm text-slate-500 mb-4">Enrolled parents will receive an in-app message notification.</p>'
       + '<div class="flex gap-3">'
       + '<button onclick="App.Utils.hideModal()" class="flex-1 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Skip</button>'
-      + '<button onclick="App.Attendance._doCancelClasses(' + JSON.stringify(ids) + ')" style="flex:1;padding:0.5rem;font-size:0.85rem;font-weight:700;background:#ef4444;color:#fff;border:none;border-radius:8px;cursor:pointer">Cancel &amp; Notify Parents</button>'
+      + '<button onclick="App.Attendance._doCancelClasses(\'' + ids.join(',') + '\')" style="flex:1;padding:0.5rem;font-size:0.85rem;font-weight:700;background:#ef4444;color:#fff;border:none;border-radius:8px;cursor:pointer">Cancel &amp; Notify Parents</button>'
       + '</div>'
       + '</div>'
     );
   }
 
   function _doCancelClasses(classIds) {
+    if (typeof classIds === 'string') classIds = classIds.split(',').filter(Boolean);
     const state = App.Store.get();
-    const cancelled     = (state.cancelledClasses || []).slice();
-    const messages      = (state.messages || []).slice();
-    const announcements = (state.announcements || []).slice();
-    const now = new Date().toISOString();
 
-    var newCancellations = [];
+    // Post the cancellation AND a real parent-facing announcement per class.
+    // Everything goes through the API so it survives the next snapshot \u2014 the
+    // previous localStorage-only writes were wiped and never reached parents.
+    var apiCalls = [];
     classIds.forEach(function(classId) {
       var cancellation = { id: App.Utils.generateId('cancel'), classId: classId, date: _attDate, reason: 'Teacher absent' };
-      cancelled.push(cancellation);
-      newCancellations.push(cancellation);
+      apiCalls.push(App.Api.post('/api/cancelled-classes', cancellation));
 
       const cls = state.classes.find(function(c) { return c.id === classId; });
       if (!cls) return;
 
-      // Create an in-app announcement for all parents
       const timeRange = App.Utils.formatTime(cls.time) + '\u2013' + App.Utils.formatTime(cls.endTime);
-      announcements.push({
-        id: App.Utils.generateId('ann'),
+      apiCalls.push(App.Api.post('/api/announcements', {
         title: 'Class Cancelled: ' + cls.name,
         message: "Today's " + cls.name + ' class (' + timeRange + ') has been cancelled due to teacher absence. We apologise for the inconvenience.',
         audience: 'All Parents',
         type: 'Urgent',
-        createdOn: _attDate,
-        createdBy: 'Admin'
-      });
-
-      // Also send direct messages to each enrolled parent
-      const enrolledStudents = state.students.filter(function(s) { return s.enrolledClasses.indexOf(classId) > -1; });
-      const parentEmails = {};
-      enrolledStudents.forEach(function(s) { if (s.contact) parentEmails[s.contact] = true; });
-
-      Object.keys(parentEmails).forEach(function(email) {
-        messages.push({
-          id: App.Utils.generateId('msg'),
-          fromRole: 'admin',
-          fromLabel: 'Admin',
-          toParent: email,
-          text: 'Class "' + cls.name + '" on ' + App.Utils.formatDate(_attDate) + ' (' + App.Utils.formatTime(cls.time) + ') has been cancelled due to teacher absence. We apologise for the inconvenience.',
-          ts: now,
-          read: false
-        });
-      });
+        status: 'published',
+        createdBy: 'Admin',
+        archiveOn: ''
+      }));
     });
 
     App.Utils.hideModal(true);
 
-    // Post each cancellation to the API
-    var apiCalls = newCancellations.map(function(c) {
-      return App.Api.post('/api/cancelled-classes', c).catch(function() { return null; });
-    });
+    // No per-call .catch: a failure rejects Promise.all and hits the outer
+    // catch, so we never falsely claim parents were notified.
     Promise.all(apiCalls).then(function() {
-      App.Store.set({ cancelledClasses: cancelled, messages: messages, announcements: announcements });
+      return App.Api.loadSnapshot();
+    }).then(function() {
       if (App.Notifs && App.Notifs.refresh) App.Notifs.refresh();
+      App.Router.refresh();
       App.Utils.showToast('Class cancelled. Parents have been notified.', 'success');
     }).catch(function() {
-      App.Store.set({ cancelledClasses: cancelled, messages: messages, announcements: announcements });
-      if (App.Notifs && App.Notifs.refresh) App.Notifs.refresh();
-      App.Utils.showToast('Saved locally (offline)', 'warning');
+      App.Utils.showToast('Could not cancel class \u2014 please retry', 'error');
     });
   }
 

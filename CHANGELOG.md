@@ -8,6 +8,36 @@ dated section when you cut a deploy.
 
 ## [Unreleased]
 
+### Fixed — Teacher privacy, progress-report scoping, payroll correctness
+
+- **Teacher privacy (PDPA):** the students API/snapshot now strips parent
+  name/email/phone, emergency contact and admin notes for teacher sessions
+  (server-side, not just hidden in the UI); the student list table no longer
+  shows a Parent/Contact column to teachers; the progress-report list is
+  scoped server-side to a teacher's own students.
+- **Progress-report PDF** is now tenant-scoped and teachers can only download
+  reports for their own students.
+- **Payroll recalculation is real:** the monthly cron and the admin
+  "Recalculate from check-ins" action now refresh stale Pending rows in place
+  (late check-ins are captured). Rows marked Paid or hand-edited are frozen.
+  Admin can hand-edit any payroll row (base/bonus/deductions/status) via
+  `PUT /api/payroll/{id}` — edits flag the row `manually_edited` (migration
+  `0022`). The old "Generate Payroll" button, which only wrote to local
+  browser state, is replaced by the real recalc + edit flow.
+- **Part-time payroll bug:** the cron compared employment type against
+  `"Part-time"` while the staff form saves `parttime` — part-time teachers
+  were silently paid a flat salary (or skipped). Comparison is now normalized.
+
+### Added — Analytics by level & on-screen invoice breakdown
+
+- **Analytics "By Level" view** — per-level (1–6) table of students, classes,
+  attendance rate, class fill and collected revenue, plus an
+  attendance-by-level chart and a Level filter across all analytics views.
+- **Invoice breakdown on screen** — click an invoice's description to see the
+  itemized packages/discounts (same data as the PDF); breakdown also shows in
+  the parent Submit Payment and admin Verify Payment dialogs. Sibling and
+  self-study invoices are now itemized too.
+
 ### Added — Package line items on invoices (Skooly-format)
 
 - **Invoice PDF redesigned** to the centre's Skooly-style layout: centered

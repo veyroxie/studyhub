@@ -2,8 +2,8 @@ package pdf
 
 import (
 	"bytes"
-	"studyhub/internal/mailer"
 	"studyhub/internal/models"
+	"studyhub/internal/store"
 
 	"github.com/jung-kurt/gofpdf"
 )
@@ -11,15 +11,19 @@ import (
 // renderProgressReportPDF lays out a single termly progress report. Sections
 // follow the structure parents expect from a printed report card: header,
 // student block, grade, strengths, areas to improve, teacher comment, focus
-// for next term, signature line.
-func RenderProgressReportPDF(pr models.ProgressReport, studentName, teacherName string) ([]byte, error) {
+// for next term, signature line. Branding is taken from the caller's tenant
+// settings (not a hardcoded tenant-1 lookup). Every printed string is run
+// through the gofpdf Unicode translator so non-Latin-1 characters (e.g. the
+// "—" placeholders, accented names) render instead of turning into mojibake.
+func RenderProgressReportPDF(pr models.ProgressReport, studentName, teacherName string, s *store.TenantSettings) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(15, 18, 15)
 	pdf.AddPage()
+	tr := pdf.UnicodeTranslatorFromDescriptor("")
 
 	pdf.SetFont("Helvetica", "B", 22)
 	pdf.SetTextColor(15, 15, 15)
-	pdf.Cell(0, 10, mailer.Brand().BrandName)
+	pdf.Cell(0, 10, tr(s.BrandName))
 	pdf.Ln(8)
 	pdf.SetFont("Helvetica", "", 11)
 	pdf.SetTextColor(120, 120, 120)
@@ -42,14 +46,14 @@ func RenderProgressReportPDF(pr models.ProgressReport, studentName, teacherName 
 	pdf.SetXY(20, yTop+5)
 	pdf.SetFont("Helvetica", "B", 12)
 	pdf.SetTextColor(20, 20, 20)
-	pdf.Cell(50, 7, studentName)
+	pdf.Cell(50, 7, tr(studentName))
 	pdf.SetX(75)
-	pdf.Cell(55, 7, pr.Term)
+	pdf.Cell(55, 7, tr(pr.Term))
 	pdf.SetX(135)
 	if teacherName == "" {
 		teacherName = "—"
 	}
-	pdf.Cell(60, 7, teacherName)
+	pdf.Cell(60, 7, tr(teacherName))
 
 	pdf.SetY(yTop + 22)
 	pdf.Ln(6)
@@ -68,17 +72,17 @@ func RenderProgressReportPDF(pr models.ProgressReport, studentName, teacherName 
 		pdf.SetXY(20, gy+4)
 		pdf.SetFont("Helvetica", "B", 12)
 		pdf.SetTextColor(120, 53, 15)
-		pdf.Cell(95, 6, pr.Subject)
+		pdf.Cell(95, 6, tr(pr.Subject))
 		pdf.SetX(115)
-		pdf.Cell(60, 6, pr.Grade)
+		pdf.Cell(60, 6, tr(pr.Grade))
 		pdf.SetY(gy + 12)
 		pdf.Ln(6)
 	}
 
-	section(pdf, "Strengths", pr.Strengths)
-	section(pdf, "Areas to improve", pr.AreasToImprove)
-	section(pdf, "Teacher's comment", pr.TeacherComment)
-	section(pdf, "Focus for next term", pr.NextTermFocus)
+	section(pdf, tr, "Strengths", pr.Strengths)
+	section(pdf, tr, "Areas to improve", pr.AreasToImprove)
+	section(pdf, tr, "Teacher's comment", pr.TeacherComment)
+	section(pdf, tr, "Focus for next term", pr.NextTermFocus)
 
 	pdf.Ln(8)
 	pdf.SetDrawColor(120, 120, 120)
@@ -95,7 +99,7 @@ func RenderProgressReportPDF(pr models.ProgressReport, studentName, teacherName 
 	return buf.Bytes(), nil
 }
 
-func section(pdf *gofpdf.Fpdf, title, body string) {
+func section(pdf *gofpdf.Fpdf, tr func(string) string, title, body string) {
 	pdf.SetFont("Helvetica", "B", 11)
 	pdf.SetTextColor(15, 15, 15)
 	pdf.Cell(0, 6, title)
@@ -105,6 +109,6 @@ func section(pdf *gofpdf.Fpdf, title, body string) {
 	if body == "" {
 		body = "—"
 	}
-	pdf.MultiCell(0, 5, body, "", "L", false)
+	pdf.MultiCell(0, 5, tr(body), "", "L", false)
 	pdf.Ln(3)
 }

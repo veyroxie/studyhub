@@ -112,7 +112,7 @@ func ListInvoicesRecent(db *DB, c *core.Claims) []models.Invoice {
 	var rows *sql.Rows
 	var err error
 	if c != nil && c.Role == "parent" {
-		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on,COALESCE(i.payment_proof,''),COALESCE(i.payment_method,''),COALESCE(i.discount_pct,0),COALESCE(i.submitted_by_parent,false),COALESCE(i.sibling_ids,''),COALESCE(i.sibling_discount,0),COALESCE(i.referral_credit,0),COALESCE(i.reference_no,''),COALESCE(i.early_bird_cutoff,''),COALESCE(i.early_bird_discount,0),COALESCE(i.line_items,'[]') FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND s.tenant_id=? AND i.tenant_id=? AND i.deleted_at IS NULL AND (i.status<>'Paid' OR i.created_on >= ?) ORDER BY i.created_on DESC`, c.Email, tid, tid, cutoff)
+		rows, err = db.Query(`SELECT i.id,i.student_id,i.description,i.type,i.amount,i.due_date,i.status,i.created_on,i.paid_on,COALESCE(i.payment_proof,''),COALESCE(i.payment_method,''),COALESCE(i.discount_pct,0),COALESCE(i.submitted_by_parent,false),COALESCE(i.sibling_ids,''),COALESCE(i.sibling_discount,0),COALESCE(i.referral_credit,0),COALESCE(i.reference_no,''),COALESCE(i.early_bird_cutoff,''),COALESCE(i.early_bird_discount,0),COALESCE(i.line_items,'[]') FROM invoices i JOIN students s ON s.id=i.student_id WHERE s.contact=? AND s.tenant_id=? AND i.tenant_id=? AND s.deleted_at IS NULL AND i.deleted_at IS NULL AND (i.status<>'Paid' OR i.created_on >= ?) ORDER BY i.created_on DESC`, c.Email, tid, tid, cutoff)
 	} else {
 		tw, twArgs := ScopeTenant(c, "")
 		args := append(append([]any{}, twArgs...), cutoff)

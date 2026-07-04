@@ -124,15 +124,11 @@
           : reviews.map(function(rv) {
               return '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.6rem">'
                 + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.35rem">'
-                +   '<span style="font-size:0.78rem;font-weight:700;color:#374151">' + App.Utils.esc(rv.period) + '</span>'
-                +   '<div style="display:flex;align-items:center;gap:0.5rem">'
-                +     '<span style="font-size:1rem;letter-spacing:-1px">' + stars(rv.rating) + '</span>'
-                +     '<span style="font-size:0.7rem;color:#94a3b8">' + App.Utils.formatDate(rv.date) + '</span>'
-                +   '</div>'
+                +   '<span style="font-size:1rem;letter-spacing:-1px">' + stars(rv.rating) + '</span>'
+                +   '<span style="font-size:0.7rem;color:#94a3b8">' + App.Utils.formatDate(rv.date) + '</span>'
                 + '</div>'
-                + (rv.strengths ? '<div style="font-size:0.76rem;color:#374151;margin-bottom:0.25rem"><span style="color:#94a3b8;font-weight:600">Strengths: </span>' + App.Utils.esc(rv.strengths) + '</div>' : '')
-                + (rv.areasToImprove ? '<div style="font-size:0.76rem;color:#374151;margin-bottom:0.25rem"><span style="color:#94a3b8;font-weight:600">Areas to Improve: </span>' + App.Utils.esc(rv.areasToImprove) + '</div>' : '')
-                + '<div style="font-size:0.7rem;color:#94a3b8;margin-top:0.2rem">Reviewed by ' + App.Utils.esc(rv.reviewedBy) + '</div>'
+                + (rv.notes ? '<div style="font-size:0.76rem;color:#374151;white-space:pre-wrap;margin-bottom:0.25rem">' + App.Utils.esc(rv.notes) + '</div>' : '')
+                + (rv.reviewerEmail ? '<div style="font-size:0.7rem;color:#94a3b8;margin-top:0.2rem">Reviewed by ' + App.Utils.esc(rv.reviewerEmail) + '</div>' : '')
                 + '</div>';
             }).join('')
         )
@@ -186,26 +182,23 @@
     document.getElementById('add-review-form').addEventListener('submit', function(e) {
       e.preventDefault();
       var fd = new FormData(e.target);
+      // Map the form's period/strengths/areas into the backend model's single
+      // notes field — those columns don't exist server-side. reviewerEmail is
+      // derived from the auth claims, so it's omitted here.
+      var period = (fd.get('period') || '').trim();
+      var strengths = (fd.get('strengths') || '').trim();
+      var areas = (fd.get('areasToImprove') || '').trim();
       var newReview = {
-        id: App.Utils.generateId(),
         staffId: staffId,
         date: App.Utils.today(),
-        period: fd.get('period'),
         rating: parseInt(fd.get('rating'), 10),
-        strengths: fd.get('strengths'),
-        areasToImprove: fd.get('areasToImprove'),
-        reviewedBy: fd.get('reviewedBy') || 'Admin'
+        notes: 'Period: ' + period + '\nStrengths: ' + strengths + '\nAreas to improve: ' + areas
       };
       App.Utils.hideModal(true);
       App.Api.post('/api/performance-reviews', newReview).then(function(result) {
         var existing = App.Store.get().performanceReviews || [];
         App.Store.set({ performanceReviews: existing.concat([result || newReview]) });
         App.Utils.showToast('Review saved', 'success');
-        setTimeout(function() { App.Staff._viewModal(staffId); App.Staff._switchTab('performance'); }, 60);
-      }).catch(function(err) {
-        var existing = App.Store.get().performanceReviews || [];
-        App.Store.set({ performanceReviews: existing.concat([newReview]) });
-        App.Utils.showToast('Saved locally (offline)', 'warning');
         setTimeout(function() { App.Staff._viewModal(staffId); App.Staff._switchTab('performance'); }, 60);
       });
     });
@@ -215,18 +208,16 @@
     var textarea = document.getElementById('perf-notes-' + staffId);
     if (!textarea) return;
     var notes = textarea.value;
-    App.Api.put('/api/staff/' + staffId, { performanceNotes: notes }).then(function() {
+    var s = App.Store.get().staff.find(function(x) { return x.id === staffId; });
+    if (!s) return;
+    // Send the FULL staff object — the backend PUT is a full-row update, so a
+    // partial body would blank every column it omits.
+    App.Api.put('/api/staff/' + staffId, Object.assign({}, s, { performanceNotes: notes })).then(function() {
       var st = App.Store.get();
       App.Store.set({ staff: st.staff.map(function(x) {
         return x.id === staffId ? Object.assign({}, x, { performanceNotes: notes }) : x;
       })});
       App.Utils.showToast('Notes saved', 'success');
-    }).catch(function() {
-      var st = App.Store.get();
-      App.Store.set({ staff: st.staff.map(function(x) {
-        return x.id === staffId ? Object.assign({}, x, { performanceNotes: notes }) : x;
-      })});
-      App.Utils.showToast('Saved locally (offline)', 'warning');
     });
   }
 
@@ -283,26 +274,30 @@
         +   '<span style="font-size:0.78rem;color:#94a3b8">'
         +     (s.employmentType === 'parttime' ? 'Part-time · RM ' + (s.hourlyRate || 0) + '/hr' : 'Full-time · RM ' + App.Utils.formatCurrency(s.salary) + '/mo')
         +   '</span>'
-        +   '<button onclick="App.Staff._genPayrollModal(\'' + staffId + '\')" style="padding:0.3rem 0.8rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">+ Generate Payroll</button>'
+        +   '<button onclick="App.Staff._recalcPayrollModal(\'' + staffId + '\')" style="padding:0.3rem 0.8rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Recalculate from check-ins</button>'
         + '</div>'
-        + (staffPayroll.length === 0 ? '<p class="text-sm text-slate-400 text-center py-6">No payroll records</p>'
+        + (staffPayroll.length === 0 ? '<p class="text-sm text-slate-400 text-center py-6">No payroll records — rows are generated automatically at month start, or press Recalculate.</p>'
           : '<table class="w-full text-sm"><thead><tr class="border-b">'
           + '<th class="text-left py-2 text-slate-500 font-medium">Month</th>'
-          + (s.employmentType === 'parttime' ? '<th class="text-right py-2 text-slate-500 font-medium">Hours</th><th class="text-right py-2 text-slate-500 font-medium">Rate/hr</th>' : '<th class="text-right py-2 text-slate-500 font-medium">Base</th>')
+          + '<th class="text-right py-2 text-slate-500 font-medium">Base</th>'
           + '<th class="text-right py-2 text-slate-500 font-medium">Bonus</th>'
           + '<th class="text-right py-2 text-slate-500 font-medium">Total</th>'
           + '<th class="text-right py-2 text-slate-500 font-medium">Status</th>'
+          + '<th class="py-2"></th>'
           + '</tr></thead><tbody>'
           + staffPayroll.map(function(p) {
+              // Part-time base is hours × rate, so show the derived hours as a hint.
+              var hoursHint = (s.employmentType === 'parttime' && s.hourlyRate > 0)
+                ? '<div style="font-size:0.68rem;color:#94a3b8">≈ ' + (p.baseSalary / s.hourlyRate).toFixed(1) + 'h @ RM ' + s.hourlyRate + '/hr</div>' : '';
+              var editedChip = p.manuallyEdited
+                ? ' <span title="Hand-edited — auto-recalc won\'t touch this row" style="display:inline-block;padding:0.05rem 0.4rem;font-size:0.6rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;vertical-align:middle">edited</span>' : '';
               return '<tr class="border-b border-slate-50">'
                 + '<td class="py-2 font-medium">' + App.Utils.formatMonth(p.month) + '</td>'
-                + (s.employmentType === 'parttime'
-                    ? '<td class="py-2 text-right text-slate-600">' + (p.hoursWorked || 0) + 'h</td>'
-                    + '<td class="py-2 text-right text-slate-600">' + App.Utils.formatCurrency(p.hourlyRate || s.hourlyRate || 0) + '</td>'
-                    : '<td class="py-2 text-right text-slate-600">' + App.Utils.formatCurrency(p.baseSalary) + '</td>')
-                + '<td class="py-2 text-right text-slate-600">' + (p.bonus ? App.Utils.formatCurrency(p.bonus) : '—') + '</td>'
+                + '<td class="py-2 text-right text-slate-600">' + App.Utils.formatCurrency(p.baseSalary) + hoursHint + '</td>'
+                + '<td class="py-2 text-right text-slate-600">' + (p.bonus ? App.Utils.formatCurrency(p.bonus) : '—') + (p.deductions ? '<div style="font-size:0.68rem;color:#dc2626">−' + App.Utils.formatCurrency(p.deductions) + '</div>' : '') + '</td>'
                 + '<td class="py-2 text-right font-semibold">' + App.Utils.formatCurrency(p.total) + '</td>'
-                + '<td class="py-2 text-right">' + App.Utils.statusBadge(p.status) + '</td>'
+                + '<td class="py-2 text-right">' + App.Utils.statusBadge(p.status) + editedChip + '</td>'
+                + '<td class="py-2 text-right"><button onclick="App.Staff._editPayrollModal(\'' + p.id + '\',\'' + staffId + '\')" style="font-size:0.72rem;color:#2563eb;background:none;border:none;cursor:pointer;text-decoration:underline">Edit</button></td>'
                 + '</tr>';
             }).join('')
           + '</tbody></table>')
@@ -504,86 +499,105 @@
     if (hourlyField) hourlyField.style.display = isParttime ? 'block' : 'none';
   }
 
-  function _genPayrollModal(staffId) {
-    const state = App.Store.get();
-    const s = state.staff.find(function(x) { return x.id === staffId; });
-    if (!s) return;
-    const isParttime = s.employmentType === 'parttime';
-    const now = new Date();
-    const defaultMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2,'0');
-
+  // _recalcPayrollModal triggers the real backend recalculation: the server
+  // re-reads teacher check-ins for the chosen month and refreshes every staff
+  // member's Pending payroll row. Paid rows and hand-edited rows are frozen
+  // server-side, so this is always safe to run.
+  function _recalcPayrollModal(staffId) {
+    var now = new Date();
+    var prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var defaultMonth = prev.getFullYear() + '-' + String(prev.getMonth() + 1).padStart(2, '0');
+    App.Utils.hideModal(true);
     App.Utils.showModal(
-      '<div class="p-6" style="min-width:380px">'
-      + '<h2 class="text-lg font-bold mb-1">Generate Payroll</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">' + App.Utils.esc(s.fullName) + ' · ' + (isParttime ? 'Part-time' : 'Full-time') + '</p>'
-      + '<form id="gen-payroll-form" class="space-y-4">'
+      '<div class="p-6" style="min-width:360px">'
+      + '<h2 class="text-lg font-bold mb-1">Recalculate Payroll</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Re-reads check-ins and refreshes pending payroll for <strong>all staff</strong> in the chosen month. Paid rows and rows you edited by hand are never touched.</p>'
+      + '<form id="recalc-payroll-form" class="space-y-4">'
       + _field('Month', '<input name="month" type="month" class="form-input" value="' + defaultMonth + '" required>')
-      + (isParttime
-          ? '<div class="grid grid-cols-2 gap-4">'
-          + _field('Hours Worked', '<input name="hoursWorked" type="number" min="0" step="0.5" class="form-input" required oninput="App.Staff._previewPayroll()">')
-          + _field('Hourly Rate (RM)', '<input name="hourlyRate" type="number" min="0" step="0.01" class="form-input" value="' + (s.hourlyRate || 0) + '" required oninput="App.Staff._previewPayroll()">')
-          + '</div>'
-          : _field('Base Salary (RM)', '<input name="salary" type="number" min="0" step="0.01" class="form-input" value="' + (s.salary || 0) + '" required>'))
-      + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Bonus (RM)', '<input name="bonus" type="number" min="0" step="0.01" class="form-input" value="0">')
-      + _field('Deductions (RM)', '<input name="deductions" type="number" min="0" step="0.01" class="form-input" value="0">')
-      + '</div>'
-      + (isParttime ? '<div id="pay-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem;font-size:0.82rem;color:#166534;display:none"></div>' : '')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Generate</button>'
+      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Recalculate</button>'
       + '</div>'
       + '</form>'
       + '</div>'
     );
-
-    document.getElementById('gen-payroll-form').addEventListener('submit', function(e) {
+    document.getElementById('recalc-payroll-form').addEventListener('submit', function(e) {
       e.preventDefault();
-      const fd = new FormData(e.target);
-      const st = App.Store.get();
-      const hoursWorked = isParttime ? (parseFloat(fd.get('hoursWorked')) || 0) : null;
-      const hourlyRate  = isParttime ? (parseFloat(fd.get('hourlyRate')) || 0) : null;
-      const baseSalary  = isParttime ? parseFloat((hoursWorked * hourlyRate).toFixed(2)) : (parseFloat(fd.get('salary')) || 0);
-      const bonus = parseFloat(fd.get('bonus')) || 0;
-      const deductions = parseFloat(fd.get('deductions')) || 0;
-      const total = parseFloat((baseSalary + bonus - deductions).toFixed(2));
-      const month = fd.get('month');
-      // Check for duplicate
-      const dup = st.payroll.find(function(p) { return p.staffId === staffId && p.month === month; });
-      if (dup) { App.Utils.showToast('Payroll for this month already exists.', 'warning'); return; }
-      const newPay = {
-        id: 'PAY' + String(st.payroll.length + 1).padStart(3,'0'),
-        staffId: staffId,
-        month: month,
-        baseSalary: baseSalary,
-        hoursWorked: hoursWorked,
-        hourlyRate: hourlyRate,
-        bonus: bonus,
-        deductions: deductions,
-        total: total,
-        status: 'Pending',
-        paidOn: null
-      };
-      App.Store.set({ payroll: [...st.payroll, newPay] });
+      var month = new FormData(e.target).get('month');
       App.Utils.hideModal(true);
-      App.Utils.showToast('Payroll generated · ' + App.Utils.formatCurrency(total), 'success');
-      setTimeout(function() { App.Staff._viewModal(staffId); App.Staff._switchTab('payroll'); }, 60);
+      App.Api.post('/api/admin/cron/regenerate-payroll?month=' + month, {}).then(function() {
+        App.Utils.showToast('Recalculating payroll for ' + month + '…', 'info');
+        // The recalc runs in the background on the server — give it a moment
+        // before pulling the refreshed rows.
+        setTimeout(function() {
+          App.Api.loadSnapshot().then(function() {
+            App.Router.refresh();
+            App.Staff._viewModal(staffId);
+            App.Staff._switchTab('payroll');
+          });
+        }, 1500);
+      }).catch(function() { /* auto-toasted */ });
     });
   }
 
-  function _previewPayroll() {
-    const hoursEl = document.querySelector('#gen-payroll-form [name="hoursWorked"]');
-    const rateEl  = document.querySelector('#gen-payroll-form [name="hourlyRate"]');
-    const preview = document.getElementById('pay-preview');
-    if (!preview) return;
-    const hours = parseFloat((hoursEl || {}).value) || 0;
-    const rate  = parseFloat((rateEl || {}).value) || 0;
-    if (hours > 0 && rate > 0) {
-      preview.style.display = 'block';
-      preview.textContent = hours + 'h × RM ' + rate.toFixed(2) + '/hr = RM ' + (hours * rate).toFixed(2) + ' base salary';
-    } else {
-      preview.style.display = 'none';
-    }
+  // _editPayrollModal lets admin hand-correct a payroll row. The server marks
+  // the row manually_edited so the automatic recalc never overwrites it.
+  function _editPayrollModal(payId, staffId) {
+    var p = App.Store.get().payroll.find(function(x) { return x.id === payId; });
+    if (!p) return;
+    App.Utils.hideModal(true);
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:380px">'
+      + '<h2 class="text-lg font-bold mb-1">Edit Payroll — ' + App.Utils.formatMonth(p.month) + '</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Hand-edited rows are frozen: auto-recalculation will not overwrite them.</p>'
+      + '<form id="edit-payroll-form" class="space-y-4">'
+      + _field('Base Salary (RM)', '<input name="baseSalary" type="number" min="0" step="0.01" class="form-input" value="' + (p.baseSalary || 0) + '" required oninput="App.Staff._previewPayrollTotal()">')
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Bonus (RM)', '<input name="bonus" type="number" min="0" step="0.01" class="form-input" value="' + (p.bonus || 0) + '" oninput="App.Staff._previewPayrollTotal()">')
+      + _field('Deductions (RM)', '<input name="deductions" type="number" min="0" step="0.01" class="form-input" value="' + (p.deductions || 0) + '" oninput="App.Staff._previewPayrollTotal()">')
+      + '</div>'
+      + _field('Status', '<select name="status" class="form-input"><option' + (p.status === 'Pending' ? ' selected' : '') + '>Pending</option><option' + (p.status === 'Paid' ? ' selected' : '') + '>Paid</option></select>')
+      + '<div id="pay-total-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem;font-size:0.82rem;color:#166534"></div>'
+      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save</button>'
+      + '</div>'
+      + '</form>'
+      + '</div>'
+    );
+    _previewPayrollTotal();
+    document.getElementById('edit-payroll-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      var payload = {
+        baseSalary: parseFloat(fd.get('baseSalary')) || 0,
+        bonus: parseFloat(fd.get('bonus')) || 0,
+        deductions: parseFloat(fd.get('deductions')) || 0,
+        status: fd.get('status')
+      };
+      var submitBtn = e.target.querySelector('button[type="submit"]');
+      try {
+        await App.Utils.withLoading(submitBtn, async function() {
+          await App.Api.put('/api/payroll/' + payId, payload);
+          await App.Api.loadSnapshot();
+        });
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Payroll updated', 'success');
+        App.Router.refresh();
+        setTimeout(function() { App.Staff._viewModal(staffId); App.Staff._switchTab('payroll'); }, 60);
+      } catch (err) { /* auto-toasted */ }
+    });
+  }
+
+  function _previewPayrollTotal() {
+    var form = document.getElementById('edit-payroll-form');
+    var preview = document.getElementById('pay-total-preview');
+    if (!form || !preview) return;
+    var fd = new FormData(form);
+    var base = parseFloat(fd.get('baseSalary')) || 0;
+    var bonus = parseFloat(fd.get('bonus')) || 0;
+    var deductions = parseFloat(fd.get('deductions')) || 0;
+    preview.innerHTML = '<strong>Total: RM ' + (base + bonus - deductions).toFixed(2) + '</strong> (base + bonus − deductions)';
   }
 
   // Show employment type badge on staff card
@@ -667,5 +681,5 @@
     }
   }
 
-  App.Staff = { render: render, _viewModal: _viewModal, _switchTab: _switchTab, _addModal: _addModal, _editModal: _editModal, _togglePayFields: _togglePayFields, _genPayrollModal: _genPayrollModal, _previewPayroll: _previewPayroll, _saveNotes: _saveNotes, _addReviewModal: _addReviewModal, _pendingTeacherModal: _pendingTeacherModal, _approveTeacher: _approveTeacher, _rejectTeacher: _rejectTeacher };
+  App.Staff = { render: render, _viewModal: _viewModal, _switchTab: _switchTab, _addModal: _addModal, _editModal: _editModal, _togglePayFields: _togglePayFields, _recalcPayrollModal: _recalcPayrollModal, _editPayrollModal: _editPayrollModal, _previewPayrollTotal: _previewPayrollTotal, _saveNotes: _saveNotes, _addReviewModal: _addReviewModal, _pendingTeacherModal: _pendingTeacherModal, _approveTeacher: _approveTeacher, _rejectTeacher: _rejectTeacher };
 })();

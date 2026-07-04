@@ -292,7 +292,7 @@
       return map[color] || map.blue;
     },
     esc(str) {
-      return String(str || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return String(str == null ? '' : str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     },
     today() {
       return new Date().toISOString().slice(0, 10);
@@ -319,20 +319,6 @@
     el.classList.add('sh-toast-exit');
     setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 260);
   }
-
-  /* ── Loading-state helper for async buttons ── */
-  App.Utils.withLoading = function(btn, asyncFn) {
-    if (btn.disabled) return;
-    var originalText = btn.textContent;
-    btn.disabled = true;
-    btn.style.opacity = '0.6';
-    btn.textContent = 'Saving...';
-    asyncFn().finally(function() {
-      btn.disabled = false;
-      btn.style.opacity = '1';
-      btn.textContent = originalText;
-    });
-  };
 
   // ── Confirm Dialog (replaces browser confirm()) ─────────────────────────────
   // Usage: App.Utils.showConfirm({ title, message, details, confirmLabel,

@@ -190,21 +190,22 @@ type PricingTier struct {
 }
 
 type Staff struct {
-	ID             string  `json:"id"`
-	Name           string  `json:"name"`
-	FullName       string  `json:"fullName"`
-	Role           string  `json:"role"`
-	Email          string  `json:"email"`
-	Phone          string  `json:"phone"`
-	Salary         float64 `json:"salary"`
-	JoinDate       string  `json:"joinDate"`
-	Status         string  `json:"status"`
-	Specialization string  `json:"specialization,omitempty"`
-	NRIC           string  `json:"nric,omitempty"`
-	EmergencyName  string  `json:"emergencyName,omitempty"`
-	EmergencyPhone string  `json:"emergencyPhone,omitempty"`
-	EmploymentType string  `json:"employmentType,omitempty"`
-	HourlyRate     float64 `json:"hourlyRate,omitempty"`
+	ID               string  `json:"id"`
+	Name             string  `json:"name"`
+	FullName         string  `json:"fullName"`
+	Role             string  `json:"role"`
+	Email            string  `json:"email"`
+	Phone            string  `json:"phone"`
+	Salary           float64 `json:"salary"`
+	JoinDate         string  `json:"joinDate"`
+	Status           string  `json:"status"`
+	Specialization   string  `json:"specialization,omitempty"`
+	NRIC             string  `json:"nric,omitempty"`
+	EmergencyName    string  `json:"emergencyName,omitempty"`
+	EmergencyPhone   string  `json:"emergencyPhone,omitempty"`
+	EmploymentType   string  `json:"employmentType,omitempty"`
+	HourlyRate       float64 `json:"hourlyRate,omitempty"`
+	PerformanceNotes string  `json:"performanceNotes,omitempty"`
 }
 
 // InvoiceLineItem is one row of a multi-line invoice, stored as a JSON array in
@@ -280,6 +281,9 @@ type Payroll struct {
 	Total      float64 `json:"total"`
 	Status     string  `json:"status"`
 	PaidOn     *string `json:"paidOn"`
+	// ManuallyEdited marks a row the admin corrected by hand; the payroll
+	// recompute (cron + regenerate endpoint) never overwrites such rows.
+	ManuallyEdited bool `json:"manuallyEdited"`
 }
 
 type Registration struct {

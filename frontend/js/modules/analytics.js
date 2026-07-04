@@ -4,11 +4,27 @@
   let _filterStudent = '';  // '' = all students
   let _filterTeacher = '';  // '' = all staff
   let _filterCategory = ''; // '' = all, or 'Academic', 'Workshop'
+  let _filterLevel = '';    // '' = all, or '1'..'6'
   let _attMode = 'student'; // 'student' | 'level'
   let _filterMonths = 6;    // number of months to show
-  let _filterView = 'overview'; // 'overview' | 'financial' | 'bystudents' | 'byteachers' | 'bysubject'
+  let _filterView = 'overview'; // 'overview' | 'financial' | 'bystudents' | 'byteachers' | 'bysubject' | 'bylevel'
 
   let _charts = {};
+
+  // _studentLevel derives a student's level (1..6) from the highest "Level N"
+  // found in any enrolled class name. Returns null when nothing matches. This is
+  // the single source of truth for level grouping (filter, By Level view, and
+  // the attendance-by-level chart all use it).
+  function _studentLevel(s, classes) {
+    var max = 0;
+    (s.enrolledClasses || []).forEach(function(cid) {
+      var c = classes.find(function(x) { return x.id === cid; });
+      if (!c) return;
+      var m = (c.name || '').match(/level\s*(\d+)/i);
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    });
+    return max > 0 ? max : null;
+  }
 
   // Lazy-load Chart.js the first time analytics renders. Returns a promise
   // that resolves when window.Chart is available. Other pages never pay the
@@ -28,6 +44,17 @@
     return _chartLibPromise;
   }
 
+  // _withCharts loads Chart.js then runs the build function on the next tick.
+  // A load failure (offline / CDN blocked) is caught and surfaced as a toast
+  // instead of an unhandled rejection.
+  function _withCharts(buildFn) {
+    _loadChartLib().then(function() {
+      setTimeout(buildFn, 50);
+    }).catch(function() {
+      App.Utils.showToast('Charts failed to load', 'warning');
+    });
+  }
+
   function render(container) {
     const { students, staff, classes, invoices, attendance } = App.Store.get();
 
@@ -40,6 +67,7 @@
       + _vbtn('financial', 'Financial')
       + _vbtn('bystudents', 'By Students')
       + _vbtn('byteachers', 'By Teachers')
+      + _vbtn('bylevel', 'By Level')
       + _vbtn('bysubject', 'By Subject')
       + '</div>';
 
@@ -60,11 +88,16 @@
       +   '<option value="">All Categories</option>'
       +   ['Academic','Workshop'].map(function(c) { return '<option value="' + c + '"' + (_filterCategory === c ? ' selected' : '') + '>' + c + '</option>'; }).join('')
       + '</select>'
+      // Level filter
+      + '<select onchange="App.Analytics._setLevel(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#374151">'
+      +   '<option value="">All Levels</option>'
+      +   ['1','2','3','4','5','6'].map(function(l) { return '<option value="' + l + '"' + (_filterLevel === l ? ' selected' : '') + '>Level ' + l + '</option>'; }).join('')
+      + '</select>'
       // Month range filter
       + '<select onchange="App.Analytics._setMonths(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#374151">'
       +   [3,6,12].map(function(m) { return '<option value="' + m + '"' + (_filterMonths === m ? ' selected' : '') + '>Last ' + m + ' months</option>'; }).join('')
       + '</select>'
-      + ((_filterStudent || _filterTeacher || _filterCategory || _filterMonths !== 6)
+      + ((_filterStudent || _filterTeacher || _filterCategory || _filterLevel || _filterMonths !== 6)
           ? '<button onclick="App.Analytics._clearFilters()" style="padding:0.4rem 0.85rem;font-size:0.8rem;border:none;border-radius:8px;background:#f1f5f9;color:#64748b;cursor:pointer">Clear</button>'
           : '')
       + '</div>';
@@ -73,6 +106,7 @@
     let filteredClasses = classes;
     if (_filterTeacher) filteredClasses = filteredClasses.filter(function(c) { return c.teacherIds.indexOf(_filterTeacher) > -1; });
     if (_filterCategory) filteredClasses = filteredClasses.filter(function(c) { return (c.category || 'Academic') === _filterCategory; });
+    if (_filterLevel) filteredClasses = filteredClasses.filter(function(c) { var m = (c.name || '').match(/level\s*(\d+)/i); return m && m[1] === _filterLevel; });
     const filteredClassIds = filteredClasses.map(function(c) { return c.id; });
 
     // --- Filter students ---
@@ -83,13 +117,17 @@
         return s.enrolledClasses.some(function(cid) { return filteredClassIds.indexOf(cid) > -1; });
       });
     }
+    if (_filterLevel) filteredStudents = filteredStudents.filter(function(s) { return String(_studentLevel(s, classes)) === _filterLevel; });
 
     // --- Filter attendance ---
+    // When any filter is active, restrict attendance to the surviving students
+    // (this also applies the level filter, since it flows through filteredStudents).
     let filteredAttendance = attendance;
-    if (_filterStudent || _filterTeacher || _filterCategory) {
+    if (_filterStudent || _filterTeacher || _filterCategory || _filterLevel) {
+      const allowedStuIds = filteredStudents.map(function(s) { return s.id; });
       filteredAttendance = attendance.filter(function(a) {
         if (a.personType !== 'student') return false;
-        if (_filterStudent && a.personId !== _filterStudent) return false;
+        if (allowedStuIds.indexOf(a.personId) === -1) return false;
         if ((_filterTeacher || _filterCategory) && filteredClassIds.indexOf(a.classId) === -1) return false;
         return true;
       });
@@ -113,25 +151,31 @@
 
     if (_filterView === 'financial') {
       container.innerHTML = viewToggle + filterBar + header + _financialHTML(filteredInvoices, students);
-      _loadChartLib().then(function() { setTimeout(function() { _buildFinancialCharts(filteredInvoices); }, 50); });
+      _withCharts(function() { _buildFinancialCharts(filteredInvoices); });
       return;
     }
 
     if (_filterView === 'bystudents') {
       container.innerHTML = viewToggle + filterBar + header + _byStudentsHTML(filteredStudents, filteredAttendance);
-      _loadChartLib().then(function() { setTimeout(function() { _buildStudentsChart(filteredStudents, filteredAttendance); }, 50); });
+      _withCharts(function() { _buildStudentsChart(filteredStudents, filteredAttendance); });
       return;
     }
 
     if (_filterView === 'byteachers') {
       container.innerHTML = viewToggle + filterBar + header + _byTeachersHTML(staff, classes, attendance, students);
-      _loadChartLib().then(function() { setTimeout(function() { _buildTeachersChart(staff, classes, attendance); }, 50); });
+      _withCharts(function() { _buildTeachersChart(staff, classes, attendance); });
+      return;
+    }
+
+    if (_filterView === 'bylevel') {
+      container.innerHTML = viewToggle + filterBar + header + _byLevelHTML(filteredStudents, filteredClasses, filteredAttendance, filteredInvoices);
+      _withCharts(function() { _buildLevelChart(filteredStudents, filteredAttendance); });
       return;
     }
 
     if (_filterView === 'bysubject') {
       container.innerHTML = viewToggle + filterBar + header + _bySubjectHTML(classes, invoices);
-      _loadChartLib().then(function() { setTimeout(function() { _buildSubjectChart(classes); }, 50); });
+      _withCharts(function() { _buildSubjectChart(classes); });
       return;
     }
 
@@ -152,13 +196,11 @@
       + '</div>'
       + '</div>';
 
-    _loadChartLib().then(function() {
-      setTimeout(function() {
-        _buildEnrollmentChart(filteredStudents);
-        _buildFillRateChart(filteredClasses);
-        _buildRevenueChart(filteredInvoices);
-        _buildAttendanceChart(filteredStudents, filteredAttendance);
-      }, 50);
+    _withCharts(function() {
+      _buildEnrollmentChart(filteredStudents);
+      _buildFillRateChart(filteredClasses);
+      _buildRevenueChart(filteredInvoices);
+      _buildAttendanceChart(filteredStudents, filteredAttendance);
     });
   }
 
@@ -250,6 +292,62 @@
           y: { stacked: true, grid: { color: '#f1f5f9' }, ticks: { callback: function(v) { return 'RM' + v; } } }
         }
       }
+    });
+  }
+
+  // _levelRows aggregates per-level (1..6 + Other) stats used by the By Level
+  // view and chart: active student count, attendance rate, class count + fill,
+  // and collected revenue.
+  function _levelRows(students, classes, attendance, invoices) {
+    var activeStudents = students.filter(function(s) { return s.status === 'Active' || s.status === 'New'; });
+    function attRate(ids) {
+      var recs = attendance.filter(function(a) { return a.personType === 'student' && ids.indexOf(a.personId) > -1; });
+      if (!recs.length) return { pct: 0, count: 0 };
+      var present = recs.filter(function(a) { return a.status === 'Present' || a.status === 'Late'; }).length;
+      return { pct: Math.round(present / recs.length * 100), count: recs.length };
+    }
+    return [1, 2, 3, 4, 5, 6, null].map(function(lvl) {
+      var stu = activeStudents.filter(function(s) { return _studentLevel(s, classes) === lvl; });
+      var ids = stu.map(function(s) { return s.id; });
+      var stats = attRate(ids);
+      var lvlClasses = classes.filter(function(c) { var m = (c.name || '').match(/level\s*(\d+)/i); return m ? (parseInt(m[1], 10) === lvl) : (lvl === null); });
+      var cap = lvlClasses.reduce(function(a, c) { return a + (c.capacity || 0); }, 0);
+      var enr = lvlClasses.reduce(function(a, c) { return a + (c.enrolled || 0); }, 0);
+      var rev = invoices.filter(function(i) { return i.status === 'Paid' && ids.indexOf(i.studentId) > -1; }).reduce(function(a, i) { return a + (i.amount || 0); }, 0);
+      return { label: lvl == null ? 'Other' : 'Level ' + lvl, students: stu.length, attPct: stats.pct, attCount: stats.count, classes: lvlClasses.length, fill: cap > 0 ? Math.round(enr / cap * 100) : 0, revenue: rev };
+    }).filter(function(r) { return r.students > 0 || r.classes > 0; });
+  }
+
+  function _byLevelHTML(students, classes, attendance, invoices) {
+    var rows = _levelRows(students, classes, attendance, invoices);
+    if (!rows.length) return '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-8 text-center text-slate-400 text-sm">No level data yet. Levels are read from the "Level N" in each class name.</div>';
+    var body = rows.map(function(r) {
+      var attColor = r.attCount === 0 ? '#94a3b8' : (r.attPct >= 80 ? '#059669' : r.attPct >= 60 ? '#d97706' : '#dc2626');
+      return '<tr class="border-b border-slate-50">'
+        + '<td class="py-2 px-3 font-medium text-slate-700">' + r.label + '</td>'
+        + '<td class="py-2 px-3 text-right">' + r.students + '</td>'
+        + '<td class="py-2 px-3 text-right">' + r.classes + '</td>'
+        + '<td class="py-2 px-3 text-right" style="color:' + attColor + ';font-weight:600">' + (r.attCount === 0 ? '—' : r.attPct + '%') + '</td>'
+        + '<td class="py-2 px-3 text-right">' + r.fill + '%</td>'
+        + '<td class="py-2 px-3 text-right font-medium">' + App.Utils.formatCurrency(r.revenue) + '</td>'
+        + '</tr>';
+    }).join('');
+    return '<div class="grid grid-cols-2 gap-5">'
+      + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5"><h3 class="font-semibold text-slate-700 mb-4">Attendance Rate by Level</h3><canvas id="chart-level" height="220"></canvas></div>'
+      + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5 overflow-x-auto"><h3 class="font-semibold text-slate-700 mb-4">Breakdown</h3>'
+      +   '<table class="w-full text-sm"><thead><tr class="text-slate-400 text-xs border-b"><th class="text-left py-2 px-3 font-medium">Level</th><th class="text-right py-2 px-3 font-medium">Students</th><th class="text-right py-2 px-3 font-medium">Classes</th><th class="text-right py-2 px-3 font-medium">Attendance</th><th class="text-right py-2 px-3 font-medium">Fill</th><th class="text-right py-2 px-3 font-medium">Revenue</th></tr></thead>'
+      +   '<tbody>' + body + '</tbody></table></div>'
+      + '</div>';
+  }
+
+  function _buildLevelChart(students, attendance) {
+    var ctx = document.getElementById('chart-level');
+    if (!ctx) return;
+    var rows = _levelRows(students, App.Store.get().classes || [], attendance, []);
+    _charts.level = new Chart(ctx.getContext('2d'), {
+      type: 'bar',
+      data: { labels: rows.map(function(r) { return r.label; }), datasets: [{ label: 'Attendance %', data: rows.map(function(r) { return r.attPct; }), backgroundColor: rows.map(function(r) { return r.attCount === 0 ? '#e2e8f0' : (r.attPct >= 80 ? '#10b981' : r.attPct >= 60 ? '#f59e0b' : '#ef4444'); }), borderRadius: 6 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(c) { var r = rows[c.dataIndex]; return r.attCount === 0 ? 'No records' : (r.attPct + '% · ' + r.students + ' student' + (r.students !== 1 ? 's' : '') + ' · ' + r.attCount + ' record' + (r.attCount !== 1 ? 's' : '')); } } } }, scales: { y: { beginAtZero: true, max: 100, ticks: { callback: function(v) { return v + '%'; } } } } }
     });
   }
 
@@ -596,8 +694,9 @@
   function _setStudent(v)  { _filterStudent = v; _refreshSoon(); }
   function _setTeacher(v)  { _filterTeacher = v; _refreshSoon(); }
   function _setCategory(v) { _filterCategory = v; _refreshSoon(); }
+  function _setLevel(v)    { _filterLevel = v; _refreshSoon(); }
   function _setMonths(v)   { _filterMonths = parseInt(v) || 6; _refreshSoon(); }
-  function _clearFilters() { _filterStudent = ''; _filterTeacher = ''; _filterCategory = ''; _filterMonths = 6; _refreshSoon(); }
+  function _clearFilters() { _filterStudent = ''; _filterTeacher = ''; _filterCategory = ''; _filterLevel = ''; _filterMonths = 6; _refreshSoon(); }
   function _setAttendanceMode(m) {
     _attMode = m;
     if (_charts.attendance) { _charts.attendance.destroy(); delete _charts.attendance; }
@@ -610,6 +709,7 @@
     _setStudent: _setStudent,
     _setTeacher: _setTeacher,
     _setCategory: _setCategory,
+    _setLevel: _setLevel,
     _setMonths: _setMonths,
     _clearFilters: _clearFilters,
     _setAttendanceMode: _setAttendanceMode

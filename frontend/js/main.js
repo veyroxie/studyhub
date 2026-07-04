@@ -165,6 +165,10 @@
         // blocking the visible shell.
         await snapshotPromise;
         App.Notifs.updateBadge();
+        // Open the live WebSocket now, same as the session-restore path — a
+        // fresh interactive login otherwise never subscribes to live events
+        // (e.g. check-in toasts) until the next reload.
+        App.Api.connectWS();
         if (App.Billing && App.Billing.checkLoginNotifications) App.Billing.checkLoginNotifications();
         App.IdleTimeout.start();
         if (App.Push) { App.Push.init(); App.Push.maybeNudge(); }

@@ -314,7 +314,7 @@
               return '<tr class="hover:bg-slate-50 transition-colors">'
                 + (isAdmin ? '<td class="td" style="width:36px"><input type="checkbox" class="inv-cb" data-id="' + inv.id + '" onchange="App.Billing._toggleSelectInv(\'' + inv.id + '\',this.checked)" style="cursor:pointer"' + (_selectedInv[inv.id] ? ' checked' : '') + '></td>' : '')
                 + '<td class="td"><div class="font-medium text-slate-800">' + App.Utils.esc(stuName) + '</div><div class="text-xs text-slate-400">' + inv.id + '</div></td>'
-                + '<td class="td text-sm text-slate-600">' + App.Utils.esc(inv.description) + '</td>'
+                + '<td class="td text-sm text-slate-600"><button type="button" onclick="App.Billing._viewInvoiceModal(\'' + inv.id + '\')" title="View breakdown" style="text-align:left;background:none;border:none;padding:0;color:inherit;cursor:pointer;font:inherit;text-decoration:underline;text-decoration-color:#e2e8f0;text-underline-offset:2px">' + App.Utils.esc(inv.description) + '</button></td>'
                 + '<td class="td">' + App.Utils.badge(inv.type, inv.type === 'Monthly' ? 'blue' : 'purple') + '</td>'
                 + '<td class="td text-sm ' + (isNearDue ? 'text-amber-600 font-medium' : 'text-slate-600') + '">'
                 +   App.Utils.formatDate(inv.dueDate) + (isNearDue ? ' <span class="text-xs">(soon)</span>' : '')
@@ -590,9 +590,10 @@
         _confirmPaid(invId, method, refNo);
       })
       .catch(function() {
+        // Receipt is mandatory — do NOT record payment if the upload fails.
+        // Keep the modal open and let the admin retry.
         if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Confirm Payment'; }
-        App.Utils.showToast('Receipt upload failed — marking paid without receipt', 'warning');
-        _confirmPaid(invId, method, refNo);
+        App.Utils.showToast('Receipt upload failed — payment not recorded, please retry', 'error');
       });
     } else {
       _confirmPaid(invId, method, refNo);
@@ -656,14 +657,6 @@
       .then(function() {
         App.Utils.showToast('Invoice marked as unpaid', 'info');
         App.Router.refresh();
-      }).catch(function() {
-        // Fallback local
-        var state = App.Store.get();
-        App.Store.set({ invoices: state.invoices.map(function(inv) {
-          return inv.id === invoiceId ? Object.assign({}, inv, { status: 'Unpaid', paidOn: null, paymentMethod: null, submittedByParent: false }) : inv;
-        })});
-        App.Utils.showToast('Invoice marked as unpaid (offline)', 'warning');
-        App.Router.refresh();
       });
   }
 
@@ -677,7 +670,7 @@
       + '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;margin-bottom:1.25rem">'
       +   '<div style="font-size:0.78rem;color:#94a3b8">Invoice</div>'
       +   '<div style="font-size:0.9rem;font-weight:700;color:#111">' + App.Utils.esc(inv.description) + '</div>'
-      +   '<div style="font-size:1rem;font-weight:800;color:var(--gold);margin-top:2px">' + App.Utils.formatCurrency(inv.amount) + '</div>'
+      +   (_invoiceBreakdownHtml(inv) || '<div style="font-size:1rem;font-weight:800;color:var(--gold);margin-top:2px">' + App.Utils.formatCurrency(inv.amount) + '</div>')
       + '</div>'
       + '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.6rem">How did you pay?</p>'
       + '<div id="payment-methods-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:1.25rem">'
@@ -897,6 +890,7 @@
       +     '</div>'
       +     '<div style="font-size:1rem;font-weight:800;color:var(--gold)">' + App.Utils.formatCurrency(inv.amount) + '</div>'
       +   '</div>'
+      +   _invoiceBreakdownHtml(inv)
       + '</div>'
       + proofSection
       + '<div style="display:flex;gap:0.5rem">'
@@ -1294,6 +1288,54 @@
     preview.innerHTML = '<strong>Total: RM ' + (visits * rate).toFixed(2) + '</strong> (' + visits + ' session' + (visits !== 1 ? 's' : '') + ' × RM ' + rate.toFixed(2) + ')';
   }
 
+  // _invoiceBreakdownHtml renders an invoice's line items on screen (the same
+  // data the PDF uses). Returns '' for legacy invoices with no stored items so
+  // callers can fall back to the plain description + amount.
+  function _invoiceBreakdownHtml(inv) {
+    var items = inv.lineItems || [];
+    if (!items.length) return '';
+    var rows = items.map(function(li) {
+      var isDisc = li.kind === 'discount';
+      var amt = (typeof li.amount === 'number') ? li.amount : (li.qty || 0) * (li.unitPrice || 0);
+      var right = (amt < 0 ? '- RM ' : 'RM ') + Math.abs(amt).toFixed(2);
+      var sub = isDisc ? '' : ((li.descriptor ? App.Utils.esc(li.descriptor) : '')
+        + (li.qty ? '<span style="color:#cbd5e1"> · ' + App.Utils.esc(String(li.qty)) + ' × RM ' + (li.unitPrice || 0).toFixed(2) + '</span>' : ''));
+      return '<div style="display:flex;justify-content:space-between;gap:1rem;padding:0.35rem 0;border-bottom:1px solid #f2efea">'
+        + '<div style="min-width:0"><div style="font-size:0.8rem;font-weight:600;color:' + (isDisc ? '#166534' : '#111') + '">' + App.Utils.esc(li.name) + '</div>'
+        + (sub ? '<div style="font-size:0.7rem;color:#94a3b8">' + sub + '</div>' : '') + '</div>'
+        + '<div style="font-size:0.8rem;font-weight:600;white-space:nowrap;color:' + (isDisc ? '#166534' : '#111') + '">' + right + '</div>'
+        + '</div>';
+    }).join('');
+    return '<div style="margin:0.5rem 0">' + rows
+      + '<div style="display:flex;justify-content:space-between;padding-top:0.5rem;font-weight:800"><span>Total</span><span>' + App.Utils.formatCurrency(inv.amount) + '</span></div>'
+      + '</div>';
+  }
+
+  // _viewInvoiceModal shows the full itemized breakdown on screen (admin + parent)
+  // with PDF/receipt download, opened by clicking an invoice's description.
+  function _viewInvoiceModal(invId) {
+    var state = App.Store.get();
+    var inv = state.invoices.find(function(i) { return i.id === invId; });
+    if (!inv) return;
+    var stu = (state.students || []).find(function(s) { return s.id === inv.studentId; });
+    var stuName = stu ? stu.firstName + ' ' + stu.lastName : inv.studentId;
+    var breakdown = _invoiceBreakdownHtml(inv);
+    var fallback = '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;margin:0.5rem 0"><div style="display:flex;justify-content:space-between;font-weight:700"><span>' + App.Utils.esc(inv.description) + '</span><span>' + App.Utils.formatCurrency(inv.amount) + '</span></div></div>';
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:360px;max-width:480px">'
+      + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 0.15rem">' + App.Utils.esc(inv.description) + '</h2>'
+      + '<p style="font-size:0.8rem;color:#94a3b8;margin:0 0 0.75rem">' + App.Utils.esc(stuName) + ' · ' + App.Utils.esc(inv.id) + ' · ' + App.Utils.statusBadge(inv.status) + '</p>'
+      + (breakdown || fallback)
+      + '<div style="display:flex;gap:1rem;font-size:0.78rem;color:#64748b;margin-top:0.75rem"><span>Issued ' + App.Utils.formatDate(inv.createdOn) + '</span><span>Due ' + App.Utils.formatDate(inv.dueDate) + '</span></div>'
+      + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1.25rem">'
+      +   '<a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;color:#374151;text-decoration:none">Download PDF</a>'
+      +   (inv.status === 'Paid' ? '<a href="/api/invoices/' + inv.id + '/receipt.pdf" target="_blank" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;color:#374151;text-decoration:none">Receipt</a>' : '')
+      +   '<button onclick="App.Utils.hideModal()" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Close</button>'
+      + '</div>'
+      + '</div>'
+    );
+  }
+
   function _doSelfStudyInvoice(fd) {
     var studentId = fd.get('ssStudentId');
     var visits = parseInt(fd.get('ssVisits')) || 0;
@@ -1305,7 +1347,7 @@
       studentId: studentId,
       description: 'Self-study — ' + visits + ' session' + (visits !== 1 ? 's' : '') + ' @ RM' + rate,
       type: 'Self-study',
-      amount: parseFloat((visits * rate).toFixed(2)),
+      lineItems: [{ kind: 'item', name: 'Self-study drop-in', descriptor: visits + ' session' + (visits !== 1 ? 's' : ''), qty: visits, unitPrice: rate, amount: parseFloat((visits * rate).toFixed(2)) }],
       dueDate: fd.get('dueDate'),
       status: 'Unpaid',
       createdOn: fd.get('invoiceDate') || App.Utils.today(),
@@ -1381,6 +1423,16 @@
     const childNames = children.map(function(c) { return c.firstName; }).join(' + ');
     const desc = description + ' — ' + childNames + (discount > 0 ? ' (' + discount + '% sibling discount)' : '');
 
+    // Itemize: one tuition line per child at the full per-child rate, then a
+    // single sibling-discount line. The server derives the total from these.
+    const lineItems = children.map(function(c) {
+      return { kind: 'item', name: 'Monthly tuition', descriptor: c.firstName + ' ' + c.lastName, qty: 1, unitPrice: perChild, amount: perChild };
+    });
+    if (discount > 0) {
+      const totalDisc = parseFloat(((perChild - discounted) * children.length).toFixed(2));
+      if (totalDisc > 0) lineItems.push({ kind: 'discount', name: 'Sibling discount (' + discount + '%)', qty: 1, unitPrice: totalDisc, amount: -totalDisc });
+    }
+
     // Create a single combined invoice linked to the first child, with
     // siblings listed in the description. Persisted to backend so it shows
     // up consistently for both the parent and admin views.
@@ -1389,7 +1441,7 @@
       siblingIds: JSON.stringify(children.slice(1).map(function(c) { return c.id; })),
       description: desc,
       type: 'Monthly',
-      amount: totalAmount,
+      lineItems: lineItems,
       siblingDiscount: discount || undefined,
       dueDate: dueDate,
       status: 'Unpaid',
@@ -1478,6 +1530,7 @@
     _generateMonthly: _generateMonthly,
     _payOnline: _payOnline,
     _editModal: _editModal,
+    _viewInvoiceModal: _viewInvoiceModal,
     _createModal: _createModal,
     checkLoginNotifications: checkLoginNotifications,
     _toggleSelectAllInv: _toggleSelectAllInv,

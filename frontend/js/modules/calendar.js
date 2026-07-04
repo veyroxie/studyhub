@@ -538,10 +538,6 @@
       App.Store.set({ feedback: [...(state.feedback||[]), newFeedback] });
       App.Utils.hideModal(true);
       App.Utils.showToast('Thank you for your feedback!', 'success');
-    }).catch(function(err) {
-      App.Store.set({ feedback: [...(state.feedback||[]), newFeedback] });
-      App.Utils.hideModal(true);
-      App.Utils.showToast('Saved locally (offline)', 'warning');
     });
   }
 
@@ -702,13 +698,6 @@
         App.Store.set({ announcements: updatedAnns });
         App.Utils.hideModal(true);
         App.Utils.showToast('Class added! Parents have been notified via announcement.', 'success');
-        App.Router.refresh();
-      }).catch(function(err) {
-        App.Store.set({ classes: [...state.classes, newClass] });
-        const updatedAnns = [...(App.Store.get().announcements || []), newAnnouncement];
-        App.Store.set({ announcements: updatedAnns });
-        App.Utils.hideModal(true);
-        App.Utils.showToast('Saved locally (offline)', 'warning');
         App.Router.refresh();
       });
     };
@@ -1132,14 +1121,6 @@
         App.Utils.hideModal(true);
         App.Utils.showToast('Workshop added', 'success');
         App.Router.refresh();
-      }).catch(function(err) {
-        const state = App.Store.get();
-        const workshops = (state.workshops || []).slice();
-        workshops.push(newWorkshop);
-        App.Store.set({ workshops: workshops });
-        App.Utils.hideModal(true);
-        App.Utils.showToast('Saved locally (offline)', 'warning');
-        App.Router.refresh();
       });
     });
   }
@@ -1213,16 +1194,12 @@
         levelBand: fd.get('levelBand') || ''
       };
       App.Api.put('/api/classes/' + classId, updated).then(function() {
-        var classes = state.classes.map(function(x) { return x.id === classId ? updated : x; });
+        // Re-read classes at write time — the `state` captured at modal open
+        // may be stale if a snapshot landed while the modal was open.
+        var classes = App.Store.get().classes.map(function(x) { return x.id === classId ? updated : x; });
         App.Store.set({ classes: classes });
         App.Utils.hideModal(true);
         App.Utils.showToast('Class updated', 'success');
-        App.Router.refresh();
-      }).catch(function(err) {
-        var classes = state.classes.map(function(x) { return x.id === classId ? updated : x; });
-        App.Store.set({ classes: classes });
-        App.Utils.hideModal(true);
-        App.Utils.showToast('Saved locally (offline)', 'warning');
         App.Router.refresh();
       });
     });
@@ -1299,14 +1276,6 @@
         App.Utils.hideModal(true);
         App.Utils.showToast('Holiday added', 'success');
         App.Router.refresh();
-      }).catch(function() {
-        var state = App.Store.get();
-        var holidays = (state.holidays || []).slice();
-        holidays.push(newHoliday);
-        App.Store.set({ holidays: holidays });
-        App.Utils.hideModal(true);
-        App.Utils.showToast('Saved locally (offline)', 'warning');
-        App.Router.refresh();
       });
     });
   }
@@ -1349,12 +1318,6 @@
         App.Store.set({ holidays: holidays });
         App.Utils.hideModal(true);
         App.Utils.showToast('Holiday updated', 'success');
-        App.Router.refresh();
-      }).catch(function() {
-        var holidays = (App.Store.get().holidays || []).map(function(x) { return x.id === holId ? updated : x; });
-        App.Store.set({ holidays: holidays });
-        App.Utils.hideModal(true);
-        App.Utils.showToast('Saved locally (offline)', 'warning');
         App.Router.refresh();
       });
     });

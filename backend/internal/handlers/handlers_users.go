@@ -63,6 +63,13 @@ func HandleUsers(db *store.DB) http.HandlerFunc {
 			if req.Role == "" {
 				req.Role = "parent"
 			}
+			// Only these three roles are creatable here. Reject anything else —
+			// notably "superadmin" — so an admin cannot self-provision a
+			// higher-privilege account through this endpoint.
+			if req.Role != "parent" && req.Role != "teacher" && req.Role != "admin" {
+				core.RespondError(w, "invalid role", 400)
+				return
+			}
 			hash, err := auth.HashPassword(req.Password)
 			if err != nil {
 				core.RespondError(w, "server error", 500)

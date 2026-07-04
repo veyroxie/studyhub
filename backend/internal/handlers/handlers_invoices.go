@@ -354,11 +354,20 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 		}
 
 		t := core.Today()
+		// Re-paying an already-Paid invoice must be a no-op: guard the Paid
+		// transition on status<>'Paid' so the original paid_on/reference survive
+		// and the referral milestone below fires at most once.
+		paidGuard := ""
+		if newStatus == "Paid" {
+			paidGuard = " AND status<>'Paid'"
+		}
 		args := append([]any{newStatus, t, body.PaymentMethod, body.ReferenceNo, id}, twArgs...)
-		if _, err := db.Exec(`UPDATE invoices SET status=?, paid_on=?, payment_method=COALESCE(NULLIF(?,''),payment_method), reference_no=COALESCE(NULLIF(?,''),reference_no) WHERE id=?`+tw, args...); err != nil {
+		res, err := db.Exec(`UPDATE invoices SET status=?, paid_on=?, payment_method=COALESCE(NULLIF(?,''),payment_method), reference_no=COALESCE(NULLIF(?,''),reference_no) WHERE id=?`+tw+paidGuard, args...)
+		if err != nil {
 			core.RespondError(w, "could not update invoice", 500)
 			return
 		}
+		rowsChanged, _ := res.RowsAffected()
 
 		// Assign a receipt number the first time an invoice becomes Paid. Drawn
 		// from receipt_no_seq so numbers are monotonic (RCPT-000001, ...). The
@@ -380,7 +389,8 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 
 		// Referral milestone: re-evaluate the referred student's progress.
 		// Only relevant for Monthly invoices, but the helper checks itself.
-		if newStatus == "Paid" {
+		// Gated on rowsChanged so a re-pay no-op can't double-count the milestone.
+		if newStatus == "Paid" && rowsChanged > 0 {
 			store.ReferralCheckMilestoneOnPay(db, studentID, c)
 		}
 

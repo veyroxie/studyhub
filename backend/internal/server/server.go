@@ -170,6 +170,7 @@ func Build(db *store.DB) http.Handler {
 			r.Delete("/{id}", handlers.HandleStudent(db))
 			r.Post("/{id}/subscription", handlers.HandleStudentSubscription(db))
 			r.Post("/{id}/relink", handlers.HandleStudentRelink(db))
+			r.Post("/{id}/note", handlers.HandleStudentNote(db))
 		})
 
 		r.Route("/api/classes", func(r chi.Router) {
@@ -200,6 +201,10 @@ func Build(db *store.DB) http.Handler {
 		// Manual trigger for the monthly invoice + payroll cron — admin-only.
 		r.Post("/api/admin/cron/run-monthly-invoices", jobs.HandleRunMonthlyCron(db))
 		r.Post("/api/admin/cron/regenerate-payroll", jobs.HandleRegeneratePayroll(db))
+
+		// Admin hand-corrections to a payroll row (marks it manually_edited so
+		// the cron refresh leaves it alone).
+		r.Put("/api/payroll/{id}", handlers.HandlePayrollUpdate(db))
 
 		r.Route("/api/announcements", func(r chi.Router) {
 			r.Get("/", handlers.HandleAnnouncements(db))
