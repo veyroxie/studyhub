@@ -17,6 +17,7 @@ func listHolidays(db *store.DB, c *core.Claims) []models.Holiday {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,name,date,end_date,type,notes,created_by FROM holidays WHERE deleted_at IS NULL`+tw+` ORDER BY date LIMIT 5000`, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Holiday")
 		return []models.Holiday{}
 	}
 	defer rows.Close()
@@ -77,7 +78,7 @@ func HandleCreateHoliday(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "server error", 500)
 			return
 		}
-		core.LogAudit(db, c.Email, "holiday_created", "holiday", h.ID, h.Name+" on "+h.Date)
+		core.LogAudit(db, store.TenantID(c), c.Email, "holiday_created", "holiday", h.ID, h.Name+" on "+h.Date)
 		w.WriteHeader(http.StatusCreated)
 		core.Respond(w, h)
 	}
@@ -111,7 +112,7 @@ func HandleUpdateHoliday(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "holiday not found", 404)
 			return
 		}
-		core.LogAudit(db, c.Email, "holiday_updated", "holiday", id, h.Name)
+		core.LogAudit(db, store.TenantID(c), c.Email, "holiday_updated", "holiday", id, h.Name)
 		core.Respond(w, h)
 	}
 }
@@ -127,7 +128,7 @@ func HandleDeleteHoliday(db *store.DB) http.HandlerFunc {
 		tw, twArgs := store.ScopeTenant(c, "")
 		args := append([]any{id}, twArgs...)
 		db.Exec(`UPDATE holidays SET deleted_at=NOW() WHERE id=?`+tw, args...)
-		core.LogAudit(db, c.Email, "holiday_deleted", "holiday", id, "soft deleted")
+		core.LogAudit(db, store.TenantID(c), c.Email, "holiday_deleted", "holiday", id, "soft deleted")
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

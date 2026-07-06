@@ -52,6 +52,7 @@ func listProgressReports(db *store.DB, c *core.Claims) []models.ProgressReport {
 			twArgs...)
 	}
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "ProgressReport")
 		return []models.ProgressReport{}
 	}
 	defer rows.Close()
@@ -123,7 +124,7 @@ func HandleProgressReports(db *store.DB) http.HandlerFunc {
 			}
 			pr.CreatedAt = now
 			pr.UpdatedAt = now
-			core.LogAudit(db, c.Email, "progress_report_created", "progress_report", pr.ID, pr.StudentID+" "+pr.Term)
+			core.LogAudit(db, store.TenantID(c), c.Email, "progress_report_created", "progress_report", pr.ID, pr.StudentID+" "+pr.Term)
 			core.Respond(w, pr)
 		}
 	}
@@ -159,7 +160,7 @@ func HandleProgressReportByID(db *store.DB) http.HandlerFunc {
 			}
 			pr.ID = id
 			pr.UpdatedAt = now
-			core.LogAudit(db, c.Email, "progress_report_updated", "progress_report", id, "")
+			core.LogAudit(db, store.TenantID(c), c.Email, "progress_report_updated", "progress_report", id, "")
 			core.Respond(w, pr)
 		case http.MethodDelete:
 			if !core.IsAdminRole(c) {
@@ -172,7 +173,7 @@ func HandleProgressReportByID(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "could not delete progress report", 500)
 				return
 			}
-			core.LogAudit(db, c.Email, "progress_report_deleted", "progress_report", id, "")
+			core.LogAudit(db, store.TenantID(c), c.Email, "progress_report_deleted", "progress_report", id, "")
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}

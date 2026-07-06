@@ -87,9 +87,23 @@
       return user;
     },
 
+    // _clearLocalData wipes every trace of the signed-in user from browser
+    // storage: the cached snapshot (which holds student PII, medical info,
+    // allergies, staff NRIC/salary), the remember flag, and the role/parent
+    // selectors. Without this, a shared/family device leaks the whole snapshot
+    // to the next person straight out of DevTools after "logout".
+    _clearLocalData() {
+      try { App.Store.reset(); } catch (e) {}
+      try { localStorage.removeItem('studyhub_v2'); } catch (e) {}
+      try { localStorage.removeItem('sh_remember'); } catch (e) {}
+      ['sh_role','sh_parent','sh_teacher','sh_dash_view','sh_notif_read'].forEach(function(k) {
+        try { sessionStorage.removeItem(k); } catch (e) {}
+      });
+    },
+
     async logout() {
       this._user = null;
-      try { localStorage.removeItem('sh_remember'); } catch (e) {}
+      this._clearLocalData();
       var headers = {};
       var csrf = _csrfToken();
       if (csrf) headers['X-CSRF-Token'] = csrf;
@@ -222,7 +236,7 @@
 
     _handle401() {
       this._user = null;
-      try { localStorage.removeItem('sh_remember'); } catch (e) {}
+      this._clearLocalData();
       App.Login.show('Session expired. Please log in again.');
     },
 

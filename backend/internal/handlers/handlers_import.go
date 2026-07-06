@@ -37,12 +37,17 @@ func HandleImport(db *store.DB) http.HandlerFunc {
 		c := core.ClaimsFrom(r)
 		l := core.LogFromReq(r)
 
-		students := skoolyData()
-
-		// Optional: accept JSON body to override/extend the hardcoded data
-		var bodyStudents []skoolyStudent
-		if err := json.NewDecoder(r.Body).Decode(&bodyStudents); err == nil && len(bodyStudents) > 0 {
-			students = bodyStudents
+		// The student roster is supplied in the request body. It is NOT baked
+		// into the binary — real parent/child PII must never live in source
+		// control. Export it from Skooly to JSON and POST it here.
+		var students []skoolyStudent
+		if err := json.NewDecoder(r.Body).Decode(&students); err != nil {
+			core.RespondError(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if len(students) == 0 {
+			core.RespondError(w, "no students in request body", http.StatusBadRequest)
+			return
 		}
 
 		tid := store.TenantID(c)
@@ -315,7 +320,7 @@ func HandleImport(db *store.DB) http.HandlerFunc {
 		}
 		recomputeClassEnrollment(db, c, recomputedClassIDs)
 
-		core.LogAudit(db, c.Email, "skooly_import", "system", "import", fmt.Sprintf("students=%d families=%d users=%d classes=%d emails=%d", studentsCreated, familiesCreated, usersCreated, classesCreated, emailsSent))
+		core.LogAudit(db, store.TenantID(c), c.Email, "skooly_import", "system", "import", fmt.Sprintf("students=%d families=%d users=%d classes=%d emails=%d", studentsCreated, familiesCreated, usersCreated, classesCreated, emailsSent))
 
 		core.Respond(w, map[string]any{
 			"studentsCreated": studentsCreated,
@@ -427,80 +432,12 @@ func HandleClearSeedData(db *store.DB) http.HandlerFunc {
 			}
 		}
 
-		core.LogAudit(db, c.Email, "seed_data_cleared", "system", "clear-seed", fmt.Sprintf("%v", deleted))
+		core.LogAudit(db, store.TenantID(c), c.Email, "seed_data_cleared", "system", "clear-seed", fmt.Sprintf("%v", deleted))
 
 		core.Respond(w, map[string]any{
 			"message": "Seed data cleared",
 			"deleted": deleted,
 		})
 
-	}
-}
-
-// skoolyData returns the hardcoded student data extracted from Skooly screenshots.
-func skoolyData() []skoolyStudent {
-	return []skoolyStudent{
-		// ── Active students ──────────────────────────────────────────────────
-		{Name: "Zhang Zhan He", DOB: "18 Jan 2016", RegisteredOn: "07 Mar 2026", Status: "Active", ParentName: "syz012345", ParentEmail: "seeduser31@example.com", ParentPhone: "60110000009", Batches: "Level 3 & 4"},
-		{Name: "Luda", DOB: "08 Feb 2026", RegisteredOn: "08 Feb 2026", Status: "Active", Batches: "Level 3 & 4"},
-		{Name: "Jiho Choi", DOB: "19 Nov 2016", RegisteredOn: "24 Jan 2026", Status: "Active", ParentName: "cindykhpark", ParentEmail: "seeduser8@example.com", Batches: "Level 3 & 4"},
-		{Name: "Joy Kim", DOB: "08 Jun 2019", RegisteredOn: "24 Jan 2026", Status: "Active", ParentName: "gellen0707", ParentEmail: "seeduser12@example.com", Siblings: "Stella Kim", Batches: "TSH Members"},
-		{Name: "Stella Kim", DOB: "08 May 2017", RegisteredOn: "24 Jan 2026", Status: "Active", ParentName: "gellen0707", ParentEmail: "seeduser12@example.com", ParentPhone: "60110000035", Siblings: "Joy Kim", Batches: "Level 3 & 4"},
-		{Name: "Chase James Gan", DOB: "17 Feb 2020", RegisteredOn: "07 Jan 2026", Status: "Active", ParentName: "Esther Ng", ParentPhone: "60110000025", Siblings: "Luther James Gan", Batches: "Mandarin"},
-		{Name: "Minsung Kim", DOB: "18 Apr 2017", RegisteredOn: "07 Jan 2026", Status: "Active", ParentName: "Doori Jo", ParentEmail: "seeduser10@example.com", ParentPhone: "60110000031", Siblings: "Minjae Kim", Batches: "Level 3 & 4"},
-		{Name: "Aria Threw Xin Yu", DOB: "04 Jan 2021", RegisteredOn: "03 Nov 2025", Status: "Active", ParentName: "agnesseowyean", ParentEmail: "seeduser4@example.com", ParentPhone: "60110000030", Batches: "TSH Members"},
-		{Name: "Taiho Nishioka", DOB: "16 Oct 2018", RegisteredOn: "02 Sep 2025", Status: "Active", ParentName: "Yui Nishioka", ParentEmail: "seeduser16@example.com", ParentPhone: "60110000032", Siblings: "Toryu Nishioka", Batches: "TSH Members"},
-		{Name: "Ari Singh Gill", DOB: "15 Mar 2016", RegisteredOn: "25 Aug 2025", Status: "Active", ParentName: "Nupur", ParentEmail: "seeduser25@example.com", ParentPhone: "60110000023", Batches: "Level 3 & 4"},
-		{Name: "Carina Poh", DOB: "22 Mar 2019", RegisteredOn: "27 Oct 2024", Status: "Active", ParentName: "Thuy Ha Minh", ParentEmail: "seeduser14@example.com", ParentPhone: "60110000024", Batches: "TSH Members"},
-		{Name: "Lee Ya Shan", DOB: "18 Aug 2016", RegisteredOn: "27 Oct 2024", Status: "Active", ParentName: "mervistang", ParentEmail: "seeduser21@example.com", ParentPhone: "60110000042", Batches: "Level 3 & 4"},
-		{Name: "Elijah Shi", DOB: "24 Jul 2017", RegisteredOn: "26 Oct 2024", Status: "Active", ParentName: "Connie Liang", ParentEmail: "seeduser9@example.com", ParentPhone: "60110000008", Batches: "Level 3 & 4"},
-		{Name: "Lewis Liew", DOB: "22 Nov 2016", RegisteredOn: "26 Oct 2024", Status: "Active", ParentName: "Soo", ParentEmail: "seeduser29@example.com", ParentPhone: "60110000018", Batches: "Level 3 & 4"},
-		{Name: "Luther James Gan", DOB: "09 May 2018", RegisteredOn: "23 Oct 2024", Status: "Active", ParentName: "Esther", ParentPhone: "60110000025", Siblings: "Chase James Gan", Batches: "Mandarin"},
-		{Name: "Carolina Cho", DOB: "15 Oct 2015", RegisteredOn: "10 Sep 2024", Status: "Active", ParentName: "mira moon", ParentEmail: "seeduser22@example.com", ParentPhone: "60110000020", Siblings: "Dylan Cho", Batches: "Level 5 & 6"},
-		{Name: "Dylan Cho", DOB: "22 Oct 2013", RegisteredOn: "10 Sep 2024", Status: "Active", ParentName: "mira moon", ParentEmail: "seeduser22@example.com", ParentPhone: "60110000020", Siblings: "Carolina Cho", Batches: "Level 5 & 6"},
-		{Name: "Geneva Ruytinx", DOB: "08 Aug 2016", RegisteredOn: "16 Nov 2024", Status: "Active", ParentName: "Ms.Sunny", ParentEmail: "seeduser30@example.com", ParentPhone: "60110000011", Batches: "Level 3 & 4,Level 5 & 6"},
-		{Name: "Blake Liu", DOB: "31 Oct 2016", RegisteredOn: "09 Nov 2024", Status: "Active", ParentName: "Alice Chen", ParentEmail: "seeduser5@example.com", ParentPhone: "60110000006", Siblings: "Valerie Liu", Batches: "Level 3 & 4"},
-		{Name: "Valerie Liu", DOB: "05 Dec 2014", RegisteredOn: "09 Nov 2024", Status: "Active", ParentName: "Alice Chen", ParentEmail: "seeduser5@example.com", ParentPhone: "60110000006", Siblings: "Blake Liu", Batches: "Level 3 & 4"},
-		{Name: "Lucas Lin Yumo", DOB: "22 Jan 2017", RegisteredOn: "08 Nov 2024", Status: "Active", ParentName: "Elaine", ParentEmail: "seeduser11@example.com", ParentPhone: "60110000007", Batches: "Level 3 & 4"},
-		{Name: "Riku Abe", DOB: "29 Mar 2014", RegisteredOn: "26 Nov 2024", Status: "Active", ParentName: "Riku Father", ParentEmail: "seeduser24@example.com", ParentPhone: "60110000019", ParentRole: "Father", Batches: "Level 3 & 4"},
-		{Name: "Minjae Kim", DOB: "18 Apr 2017", RegisteredOn: "07 Jan 2026", Status: "Active", ParentName: "Doori Jo", ParentEmail: "seeduser10@example.com", ParentPhone: "60110000031", Siblings: "Minsung Kim", Batches: "Level 3 & 4"},
-		// Rui Xiang, Utaha, Kota Inoue, Stephanie Jin, Gareth Lee — from blurry screenshot
-		{Name: "Rui Xiang", DOB: "22 Oct 2016", RegisteredOn: "04 Feb 2025", Status: "Active", ParentName: "Lin", ParentEmail: "seeduser18@example.com", Batches: "TSH Members"},
-		{Name: "Utaha", DOB: "24 Jan 2017", RegisteredOn: "02 Feb 2025", Status: "Active", Batches: "TSH Members"},
-		{Name: "Kota Inoue", DOB: "19 Jan 2017", RegisteredOn: "02 Feb 2025", Status: "Active", ParentEmail: "seeduser15@example.com", Batches: "Level 3 & 4"},
-		{Name: "Stephanie Jin", DOB: "14 Feb 2017", RegisteredOn: "15 Feb 2025", Status: "Active", Batches: "Level 3 & 4"},
-		{Name: "Gareth Lee", DOB: "25 Sep 2016", RegisteredOn: "13 Oct 2024", Status: "Active", Batches: "TSH Members"},
-		{Name: "Toryu Nishioka", DOB: "16 Oct 2015", RegisteredOn: "02 Sep 2025", Status: "Active", ParentName: "Yui Nishioka", ParentEmail: "seeduser16@example.com", ParentPhone: "60110000032", Siblings: "Taiho Nishioka", Batches: "Level 3 & 4"},
-		{Name: "Jiho Yoo", DOB: "31 Mar 2026", RegisteredOn: "31 Mar 2026", Status: "Active"},
-
-		// ── New students ─────────────────────────────────────────────────────
-		{Name: "Koki", DOB: "31 Mar 2026", RegisteredOn: "31 Mar 2026", Status: "New"},
-		{Name: "Siyoon", DOB: "31 Mar 2026", RegisteredOn: "31 Mar 2026", Status: "New"},
-		{Name: "Ryan", DOB: "31 Mar 2026", RegisteredOn: "31 Mar 2026", Status: "New"},
-		{Name: "Jiyu", DOB: "31 Mar 2026", RegisteredOn: "31 Mar 2026", Status: "New"},
-		{Name: "Lucas", DOB: "31 Mar 2026", RegisteredOn: "31 Mar 2026", Status: "New"},
-
-		// ── Inactive students ────────────────────────────────────────────────
-		{Name: "Averie", DOB: "20 Nov 2025", RegisteredOn: "20 Nov 2025", Status: "Inactive"},
-		{Name: "Sydney", DOB: "20 Nov 2025", RegisteredOn: "20 Nov 2025", Status: "Inactive"},
-		{Name: "Josef Langkoe Low", DOB: "31 Jan 2015", RegisteredOn: "31 Oct 2025", Status: "Inactive", ParentName: "lowsjo", ParentEmail: "seeduser19@example.com", ParentPhone: "60110000012", ParentRole: "Father"},
-		{Name: "Pierce Wilson", DOB: "13 Sep 2025", RegisteredOn: "13 Sep 2025", Status: "Inactive"},
-		{Name: "Eita Sawauchi", DOB: "20 Oct 2013", RegisteredOn: "22 Mar 2025", Status: "Inactive", ParentName: "Kaho Sawauchi", ParentEmail: "seeduser26@example.com", ParentPhone: "60110000027", Siblings: "Kaho Sawauchi"},
-		{Name: "Kaho Sawauchi", DOB: "20 Jul 2015", RegisteredOn: "22 Mar 2025", Status: "Inactive", ParentName: "Kaho Sawauchi", ParentEmail: "seeduser26@example.com", ParentPhone: "60110000027", Siblings: "Eita Sawauchi"},
-		{Name: "Cynthia", DOB: "15 Sep 2016", RegisteredOn: "09 Dec 2024", Status: "Inactive", ParentName: "Nicole Wang", ParentEmail: "seeduser34@example.com", ParentPhone: "60110000022"},
-		{Name: "Ashley", DOB: "15 Nov 2012", RegisteredOn: "03 Dec 2024", Status: "Inactive", ParentName: "Ms Zhang", ParentEmail: "seeduser1@example.com", ParentPhone: "60110000039", Siblings: "Jane"},
-		{Name: "Jane", DOB: "02 Oct 2016", RegisteredOn: "03 Dec 2024", Status: "Inactive", ParentName: "Zhang", ParentEmail: "seeduser1@example.com", ParentPhone: "60110000039", Siblings: "Ashley"},
-		{Name: "Jayden Wong", DOB: "12 Jul 2019", RegisteredOn: "19 Nov 2024", Status: "Inactive", ParentName: "Shuehyean", ParentEmail: "seeduser28@example.com", ParentPhone: "60110000041"},
-		{Name: "Adam Henry Rajudin", DOB: "15 Sep 1991", RegisteredOn: "27 Oct 2024", Status: "Inactive", ParentName: "Serena.azizuddin", ParentEmail: "seeduser3@example.com", ParentPhone: "60110000010"},
-		{Name: "Chloe Choe", DOB: "23 Mar 2013", RegisteredOn: "10 Sep 2024", Status: "Inactive", ParentName: "Amy", ParentEmail: "seeduser23@example.com", ParentPhone: "60110000001"},
-		{Name: "Eason Ling", DOB: "10 Sep 2024", RegisteredOn: "10 Sep 2024", Status: "Inactive", ParentName: "Karen", ParentPhone: "60110000005"},
-		{Name: "Mina", DOB: "21 Dec 2013", RegisteredOn: "10 Sep 2024", Status: "Inactive", ParentName: "Wendy", ParentPhone: "60110000034", Siblings: "Serena"},
-		{Name: "Serena", DOB: "13 Apr 2016", RegisteredOn: "10 Sep 2024", Status: "Inactive", ParentName: "Wendy", ParentPhone: "60110000034", Siblings: "Mina"},
-		{Name: "Ouwen Hao", DOB: "23 Nov 2015", RegisteredOn: "10 Sep 2024", Status: "Inactive", ParentName: "Jessie", ParentPhone: "60110000036"},
-		{Name: "Wen Hang", DOB: "31 May 2014", RegisteredOn: "10 Sep 2024", Status: "Inactive", ParentName: "Wang", ParentPhone: "60110000004"},
-		{Name: "Henry", DOB: "10 Sep 2024", RegisteredOn: "10 Sep 2024", Status: "Inactive", ParentName: "Amelia", ParentPhone: "60110000033", Siblings: "Xin Bei"},
-		{Name: "Xin Bei", DOB: "10 Sep 2024", RegisteredOn: "10 Sep 2024", Status: "Inactive", ParentName: "Amelia", ParentPhone: "60110000033", Siblings: "Henry"},
-		{Name: "Kher Ern", DOB: "12 Dec 2011", RegisteredOn: "10 Sep 2024", Status: "Inactive", ParentName: "Kher Ern mummy", ParentPhone: "60110000021", Siblings: "Zi Heng"},
-		{Name: "Zi Heng", DOB: "10 Sep 2024", RegisteredOn: "10 Sep 2024", Status: "Inactive", ParentName: "Kher Ern mummy", ParentPhone: "60110000021", Siblings: "Kher Ern"},
 	}
 }

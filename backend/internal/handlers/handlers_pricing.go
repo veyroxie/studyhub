@@ -44,7 +44,7 @@ func HandleUpdatePricingTier(db *store.DB) http.HandlerFunc {
 			return
 		}
 		p.ID = id
-		core.LogAudit(db, c.Email, "pricing_tier_updated", "pricing_tier", id, p.ClassType+" "+p.LevelBand)
+		core.LogAudit(db, store.TenantID(c), c.Email, "pricing_tier_updated", "pricing_tier", id, p.ClassType+" "+p.LevelBand)
 		core.Respond(w, p)
 	}
 }

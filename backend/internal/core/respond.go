@@ -3,6 +3,7 @@ package core
 import (
 	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"hash/fnv"
 	"net/http"
@@ -89,10 +90,16 @@ type Execer interface {
 // LogAudit inserts an audit_logs row and logs any error via slog.
 // This replaces all bare db.Exec audit inserts — a failed audit write
 // should never crash the request, but it must never be silently swallowed.
-func LogAudit(db Execer, actorEmail, action, entityType, entityID, detail string) {
+//
+// tenantID stamps the row so audit trails stay tenant-isolated: HandleAuditLogs
+// filters by tenant, so a row written without it would default to tenant 1 and
+// leak across tenants (or vanish for tenant 2). Callers pass store.TenantID(c)
+// for request-scoped actions, or the tenant of the affected row for system /
+// webhook / pre-auth actions.
+func LogAudit(db Execer, tenantID int, actorEmail, action, entityType, entityID, detail string) {
 	if _, err := db.Exec(
-		`INSERT INTO audit_logs(actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?)`,
-		actorEmail, action, entityType, entityID, detail,
+		`INSERT INTO audit_logs(tenant_id,actor_email,action,entity_type,entity_id,detail) VALUES(?,?,?,?,?,?)`,
+		tenantID, actorEmail, action, entityType, entityID, detail,
 	); err != nil {
 		Logger.Error("audit log write failed", "err", err, "action", action, "entity_type", entityType, "entity_id", entityID)
 	}
@@ -136,8 +143,18 @@ func ParsePagination(r *http.Request) Pagination {
 	return p
 }
 
+// GenerateID returns a sortable, collision-resistant ID: a millisecond
+// timestamp prefix (so IDs stay roughly time-ordered) plus a crypto-random
+// suffix so two IDs minted in the same millisecond — e.g. inside the monthly
+// invoice / payroll cron loops — never collide and silently drop a row.
 func GenerateID(prefix string) string {
-	return prefix + "_" + strings.ReplaceAll(time.Now().Format("20060102150405.000"), ".", "")
+	ts := strings.ReplaceAll(time.Now().Format("20060102150405.000"), ".", "")
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		Logger.Error("GenerateID: crypto/rand failed", "err", err)
+		return prefix + "_" + ts + strconv.FormatInt(time.Now().UnixNano()%1e6, 10)
+	}
+	return prefix + "_" + ts + hex.EncodeToString(b)
 }
 
 // NewReferralCode returns a short shareable code like "SH-7K3X".

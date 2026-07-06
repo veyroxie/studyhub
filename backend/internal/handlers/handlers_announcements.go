@@ -19,6 +19,7 @@ func listAnnouncements(db *store.DB, c *core.Claims) []models.Announcement {
 	args := append(append([]any{}, twArgs...), vwArgs...)
 	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT 5000`, args...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Announcement")
 		return []models.Announcement{}
 	}
 	defer rows.Close()
@@ -51,6 +52,7 @@ func listAnnouncementsPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]
 	pageArgs := append(append([]any{}, baseArgs...), p.Limit, p.Offset)
 	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Announcement")
 		return []models.Announcement{}, total
 	}
 	defer rows.Close()
@@ -118,7 +120,7 @@ func HandleAnnouncements(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "could not create announcement", 500)
 				return
 			}
-			core.LogAudit(db, c.Email, "announcement_created", "announcement", a.ID, a.Title)
+			core.LogAudit(db, store.TenantID(c), c.Email, "announcement_created", "announcement", a.ID, a.Title)
 			core.Respond(w, a)
 		}
 	}
@@ -138,7 +140,7 @@ func HandleAnnouncementDelete(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "could not delete announcement", 500)
 			return
 		}
-		core.LogAudit(db, c.Email, "announcement_deleted", "announcement", id, "deleted")
+		core.LogAudit(db, store.TenantID(c), c.Email, "announcement_deleted", "announcement", id, "deleted")
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -162,7 +164,7 @@ func HandleAnnouncementUpdate(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "could not update announcement", 500)
 			return
 		}
-		core.LogAudit(db, c.Email, "announcement_updated", "announcement", id, a.Title)
+		core.LogAudit(db, store.TenantID(c), c.Email, "announcement_updated", "announcement", id, a.Title)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -191,7 +193,7 @@ func HandleAnnouncementApprove(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "could not update announcement", 500)
 			return
 		}
-		core.LogAudit(db, c.Email, "announcement_"+body.Status, "announcement", id, "status changed to "+body.Status)
+		core.LogAudit(db, store.TenantID(c), c.Email, "announcement_"+body.Status, "announcement", id, "status changed to "+body.Status)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

@@ -129,6 +129,7 @@ func listPendingUsers(db *store.DB, c *core.Claims) []models.PendingUser {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id, email, name, role FROM users WHERE status='pending_verification'`+tw+` ORDER BY id DESC`, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "PendingUser")
 		return []models.PendingUser{}
 	}
 	defer rows.Close()

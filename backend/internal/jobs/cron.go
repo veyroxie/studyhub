@@ -750,7 +750,7 @@ func HandleRunMonthlyCron(db *store.DB) http.HandlerFunc {
 				store.SnapshotCacheInvalidateAll()
 			}
 			core.Logger.Info("monthly cron manual run finished", "actor", actor, "invoices", invoices, "overflow", overflow, "payrolls", payrolls)
-			core.LogAudit(db, actor, "monthly_cron_manual_run", "system", "", "")
+			core.LogAudit(db, store.TenantID(c), actor, "monthly_cron_manual_run", "system", "", "")
 		}()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
@@ -1066,7 +1066,7 @@ func HandleRegeneratePayroll(db *store.DB) http.HandlerFunc {
 			defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, lockKey)
 			count := generateMonthlyPayroll(db, target)
 			core.Logger.Info("payroll regenerated", "actor", actor, "month", monthArg, "created", count)
-			core.LogAudit(db, actor, "payroll_regenerated", "system", monthArg, "")
+			core.LogAudit(db, store.TenantID(c), actor, "payroll_regenerated", "system", monthArg, "")
 		}()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)

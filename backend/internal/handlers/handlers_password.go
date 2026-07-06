@@ -68,7 +68,7 @@ func HandleForgotPassword(db *store.DB) http.HandlerFunc {
 			l.Info("password reset email sent")
 		}
 
-		core.LogAudit(db, req.Email, "password_reset_requested", "user", fmt.Sprintf("%d", userID), "reset email queued")
+		core.LogAudit(db, store.TenantOfUser(db, int64(userID)), req.Email, "password_reset_requested", "user", fmt.Sprintf("%d", userID), "reset email queued")
 
 		core.Respond(w, genericResponse)
 	}
@@ -151,7 +151,7 @@ func HandleSetPassword(db *store.DB) http.HandlerFunc {
 			SameSite: http.SameSiteLaxMode,
 		})
 
-		core.LogAudit(db, t.Email, "password_set", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
+		core.LogAudit(db, store.TenantOfUser(db, t.UserID.Int64), t.Email, "password_set", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
 
 		core.Respond(w, map[string]any{
 			"message":    "Password set. You're now signed in.",
@@ -207,7 +207,15 @@ func HandleResetPassword(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "could not update password", 500)
 			return
 		}
-		core.LogAudit(db, t.Email, "password_reset_completed", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
+		// A reset is the primary account-recovery path after a compromise —
+		// revoke any refresh-token families so a still-active intruder session
+		// can't survive the reset, and bump the iCal feed version so a leaked
+		// calendar subscription URL is invalidated too.
+		store.RevokeRefreshFamilyByUser(db, int(t.UserID.Int64), "password_reset")
+		if _, err := db.Exec(`UPDATE users SET ical_token_version = COALESCE(ical_token_version,0) + 1 WHERE id=?`, t.UserID.Int64); err != nil {
+			core.Logger.Error("bump ical_token_version failed", "err", err, "user_id", t.UserID.Int64)
+		}
+		core.LogAudit(db, store.TenantOfUser(db, t.UserID.Int64), t.Email, "password_reset_completed", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
 
 		core.Respond(w, map[string]string{"message": "Password updated. You can now log in with your new password."})
 	}

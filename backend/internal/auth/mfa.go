@@ -1,14 +1,19 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/png"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,7 +21,33 @@ import (
 	"studyhub/internal/models"
 	"studyhub/internal/store"
 	"time"
+
+	"github.com/boombuler/barcode"
+	"github.com/boombuler/barcode/qr"
 )
+
+// qrDataURI encodes text as a QR PNG and returns it as a base64 data URI, so
+// the frontend can render the code inline WITHOUT shipping the TOTP secret to
+// a third-party QR image service. Returns "" on failure — the caller falls
+// back to the manual-entry secret it already shows.
+func qrDataURI(text string) string {
+	code, err := qr.Encode(text, qr.M, qr.Auto)
+	if err != nil {
+		core.Logger.Error("qr encode failed", "err", err)
+		return ""
+	}
+	code, err = barcode.Scale(code, 180, 180)
+	if err != nil {
+		core.Logger.Error("qr scale failed", "err", err)
+		return ""
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, code); err != nil {
+		core.Logger.Error("qr png encode failed", "err", err)
+		return ""
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+}
 
 func jsonDecode(r *http.Request, v any) error {
 	return json.NewDecoder(r.Body).Decode(v)
@@ -158,7 +189,7 @@ func HandleMFASetup(db *store.DB) http.HandlerFunc {
 			return
 		}
 		uri := otpauthURI("StudyHub", c.Email, secret)
-		core.Respond(w, map[string]string{"secret": secret, "uri": uri})
+		core.Respond(w, map[string]string{"secret": secret, "uri": uri, "qr": qrDataURI(uri)})
 	}
 }
 
@@ -207,7 +238,7 @@ func HandleMFAConfirm(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "could not enable MFA", 500)
 			return
 		}
-		core.LogAudit(db, c.Email, "mfa_enabled", "user", fmt.Sprintf("%d", c.UserID), "")
+		core.LogAudit(db, store.TenantID(c), c.Email, "mfa_enabled", "user", fmt.Sprintf("%d", c.UserID), "")
 		core.Respond(w, map[string]any{
 			"enabled":       true,
 			"recoveryCodes": codes,
@@ -224,11 +255,28 @@ func HandleMFADisable(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "admin only", http.StatusForbidden)
 			return
 		}
+		// Require a fresh TOTP code to disable, so a hijacked admin cookie
+		// alone can't silently turn off 2FA. The code proves possession of the
+		// authenticator, not just the session.
+		var body struct {
+			Code string `json:"code"`
+		}
+		if err := jsonDecode(r, &body); err != nil {
+			core.RespondError(w, "bad body", http.StatusBadRequest)
+			return
+		}
+		var currentSecret string
+		var isEnabled bool
+		db.QueryRow(`SELECT COALESCE(mfa_secret,''), COALESCE(mfa_enabled,false) FROM users WHERE id=?`, c.UserID).Scan(&currentSecret, &isEnabled)
+		if isEnabled && !verifyTOTPCode(currentSecret, body.Code) {
+			core.RespondError(w, "enter a valid 6-digit code from your authenticator to disable 2FA", http.StatusUnauthorized)
+			return
+		}
 		if _, err := db.Exec(`UPDATE users SET mfa_enabled=false, mfa_secret='', mfa_recovery_codes='[]' WHERE id=?`, c.UserID); err != nil {
 			core.RespondError(w, "could not disable MFA", 500)
 			return
 		}
-		core.LogAudit(db, c.Email, "mfa_disabled", "user", fmt.Sprintf("%d", c.UserID), "")
+		core.LogAudit(db, store.TenantID(c), c.Email, "mfa_disabled", "user", fmt.Sprintf("%d", c.UserID), "")
 		core.Respond(w, map[string]bool{"enabled": false})
 	}
 }
@@ -304,13 +352,22 @@ type mfaIntermediate struct {
 	rememberMe bool
 }
 
+// hashMFAToken returns the SHA-256 hex digest stored in the token column. The
+// cleartext only ever lives in the client's response; the DB keeps the hash so
+// a DB-read attacker can't replay an in-flight intermediate token within its
+// 5-minute window.
+func hashMFAToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
 func issueMFAIntermediate(db *store.DB, userID, tenantID int, email, role, name string, rememberMe bool) (string, error) {
 	token, err := store.GenerateToken()
 	if err != nil {
 		return "", err
 	}
 	_, err = db.Exec(`INSERT INTO mfa_intermediate(token,user_id,tenant_id,email,role,name,remember_me,expires_at) VALUES(?,?,?,?,?,?,?,?)`,
-		token, userID, tenantID, email, role, name, rememberMe, time.Now().Add(5*time.Minute))
+		hashMFAToken(token), userID, tenantID, email, role, name, rememberMe, time.Now().Add(5*time.Minute))
 	if err != nil {
 		return "", err
 	}
@@ -325,7 +382,7 @@ func consumeMFAIntermediate(db *store.DB, token string) (*mfaIntermediate, error
 	var expiresAt time.Time
 	err := db.QueryRow(
 		`DELETE FROM mfa_intermediate WHERE token=? AND expires_at > NOW() RETURNING user_id, tenant_id, email, role, name, remember_me, expires_at`,
-		token,
+		hashMFAToken(token),
 	).Scan(&m.userID, &m.tenantID, &m.email, &m.role, &m.name, &m.rememberMe, &expiresAt)
 	if err != nil {
 		return nil, err

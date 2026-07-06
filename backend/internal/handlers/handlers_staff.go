@@ -54,7 +54,7 @@ func ensureTeacherUserAccount(db *store.DB, r *http.Request, tid int, email, ful
 			core.Logger.Error("teacher welcome email failed", "err", err, "email", email)
 		}
 	}()
-	core.LogAudit(db, "system", "teacher_user_created", "user", fmt.Sprintf("%d", userID), "via add-staff")
+	core.LogAudit(db, tid, "system", "teacher_user_created", "user", fmt.Sprintf("%d", userID), "via add-staff")
 }
 
 // ── Staff ─────────────────────────────────────────────────────────────────────
@@ -63,6 +63,7 @@ func listStaff(db *store.DB, c *core.Claims) []models.Staff {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,name,full_name,role,email,phone,salary,join_date,status,specialization,nric,emergency_name,emergency_phone,employment_type,hourly_rate,performance_notes FROM staff WHERE deleted_at IS NULL`+tw, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Staff")
 		return []models.Staff{}
 	}
 	defer rows.Close()
@@ -149,7 +150,7 @@ func HandleStaff(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "could not create staff", 500)
 				return
 			}
-			core.LogAudit(db, c.Email, "staff_created", "staff", s.ID, s.FullName)
+			core.LogAudit(db, store.TenantID(c), c.Email, "staff_created", "staff", s.ID, s.FullName)
 			// If staff is a teacher (default), create login + welcome email.
 			// Admin role is created without a login here — admin users are
 			// managed via /api/users (separate flow with explicit role assignment).
@@ -187,7 +188,7 @@ func HandleStaffByID(db *store.DB) http.HandlerFunc {
 				return
 			}
 			if c != nil {
-				core.LogAudit(db, c.Email, "staff_updated", "staff", id, s.Name)
+				core.LogAudit(db, store.TenantID(c), c.Email, "staff_updated", "staff", id, s.Name)
 			}
 			core.Respond(w, s)
 
@@ -203,7 +204,7 @@ func HandleStaffByID(db *store.DB) http.HandlerFunc {
 				return
 			}
 			if c != nil {
-				core.LogAudit(db, c.Email, "staff_deleted", "staff", id, "soft deleted")
+				core.LogAudit(db, store.TenantID(c), c.Email, "staff_deleted", "staff", id, "soft deleted")
 			}
 			w.WriteHeader(http.StatusNoContent)
 		}

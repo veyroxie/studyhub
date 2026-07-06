@@ -25,6 +25,7 @@ func listFamilies(db *store.DB, c *core.Claims) []models.Family {
 		rows, err = db.Query(`SELECT id,name,contact,phone,parent_name,COALESCE(address,''),COALESCE(notes,''),COALESCE(referral_code,''),COALESCE(referral_credits_remaining,0) FROM families WHERE deleted_at IS NULL`+tw+` ORDER BY name LIMIT 5000`, twArgs...)
 	}
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Family")
 		return []models.Family{}
 	}
 	defer rows.Close()
@@ -72,7 +73,7 @@ func HandleFamilies(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "server error", 500)
 				return
 			}
-			core.LogAudit(db, c.Email, "family_created", "family", f.ID, f.Name)
+			core.LogAudit(db, store.TenantID(c), c.Email, "family_created", "family", f.ID, f.Name)
 			w.WriteHeader(http.StatusCreated)
 			core.Respond(w, f)
 		}
@@ -111,13 +112,24 @@ func HandleFamilyPDPADelete(db *store.DB) http.HandlerFunc {
 
 		// Anonymise + soft-delete family. Tenant scope added so a
 		// superadmin's tx targeting one tenant cannot accidentally touch
-		// a family with the same id in another tenant.
+		// a family with the same id in another tenant. Each statement's error
+		// is checked: this is a compliance endpoint, so a partial failure must
+		// roll back (via the deferred Rollback) rather than report success
+		// while PII survives.
 		famArgs := append([]any{famID}, twArgs...)
-		tx.Exec(`UPDATE families SET deleted_at=NOW(), name='[deleted]', contact='deleted-'||id||'@redacted', phone='', parent_name='[deleted]', address='', notes='' WHERE id=?`+tw, famArgs...)
+		if _, err := tx.Exec(`UPDATE families SET deleted_at=NOW(), name='[deleted]', contact='deleted-'||id||'@redacted', phone='', parent_name='[deleted]', address='', notes='' WHERE id=?`+tw, famArgs...); err != nil {
+			core.Logger.Error("pdpa delete: family anonymise failed", "err", err, "family_id", famID)
+			core.RespondError(w, "could not anonymise account", 500)
+			return
+		}
 
 		// Anonymise + soft-delete all students in this family.
 		stuArgs := append([]any{famID}, twArgs...)
-		tx.Exec(`UPDATE students SET deleted_at=NOW(), first_name='[deleted]', last_name='[deleted]', parent_name='[deleted]', contact='deleted-'||id||'@redacted', phone='', notes='', medical_info='', allergies='', emergency2_name='', emergency2_phone='' WHERE family_id=? AND deleted_at IS NULL`+tw, stuArgs...)
+		if _, err := tx.Exec(`UPDATE students SET deleted_at=NOW(), first_name='[deleted]', last_name='[deleted]', parent_name='[deleted]', contact='deleted-'||id||'@redacted', phone='', notes='', medical_info='', allergies='', emergency2_name='', emergency2_phone='' WHERE family_id=? AND deleted_at IS NULL`+tw, stuArgs...); err != nil {
+			core.Logger.Error("pdpa delete: students anonymise failed", "err", err, "family_id", famID)
+			core.RespondError(w, "could not anonymise account", 500)
+			return
+		}
 
 		// Anonymise the parent user account only if this contact email is
 		// unique to a single tenant. users.email is globally unique by
@@ -126,7 +138,11 @@ func HandleFamilyPDPADelete(db *store.DB) http.HandlerFunc {
 		// cannot delete a user owned by tenant B that shares an email.
 		if contact != "" {
 			userArgs := append([]any{contact}, twArgs...)
-			tx.Exec(`UPDATE users SET password_hash='DELETED', email='deleted-'||id||'@redacted', name='[deleted]', status='deleted' WHERE email=?`+tw, userArgs...)
+			if _, err := tx.Exec(`UPDATE users SET password_hash='DELETED', email='deleted-'||id||'@redacted', name='[deleted]', status='deleted' WHERE email=?`+tw, userArgs...); err != nil {
+				core.Logger.Error("pdpa delete: user anonymise failed", "err", err, "family_id", famID)
+				core.RespondError(w, "could not anonymise account", 500)
+				return
+			}
 		}
 
 		if err := tx.Commit(); err != nil {
@@ -134,7 +150,7 @@ func HandleFamilyPDPADelete(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		core.LogAudit(db, c.Email, "pdpa_account_deleted", "family", famID, "contact="+contact)
+		core.LogAudit(db, store.TenantID(c), c.Email, "pdpa_account_deleted", "family", famID, "contact="+contact)
 		core.Logger.Info("PDPA account deleted", "family_id", famID, "contact", contact, "admin", c.Email)
 
 		core.Respond(w, map[string]string{"message": "Account and associated data have been anonymised."})
@@ -163,7 +179,7 @@ func HandleFamilyByID(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "could not update family", 500)
 				return
 			}
-			core.LogAudit(db, c.Email, "family_updated", "family", id, f.Name)
+			core.LogAudit(db, store.TenantID(c), c.Email, "family_updated", "family", id, f.Name)
 			core.Respond(w, f)
 		case http.MethodDelete:
 			args := append([]any{id}, twArgs...)
@@ -176,7 +192,7 @@ func HandleFamilyByID(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "family not found", http.StatusNotFound)
 				return
 			}
-			core.LogAudit(db, c.Email, "family_deleted", "family", id, "soft deleted")
+			core.LogAudit(db, store.TenantID(c), c.Email, "family_deleted", "family", id, "soft deleted")
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}

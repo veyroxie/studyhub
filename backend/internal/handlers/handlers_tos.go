@@ -47,7 +47,7 @@ func HandleToSAccept(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "could not record acceptance", 500)
 			return
 		}
-		core.LogAudit(db, c.Email, "tos_accepted", "user", c.Email, "")
+		core.LogAudit(db, store.TenantID(c), c.Email, "tos_accepted", "user", c.Email, "")
 		core.Respond(w, map[string]any{
 			"acceptedVersion": core.CurrentToSVersion,
 			"mustAccept":      false,

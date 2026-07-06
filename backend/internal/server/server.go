@@ -30,7 +30,7 @@ func Build(db *store.DB) http.Handler {
 		"http://localhost:8080",
 		"http://127.0.0.1:8080",
 		"https://studyhub.fit",
-		"http://studyhub.fit",
+		"https://www.studyhub.fit",
 	}
 	if v := os.Getenv("ALLOWED_ORIGIN"); v != "" {
 		allowedOrigins = append(allowedOrigins, v)

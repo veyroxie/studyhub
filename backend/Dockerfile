@@ -65,5 +65,8 @@ RUN chmod +x /app/backup.sh /app/backup_verify.sh && \
 
 USER 1000:1000
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://localhost:8080/api/auth/me || exit 0
+# Hit the unauthenticated /api/health endpoint and actually fail on error.
+# The old check probed /api/auth/me (always 401) and ended in "|| exit 0",
+# so the container reported healthy even when the API was down.
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://localhost:8080/api/health || exit 1
 CMD ["./studyhub"]

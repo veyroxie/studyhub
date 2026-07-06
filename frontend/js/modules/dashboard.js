@@ -1263,11 +1263,17 @@
     try {
       var res = await App.Api.post('/api/auth/mfa/setup', {});
       if (!res || !res.uri) return;
-      var qr = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(res.uri);
+      // QR is a data: URI rendered server-side. The TOTP secret must never be
+      // sent to a third-party QR image service (it would hand them the 2FA
+      // seed). If absent, fall back to manual entry of the secret shown below.
+      var qr = res.qr || '';
+      var qrImg = qr
+        ? '<img src="' + App.Utils.esc(qr) + '" alt="QR code" style="width:140px;height:140px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:6px">'
+        : '<div style="width:140px;font-size:0.72rem;color:#64748b">QR unavailable — enter the secret manually.</div>';
       var sec = document.getElementById('mfa-section');
       sec.innerHTML = '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.5rem">Scan with your authenticator</h3>'
         + '<div style="display:flex;gap:1rem;align-items:flex-start;margin-bottom:0.75rem">'
-        +   '<img src="' + qr + '" alt="QR code" style="width:140px;height:140px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:6px">'
+        +   qrImg
         +   '<div style="flex:1;font-size:0.74rem;color:#64748b;line-height:1.5">'
         +     '<p style="margin:0 0 0.5rem">Or enter this secret manually:</p>'
         +     '<code style="display:block;background:#f8fafc;padding:0.5rem;border-radius:6px;border:1px solid #e2e8f0;font-size:0.7rem;word-break:break-all">' + App.Utils.esc(res.secret) + '</code>'
@@ -1322,8 +1328,12 @@
       danger: true,
     });
     if (!ok) return;
+    // Server requires a fresh authenticator code to disable, so a stolen
+    // session alone can't turn off 2FA. Prompt for it here.
+    var code = window.prompt('Enter a current 6-digit code from your authenticator to confirm:');
+    if (!code) return;
     try {
-      await App.Api.post('/api/auth/mfa/disable', {});
+      await App.Api.post('/api/auth/mfa/disable', { code: code.trim() });
       _renderMFASection(false);
       App.Utils.showToast('2FA disabled', 'info');
     } catch (err) {}

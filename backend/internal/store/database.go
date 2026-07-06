@@ -447,9 +447,14 @@ func runMigrations(db *sql.DB) {
 		`CREATE INDEX IF NOT EXISTS idx_families_contact ON families(contact)`,
 		`CREATE INDEX IF NOT EXISTS idx_families_tenant ON families(tenant_id)`,
 
-		// Replacement credits: add category column and convert old minutes to credits
+		// Replacement credits: add category column. NOTE: an old one-shot
+		// `UPDATE ... SET minutes = GREATEST(1, minutes/15)` used to live here to
+		// convert a legacy unit. It was NOT idempotent and re-divided every
+		// balance on every boot (45 → 3 → 1), corrupting self-study rollover
+		// credits. The whole ledger now stores and reads `minutes` consistently
+		// (see cron rollover + HandleReplacementBalance), so the conversion is
+		// gone for good — do not re-add it.
 		`ALTER TABLE replacement_credits ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'class'`,
-		`UPDATE replacement_credits SET minutes = GREATEST(1, minutes / 15) WHERE minutes > 4`,
 
 		// Feedback replies index
 		`CREATE INDEX IF NOT EXISTS idx_feedback_replies_feedback ON feedback_replies(feedback_id)`,

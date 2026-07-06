@@ -24,6 +24,7 @@ func listPayroll(db *store.DB, c *core.Claims) []models.Payroll {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,staff_id,month,base_salary,bonus,deductions,total,status,paid_on,COALESCE(manually_edited,false) FROM payroll WHERE 1=1`+tw+` ORDER BY month DESC`, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Payroll")
 		return []models.Payroll{}
 	}
 	defer rows.Close()
@@ -86,7 +87,7 @@ func HandlePayrollUpdate(db *store.DB) http.HandlerFunc {
 		}
 		p.ID = id
 		p.ManuallyEdited = true
-		core.LogAudit(db, c.Email, "payroll_edited", "payroll", id, fmt.Sprintf("total RM%.2f (%s)", p.Total, p.Status))
+		core.LogAudit(db, store.TenantID(c), c.Email, "payroll_edited", "payroll", id, fmt.Sprintf("total RM%.2f (%s)", p.Total, p.Status))
 		core.Respond(w, p)
 	}
 }

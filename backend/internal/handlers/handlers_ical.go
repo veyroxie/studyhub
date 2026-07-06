@@ -38,15 +38,25 @@ func chiURLParam(r *http.Request, name string) string {
 // middleware; that would force the calendar app to authenticate, which
 // none of them do.
 
-func icalToken(userID int, email string) string {
+// icalToken signs the feed URL. The version counter is part of the signed
+// input, so bumping users.ical_token_version (e.g. on password reset)
+// invalidates any previously-issued feed URL without rotating JWT_SECRET.
+func icalToken(userID int, email string, version int) string {
 	mac := hmac.New(sha256.New, auth.JWTSecret())
-	mac.Write([]byte(fmt.Sprintf("ical:%d:%s", userID, email)))
+	mac.Write([]byte(fmt.Sprintf("ical:%d:%s:%d", userID, email, version)))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func verifyIcalToken(userID int, email, token string) bool {
-	want := icalToken(userID, email)
+func verifyIcalToken(userID int, email, token string, version int) bool {
+	want := icalToken(userID, email, version)
 	return hmac.Equal([]byte(want), []byte(token))
+}
+
+// icalTokenVersion returns the user's current feed-token version (0 default).
+func icalTokenVersion(db *store.DB, userID int) int {
+	var v int
+	db.QueryRow(`SELECT COALESCE(ical_token_version,0) FROM users WHERE id=?`, userID).Scan(&v)
+	return v
 }
 
 // handleParentCalendarURL returns the personalised feed URL for the
@@ -67,7 +77,7 @@ func HandleParentCalendarURL(db *store.DB) http.HandlerFunc {
 		// snapshot. https:// works too as a fallback.
 		webcalBase := strings.Replace(base, "http://", "webcal://", 1)
 		webcalBase = strings.Replace(webcalBase, "https://", "webcal://", 1)
-		path := fmt.Sprintf("/api/calendar/%d/%s.ics", c.UserID, icalToken(c.UserID, c.Email))
+		path := fmt.Sprintf("/api/calendar/%d/%s.ics", c.UserID, icalToken(c.UserID, c.Email, icalTokenVersion(db, c.UserID)))
 		core.Respond(w, map[string]string{
 			"webcalUrl": webcalBase + path,
 			"httpsUrl":  base + path,
@@ -92,12 +102,12 @@ func HandleParentCalendarFeed(db *store.DB) http.HandlerFunc {
 		}
 
 		var email, role string
-		var tenantID int
-		if err := db.QueryRow(`SELECT email, COALESCE(role,''), tenant_id FROM users WHERE id=?`, userID).Scan(&email, &role, &tenantID); err != nil {
+		var tenantID, tokenVersion int
+		if err := db.QueryRow(`SELECT email, COALESCE(role,''), tenant_id, COALESCE(ical_token_version,0) FROM users WHERE id=?`, userID).Scan(&email, &role, &tenantID, &tokenVersion); err != nil {
 			core.RespondError(w, "not found", http.StatusNotFound)
 			return
 		}
-		if !verifyIcalToken(userID, email, token) {
+		if !verifyIcalToken(userID, email, token, tokenVersion) {
 			core.RespondError(w, "invalid feed token", http.StatusUnauthorized)
 			return
 		}

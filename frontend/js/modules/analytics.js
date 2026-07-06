@@ -36,6 +36,10 @@
     _chartLibPromise = new Promise(function(resolve, reject) {
       const s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+      // Subresource Integrity: the CDN can't serve tampered code without
+      // failing this hash. Must pin the exact version above to match.
+      s.integrity = 'sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g';
+      s.crossOrigin = 'anonymous';
       s.async = true;
       s.onload = function() { resolve(); };
       s.onerror = function() { _chartLibPromise = null; reject(new Error('chart.js failed to load')); };

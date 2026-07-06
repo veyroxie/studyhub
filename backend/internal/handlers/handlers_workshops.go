@@ -75,6 +75,7 @@ func listWorkshops(db *store.DB, c *core.Claims) []models.Workshop {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,name,description,date,time,end_time,classroom,capacity,enrolled,fee,teacher_ids,status FROM workshops WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC LIMIT 5000`, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Workshop")
 		return []models.Workshop{}
 	}
 	defer rows.Close()
@@ -139,7 +140,7 @@ func HandleCreateWorkshop(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			core.LogAudit(db, c.Email, "workshop_created", "workshop", ws.ID, ws.Name)
+			core.LogAudit(db, store.TenantID(c), c.Email, "workshop_created", "workshop", ws.ID, ws.Name)
 		}
 		w.WriteHeader(http.StatusCreated)
 		core.Respond(w, ws)
@@ -184,7 +185,7 @@ func HandleUpdateWorkshop(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			core.LogAudit(db, c.Email, "workshop_updated", "workshop", id, ws.Name)
+			core.LogAudit(db, store.TenantID(c), c.Email, "workshop_updated", "workshop", id, ws.Name)
 		}
 		core.Respond(w, ws)
 	}
@@ -205,7 +206,7 @@ func HandleDeleteWorkshop(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			core.LogAudit(db, c.Email, "workshop_deleted", "workshop", id, "soft deleted")
+			core.LogAudit(db, store.TenantID(c), c.Email, "workshop_deleted", "workshop", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

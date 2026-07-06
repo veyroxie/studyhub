@@ -26,6 +26,7 @@ func listReplacementCredits(db *store.DB, c *core.Claims) []models.ReplacementCr
 		rows, err = db.Query(`SELECT id,student_id,type,minutes,note,class_id,date,created_by,COALESCE(category,'class') FROM replacement_credits WHERE 1=1`+tw+` ORDER BY created_at DESC LIMIT 5000`, twArgs...)
 	}
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "ReplacementCredit")
 		return []models.ReplacementCredit{}
 	}
 	defer rows.Close()
@@ -167,7 +168,7 @@ func HandleCreateReplacementCredit(db *store.DB) http.HandlerFunc {
 				return
 			}
 		}
-		core.LogAudit(db, c.Email, "replacement_credit_"+rc.Type, "replacement_credit", rc.ID, fmt.Sprintf("student=%s credits=%d category=%s", rc.StudentID, rc.Minutes, rc.Category))
+		core.LogAudit(db, store.TenantID(c), c.Email, "replacement_credit_"+rc.Type, "replacement_credit", rc.ID, fmt.Sprintf("student=%s credits=%d category=%s", rc.StudentID, rc.Minutes, rc.Category))
 		w.WriteHeader(http.StatusCreated)
 		core.Respond(w, rc)
 	}
@@ -187,7 +188,7 @@ func HandleDeleteReplacementCredit(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "could not delete replacement credit", 500)
 			return
 		}
-		core.LogAudit(db, c.Email, "replacement_credit_deleted", "replacement_credit", id, "deleted")
+		core.LogAudit(db, store.TenantID(c), c.Email, "replacement_credit_deleted", "replacement_credit", id, "deleted")
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

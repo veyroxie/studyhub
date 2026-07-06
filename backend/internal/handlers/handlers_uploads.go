@@ -107,7 +107,7 @@ func HandleUploadProof(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		core.LogAudit(db, c.Email, "proof_uploaded", "invoice", invoiceID, proofPath)
+		core.LogAudit(db, store.TenantID(c), c.Email, "proof_uploaded", "invoice", invoiceID, proofPath)
 
 		core.Respond(w, map[string]string{"path": proofPath})
 	}

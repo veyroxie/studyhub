@@ -40,6 +40,11 @@ import (
 // handler logic — reference_no is the gateway's transaction id, so the
 // non-cash ref enforcement is automatically satisfied.
 
+// stripeSignatureTolerance is the max age of a Stripe webhook's signed
+// timestamp we accept, matching Stripe's recommended default. Beyond this a
+// captured event is treated as a replay and rejected.
+const stripeSignatureTolerance = 5 * time.Minute
+
 func defaultPaymentProvider() string {
 	if v := os.Getenv("PAYMENT_PROVIDER"); v != "" {
 		return v
@@ -105,7 +110,7 @@ func HandlePaymentCheckout(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, msg, http.StatusBadGateway)
 			return
 		}
-		core.LogAudit(db, c.Email, "payment_checkout_created", "invoice", id, provider)
+		core.LogAudit(db, store.TenantID(c), c.Email, "payment_checkout_created", "invoice", id, provider)
 		core.Respond(w, map[string]string{"url": checkoutURL, "provider": provider})
 	}
 }
@@ -171,14 +176,19 @@ func HandleBillplzWebhook(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "bad body", 400)
 			return
 		}
-		// Verify signature.
+		// Verify signature. Fail CLOSED: an unset secret means the webhook is
+		// misconfigured, and skipping verification would turn this public route
+		// into an unauthenticated "mark any invoice paid" endpoint.
 		secret := os.Getenv("BILLPLZ_X_SIGNATURE")
-		if secret != "" {
-			given := r.Form.Get("x_signature")
-			if !verifyBillplzSignature(r.Form, secret, given) {
-				core.RespondError(w, "invalid signature", http.StatusForbidden)
-				return
-			}
+		if secret == "" {
+			core.Logger.Error("billplz webhook rejected: BILLPLZ_X_SIGNATURE not configured")
+			core.RespondError(w, "webhook not configured", http.StatusServiceUnavailable)
+			return
+		}
+		given := r.Form.Get("x_signature")
+		if !verifyBillplzSignature(r.Form, secret, given) {
+			core.RespondError(w, "invalid signature", http.StatusForbidden)
+			return
 		}
 		invoiceID := r.Form.Get("reference_1")
 		paid := r.Form.Get("paid") == "true"
@@ -200,7 +210,7 @@ func HandleBillplzWebhook(db *store.DB) http.HandlerFunc {
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			core.Logger.Info("billplz webhook: invoice marked paid", "invoice_id", invoiceID, "bill_id", billID)
-			core.LogAudit(db, "billplz", "invoice_paid", "invoice", invoiceID, "via webhook")
+			core.LogAudit(db, store.TenantOfInvoice(db, invoiceID), "billplz", "invoice_paid", "invoice", invoiceID, "via webhook")
 			// Assign a receipt number now that the invoice is Paid — same
 			// idempotent guard as the admin/parent pay paths. No tenant scope
 			// here (system webhook, no Claims); the invoice id is unique.
@@ -313,12 +323,16 @@ func HandleStripeWebhook(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "read failed", 400)
 			return
 		}
+		// Fail CLOSED when the signing secret is absent (see Billplz webhook).
 		secret := os.Getenv("STRIPE_WEBHOOK_SECRET")
-		if secret != "" {
-			if !verifyStripeSignature(body, r.Header.Get("Stripe-Signature"), secret) {
-				core.RespondError(w, "invalid signature", http.StatusForbidden)
-				return
-			}
+		if secret == "" {
+			core.Logger.Error("stripe webhook rejected: STRIPE_WEBHOOK_SECRET not configured")
+			core.RespondError(w, "webhook not configured", http.StatusServiceUnavailable)
+			return
+		}
+		if !verifyStripeSignature(body, r.Header.Get("Stripe-Signature"), secret) {
+			core.RespondError(w, "invalid signature", http.StatusForbidden)
+			return
 		}
 		// Parse the parts we care about.
 		var evt struct {
@@ -362,7 +376,7 @@ func HandleStripeWebhook(db *store.DB) http.HandlerFunc {
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			core.Logger.Info("stripe webhook: invoice marked paid", "invoice_id", invoiceID, "session_id", evt.Data.Object.ID)
-			core.LogAudit(db, "stripe", "invoice_paid", "invoice", invoiceID, "via webhook")
+			core.LogAudit(db, store.TenantOfInvoice(db, invoiceID), "stripe", "invoice_paid", "invoice", invoiceID, "via webhook")
 			// Assign a receipt number now that the invoice is Paid — same
 			// idempotent guard as the admin/parent pay paths. No tenant scope
 			// here (system webhook, no Claims); the invoice id is unique.
@@ -399,6 +413,15 @@ func verifyStripeSignature(body []byte, header, secret string) bool {
 		}
 	}
 	if t == "" || sig == "" {
+		return false
+	}
+	// Reject stale/replayed events: the signed timestamp must be within the
+	// tolerance window of now (Stripe's own recommended default is 5 minutes).
+	ts, err := strconv.ParseInt(t, 10, 64)
+	if err != nil {
+		return false
+	}
+	if delta := time.Since(time.Unix(ts, 0)); delta < -stripeSignatureTolerance || delta > stripeSignatureTolerance {
 		return false
 	}
 	payload := t + "." + string(body)

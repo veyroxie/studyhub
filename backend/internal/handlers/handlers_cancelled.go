@@ -15,6 +15,7 @@ func listCancelledClasses(db *store.DB, c *core.Claims) []models.CancelledClass 
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,class_id,date,reason,cancelled_by,created_on FROM cancelled_classes WHERE 1=1`+tw+` ORDER BY date DESC LIMIT 5000`, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "CancelledClass")
 		return []models.CancelledClass{}
 	}
 	defer rows.Close()
@@ -76,7 +77,7 @@ func HandleCreateCancelledClass(db *store.DB) http.HandlerFunc {
 		applyCancelledClassSideEffects(db, c, cc, tid)
 
 		if c != nil {
-			core.LogAudit(db, c.Email, "class_cancelled", "cancelled_class", cc.ID, "class="+cc.ClassID+" date="+cc.Date)
+			core.LogAudit(db, store.TenantID(c), c.Email, "class_cancelled", "cancelled_class", cc.ID, "class="+cc.ClassID+" date="+cc.Date)
 		}
 		w.WriteHeader(http.StatusCreated)
 		core.Respond(w, cc)
@@ -115,7 +116,7 @@ func applyCancelledClassSideEffects(db *store.DB, c *core.Claims, cc models.Canc
 	} else if c != nil {
 		// Mirror the direct-create audit hook so "list every announcement
 		// mutation" queries don't skip the auto-generated ones.
-		core.LogAudit(db, c.Email, "announcement_created", "announcement", annID, "auto: class cancellation "+cc.ClassID)
+		core.LogAudit(db, store.TenantID(c), c.Email, "announcement_created", "announcement", annID, "auto: class cancellation "+cc.ClassID)
 	}
 
 	// Replacement credits — one "class" credit per enrolled student. We

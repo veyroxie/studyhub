@@ -99,7 +99,7 @@ func HandleProfile(db *store.DB) http.HandlerFunc {
 				db.Exec(`UPDATE users SET notify_checkin_email=? WHERE email=?`, *body.NotifyCheckinEmail, c.Email)
 			}
 
-			core.LogAudit(db, c.Email, "profile_updated", "user", c.Email, body.Name)
+			core.LogAudit(db, store.TenantID(c), c.Email, "profile_updated", "user", c.Email, body.Name)
 
 			// Reissue the JWT so the new name is reflected in the cookie
 			// immediately (no need to re-login). Preserve the original
@@ -182,7 +182,12 @@ func HandleChangePassword(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		core.LogAudit(db, c.Email, "password_changed", "user", c.Email, "")
+		// Evict any other live sessions: a password change should invalidate
+		// refresh tokens (and thus the ability to mint new access JWTs) so a
+		// compromise-driven change kicks out the intruder.
+		store.RevokeRefreshFamilyByUser(db, c.UserID, "password_changed")
+
+		core.LogAudit(db, store.TenantID(c), c.Email, "password_changed", "user", c.Email, "")
 
 		core.Respond(w, map[string]string{"message": "Password changed."})
 	}

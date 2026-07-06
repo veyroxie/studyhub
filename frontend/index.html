@@ -75,7 +75,9 @@
             if (h) h.textContent = b.brandName;
             document.title = b.brandName;
             var f = document.getElementById('brand-footer');
-            if (f) f.innerHTML = b.brandName + ' &copy; ' + new Date().getFullYear();
+            // textContent, not innerHTML: brandName is tenant-admin-controlled
+            // and must never be able to inject markup into the login shell.
+            if (f) f.textContent = b.brandName + ' © ' + new Date().getFullYear();
           }
           if (b.primaryColor) {
             document.documentElement.style.setProperty('--gold', b.primaryColor);
@@ -120,6 +122,9 @@
     if (window.SENTRY_DSN) {
       var s = document.createElement('script');
       s.src = 'https://browser.sentry-cdn.com/7.119.0/bundle.min.js';
+      // SRI-pinned to the exact version above so a compromised CDN can't inject
+      // code into every page load.
+      s.integrity = 'sha384-N/+t7zuoySxu9rbUlySpn5qv9w/rBT0D7HE35N2dXNy/1W68iV8i6hc13TPJnKOB';
       s.crossOrigin = 'anonymous';
       s.onload = function() {
         if (window.Sentry) {
@@ -212,22 +217,6 @@
         <a href="#" id="resend-verify-link" style="color:#C9A227;text-decoration:none;font-weight:700;display:inline-block;margin-top:0.4rem">Resend verification email →</a>
       </div>
 
-      <!-- Dev quick-login buttons (localhost only) -->
-      <div id="dev-quick-login" style="display:none;margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--rule,#E5DECB)">
-        <p style="font-size:0.6rem;color:var(--ink-mute,#6b6258);margin-bottom:0.5rem;font-weight:700;text-transform:uppercase;letter-spacing:0.14em">Dev quick login</p>
-        <div style="display:flex;gap:0.4rem">
-          <button onclick="App.Login.quickLogin('admin@studyhub.com','admin123')"
-            style="flex:1;padding:0.4rem;font-size:0.68rem;background:rgba(201,162,39,0.06);color:#8a6a14;border:1px solid rgba(201,162,39,0.2);border-radius:4px;cursor:pointer;font-weight:600;transition:background 0.15s;font-family:'Instrument Sans',sans-serif"
-            onmouseover="this.style.background='rgba(201,162,39,0.12)'" onmouseout="this.style.background='rgba(201,162,39,0.06)'">Admin</button>
-          <button onclick="App.Login.quickLogin('chiying@studyhub.com','Teacher123!')"
-            style="flex:1;padding:0.4rem;font-size:0.68rem;background:rgba(139,92,246,0.06);color:#7c3aed;border:1px solid rgba(139,92,246,0.2);border-radius:4px;cursor:pointer;font-weight:600;transition:background 0.15s;font-family:'Instrument Sans',sans-serif"
-            onmouseover="this.style.background='rgba(139,92,246,0.12)'" onmouseout="this.style.background='rgba(139,92,246,0.06)'">Teacher</button>
-          <button onclick="App.Login.quickLogin('seeduser27@example.com','parent123')"
-            style="flex:1;padding:0.4rem;font-size:0.68rem;background:rgba(16,185,129,0.06);color:#059669;border:1px solid rgba(16,185,129,0.2);border-radius:4px;cursor:pointer;font-weight:600;transition:background 0.15s;font-family:'Instrument Sans',sans-serif"
-            onmouseover="this.style.background='rgba(16,185,129,0.12)'" onmouseout="this.style.background='rgba(16,185,129,0.06)'">Parent</button>
-        </div>
-      </div>
-      <script>if(location.hostname==='localhost'||location.hostname==='127.0.0.1'){document.getElementById('dev-quick-login').style.display='';}</script>
     </div>
 
     <p id="brand-footer" style="text-align:center;font-size:0.62rem;color:var(--ink-mute,#6b6258);margin-top:1.5rem;font-family:'Instrument Sans',sans-serif;text-transform:uppercase;letter-spacing:0.1em;opacity:0.45">The Study Hub &copy; 2026</p>

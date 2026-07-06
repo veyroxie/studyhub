@@ -10,8 +10,9 @@ import "studyhub/internal/core"
 func ReferralCheckMilestoneOnPay(db *DB, studentID string, c *core.Claims) {
 	tw, twArgs := ScopeTenant(c, "")
 	var rrID, status string
+	var rrTenantID int
 	selArgs := append([]any{studentID}, twArgs...)
-	if err := db.QueryRow(`SELECT id, status FROM referral_rewards WHERE referred_student_id=?`+tw, selArgs...).Scan(&rrID, &status); err != nil {
+	if err := db.QueryRow(`SELECT id, status, tenant_id FROM referral_rewards WHERE referred_student_id=?`+tw, selArgs...).Scan(&rrID, &status, &rrTenantID); err != nil {
 		return
 	}
 	if status != "pending" {
@@ -31,5 +32,5 @@ func ReferralCheckMilestoneOnPay(db *DB, studentID string, c *core.Claims) {
 	if _, err := db.Exec(`UPDATE referral_rewards SET status='earned', credits_remaining=3, paid_invoice_count=?, milestone_met_on=? WHERE id=?`+tw, milestoneArgs...); err != nil {
 		core.Logger.Error("failed to update referral milestone", "err", err, "referral_reward_id", rrID)
 	}
-	core.LogAudit(db, "system", "referral_milestone_met", "referral", rrID, "student="+studentID)
+	core.LogAudit(db, rrTenantID, "system", "referral_milestone_met", "referral", rrID, "student="+studentID)
 }

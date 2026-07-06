@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"studyhub/internal/core"
 	"studyhub/internal/models"
 	"studyhub/internal/notify"
@@ -25,6 +26,7 @@ func listAttendance(db *store.DB, c *core.Claims) []models.Attendance {
 		rows, err = db.Query(`SELECT id,person_id,person_type,date,class_id,check_in,check_out,status FROM attendance WHERE 1=1`+tw+` ORDER BY date DESC`, twArgs...)
 	}
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Attendance")
 		return []models.Attendance{}
 	}
 	defer rows.Close()
@@ -64,6 +66,7 @@ func listAttendancePaged(db *store.DB, c *core.Claims, p core.Pagination) ([]mod
 		rows, err = db.Query(`SELECT id,person_id,person_type,date,class_id,check_in,check_out,status FROM attendance WHERE 1=1`+tw+` ORDER BY date DESC LIMIT ? OFFSET ?`, pageArgs...)
 	}
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Attendance")
 		return []models.Attendance{}, total
 	}
 	defer rows.Close()
@@ -153,18 +156,6 @@ func HandleAttendance(db *store.DB, hub *WSHub) http.HandlerFunc {
 				}
 			}
 
-			// Upsert: update existing record for same person+class+date, or insert.
-			// Scoped to the caller's tenant so a teacher in tenant A cannot
-			// overwrite an attendance row for a colliding person_id in tenant B.
-			var existingID string
-			q := `SELECT id FROM attendance WHERE person_id=? AND date=?` + tw
-			args := append([]any{a.PersonID, a.Date}, twArgs...)
-			if a.ClassID != nil {
-				q = `SELECT id FROM attendance WHERE person_id=? AND date=? AND class_id=?` + tw
-				args = append([]any{a.PersonID, a.Date, *a.ClassID}, twArgs...)
-			}
-			db.QueryRow(q, args...).Scan(&existingID)
-
 			var classID, checkIn, checkOut any
 			if a.ClassID != nil {
 				classID = *a.ClassID
@@ -176,22 +167,62 @@ func HandleAttendance(db *store.DB, hub *WSHub) http.HandlerFunc {
 				checkOut = *a.CheckOut
 			}
 
+			// Upsert: update existing record for same person+class+date, or
+			// insert. Runs inside a transaction guarded by an advisory lock on
+			// the (tenant, person, date, class) key so two concurrent kiosk
+			// scans can't both miss the existing row and insert duplicates —
+			// duplicate attendance rows double-count part-time payroll hours.
+			// Scoped to the caller's tenant so a teacher in tenant A cannot
+			// overwrite an attendance row for a colliding person_id in tenant B.
+			tid := store.TenantID(c)
+			tx, err := db.BeginTx(r.Context())
+			if err != nil {
+				core.RespondError(w, "server error", 500)
+				return
+			}
+			defer tx.Rollback()
+
+			classKey := ""
+			if a.ClassID != nil {
+				classKey = *a.ClassID
+			}
+			lockKey := core.AdvisoryLockKey(strconv.Itoa(tid) + "|att|" + a.PersonID + "|" + a.Date + "|" + classKey)
+			if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, lockKey); err != nil {
+				core.RespondError(w, "server error", 500)
+				return
+			}
+
+			var existingID string
+			q := `SELECT id FROM attendance WHERE person_id=? AND date=?` + tw
+			args := append([]any{a.PersonID, a.Date}, twArgs...)
+			if a.ClassID != nil {
+				q = `SELECT id FROM attendance WHERE person_id=? AND date=? AND class_id=?` + tw
+				args = append([]any{a.PersonID, a.Date, *a.ClassID}, twArgs...)
+			}
+			tx.QueryRow(q, args...).Scan(&existingID)
+
 			if existingID != "" {
 				a.ID = existingID
 				updArgs := append([]any{checkIn, checkOut, a.Status, existingID}, twArgs...)
-				if _, err := db.Exec(`UPDATE attendance SET check_in=?,check_out=?,status=? WHERE id=?`+tw, updArgs...); err != nil {
+				if _, err := tx.Exec(`UPDATE attendance SET check_in=?,check_out=?,status=? WHERE id=?`+tw, updArgs...); err != nil {
 					core.RespondError(w, "could not update attendance", 500)
 					return
 				}
-				core.LogAudit(db, c.Email, "attendance_updated", "attendance", a.ID, a.PersonID+" "+a.Date+" "+a.Status)
 			} else {
-				tid := store.TenantID(c)
-				if _, err := db.Exec(`INSERT INTO attendance(id,tenant_id,person_id,person_type,date,class_id,check_in,check_out,status) VALUES(?,?,?,?,?,?,?,?,?)`,
+				if _, err := tx.Exec(`INSERT INTO attendance(id,tenant_id,person_id,person_type,date,class_id,check_in,check_out,status) VALUES(?,?,?,?,?,?,?,?,?)`,
 					a.ID, tid, a.PersonID, a.PersonType, a.Date, classID, checkIn, checkOut, a.Status); err != nil {
 					core.RespondError(w, "could not create attendance", 500)
 					return
 				}
-				core.LogAudit(db, c.Email, "attendance_created", "attendance", a.ID, a.PersonID+" "+a.Date+" "+a.Status)
+			}
+			if err := tx.Commit(); err != nil {
+				core.RespondError(w, "server error", 500)
+				return
+			}
+			if existingID != "" {
+				core.LogAudit(db, store.TenantID(c), c.Email, "attendance_updated", "attendance", a.ID, a.PersonID+" "+a.Date+" "+a.Status)
+			} else {
+				core.LogAudit(db, store.TenantID(c), c.Email, "attendance_created", "attendance", a.ID, a.PersonID+" "+a.Date+" "+a.Status)
 			}
 
 			// Notify the parent on check-in/out across every channel: in-app
@@ -201,13 +232,17 @@ func HandleAttendance(db *store.DB, hub *WSHub) http.HandlerFunc {
 			// read "checked in at " with no time.
 			if a.PersonType == "student" && (a.CheckIn != nil || a.CheckOut != nil) {
 				isCheckIn := a.CheckOut == nil
-				tid := store.TenantID(c)
 				if hub != nil {
 					eventType := "CHECK_IN"
 					if !isCheckIn {
 						eventType = "CHECK_OUT"
 					}
-					hub.broadcastTenant(tid, map[string]any{
+					// Look up the owning parent so the event reaches staff and
+					// only that child's parent — not every family in the tenant.
+					var ownerEmail string
+					ownerArgs := append([]any{a.PersonID}, twArgs...)
+					db.QueryRow(`SELECT COALESCE(contact,'') FROM students WHERE id=?`+tw, ownerArgs...).Scan(&ownerEmail)
+					hub.broadcastCheckIn(tid, ownerEmail, map[string]any{
 						"type":     eventType,
 						"personId": a.PersonID,
 						"checkIn":  a.CheckIn,

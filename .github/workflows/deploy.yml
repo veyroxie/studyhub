@@ -31,7 +31,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Deploy over SSH (build, health-check, rollback on failure)
-        uses: appleboy/ssh-action@v1.2.0
+        # Pinned to the v1.2.0 commit SHA — a mutable tag on a third-party action
+        # that holds the droplet SSH key must not be repointable by its author.
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -49,9 +51,9 @@ jobs:
             echo "==> Saving current image for rollback"
             docker image tag studyhub-api studyhub-api:rollback 2>/dev/null || echo "no existing image to tag (first deploy)"
 
-            echo "==> Building + starting api"
-            docker compose build api
-            docker compose up -d api
+            echo "==> Building + starting api + analytics"
+            docker compose build api analytics
+            docker compose up -d api analytics
 
             echo "==> Health check"
             ok=0

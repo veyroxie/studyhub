@@ -34,6 +34,7 @@ func listReferralRewards(db *store.DB, c *core.Claims) []models.ReferralReward {
 		rows, err = db.Query(q, twArgs...)
 	}
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "ReferralReward")
 		return []models.ReferralReward{}
 	}
 	defer rows.Close()
@@ -99,7 +100,7 @@ func HandleReferralEarn(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "could not mark earned", 500)
 			return
 		}
-		core.LogAudit(db, c.Email, "referral_milestone_met", "referral", id, "student="+studentID)
+		core.LogAudit(db, store.TenantID(c), c.Email, "referral_milestone_met", "referral", id, "student="+studentID)
 		core.Respond(w, map[string]string{"status": "earned"})
 	}
 }
@@ -139,7 +140,7 @@ func HandleReferralConsume(db *store.DB) http.HandlerFunc {
 		var newRemaining int
 		readArgs := append([]any{id}, twArgs...)
 		db.QueryRow(`SELECT status, credits_remaining FROM referral_rewards WHERE id=?`+tw, readArgs...).Scan(&newStatus, &newRemaining)
-		core.LogAudit(db, c.Email, "referral_credit_applied", "referral", id, "remaining="+itoa(newRemaining))
+		core.LogAudit(db, store.TenantID(c), c.Email, "referral_credit_applied", "referral", id, "remaining="+itoa(newRemaining))
 		core.Respond(w, map[string]any{"status": newStatus, "creditsRemaining": newRemaining})
 	}
 }

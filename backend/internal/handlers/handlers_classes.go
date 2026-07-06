@@ -39,6 +39,7 @@ func listClasses(db *store.DB, c *core.Claims) []models.Class {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,COALESCE(class_type,'Group'),COALESCE(level_band,'') FROM classes WHERE deleted_at IS NULL`+tw, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Class")
 		return []models.Class{}
 	}
 	defer rows.Close()
@@ -61,6 +62,7 @@ func listPricingTiers(db *store.DB, c *core.Claims) []models.PricingTier {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,class_type,level_band,COALESCE(monthly_fee,0) FROM pricing_tiers WHERE deleted_at IS NULL`+tw+` ORDER BY class_type, level_band`, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "PricingTier")
 		return []models.PricingTier{}
 	}
 	defer rows.Close()
@@ -153,7 +155,7 @@ func HandleClasses(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "could not create class", 500)
 				return
 			}
-			core.LogAudit(db, cl.Email, "class_created", "class", c.ID, c.Name)
+			core.LogAudit(db, store.TenantID(cl), cl.Email, "class_created", "class", c.ID, c.Name)
 			core.Respond(w, c)
 		}
 	}
@@ -211,9 +213,17 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 			}
 
 			args := append([]any{cl.Name, models.JSONArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Enrolled, cl.Color, cl.Category, cl.ClassType, cl.LevelBand, id}, twArgs...)
-			db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,enrolled=?,color=?,category=?,class_type=?,level_band=? WHERE id=?`+tw, args...)
+			res, err := db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,enrolled=?,color=?,category=?,class_type=?,level_band=? WHERE id=?`+tw, args...)
+			if err != nil {
+				core.RespondError(w, "could not update class", 500)
+				return
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				core.RespondError(w, "class not found", 404)
+				return
+			}
 			if c != nil {
-				core.LogAudit(db, c.Email, "class_updated", "class", id, cl.Name)
+				core.LogAudit(db, store.TenantID(c), c.Email, "class_updated", "class", id, cl.Name)
 			}
 			core.Respond(w, cl)
 
@@ -224,9 +234,17 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 			}
 			tw, twArgs := store.ScopeTenant(c, "")
 			args := append([]any{id}, twArgs...)
-			db.Exec(`UPDATE classes SET deleted_at=NOW() WHERE id=?`+tw, args...)
+			res, err := db.Exec(`UPDATE classes SET deleted_at=NOW() WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+			if err != nil {
+				core.RespondError(w, "could not delete class", 500)
+				return
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				core.RespondError(w, "class not found", 404)
+				return
+			}
 			if c != nil {
-				core.LogAudit(db, c.Email, "class_deleted", "class", id, "soft deleted")
+				core.LogAudit(db, store.TenantID(c), c.Email, "class_deleted", "class", id, "soft deleted")
 			}
 			w.WriteHeader(http.StatusNoContent)
 		}

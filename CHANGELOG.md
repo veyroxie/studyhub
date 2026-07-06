@@ -8,6 +8,48 @@ dated section when you cut a deploy.
 
 ## [Unreleased]
 
+### Security & correctness — prod-readiness hardening pass
+
+- **Billing data corruption fixed:** a legacy startup migration re-divided every
+  replacement-credit balance by 15 on every boot (45 → 3 → 1). Removed; the
+  ledger is consistently in minutes.
+- **Payment webhooks fail closed:** Billplz/Stripe webhooks now reject requests
+  when the signing secret is unset (previously they skipped verification,
+  letting anyone mark invoices paid on a misconfigured deploy). Added Stripe
+  timestamp tolerance to block replays.
+- **Session revocation:** logout now revokes the refresh-token family and clears
+  its cookie; password change/reset revoke refresh families (and reset bumps the
+  iCal feed token) so a compromised session can't survive.
+- **IDs are collision-safe:** `GenerateID` appends crypto-random bytes, so
+  same-millisecond cron IDs no longer collide and silently drop invoice/payroll
+  rows.
+- **Registration approve is idempotent:** double-clicks no longer create
+  duplicate students / double-bump class counts; the "enrolled" email only sends
+  after the transaction commits.
+- **PDPA delete** checks every anonymisation statement and rolls back on failure
+  instead of reporting success while PII survives.
+- **Money precision:** `invoices.early_bird_discount`, `pricing_tiers.monthly_fee`
+  and `registrations.school_fees` converted from float to `NUMERIC(12,2)`
+  (migration `0025`).
+- **Concurrency:** attendance upserts and student-edit capacity checks are now
+  serialized (advisory locks) so kiosk double-scans / concurrent edits can't
+  create duplicate rows or overfill a class.
+- **Audit logs are tenant-scoped:** `audit_logs` rows are stamped with the
+  correct tenant instead of defaulting to tenant 1.
+- **MFA:** the enrolment QR is generated server-side (the TOTP secret is no
+  longer sent to a third-party QR service); disabling 2FA requires a fresh code;
+  intermediate tokens are hashed at rest.
+- **Frontend:** cached snapshot (student PII, medical info, staff salary/NRIC) is
+  cleared on logout/401; XSS-safe brand rendering; SRI on CDN scripts; dev
+  quick-login credentials and real-looking mock emails removed.
+- **Infra:** docker-compose requires `JWT_SECRET`/`POSTGRES_PASSWORD` (no
+  insecure fallbacks) and rotates container logs; healthcheck fixed; analytics
+  runs non-root; deploy SSH action pinned to a commit SHA.
+- **Multi-tenant RLS foundation:** removed the middleware that poisoned pooled
+  connections; staged a non-superuser DB role (migration `0026`) and an
+  activation runbook (`notes/rls-activation.md`). Tenant isolation is enforced by
+  `ScopeTenant` (tested).
+
 ### Fixed — Teacher privacy, progress-report scoping, payroll correctness
 
 - **Teacher privacy (PDPA):** the students API/snapshot now strips parent

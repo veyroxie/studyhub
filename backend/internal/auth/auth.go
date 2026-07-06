@@ -74,6 +74,19 @@ type LoginResponse struct {
 	StaffID string `json:"staffId,omitempty"`
 }
 
+// dummyPasswordHash is a valid argon2id hash verified against on the
+// "user not found" login path, so that path spends the same ~Argon2 CPU time
+// as a real credential check. Without it, an unknown email returns instantly
+// while a known email pays the hashing cost — a timing oracle for enumerating
+// which emails have accounts.
+var dummyPasswordHash = func() string {
+	h, err := HashPassword("timing-equalizer-not-a-real-password")
+	if err != nil {
+		return ""
+	}
+	return h
+}()
+
 func HandleLogin(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req loginRequest
@@ -107,7 +120,10 @@ func HandleLogin(db *store.DB) http.HandlerFunc {
 		).Scan(&id, &hash, &role, &name, &tenantID, &status, &failedCount, &lockedUntil)
 
 		if err == sql.ErrNoRows {
-			// Use same error as wrong password — never reveal which one was wrong
+			// Burn the same Argon2 time a real password check would, so an
+			// unknown email is indistinguishable from a wrong password by
+			// response latency. Same generic error either way.
+			_ = VerifyPassword(dummyPasswordHash, req.Password)
 			core.RespondError(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
@@ -298,6 +314,11 @@ func HandleLogout(db *store.DB) http.HandlerFunc {
 				revokeToken(db, claims.ID, claims.UserID, exp, "logout")
 			}
 		}
+		// Revoke the refresh-token family and clear its cookie too — otherwise
+		// the sh_refresh cookie (7-day TTL, scoped to /api/auth) stays valid
+		// and can mint a fresh access session after "logout".
+		store.RevokeRefreshByCookie(db, r)
+		store.ClearRefreshCookie(w, r)
 		secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 		http.SetCookie(w, &http.Cookie{
 			Name:     "sh_token",

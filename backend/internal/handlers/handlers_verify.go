@@ -49,7 +49,7 @@ func HandleVerifyEmail(db *store.DB) http.HandlerFunc {
 
 		// ── Teacher branch: confirm only, no login ─────────────────────────
 		if t.Purpose == store.TokenPurposeVerifyTeacher {
-			core.LogAudit(db, t.Email, "teacher_email_verified", "registration", nullStrFromPtr(&t.RegistrationID), "")
+			core.LogAudit(db, store.TenantOfRegistration(db, t.RegistrationID.String), t.Email, "teacher_email_verified", "registration", nullStrFromPtr(&t.RegistrationID), "")
 			core.Respond(w, map[string]any{
 				"type":       "teacher",
 				"message":    "Email confirmed. Your application is now in our review queue — we'll be in touch within 3-5 business days.",
@@ -97,7 +97,7 @@ func HandleVerifyEmail(db *store.DB) http.HandlerFunc {
 			SameSite: http.SameSiteLaxMode,
 		})
 
-		core.LogAudit(db, email, "email_verified", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
+		core.LogAudit(db, store.TenantOfUser(db, t.UserID.Int64), email, "email_verified", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
 
 		core.Respond(w, map[string]any{
 			"type":       "parent",
@@ -178,7 +178,7 @@ func HandleResendVerification(db *store.DB) http.HandlerFunc {
 				} else {
 					l.Info("teacher set-password link resent")
 				}
-				core.LogAudit(db, req.Email, "verification_resent", "user", fmt.Sprintf("%d", userID), "teacher")
+				core.LogAudit(db, store.TenantOfUser(db, int64(userID)), req.Email, "verification_resent", "user", fmt.Sprintf("%d", userID), "teacher")
 				core.Respond(w, generic)
 				return
 			}
@@ -204,7 +204,7 @@ func HandleResendVerification(db *store.DB) http.HandlerFunc {
 			} else {
 				l.Info("verification resent")
 			}
-			core.LogAudit(db, req.Email, "verification_resent", "user", fmt.Sprintf("%d", userID), "parent")
+			core.LogAudit(db, store.TenantOfUser(db, int64(userID)), req.Email, "verification_resent", "user", fmt.Sprintf("%d", userID), "parent")
 			core.Respond(w, generic)
 			return
 		}
@@ -230,7 +230,7 @@ func HandleResendVerification(db *store.DB) http.HandlerFunc {
 			} else {
 				l.Info("teacher verification resent")
 			}
-			core.LogAudit(db, req.Email, "verification_resent", "registration", regID, "teacher")
+			core.LogAudit(db, store.TenantOfRegistration(db, regID), req.Email, "verification_resent", "registration", regID, "teacher")
 			core.Respond(w, generic)
 			return
 		}

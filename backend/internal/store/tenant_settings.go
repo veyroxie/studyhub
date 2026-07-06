@@ -287,7 +287,7 @@ func HandleAdminSettings(db *DB) http.HandlerFunc {
 				return
 			}
 			invalidateTenantSettings(tid)
-			core.LogAudit(db, c.Email, "tenant_settings_updated", "tenant", "", strings.Join(parts, ","))
+			core.LogAudit(db, tid, c.Email, "tenant_settings_updated", "tenant", "", strings.Join(parts, ","))
 			core.Respond(w, LoadTenantSettings(db, tid))
 		}
 	}

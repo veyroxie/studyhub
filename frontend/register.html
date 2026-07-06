@@ -336,7 +336,7 @@
         if (!b) return;
         if (b.brandName) {
           var h = document.getElementById('brand-name'); if (h) h.textContent = b.brandName;
-          var f = document.getElementById('brand-footer'); if (f) f.innerHTML = b.brandName + ' &copy; ' + new Date().getFullYear();
+          var f = document.getElementById('brand-footer'); if (f) f.textContent = b.brandName + ' © ' + new Date().getFullYear();
           document.title = 'Register — ' + b.brandName;
         }
       }).catch(function(){});

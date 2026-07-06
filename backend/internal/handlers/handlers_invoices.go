@@ -29,6 +29,7 @@ func listInvoices(db *store.DB, c *core.Claims) []models.Invoice {
 		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on,COALESCE(payment_proof,''),COALESCE(payment_method,''),COALESCE(discount_pct,0),COALESCE(submitted_by_parent,false),COALESCE(sibling_ids,''),COALESCE(sibling_discount,0),COALESCE(referral_credit,0),COALESCE(reference_no,''),COALESCE(early_bird_cutoff,''),COALESCE(early_bird_discount,0) FROM invoices WHERE deleted_at IS NULL`+tw+` ORDER BY created_on DESC`, twArgs...)
 	}
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Invoice")
 		return []models.Invoice{}
 	}
 	defer rows.Close()
@@ -62,6 +63,7 @@ func listInvoicesPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]model
 		rows, err = db.Query(`SELECT id,student_id,description,type,amount,due_date,status,created_on,paid_on,COALESCE(payment_proof,''),COALESCE(payment_method,''),COALESCE(discount_pct,0),COALESCE(submitted_by_parent,false),COALESCE(sibling_ids,''),COALESCE(sibling_discount,0),COALESCE(referral_credit,0),COALESCE(reference_no,''),COALESCE(early_bird_cutoff,''),COALESCE(early_bird_discount,0) FROM invoices WHERE deleted_at IS NULL`+tw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
 	}
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Invoice")
 		return []models.Invoice{}, total
 	}
 	defer rows.Close()
@@ -164,7 +166,7 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "could not create invoice", 500)
 				return
 			}
-			core.LogAudit(db, c.Email, "invoice_created", "invoice", inv.ID, inv.StudentID+" "+inv.Description)
+			core.LogAudit(db, store.TenantID(c), c.Email, "invoice_created", "invoice", inv.ID, inv.StudentID+" "+inv.Description)
 			core.Respond(w, inv)
 		}
 	}
@@ -210,7 +212,7 @@ func HandleInvoiceUpdate(db *store.DB) http.HandlerFunc {
 			return
 		}
 		inv.ID = id
-		core.LogAudit(db, c.Email, "invoice_updated", "invoice", id, inv.Description+" RM"+fmt.Sprintf("%.2f", inv.Amount))
+		core.LogAudit(db, store.TenantID(c), c.Email, "invoice_updated", "invoice", id, inv.Description+" RM"+fmt.Sprintf("%.2f", inv.Amount))
 		core.Respond(w, inv)
 	}
 }
@@ -251,7 +253,7 @@ func HandleInvoiceDelete(db *store.DB) http.HandlerFunc {
 			"status":    status,
 			"amount":    amount,
 		})
-		core.LogAudit(db, c.Email, "invoice_deleted", "invoice", id, string(detailBytes))
+		core.LogAudit(db, store.TenantID(c), c.Email, "invoice_deleted", "invoice", id, string(detailBytes))
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -385,7 +387,7 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 			"paidOn":    t,
 			"method":    body.PaymentMethod,
 		})
-		core.LogAudit(db, c.Email, "invoice_paid", "invoice", id, string(detailBytes))
+		core.LogAudit(db, store.TenantID(c), c.Email, "invoice_paid", "invoice", id, string(detailBytes))
 
 		// Referral milestone: re-evaluate the referred student's progress.
 		// Only relevant for Monthly invoices, but the helper checks itself.

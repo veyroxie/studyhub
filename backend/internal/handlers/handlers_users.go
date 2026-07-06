@@ -131,7 +131,7 @@ func HandleUserVerify(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		core.LogAudit(db, c.Email, "user_manually_verified", "user", id, "by admin: "+c.Email)
+		core.LogAudit(db, store.TenantID(c), c.Email, "user_manually_verified", "user", id, "by admin: "+c.Email)
 
 		core.Respond(w, map[string]string{"message": "Account activated", "email": email})
 	}
@@ -174,7 +174,7 @@ func HandleUserResendVerification(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		core.LogAudit(db, c.Email, "verification_resent_by_admin", "user", id, email)
+		core.LogAudit(db, store.TenantID(c), c.Email, "verification_resent_by_admin", "user", id, email)
 
 		core.Respond(w, map[string]string{"message": "Verification email sent to " + email})
 	}
@@ -190,7 +190,7 @@ func HandleUserDelete(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if c := core.ClaimsFrom(r); c != nil {
-			core.LogAudit(db, c.Email, "user_deleted", "user", id, "hard deleted")
+			core.LogAudit(db, store.TenantID(c), c.Email, "user_deleted", "user", id, "hard deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

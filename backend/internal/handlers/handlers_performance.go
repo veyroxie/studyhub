@@ -16,6 +16,7 @@ func listPerformanceReviews(db *store.DB, c *core.Claims) []models.PerformanceRe
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC LIMIT 5000`, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "PerformanceReview")
 		return []models.PerformanceReview{}
 	}
 	defer rows.Close()
@@ -122,7 +123,7 @@ func HandleCreatePerformanceReview(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			core.LogAudit(db, c.Email, "performance_review_created", "performance_review", p.ID, "staff="+p.StaffID)
+			core.LogAudit(db, store.TenantID(c), c.Email, "performance_review_created", "performance_review", p.ID, "staff="+p.StaffID)
 		}
 		w.WriteHeader(http.StatusCreated)
 		core.Respond(w, p)
@@ -141,7 +142,7 @@ func HandleDeletePerformanceReview(db *store.DB) http.HandlerFunc {
 		args := append([]any{id}, twArgs...)
 		db.Exec(`UPDATE performance_reviews SET deleted_at=NOW() WHERE id=?`+tw, args...)
 		if c := core.ClaimsFrom(r); c != nil {
-			core.LogAudit(db, c.Email, "performance_review_deleted", "performance_review", id, "soft deleted")
+			core.LogAudit(db, store.TenantID(c), c.Email, "performance_review_deleted", "performance_review", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

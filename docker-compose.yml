@@ -5,6 +5,14 @@
 #   analytics — Python FastAPI microservice          (port 8001, internal only)
 #   postgres  — PostgreSQL 16                        (port 5432, internal)
 
+# Bounded container logs so json-file logs can't fill the droplet disk (which
+# would also take Postgres down). Applied to every service via the anchor.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
 
   # ── Go API ─────────────────────────────────────────────────────────────────
@@ -20,8 +28,11 @@ services:
       - ./backups:/app/backups
     environment:
       PORT: 8080
-      DATABASE_URL: ${DATABASE_URL:-postgres://studyhub:${POSTGRES_PASSWORD:-changeme}@postgres:5432/studyhub?sslmode=disable}
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      # Required secrets — compose refuses to start if unset/empty (":?"),
+      # so a missing .env fails loudly instead of silently running with a
+      # committed placeholder secret anyone could forge admin JWTs with.
+      DATABASE_URL: ${DATABASE_URL:-postgres://studyhub:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/studyhub?sslmode=disable}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (use a long random value, min 16 chars)}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:8080}
       APP_ENV: ${APP_ENV:-production}
       ANALYTICS_SERVICE_URL: http://analytics:8001
@@ -43,6 +54,7 @@ services:
       analytics:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
     deploy:
       resources:
         limits:
@@ -63,6 +75,7 @@ services:
       retries: 3
       start_period: 15s
     restart: unless-stopped
+    logging: *default-logging
     deploy:
       resources:
         limits:
@@ -75,7 +88,7 @@ services:
     environment:
       POSTGRES_DB: studyhub
       POSTGRES_USER: studyhub
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     # Tuned for a 512MB-768MB container on a small droplet. Defaults
     # (shared_buffers=128MB, work_mem=4MB) leave Postgres I/O-bound on
     # the snapshot endpoint; these settings give it real headroom for
@@ -101,6 +114,7 @@ services:
       retries: 5
       start_period: 10s
     restart: unless-stopped
+    logging: *default-logging
     deploy:
       resources:
         limits:

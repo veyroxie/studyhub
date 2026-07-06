@@ -42,6 +42,7 @@ func listSelfStudy(db *store.DB, c *core.Claims) []models.SelfStudySession {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC`, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "SelfStudySession")
 		return []models.SelfStudySession{}
 	}
 	defer rows.Close()
@@ -180,7 +181,7 @@ func HandleCreateSelfStudy(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			core.LogAudit(db, c.Email, "self_study_created", "self_study", s.ID, "student="+s.StudentID)
+			core.LogAudit(db, store.TenantID(c), c.Email, "self_study_created", "self_study", s.ID, "student="+s.StudentID)
 		}
 		// Notify the parent only for a live arrival — a session logged with a
 		// start but no end yet. A fully backfilled session (end already set) is
@@ -208,7 +209,7 @@ func HandleDeleteSelfStudy(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if c := core.ClaimsFrom(r); c != nil {
-			core.LogAudit(db, c.Email, "self_study_deleted", "self_study", id, "soft deleted")
+			core.LogAudit(db, store.TenantID(c), c.Email, "self_study_deleted", "self_study", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

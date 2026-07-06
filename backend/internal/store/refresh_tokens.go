@@ -110,7 +110,7 @@ func HandleRefresh(db *DB) http.HandlerFunc {
 		// indicator of theft. Burn down the entire family.
 		if usedAt != nil || revokedAt != nil {
 			db.Exec(`UPDATE refresh_tokens SET revoked_at=NOW() WHERE token_family=? AND revoked_at IS NULL`, family)
-			core.LogAudit(db, "system", "refresh_token_reused", "user", "", "family="+family+" — possible theft, family revoked")
+			core.LogAudit(db, tenantID, "system", "refresh_token_reused", "user", "", "family="+family+" — possible theft, family revoked")
 			core.RespondError(w, "session terminated — please sign in again", http.StatusUnauthorized)
 			return
 		}
@@ -153,6 +153,39 @@ func HandleRefresh(db *DB) http.HandlerFunc {
 	}
 }
 
+// ClearRefreshCookie overwrites the sh_refresh cookie with an expired value.
+// Must use the same Name/Path the cookie was set with, or the browser keeps
+// the original. Called on logout so the refresh cookie can't outlive the
+// session and mint fresh access tokens.
+func ClearRefreshCookie(w http.ResponseWriter, r *http.Request) {
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    "",
+		Path:     refreshCookiePath,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// RevokeRefreshByCookie revokes the family of whatever refresh token the
+// request currently carries. Used on logout, where we don't have the user id
+// in context (logout runs outside the JWT middleware). No-ops silently if
+// there is no cookie or the token is unknown.
+func RevokeRefreshByCookie(db *DB, r *http.Request) {
+	cookie, err := r.Cookie(refreshCookieName)
+	if err != nil || cookie.Value == "" {
+		return
+	}
+	sum := sha256.Sum256([]byte(cookie.Value))
+	hash := hex.EncodeToString(sum[:])
+	if _, err := db.Exec(`UPDATE refresh_tokens SET revoked_at=NOW() WHERE token_family=(SELECT token_family FROM refresh_tokens WHERE token_hash=?) AND revoked_at IS NULL`, hash); err != nil {
+		core.Logger.Error("revoke refresh by cookie failed", "err", err)
+	}
+}
+
 // revokeRefreshFamily marks every refresh token for a user as revoked.
 // Called from password change and admin suspension so a still-cached
 // refresh token can't mint new access tokens.
@@ -165,7 +198,9 @@ func RevokeRefreshFamilyByUser(db *DB, userID int, reason string) {
 		core.Logger.Error("revoke refresh family failed", "err", err, "user_id", userID)
 		return
 	}
-	core.LogAudit(db, "system", "refresh_family_revoked", "user", "", reason)
+	var tenantID int
+	db.QueryRow(`SELECT tenant_id FROM users WHERE id=?`, userID).Scan(&tenantID)
+	core.LogAudit(db, tenantID, "system", "refresh_family_revoked", "user", "", reason)
 }
 
 // purgeExpiredRefreshTokens runs alongside the email-token cleanup.

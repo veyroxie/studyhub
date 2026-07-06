@@ -30,6 +30,7 @@ func listParentEnrollments(db *store.DB, c *core.Claims) []models.Registration {
 	args := append([]any{c.Email}, twArgs...)
 	rows, err := db.Query(`SELECT id,parent_name,email,COALESCE(student_first_name,''),COALESCE(student_last_name,''),submitted_on,status,COALESCE(type,'enrollment') FROM registrations WHERE email=? AND type='enrollment'`+tw+` ORDER BY submitted_on DESC`, args...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Registration")
 		return []models.Registration{}
 	}
 	defer rows.Close()
@@ -48,6 +49,7 @@ func listRegistrations(db *store.DB, c *core.Claims) []models.Registration {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,parent_name,email,phone,COALESCE(emergency_name,''),COALESCE(emergency_phone,''),COALESCE(student_first_name,''),COALESCE(student_last_name,''),COALESCE(student_dob,''),COALESCE(student_gender,''),COALESCE(gender,''),COALESCE(school_name,''),COALESCE(year_grade,''),COALESCE(class_type_interest,''),COALESCE(subject_interest,''),COALESCE(school_fees,0),COALESCE(registration_date,''),COALESCE(workshop_interest,''),COALESCE(class_interest,''),COALESCE(notes,''),submitted_on,status,COALESCE(type,'student'),COALESCE(specialization,''),COALESCE(nric,''),COALESCE(display_name,''),COALESCE(employment_type,'Full-time'),COALESCE(experience,''),COALESCE(qualifications,''),COALESCE(bio,''),COALESCE(schedule,''),COALESCE(expected_salary,''),COALESCE(referral_code,''),COALESCE(email_verified_at::text,'') FROM registrations WHERE status='pending'`+tw+` ORDER BY submitted_on DESC`, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Registration")
 		return []models.Registration{}
 	}
 	defer rows.Close()
@@ -185,7 +187,7 @@ func HandleRegister(db *store.DB) http.HandlerFunc {
 			core.LogFromReq(r).Error("parent verify mail send failed", "err", err, "email", email)
 		}
 
-		core.LogAudit(db, email, "parent_self_registered", "user", fmt.Sprintf("%d", userID), "family_id="+famID)
+		core.LogAudit(db, store.TenantOfUser(db, userID), email, "parent_self_registered", "user", fmt.Sprintf("%d", userID), "family_id="+famID)
 
 		w.WriteHeader(http.StatusCreated)
 		core.Respond(w, map[string]string{
@@ -258,6 +260,30 @@ func HandleRegistrationApprove(db *store.DB) http.HandlerFunc {
 			pendingTeacherName   string
 			pendingTeacherUserID int64
 		)
+		// Enrollment-approved email values, sent only after a successful commit
+		// (see teacher branch). Empty enrollEmail means "no email to send".
+		var (
+			enrollEmail       string
+			enrollParentName  string
+			enrollStudentName string
+			enrollClassHTML   string
+		)
+
+		// Atomically claim the registration: flip pending→approved up front so a
+		// double-click / retry / replay finds zero rows and aborts before any
+		// student, class-enrollment, or staff side effects run. This is the
+		// idempotency gate — without it, approving twice creates duplicate
+		// students and double-bumps class counts.
+		claimArgs := append([]any{id}, regTwArgs...)
+		claimRes, err := tx.Exec(`UPDATE registrations SET status='approved' WHERE id=?`+regTw+` AND status='pending'`, claimArgs...)
+		if err != nil {
+			core.RespondError(w, "could not update registration status", 500)
+			return
+		}
+		if n, _ := claimRes.RowsAffected(); n == 0 {
+			core.RespondError(w, "registration is not pending (already processed?)", http.StatusConflict)
+			return
+		}
 
 		if reg.Type == "enrollment" {
 			// Enrollment request: the parent already has a user + family.
@@ -326,7 +352,7 @@ func HandleRegistrationApprove(db *store.DB) http.HandlerFunc {
 						core.GenerateID("REF"), tid, referrerFamID, stuID); err == nil {
 						stuUpdArgs := append([]any{referrerFamID, stuID}, clsTwArgs...)
 						tx.Exec(`UPDATE students SET referred_by_family_id=? WHERE id=?`+clsTw, stuUpdArgs...)
-						core.LogAudit(tx, c.Email, "referral_validated", "student", stuID, "code="+code+" referrer="+referrerFamID)
+						core.LogAudit(tx, store.TenantID(c), c.Email, "referral_validated", "student", stuID, "code="+code+" referrer="+referrerFamID)
 					}
 				}
 			}
@@ -352,19 +378,12 @@ func HandleRegistrationApprove(db *store.DB) http.HandlerFunc {
 				classListHTML += `</ul>`
 			}
 
-			// Defer enrollment-approved email until after commit.
-			enrollEmail := strings.ToLower(strings.TrimSpace(reg.Email))
-			enrollParentName := reg.ParentName
-			enrollStudentName := reg.StudentFirstName + " " + reg.StudentLastName
-			enrollClassHTML := classListHTML
-			defer func() {
-				go func() {
-					if err := core.SendEmail(enrollEmail, mailer.SafeName(enrollStudentName)+" has been enrolled at The Study Hub",
-						mailer.RenderEnrollmentApprovedEmail(enrollParentName, enrollStudentName, enrollClassHTML)); err != nil {
-						core.Logger.Error("enrollment approved email failed", "err", err, "email", enrollEmail)
-					}
-				}()
-			}()
+			// Stash enrollment-approved email values; sent after commit so a
+			// rolled-back approval never emails "X has been enrolled".
+			enrollEmail = strings.ToLower(strings.TrimSpace(reg.Email))
+			enrollParentName = reg.ParentName
+			enrollStudentName = reg.StudentFirstName + " " + reg.StudentLastName
+			enrollClassHTML = classListHTML
 		} else if reg.Type == "teacher" {
 			// Teacher approval: create staff + user records, then email a
 			// "set your password" link instead of the legacy temp password.
@@ -486,14 +505,14 @@ func HandleRegistrationApprove(db *store.DB) http.HandlerFunc {
 						core.GenerateID("REF"), tid, referrerFamID, stuID); err == nil {
 						stuRefArgs := append([]any{referrerFamID, stuID}, refTwArgs...)
 						tx.Exec(`UPDATE students SET referred_by_family_id=? WHERE id=?`+refTw, stuRefArgs...)
-						core.LogAudit(tx, c.Email, "referral_validated", "student", stuID, "code="+code+" referrer="+referrerFamID)
+						core.LogAudit(tx, store.TenantID(c), c.Email, "referral_validated", "student", stuID, "code="+code+" referrer="+referrerFamID)
 					}
 				} else {
 					reason := "code_not_found"
 					if referrerFamID == famID {
 						reason = "self_referral"
 					}
-					core.LogAudit(tx, c.Email, "referral_rejected", "student", stuID, "code="+code+" reason="+reason)
+					core.LogAudit(tx, store.TenantID(c), c.Email, "referral_rejected", "student", stuID, "code="+code+" reason="+reason)
 				}
 			}
 
@@ -513,16 +532,22 @@ func HandleRegistrationApprove(db *store.DB) http.HandlerFunc {
 			}
 		}
 
-		// Mark registration approved (tenant-scoped — same tw/args computed above).
-		regUpdArgs := append([]any{id}, regTwArgs...)
-		if _, err := tx.Exec(`UPDATE registrations SET status='approved' WHERE id=?`+regTw, regUpdArgs...); err != nil {
-			core.RespondError(w, "could not update registration status", 500)
-			return
-		}
-
+		// Registration was already flipped pending→approved atomically at the
+		// top of the transaction (the idempotency gate).
 		if err := tx.Commit(); err != nil {
 			core.RespondError(w, "server error", 500)
 			return
+		}
+
+		// Post-commit: enrollment-approved email. Fired only now so a rolled-back
+		// approval can never tell a parent their child was enrolled.
+		if enrollEmail != "" {
+			go func() {
+				if err := core.SendEmail(enrollEmail, mailer.SafeName(enrollStudentName)+" has been enrolled at The Study Hub",
+					mailer.RenderEnrollmentApprovedEmail(enrollParentName, enrollStudentName, enrollClassHTML)); err != nil {
+					core.Logger.Error("enrollment approved email failed", "err", err, "email", enrollEmail)
+				}
+			}()
 		}
 
 		// Post-commit: if we just approved a teacher, mint a set-password
@@ -542,7 +567,7 @@ func HandleRegistrationApprove(db *store.DB) http.HandlerFunc {
 					l.Info("teacher approved, set-password email sent")
 				}
 			}
-			core.LogAudit(db, c.Email, "teacher_approved", "user", fmt.Sprintf("%d", pendingTeacherUserID), pendingTeacherEmail)
+			core.LogAudit(db, store.TenantID(c), c.Email, "teacher_approved", "user", fmt.Sprintf("%d", pendingTeacherUserID), pendingTeacherEmail)
 		}
 
 		core.Respond(w, responseData)
@@ -621,7 +646,7 @@ func HandleEnrollmentRequest(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		core.LogAudit(db, c.Email, "enrollment_requested", "registration", id, req.StudentFirstName+" "+req.StudentLastName)
+		core.LogAudit(db, store.TenantID(c), c.Email, "enrollment_requested", "registration", id, req.StudentFirstName+" "+req.StudentLastName)
 
 		// Validate referral code at submission time. We DON'T block the
 		// enrollment if the code is invalid — we just include a warning so
@@ -671,7 +696,7 @@ func HandleRegistrationReject(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if c := core.ClaimsFrom(r); c != nil {
-			core.LogAudit(db, c.Email, "registration_rejected", "registration", id, "")
+			core.LogAudit(db, store.TenantID(c), c.Email, "registration_rejected", "registration", id, "")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -742,7 +767,7 @@ func HandleRegisterTeacher(db *store.DB) http.HandlerFunc {
 			l.Error("teacher register token create failed", "err", terr)
 		}
 
-		core.LogAudit(db, email, "teacher_self_registered", "registration", id, reg.FullName)
+		core.LogAudit(db, store.TenantOfRegistration(db, id), email, "teacher_self_registered", "registration", id, reg.FullName)
 
 		w.WriteHeader(http.StatusCreated)
 		core.Respond(w, map[string]string{

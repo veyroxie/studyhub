@@ -44,7 +44,7 @@ func HandleAdminUnlockUser(db *store.DB) http.HandlerFunc {
 			return
 		}
 		auth.InvalidateUserStatusCache(parseInt(id))
-		core.LogAudit(db, c.Email, "user_unlocked", "user", id, email)
+		core.LogAudit(db, store.TenantID(c), c.Email, "user_unlocked", "user", id, email)
 		core.Respond(w, map[string]string{"status": "unlocked", "email": email})
 	}
 }

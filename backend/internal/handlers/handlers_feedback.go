@@ -16,6 +16,7 @@ func listFeedback(db *store.DB, c *core.Claims) []models.Feedback {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,class_id,date,teacher_id,topic,mood,notes,student_notes FROM feedback WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC`, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Feedback")
 		return []models.Feedback{}
 	}
 	defer rows.Close()
@@ -261,7 +262,7 @@ func HandleCreateFeedback(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			core.LogAudit(db, c.Email, "feedback_created", "feedback", f.ID, "class="+f.ClassID)
+			core.LogAudit(db, store.TenantID(c), c.Email, "feedback_created", "feedback", f.ID, "class="+f.ClassID)
 		}
 		w.WriteHeader(http.StatusCreated)
 		core.Respond(w, f)
@@ -314,7 +315,7 @@ func HandleUpdateFeedback(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if c != nil {
-			core.LogAudit(db, c.Email, "feedback_updated", "feedback", id, "")
+			core.LogAudit(db, store.TenantID(c), c.Email, "feedback_updated", "feedback", id, "")
 		}
 		core.Respond(w, f)
 	}
@@ -348,7 +349,7 @@ func HandleDeleteFeedback(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if c := core.ClaimsFrom(r); c != nil {
-			core.LogAudit(db, c.Email, "feedback_deleted", "feedback", id, "soft deleted")
+			core.LogAudit(db, store.TenantID(c), c.Email, "feedback_deleted", "feedback", id, "soft deleted")
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -368,6 +369,7 @@ func listFeedbackReplies(db *store.DB, c *core.Claims) []models.FeedbackReply {
 	      WHERE f.deleted_at IS NULL` + tw
 	rows, err := db.Query(q+` ORDER BY fr.created_at DESC`, twArgs...)
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "FeedbackReply")
 		return []models.FeedbackReply{}
 	}
 	defer rows.Close()

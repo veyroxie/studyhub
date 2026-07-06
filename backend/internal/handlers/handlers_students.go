@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"studyhub/internal/auth"
 	"studyhub/internal/core"
@@ -70,6 +72,7 @@ func listStudents(db *store.DB, c *core.Claims) []models.Student {
 		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at,COALESCE(dropin_self_study,false) FROM students WHERE deleted_at IS NULL`+tw+` ORDER BY registered_on`, twArgs...)
 	}
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Student")
 		return []models.Student{}
 	}
 	defer rows.Close()
@@ -154,6 +157,7 @@ func listStudentsPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]model
 		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at,COALESCE(dropin_self_study,false) FROM students WHERE deleted_at IS NULL`+tw+` ORDER BY registered_on LIMIT ? OFFSET ?`, pageArgs...)
 	}
 	if err != nil {
+		core.Logger.Error("list query failed", "err", err, "type", "Student")
 		return []models.Student{}, total
 	}
 	defer rows.Close()
@@ -291,29 +295,42 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 			oldArgs := append([]any{id}, twArgs...)
 			db.QueryRow(`SELECT COALESCE(family_id,''), COALESCE(enrolled_classes,'[]') FROM students WHERE id=?`+tw, oldArgs...).Scan(&oldFamilyID, &oldEnrolledRaw)
 			oldEnrolled := models.ParseArr(oldEnrolledRaw)
-			// Capacity gate: any class the student is being ADDED to must
-			// still have room. Existing enrolments are not re-checked.
+			// Classes the student is being ADDED to (existing enrolments keep
+			// their seat and aren't re-checked).
 			oldSet := map[string]bool{}
 			for _, c := range oldEnrolled {
 				oldSet[c] = true
 			}
+			var addedClasses []string
 			for _, cid := range s.EnrolledClasses {
-				if oldSet[cid] {
-					continue
+				if !oldSet[cid] {
+					addedClasses = append(addedClasses, cid)
 				}
-				var enrolled, capacity int
-				capArgs := append([]any{cid}, twArgs...)
-				if err := db.QueryRow(`SELECT COALESCE(enrolled,0), COALESCE(capacity,0) FROM classes WHERE id=? AND deleted_at IS NULL`+tw, capArgs...).Scan(&enrolled, &capacity); err != nil {
-					core.RespondError(w, "class not found: "+cid, http.StatusBadRequest)
-					return
-				}
-				if capacity > 0 && enrolled >= capacity {
-					core.RespondError(w, "class is full: "+cid, http.StatusConflict)
+			}
+			sort.Strings(addedClasses) // deterministic lock order → no deadlock
+
+			// Capacity gate must be atomic with the write: enrolled is derived
+			// from COUNT(students), so a plain read-then-check lets two
+			// concurrent adds both pass on the last seat. Run check + update +
+			// recount in one tx, serialised per class by an advisory xact lock,
+			// and re-validate against the recomputed count.
+			tid := store.TenantID(c)
+			tx, err := db.BeginTx(r.Context())
+			if err != nil {
+				core.RespondError(w, "server error", 500)
+				return
+			}
+			defer tx.Rollback()
+			for _, cid := range addedClasses {
+				lockKey := core.AdvisoryLockKey(strconv.Itoa(tid) + "|cls|" + cid)
+				if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, lockKey); err != nil {
+					core.RespondError(w, "server error", 500)
 					return
 				}
 			}
+
 			args := append([]any{s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, models.JSONArr(s.EnrolledClasses), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.DropinSelfStudy, id}, twArgs...)
-			res, err := db.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=?,dropin_self_study=? WHERE id=?`+tw, args...)
+			res, err := tx.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=?,dropin_self_study=? WHERE id=?`+tw, args...)
 			if err != nil {
 				core.RespondError(w, "could not update student", 500)
 				return
@@ -322,12 +339,33 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "student not found", http.StatusNotFound)
 				return
 			}
+			// Recount the affected classes inside the tx, then confirm no newly
+			// added class overflowed. A concurrent add is blocked on the same
+			// advisory lock until we commit, so it sees this student in its own
+			// recount and gets rejected instead of overfilling.
+			recomputeClassEnrollment(tx, c, append(append([]string{}, oldEnrolled...), s.EnrolledClasses...))
+			for _, cid := range addedClasses {
+				var enrolled, capacity int
+				capArgs := append([]any{cid}, twArgs...)
+				if err := tx.QueryRow(`SELECT COALESCE(enrolled,0), COALESCE(capacity,0) FROM classes WHERE id=? AND deleted_at IS NULL`+tw, capArgs...).Scan(&enrolled, &capacity); err != nil {
+					core.RespondError(w, "class not found: "+cid, http.StatusBadRequest)
+					return
+				}
+				if capacity > 0 && enrolled > capacity {
+					core.RespondError(w, "class is full: "+cid, http.StatusConflict)
+					return
+				}
+			}
+			if err := tx.Commit(); err != nil {
+				core.RespondError(w, "server error", 500)
+				return
+			}
+
 			recomputeFamilySiblings(db, c, s.FamilyID)
 			if oldFamilyID != "" && oldFamilyID != s.FamilyID {
 				recomputeFamilySiblings(db, c, oldFamilyID)
 			}
-			recomputeClassEnrollment(db, c, append(append([]string{}, oldEnrolled...), s.EnrolledClasses...))
-			core.LogAudit(db, c.Email, "student_updated", "student", id, s.FirstName+" "+s.LastName)
+			core.LogAudit(db, tid, c.Email, "student_updated", "student", id, s.FirstName+" "+s.LastName)
 			core.Respond(w, s)
 		case http.MethodDelete:
 			tw, twArgs := store.ScopeTenant(c, "")
@@ -349,7 +387,7 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 			}
 			recomputeClassEnrollment(db, c, classIDs)
 			recomputeFamilySiblings(db, c, famID)
-			core.LogAudit(db, c.Email, "student_deleted", "student", id, "soft deleted")
+			core.LogAudit(db, store.TenantID(c), c.Email, "student_deleted", "student", id, "soft deleted")
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}
@@ -401,7 +439,7 @@ func HandleStudentSubscription(db *store.DB) http.HandlerFunc {
 				return
 			}
 		}
-		core.LogAudit(db, c.Email, "subscription_"+body.Action, "student", id, newStatus)
+		core.LogAudit(db, store.TenantID(c), c.Email, "subscription_"+body.Action, "student", id, newStatus)
 		core.Respond(w, map[string]string{"subscriptionStatus": newStatus})
 	}
 }
@@ -447,7 +485,7 @@ func ensureParentUserAccount(db *store.DB, r *http.Request, tid int, contact, pa
 			core.Logger.Error("parent welcome email failed", "err", err, "email", contact)
 		}
 	}()
-	core.LogAudit(db, "system", "parent_user_created", "user", fmt.Sprintf("%d", userID), "via add-student")
+	core.LogAudit(db, tid, "system", "parent_user_created", "user", fmt.Sprintf("%d", userID), "via add-student")
 }
 
 // recomputeClassEnrollment recounts students enrolled in each given class and
@@ -456,7 +494,16 @@ func ensureParentUserAccount(db *store.DB, r *http.Request, tid int, contact, pa
 // callers that mutate enrolled_classes should call this with the union of old
 // and new class IDs. Tenant-scoped so cross-tenant id collisions can't taint
 // the count.
-func recomputeClassEnrollment(db *store.DB, c *core.Claims, classIDs []string) {
+// classDB is the subset of *store.DB / *store.Tx the recompute helpers need, so
+// they can run either directly on the pool or inside a caller's transaction
+// (used by the student-edit capacity gate to keep check+update+recount atomic).
+type classDB interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+func recomputeClassEnrollment(db classDB, c *core.Claims, classIDs []string) {
 	if len(classIDs) == 0 {
 		return
 	}
@@ -489,7 +536,7 @@ func recomputeClassEnrollment(db *store.DB, c *core.Claims, classIDs []string) {
 // membership (POST student, PUT student, relink) calls this to keep the JSON
 // in lockstep with family_id. Without it the siblings column drifted whenever
 // a new kid joined a family. Empty familyID is a no-op.
-func recomputeFamilySiblings(db *store.DB, c *core.Claims, familyID string) {
+func recomputeFamilySiblings(db classDB, c *core.Claims, familyID string) {
 	if familyID == "" {
 		return
 	}
@@ -621,7 +668,7 @@ func HandleStudentRelink(db *store.DB) http.HandlerFunc {
 		if req.Contact == "" {
 			detail = oldContact + " -> (unlinked)"
 		}
-		core.LogAudit(db, c.Email, "student_relinked", "student", id, detail)
+		core.LogAudit(db, store.TenantID(c), c.Email, "student_relinked", "student", id, detail)
 
 		var familyName string
 		if famID != "" {
@@ -690,7 +737,7 @@ func HandleStudentNote(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "student not found", 404)
 			return
 		}
-		core.LogAudit(db, c.Email, "student_note_added", "student", id, note)
+		core.LogAudit(db, store.TenantID(c), c.Email, "student_note_added", "student", id, note)
 		core.Respond(w, map[string]any{"ok": true})
 	}
 }
