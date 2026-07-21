@@ -1,15 +1,15 @@
 module studyhub
 
-go 1.24.0
+go 1.25.12
 
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/boombuler/barcode v1.0.2
 	github.com/go-chi/chi/v5 v5.0.11
 	github.com/go-chi/cors v1.2.1
-	github.com/golang-jwt/jwt/v5 v5.2.1
+	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/gorilla/websocket v1.5.1
-	github.com/jackc/pgx/v5 v5.8.0
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/joho/godotenv v1.5.1
 	github.com/jung-kurt/gofpdf v1.16.2
 	golang.org/x/crypto v0.41.0
