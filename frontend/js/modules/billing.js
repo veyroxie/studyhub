@@ -454,9 +454,28 @@
 
   function _toggleMenu(event, id) {
     event.stopPropagation();
-    document.querySelectorAll('.inv-menu').forEach(function(m) { m.classList.add('hidden'); });
     const menu = document.getElementById('inv-menu-' + id);
-    if (menu) menu.classList.remove('hidden');
+    const wasOpen = menu && !menu.classList.contains('hidden');
+    document.querySelectorAll('.inv-menu').forEach(function(m) { m.classList.add('hidden'); });
+    if (!menu || wasOpen) return; // second click on the same button closes it
+    menu.classList.remove('hidden');
+    // The row's ⋮ menu is absolutely positioned inside a `.overflow-x-auto`
+    // table wrapper, which clips it vertically — so lower items (Download,
+    // Delete) got cut off. Re-anchor it as `fixed` at the button so it
+    // escapes the clip, and flip it upward when it would run past the
+    // viewport bottom.
+    const r = event.currentTarget.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.right = 'auto';
+    const mw = menu.offsetWidth || 160;
+    const mh = menu.offsetHeight || 0;
+    let left = r.right - mw;
+    if (left < 8) left = 8;
+    let top = r.bottom + 4;
+    if (top + mh > window.innerHeight - 8) top = r.top - mh - 4;
+    if (top < 8) top = 8;
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
   }
 
   function _markPaidModal(invId) {
