@@ -212,8 +212,13 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 				}
 			}
 
-			args := append([]any{cl.Name, models.JSONArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Enrolled, cl.Color, cl.Category, cl.ClassType, cl.LevelBand, id}, twArgs...)
-			res, err := db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,enrolled=?,color=?,category=?,class_type=?,level_band=? WHERE id=?`+tw, args...)
+			// NOTE: `enrolled` is deliberately NOT updated here. It is a derived
+			// count maintained only by the authoritative recompute paths
+			// (student add/edit/delete, registration approve). Trusting the
+			// client-supplied cl.Enrolled here let a class edit silently
+			// overwrite the true count, drifting capacity enforcement.
+			args := append([]any{cl.Name, models.JSONArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Color, cl.Category, cl.ClassType, cl.LevelBand, id}, twArgs...)
+			res, err := db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,color=?,category=?,class_type=?,level_band=? WHERE id=?`+tw, args...)
 			if err != nil {
 				core.RespondError(w, "could not update class", 500)
 				return

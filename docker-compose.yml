@@ -28,6 +28,9 @@ services:
       - ./backups:/app/backups
     environment:
       PORT: 8080
+      # Business runs in Malaysia (UTC+8). Without this the container is UTC and
+      # dates near midnight (attendance, invoices, early-bird cutoff) are wrong.
+      TZ: ${TZ:-Asia/Kuala_Lumpur}
       # Required secrets — compose refuses to start if unset/empty (":?"),
       # so a missing .env fails loudly instead of silently running with a
       # committed placeholder secret anyone could forge admin JWTs with.

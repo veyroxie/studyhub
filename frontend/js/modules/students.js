@@ -1098,7 +1098,14 @@
   // instead of showing a blank field.
   function _contactPhone(s) {
     if (s.phone) return s.phone;
-    var fam = (App.Store.get().families || []).find(function(x) { return x.id === s.familyId; });
+    var fams = App.Store.get().families || [];
+    var fam = fams.find(function(x) { return x.id === s.familyId; });
+    if (!fam && s.contact) {
+      // family_id may be blank (admin-added students); fall back to matching
+      // the family by the parent's email, which is always set.
+      var c = (s.contact || '').toLowerCase();
+      fam = fams.find(function(x) { return (x.contact || '').toLowerCase() === c; });
+    }
     return (fam && fam.phone) || '';
   }
   function _infoRow(label, value) {

@@ -46,7 +46,10 @@ RUN find js -name '*.js' -type f -exec \
 # Tailwind (the bulk of CSS) is already minified separately.
 
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates postgresql16-client bash s3cmd && \
+# tzdata is required so the app can resolve TZ=Asia/Kuala_Lumpur — without it
+# the binary falls back to UTC and every date (attendance, invoice createdOn,
+# early-bird day-of-month) is wrong for the 00:00–08:00 MYT window.
+RUN apk add --no-cache ca-certificates tzdata postgresql16-client bash s3cmd && \
     addgroup -g 1000 studyhub && adduser -D -u 1000 -G studyhub studyhub
 WORKDIR /app
 COPY --from=builder /app/studyhub .

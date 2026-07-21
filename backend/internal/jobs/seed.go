@@ -215,5 +215,14 @@ func SeedIfEmpty(db *store.DB) {
 		db.Exec(`INSERT INTO workshops(id,name,description,date,time,end_time,classroom,capacity,enrolled,fee,teacher_ids,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, w...)
 	}
 
+	// The hardcoded class enrolled counts above don't necessarily match the
+	// seeded students' enrolled_classes. Recompute so a fresh/demo instance
+	// starts with accurate counters (same authoritative source as migration
+	// 0028 and the app's recompute paths).
+	db.Exec(`UPDATE classes c SET enrolled = (
+		SELECT count(*) FROM students s
+		WHERE s.deleted_at IS NULL AND s.enrolled_classes LIKE '%"' || c.id || '"%'
+	) WHERE c.deleted_at IS NULL`)
+
 	log.Println("Seed complete.")
 }
