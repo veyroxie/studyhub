@@ -460,19 +460,23 @@
     if (!menu || wasOpen) return; // second click on the same button closes it
     menu.classList.remove('hidden');
     // The row's ⋮ menu is absolutely positioned inside a `.overflow-x-auto`
-    // table wrapper, which clips it vertically — so lower items (Download,
-    // Delete) got cut off. Re-anchor it as `fixed` at the button so it
-    // escapes the clip, and flip it upward when it would run past the
-    // viewport bottom.
+    // table wrapper (clips it vertically) AND the theme-B bottom dock is a
+    // fixed bar with z-index:50. So for bottom rows the menu was both clipped
+    // and rendered *under* the dock — the "actions get blocked" bug. Re-anchor
+    // it as `fixed` at the button (escapes the clip), lift it above the dock
+    // (z-index), and flip it upward when it would collide with the dock zone.
+    const DOCK_RESERVE = 96; // ~5.5rem dock area at the viewport bottom
     const r = event.currentTarget.getBoundingClientRect();
     menu.style.position = 'fixed';
     menu.style.right = 'auto';
+    menu.style.zIndex = '60'; // above #bottom-dock (z-index:50)
     const mw = menu.offsetWidth || 160;
     const mh = menu.offsetHeight || 0;
     let left = r.right - mw;
     if (left < 8) left = 8;
     let top = r.bottom + 4;
-    if (top + mh > window.innerHeight - 8) top = r.top - mh - 4;
+    // Flip above the button if opening downward would reach the dock zone.
+    if (top + mh > window.innerHeight - DOCK_RESERVE) top = r.top - mh - 4;
     if (top < 8) top = 8;
     menu.style.left = left + 'px';
     menu.style.top = top + 'px';

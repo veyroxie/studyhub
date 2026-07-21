@@ -459,7 +459,7 @@
       +   _infoRow('Gender', App.Utils.esc(s.gender))
       +   (isTeacher ? '' : _infoRow('Parent / Guardian', App.Utils.esc(s.parentName)))
       +   (isTeacher ? '' : _infoRow('Email', App.Utils.esc(s.contact)))
-      +   (isTeacher ? '' : _infoRow('Phone', App.Utils.esc(s.phone)))
+      +   (isTeacher ? '' : _infoRow('Phone', App.Utils.esc(_contactPhone(s))))
       +   _infoRow('Branch', App.Utils.esc(s.branch))
       +   (isTeacher ? '' : (function() {
             var fam = (App.Store.get().families || []).find(function(x) { return x.id === s.familyId; });
@@ -671,7 +671,7 @@
       + _field('Parent / Guardian Name', '<input name="parentName" class="form-input" value="' + App.Utils.esc(s.parentName) + '">')
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Parent Email', '<input name="contact" type="email" class="form-input" value="' + App.Utils.esc(s.contact) + '">')
-      + _field('Phone', '<input name="phone" class="form-input" value="' + App.Utils.esc(s.phone||'') + '">')
+      + _field('Phone', '<input name="phone" class="form-input" value="' + App.Utils.esc(_contactPhone(s)) + '">')
       + '</div>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Status</label>'
       + '<select name="status" class="form-input">'
@@ -1091,6 +1091,16 @@
     });
   }
 
+  // _contactPhone resolves the phone shown for a student. Students added via
+  // the "existing parent enrols a child" flow are saved with an empty
+  // students.phone — the registered contact number lives on the family record.
+  // Fall back to the family's phone so the number is visible and editable
+  // instead of showing a blank field.
+  function _contactPhone(s) {
+    if (s.phone) return s.phone;
+    var fam = (App.Store.get().families || []).find(function(x) { return x.id === s.familyId; });
+    return (fam && fam.phone) || '';
+  }
   function _infoRow(label, value) {
     return '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-0.5">' + label + '</div><div class="font-medium text-slate-700">' + value + '</div></div>';
   }
