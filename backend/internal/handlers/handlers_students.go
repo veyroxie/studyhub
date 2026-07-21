@@ -339,6 +339,18 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "student not found", http.StatusNotFound)
 				return
 			}
+			// Keep the contact number consistent: the registered phone lives on
+			// the family record (shared by siblings, shown in the family view),
+			// while the student form edits students.phone. Propagate a non-empty
+			// phone to the family so editing the number here updates it
+			// everywhere instead of diverging from the source of truth.
+			if s.FamilyID != "" && strings.TrimSpace(s.Phone) != "" {
+				famPhoneArgs := append([]any{s.Phone, s.FamilyID}, twArgs...)
+				if _, err := tx.Exec(`UPDATE families SET phone=? WHERE id=?`+tw+` AND deleted_at IS NULL`, famPhoneArgs...); err != nil {
+					core.RespondError(w, "could not update family contact", 500)
+					return
+				}
+			}
 			// Recount the affected classes inside the tx, then confirm no newly
 			// added class overflowed. A concurrent add is blocked on the same
 			// advisory lock until we commit, so it sees this student in its own
