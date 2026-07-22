@@ -438,11 +438,14 @@
       +     '<h2 class="text-xl font-bold text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName) + subChip + '</h2>'
       +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.statusBadge(s.status) + '<span class="text-xs text-slate-400">' + s.id + '</span></div>'
       +   '</div>'
-      +   (isAdmin ? '<div style="margin-left:auto;text-align:right">'
-      +     '<div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem">Auto-bill</div>'
-      +     '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;font-size:0.72rem;font-weight:700">'
-      +       '<button onclick="App.Students._activateStudent(\'' + studentId + '\')" style="padding:0.32rem 0.72rem;border:none;cursor:pointer;background:' + (subStatus === 'active' ? '#22c55e' : '#fff') + ';color:' + (subStatus === 'active' ? '#fff' : '#64748b') + '">On</button>'
-      +       '<button onclick="App.Students._deactivateStudent(\'' + studentId + '\')" style="padding:0.32rem 0.72rem;border:none;border-left:1px solid #e2e8f0;cursor:pointer;background:' + (subStatus !== 'active' ? '#f59e0b' : '#fff') + ';color:' + (subStatus !== 'active' ? '#fff' : '#64748b') + '">Off</button>'
+      +   (isAdmin ? '<div style="margin-left:auto;display:flex;gap:1rem;align-items:center">'
+      +     '<button onclick="App.Students._toggleInlineEdit(\'' + studentId + '\')" id="inline-edit-btn" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Edit</button>'
+      +     '<div style="text-align:right">'
+      +       '<div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem">Auto-bill</div>'
+      +       '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;font-size:0.72rem;font-weight:700">'
+      +         '<button onclick="App.Students._activateStudent(\'' + studentId + '\')" style="padding:0.32rem 0.72rem;border:none;cursor:pointer;background:' + (subStatus === 'active' ? '#22c55e' : '#fff') + ';color:' + (subStatus === 'active' ? '#fff' : '#64748b') + '">On</button>'
+      +         '<button onclick="App.Students._deactivateStudent(\'' + studentId + '\')" style="padding:0.32rem 0.72rem;border:none;border-left:1px solid #e2e8f0;cursor:pointer;background:' + (subStatus !== 'active' ? '#f59e0b' : '#fff') + ';color:' + (subStatus !== 'active' ? '#fff' : '#64748b') + '">Off</button>'
+      +       '</div>'
       +     '</div>'
       +   '</div>' : '')
       + '</div>'
@@ -644,7 +647,7 @@
 
       + '<div class="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-4">'
       + '<button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Close</button>'
-      + (isAdmin ? '<button onclick="App.Students._editModal(\'' + studentId + '\')" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Edit Student</button>' : '')
+      + (isAdmin ? '<button onclick="App.Students._toggleInlineEdit(\'' + studentId + '\')" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Edit Student</button>' : '')
       + '</div>'
       + '</div>'
     );
@@ -1113,6 +1116,100 @@
   }
   function _field(label, inputHtml) {
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
+  }
+
+  // ── Inline edit (view modal) ───────────────────────────────────────────────
+  // Same card layout as the read-only _infoRow, but the value is an editable
+  // control. Lets the Details tab flip to edit-in-place without a separate,
+  // differently-formatted edit modal.
+  function _editRow(label, inputHtml) {
+    return '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">' + App.Utils.esc(label) + '</div>' + inputHtml + '</div>';
+  }
+  function _ei(name, value, type) {
+    return '<input name="' + name + '" type="' + (type || 'text') + '" value="' + App.Utils.esc(value == null ? '' : String(value)) + '" class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm font-medium text-slate-700 focus:border-blue-500 focus:outline-none">';
+  }
+  function _es(name, value, opts) {
+    var options = opts.map(function(o) { return '<option' + (value === o ? ' selected' : '') + '>' + o + '</option>'; }).join('');
+    return '<select name="' + name + '" class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm font-medium text-slate-700 focus:border-blue-500 focus:outline-none">' + options + '</select>';
+  }
+  function _eta(name, value) {
+    return '<textarea name="' + name + '" rows="2" class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm text-slate-700 focus:border-blue-500 focus:outline-none">' + App.Utils.esc(value || '') + '</textarea>';
+  }
+
+  // _toggleInlineEdit swaps the Details tab into editable fields in place. The
+  // header Edit button is hidden while editing; Cancel re-opens the read-only
+  // view. Classes/billing keep their own dedicated actions and are untouched.
+  function _toggleInlineEdit(studentId) {
+    var s = App.Store.get().students.find(function(x) { return x.id === studentId; });
+    if (!s) return;
+    _switchTab('details');
+    var panel = document.getElementById('tab-panel-details');
+    if (!panel) return;
+    var editBtn = document.getElementById('inline-edit-btn');
+    if (editBtn) editBtn.style.display = 'none';
+    panel.innerHTML =
+      '<form id="inline-edit-form">'
+      + '<div class="grid grid-cols-2 gap-3 text-sm">'
+      +   _editRow('First Name', _ei('firstName', s.firstName))
+      +   _editRow('Last Name', _ei('lastName', s.lastName))
+      +   _editRow('Date of Birth', _ei('dob', s.dob, 'date'))
+      +   _editRow('Gender', _es('gender', s.gender, ['Male', 'Female']))
+      +   _editRow('Parent / Guardian', _ei('parentName', s.parentName))
+      +   _editRow('Email', _ei('contact', s.contact, 'email'))
+      +   _editRow('Phone', _ei('phone', _contactPhone(s)))
+      +   _editRow('Status', _es('status', s.status, ['Active', 'Inactive', 'New', 'Waitlisted']))
+      +   _editRow('Emergency Name', _ei('emergency2Name', s.emergency2Name || ''))
+      +   _editRow('Emergency Phone', _ei('emergency2Phone', s.emergency2Phone || ''))
+      + '</div>'
+      + '<div class="grid grid-cols-1 gap-3 text-sm mt-3">'
+      +   _editRow('Medical Conditions', _eta('medicalInfo', s.medicalInfo))
+      +   _editRow('Allergies', _eta('allergies', s.allergies))
+      +   _editRow('Notes', _eta('notes', s.notes))
+      + '</div>'
+      + '<div class="mt-4 flex justify-end gap-2">'
+      +   '<button type="button" onclick="App.Students._viewModal(\'' + studentId + '\')" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      +   '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>'
+      + '</div>'
+      + '</form>';
+    document.getElementById('inline-edit-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      _saveInlineEdit(studentId, e.target);
+    });
+  }
+
+  async function _saveInlineEdit(studentId, form) {
+    var s = App.Store.get().students.find(function(x) { return x.id === studentId; });
+    if (!s) return;
+    var fd = new FormData(form);
+    if (!fd.get('firstName') || !fd.get('lastName')) {
+      App.Utils.showToast('First and last name are required', 'error');
+      return;
+    }
+    var updated = Object.assign({}, s, {
+      firstName: fd.get('firstName'),
+      lastName: fd.get('lastName'),
+      dob: fd.get('dob'),
+      gender: fd.get('gender'),
+      parentName: fd.get('parentName'),
+      contact: fd.get('contact'),
+      phone: fd.get('phone'),
+      status: fd.get('status'),
+      emergency2Name: fd.get('emergency2Name') || '',
+      emergency2Phone: fd.get('emergency2Phone') || '',
+      medicalInfo: fd.get('medicalInfo') || '',
+      allergies: fd.get('allergies') || '',
+      notes: fd.get('notes') || ''
+    });
+    var submitBtn = form.querySelector('button[type="submit"]');
+    try {
+      await App.Utils.withLoading(submitBtn, async function() {
+        await App.Api.put('/api/students/' + studentId, updated);
+        await App.Api.loadSnapshot();
+      });
+      App.Utils.showToast(App.Utils.esc(updated.firstName) + ' ' + App.Utils.esc(updated.lastName) + ' updated', 'success');
+      _viewModal(studentId);
+      App.Router.refresh();
+    } catch (err) { /* auto-toasted */ }
   }
 
   // _dropinField renders the "pay-per-session drop-in" toggle. Drop-in students
@@ -1691,6 +1788,8 @@
     _onFilter: _onFilter,
     _viewModal: _viewModal,
     _editModal: _editModal,
+    _toggleInlineEdit: _toggleInlineEdit,
+    _saveInlineEdit: _saveInlineEdit,
     _subscriptionAction: _subscriptionAction,
     _activateStudent: _activateStudent,
     _deactivateStudent: _deactivateStudent,
