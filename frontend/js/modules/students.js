@@ -438,7 +438,7 @@
       +     '<h2 class="text-xl font-bold text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName) + subChip + '</h2>'
       +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.statusBadge(s.status) + '<span class="text-xs text-slate-400">No: ' + App.Utils.esc(_studentNo(s)) + '</span></div>'
       +   '</div>'
-      +   (isAdmin ? '<div style="margin-left:auto;display:flex;gap:1rem;align-items:center">'
+      +   (isAdmin ? '<div style="margin-left:auto;display:flex;gap:1rem;align-items:flex-end">'
       +     '<button onclick="App.Students._toggleInlineEdit(\'' + studentId + '\')" id="inline-edit-btn" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Edit</button>'
       +     '<div style="text-align:right">'
       +       '<div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem">Auto-bill</div>'
@@ -647,7 +647,6 @@
 
       + '<div class="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-4">'
       + '<button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Close</button>'
-      + (isAdmin ? '<button onclick="App.Students._toggleInlineEdit(\'' + studentId + '\')" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Edit Student</button>' : '')
       + '</div>'
       + '</div>'
     );
