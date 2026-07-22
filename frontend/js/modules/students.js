@@ -167,7 +167,7 @@
                 +   '<div><div class="font-medium text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName)
                 +     (_bal > 0 ? ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.65rem;font-weight:700;background:#fffbeb;color:#92400e;border:1px solid #fef3c7;border-radius:999px;vertical-align:middle;margin-left:4px" title="Replacement balance">' + _bal + 'cr</span>' : '')
                 +     rowSubChip
-                +   '</div><div class="text-xs text-slate-400">' + App.Utils.esc(_studentNo(s)) + '</div></div>'
+                +   '</div><div class="text-xs text-slate-400">' + App.Utils.esc(_studentDisplayId(s)) + '</div></div>'
                 + '</div></td>'
                 + '<td class="td"><div class="flex flex-wrap gap-1">'
                 + (enrolledNames.length === 0 ? '<span class="text-xs text-slate-400">—</span>'
@@ -436,7 +436,7 @@
       +   '<div class="w-16 h-16 rounded-2xl bg-blue-100 text-blue-700 font-bold text-2xl flex items-center justify-center">' + App.Utils.esc(s.firstName.charAt(0)) + App.Utils.esc(s.lastName.charAt(0)) + '</div>'
       +   '<div>'
       +     '<h2 class="text-xl font-bold text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName) + subChip + '</h2>'
-      +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.statusBadge(s.status) + '<span class="text-xs text-slate-400">No: ' + App.Utils.esc(_studentNo(s)) + '</span></div>'
+      +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.statusBadge(s.status) + '<span class="text-xs text-slate-400">ID: ' + App.Utils.esc(_studentDisplayId(s)) + '</span></div>'
       +   '</div>'
       +   (isAdmin ? '<div style="margin-left:auto;display:flex;gap:1rem;align-items:flex-end">'
       +     '<button onclick="App.Students._toggleInlineEdit(\'' + studentId + '\')" id="inline-edit-btn" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Edit</button>'
@@ -745,7 +745,7 @@
       '<div class="p-6">'
       + '<h2 class="text-xl font-bold mb-4">Add New Student</h2>'
       + '<form id="add-student-form" class="space-y-4">'
-      + _field('Student Number <span class="text-slate-400 font-normal">(optional — e.g. 2024-001)</span>', '<input name="studentNo" class="form-input" placeholder="Leave blank to use the internal ID">')
+      + _field('Student ID <span class="text-slate-400 font-normal">(optional — e.g. 2024-001)</span>', '<input name="studentNo" class="form-input" placeholder="Leave blank to use the internal student number">')
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('First Name', '<input name="firstName" class="form-input" required>')
       + _field('Last Name', '<input name="lastName" class="form-input" required>')
@@ -1099,10 +1099,11 @@
   // students.phone — the registered contact number lives on the family record.
   // Fall back to the family's phone so the number is visible and editable
   // instead of showing a blank field.
-  // _studentNo returns the human-facing student number. Falls back to the
-  // internal id (STU_...) until an admin assigns a custom number, so the field
-  // is never blank.
-  function _studentNo(s) {
+  // _studentDisplayId returns what admins/teachers/students see: the human
+  // "Student ID" they assign (stored in s.studentNo), falling back to the
+  // internal STU_... "student number" (s.id) until an ID is set. The internal
+  // number is a backend key; the Student ID is the people-facing identifier.
+  function _studentDisplayId(s) {
     return s.studentNo || s.id;
   }
   function _contactPhone(s) {
@@ -1156,7 +1157,7 @@
     panel.innerHTML =
       '<form id="inline-edit-form">'
       + '<div class="grid grid-cols-2 gap-3 text-sm">'
-      +   _editRow('Student Number', '<input name="studentNo" type="text" value="' + App.Utils.esc(s.studentNo || '') + '" placeholder="' + App.Utils.esc(s.id) + '" class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm font-medium text-slate-700 focus:border-blue-500 focus:outline-none">')
+      +   _editRow('Student ID', '<input name="studentNo" type="text" value="' + App.Utils.esc(s.studentNo || '') + '" placeholder="' + App.Utils.esc(s.id) + '" class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm font-medium text-slate-700 focus:border-blue-500 focus:outline-none">')
       +   _editRow('Status', _es('status', s.status, ['Active', 'Inactive', 'New', 'Waitlisted']))
       +   _editRow('First Name', _ei('firstName', s.firstName))
       +   _editRow('Last Name', _ei('lastName', s.lastName))
