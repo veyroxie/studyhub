@@ -120,6 +120,7 @@ func FormatQty(qty float64) string {
 
 type Student struct {
 	ID                 string   `json:"id"`
+	StudentNo          string   `json:"studentNo"`
 	FirstName          string   `json:"firstName"`
 	LastName           string   `json:"lastName"`
 	DOB                string   `json:"dob"`
