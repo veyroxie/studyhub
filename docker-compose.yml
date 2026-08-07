@@ -59,6 +59,11 @@ services:
       ALERT_EMAIL: ${ALERT_EMAIL:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-}
+      # Outbound kill-switch + job/guard overrides — a variable that isn't
+      # forwarded here never reaches the container, however it's set in .env.
+      OUTBOUND_ENABLED: ${OUTBOUND_ENABLED:-}
+      ENABLE_JOBS: ${ENABLE_JOBS:-}
+      ALLOW_REMOTE_DB: ${ALLOW_REMOTE_DB:-}
       # Web push (VAPID) — leave blank to disable push (email + in-app still work)
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
