@@ -269,7 +269,7 @@
         orange: 'bg-orange-50 text-orange-700 ring-orange-500/30',
         teal:   'bg-teal-50 text-teal-700 ring-teal-500/30'
       };
-      return '<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ' + (map[color]||map.blue) + '">' + text + '</span>';
+      return '<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ' + (map[color]||map.blue) + '">' + App.Utils.esc(text) + '</span>';
     },
     statusBadge(status) {
       const map = {
@@ -294,14 +294,53 @@
     esc(str) {
       return String(str == null ? '' : str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     },
+    // Local calendar date, NOT toISOString() (which is UTC). In UTC+8 the UTC
+    // date is still "yesterday" until 08:00 local, so every check-in, credit and
+    // self-study row logged in the morning got yesterday's date paired with
+    // nowTime()'s local time. Must stay consistent with nowTime().
+    // copyFrom reads the text out of the element's data-copy attribute rather
+    // than having callers inline the value into an onclick JS string. Entity-
+    // escaping does NOT protect a JS string literal (the browser decodes
+    // &#39; back to a quote before the JS parser runs), so the value has to
+    // travel as an attribute instead.
+    copyFrom(btn, msg) {
+      var text = btn && btn.dataset ? btn.dataset.copy : '';
+      if (!text) return;
+      // navigator.clipboard is undefined on a non-secure origin, and writeText
+      // rejects when permission is denied — neither should throw at the user.
+      if (!navigator.clipboard || !navigator.clipboard.writeText) {
+        App.Utils.showToast('Copying needs a secure (https) connection', 'error');
+        return;
+      }
+      navigator.clipboard.writeText(text).then(function() {
+        App.Utils.showToast(msg || 'Copied', 'success');
+      }).catch(function() {
+        App.Utils.showToast('Could not copy to clipboard', 'error');
+      });
+    },
+    // localDate formats a Date as a LOCAL YYYY-MM-DD. Never use
+    // toISOString().slice(0,10) for a calendar date — that returns the UTC day,
+    // which in UTC+8 is still "yesterday" until 08:00 local. The backend stamps
+    // dates in local MYT, so a UTC string silently compares against the wrong
+    // day. Must stay consistent with nowTime(), which is also local.
+    localDate(d) {
+      d = d || new Date();
+      return d.getFullYear() + '-'
+        + String(d.getMonth() + 1).padStart(2, '0') + '-'
+        + String(d.getDate()).padStart(2, '0');
+    },
     today() {
-      return new Date().toISOString().slice(0, 10);
+      return App.Utils.localDate(new Date());
     },
     nowTime() {
       const d = new Date();
       return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
     },
     emptyState(title, subtitle, btnHtml) {
+      // title/subtitle escaped here so a future "No results for {search}"
+      // caller can't become an XSS sink; btnHtml stays intentionally raw.
+      title = this.esc(title);
+      subtitle = this.esc(subtitle);
       return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem 2rem;text-align:center">'
         + '<div style="width:64px;height:64px;background:#f1f5f9;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:1.25rem">'
         + '<svg width="28" height="28" fill="none" stroke="#94a3b8" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
@@ -323,7 +362,7 @@
   // ── Confirm Dialog (replaces browser confirm()) ─────────────────────────────
   // Usage: App.Utils.showConfirm({ title, message, details, confirmLabel,
   //   cancelLabel, danger, icon }).then(ok => { if (ok) ... })
-  //   - message accepts HTML (legacy: some callers pass <strong>/<br>)
+  //   - message is escaped text; use messageHtml for trusted markup
   //   - details renders as a smaller boxed note under the message
   //   - icon: 'trash' | 'warning' | 'info' | 'question' (auto if omitted)
   function _confirmIconSvg(kind) {
@@ -353,7 +392,9 @@
   App.Utils.showConfirm = function(opts) {
     opts = opts || {};
     var title = opts.title || 'Are you sure?';
-    var message = opts.message || '';
+    // message is escaped; callers that genuinely need markup pass messageHtml.
+    // The old raw-by-default contract was one interpolated name away from XSS.
+    var message = opts.messageHtml || App.Utils.esc(opts.message || '');
     var details = opts.details || '';
     var confirmLabel = opts.confirmLabel || 'Confirm';
     var cancelLabel = opts.cancelLabel || 'Cancel';
@@ -427,5 +468,35 @@
     document.getElementById('modal-overlay').addEventListener('click', function(e) {
       if (e.target === this) App.Utils.hideModal();
     });
+
+    // App-wide double-submit guard. Most modal forms post straight from their
+    // submit handler with no button disable, so a double-click created
+    // duplicate announcements / progress reports / classes. Swallow a second
+    // submit on the same form within the window instead of disabling the
+    // button, so this can't fight the withLoading state some forms already use.
+    document.addEventListener('submit', function(e) {
+      var form = e.target;
+      if (!form || form.tagName !== 'FORM') return;
+      if (form.dataset.shSubmitting === '1') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      form.dataset.shSubmitting = '1';
+      // Release as soon as the user touches the form again: handlers that bail
+      // on validation ("Select a student", "Student ID is required") return
+      // synchronously, and holding the guard would silently swallow the
+      // corrected resubmit — a dead button with no feedback, which is worse
+      // than the duplicate it prevents. The short timer still covers a
+      // double-click without blocking a deliberate retry.
+      var release = function() {
+        delete form.dataset.shSubmitting;
+        form.removeEventListener('input', release);
+        form.removeEventListener('change', release);
+      };
+      form.addEventListener('input', release);
+      form.addEventListener('change', release);
+      setTimeout(release, 1200);
+    }, true);
   });
 })();

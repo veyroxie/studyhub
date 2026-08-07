@@ -114,7 +114,7 @@
 
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">'
       +   '<div class="p-4 border-b border-slate-100 flex items-center gap-3 flex-wrap">'
-      +     '<input id="student-search" type="text" placeholder="Search by name or ID..." value="' + _search + '" oninput="App.Students._onSearch(this.value)" class="flex-1 min-w-48 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">'
+      +     '<input id="student-search" type="text" placeholder="Search by name or ID..." value="' + App.Utils.esc(_search) + '" oninput="App.Students._onSearch(this.value)" class="flex-1 min-w-48 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">'
       // Status filter is the stat-card row above — no redundant dropdown.
       +   '</div>'
       +   '<div id="stu-bulk-bar" style="padding:0 1rem">' + _bulkBar() + '</div>'
@@ -208,7 +208,6 @@
     if (count === 0) return '';
     return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 1rem;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.25);border-radius:10px;margin-bottom:0.75rem">'
       + '<span style="font-size:0.82rem;font-weight:700;color:#92400e">' + count + ' selected</span>'
-      + '<button onclick="App.Students._bulkMessage()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Send Message</button>'
       + '<button onclick="App.Students._bulkDeselect()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:transparent;color:#92400e;border:1px solid rgba(201,162,39,0.3);border-radius:7px;cursor:pointer">Clear</button>'
       + '</div>';
   }
@@ -241,39 +240,11 @@
     _refreshBulkBar();
   }
 
-  function _bulkMessage() {
-    var ids = Object.keys(_selected);
-    if (ids.length === 0) return;
-    var { students } = App.Store.get();
-    var parents = {};
-    students.filter(function(s) { return ids.indexOf(s.id) > -1; }).forEach(function(s) { parents[s.contact] = s.parentName; });
-    var parentList = Object.keys(parents);
-    var html = '<div class="p-6">'
-      + '<h2 class="text-lg font-bold mb-1">Send Message</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">Will send to ' + parentList.length + ' parent' + (parentList.length !== 1 ? 's' : '') + '</p>'
-      + '<textarea id="bulk-msg-text" rows="4" placeholder="Type your message…" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-300 resize-none mb-4"></textarea>'
-      + '<div class="flex gap-2 justify-end">'
-      + '<button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg">Cancel</button>'
-      + '<button onclick="App.Students._bulkSendMessage()" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Send</button>'
-      + '</div></div>';
-    App.Utils.showModal(html);
-  }
+  // Bulk "Send Message" was removed: there is no messaging endpoint on the
+  // backend and the only consumer (modules/messages.js) is unrouted, so the flow
+  // wrote to the local store, reported "Message sent to N parents", and lost
+  // everything on the next snapshot reload. Re-add only alongside a real API.
 
-  function _bulkSendMessage() {
-    var text = document.getElementById('bulk-msg-text').value.trim();
-    if (!text) return;
-    var ids = Object.keys(_selected);
-    var { students, messages } = App.Store.get();
-    var parents = {};
-    students.filter(function(s) { return ids.indexOf(s.id) > -1; }).forEach(function(s) { parents[s.contact] = true; });
-    var newMsgs = Object.keys(parents).map(function(email) {
-      return { id: App.Utils.generateId(), fromRole: 'admin', fromLabel: 'Study Hub', toParent: email, text: text, ts: new Date().toISOString(), read: false };
-    });
-    App.Store.set({ messages: (messages || []).concat(newMsgs) });
-    App.Utils.hideModal(true);
-    App.Utils.showToast('Message sent to ' + newMsgs.length + ' parent' + (newMsgs.length !== 1 ? 's' : ''), 'success');
-    _bulkDeselect();
-  }
 
   let _searchTimer = null;
 
@@ -745,7 +716,7 @@
       '<div class="p-6">'
       + '<h2 class="text-xl font-bold mb-4">Add New Student</h2>'
       + '<form id="add-student-form" class="space-y-4">'
-      + _field('Student ID <span class="text-slate-400 font-normal">(optional — e.g. 2024-001)</span>', '<input name="studentNo" class="form-input" placeholder="Leave blank to use the internal student number">')
+      + _field('Student ID', '<input name="studentNo" class="form-input" required placeholder="e.g. 2024-001">')
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('First Name', '<input name="firstName" class="form-input" required>')
       + _field('Last Name', '<input name="lastName" class="form-input" required>')
@@ -784,15 +755,21 @@
       const fd = new FormData(e.target);
       const state = App.Store.get();
       const selectedClasses = fd.getAll('classIds');
-      const submittedId = (fd.get('id') || '').trim();
-      const newId = submittedId || App.Utils.generateId('STU');
-      if (state.students.some(function(s) { return s.id === newId; })) {
-        App.Utils.showToast('Student # "' + newId + '" already in use', 'error');
+      const studentNo = (fd.get('studentNo') || '').trim();
+      if (!studentNo) {
+        App.Utils.showToast('Student ID is required', 'error');
         return;
       }
+      if (state.students.some(function(s) { return (s.studentNo || '').toLowerCase() === studentNo.toLowerCase(); })) {
+        App.Utils.showToast('Student ID "' + studentNo + '" is already in use', 'error');
+        return;
+      }
+      // The internal id (the DB "student number") is always auto-generated;
+      // the user-facing Student ID lives in studentNo.
+      const newId = App.Utils.generateId('STU');
       const newStudent = {
         id: newId,
-        studentNo: (fd.get('studentNo') || '').trim(),
+        studentNo: studentNo,
         firstName: fd.get('firstName'),
         lastName: fd.get('lastName'),
         dob: fd.get('dob'),
@@ -1157,7 +1134,7 @@
     panel.innerHTML =
       '<form id="inline-edit-form">'
       + '<div class="grid grid-cols-2 gap-3 text-sm">'
-      +   _editRow('Student ID', '<input name="studentNo" type="text" value="' + App.Utils.esc(s.studentNo || '') + '" placeholder="' + App.Utils.esc(s.id) + '" class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm font-medium text-slate-700 focus:border-blue-500 focus:outline-none">')
+      +   _editRow('Student ID', '<input name="studentNo" type="text" value="' + App.Utils.esc(s.studentNo || '') + '" placeholder="e.g. 2024-001" class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm font-medium text-slate-700 focus:border-blue-500 focus:outline-none">')
       +   _editRow('Status', _es('status', s.status, ['Active', 'Inactive', 'New', 'Waitlisted']))
       +   _editRow('First Name', _ei('firstName', s.firstName))
       +   _editRow('Last Name', _ei('lastName', s.lastName))
@@ -1193,8 +1170,19 @@
       App.Utils.showToast('First and last name are required', 'error');
       return;
     }
+    // Validate at save (not via a live handler) so the field stays freely
+    // clearable while editing — it only has to be non-empty and unique on Save.
+    var studentNo = (fd.get('studentNo') || '').trim();
+    if (!studentNo) {
+      App.Utils.showToast('Student ID is required', 'error');
+      return;
+    }
+    if (App.Store.get().students.some(function(x) { return x.id !== studentId && (x.studentNo || '').toLowerCase() === studentNo.toLowerCase(); })) {
+      App.Utils.showToast('Student ID "' + studentNo + '" is already in use', 'error');
+      return;
+    }
     var updated = Object.assign({}, s, {
-      studentNo: (fd.get('studentNo') || '').trim(),
+      studentNo: studentNo,
       firstName: fd.get('firstName'),
       lastName: fd.get('lastName'),
       dob: fd.get('dob'),
@@ -1242,13 +1230,13 @@
 
   function _exportCSV() {
     const { students, classes } = App.Store.get();
-    const headers = ['ID','First Name','Last Name','DOB','Gender','Parent','Contact','Phone','Status','Registered On','Classes','Medical Info','Allergies'];
+    const headers = ['Student ID','First Name','Last Name','DOB','Gender','Parent','Contact','Phone','Status','Registered On','Classes','Medical Info','Allergies'];
     const rows = students.map(function(s) {
       const classNames = s.enrolledClasses.map(function(cid) {
         var c = classes.find(function(x) { return x.id === cid; });
         return c ? c.name : cid;
       }).join('; ');
-      return [s.id, s.firstName, s.lastName, s.dob, s.gender, s.parentName, s.contact, s.phone, s.status, s.registeredOn, classNames, s.medicalInfo||'', s.allergies||'']
+      return [_studentDisplayId(s), s.firstName, s.lastName, s.dob, s.gender, s.parentName, s.contact, s.phone, s.status, s.registeredOn, classNames, s.medicalInfo||'', s.allergies||'']
         .map(function(v) { return '"' + String(v||'').replace(/"/g,'""') + '"'; }).join(',');
     });
     _downloadCSV([headers.join(',')].concat(rows).join('\n'), 'students.csv');
@@ -1256,7 +1244,7 @@
   }
 
   function _addCreditModal(studentId) {
-    var today = App.Utils.today ? App.Utils.today() : new Date().toISOString().slice(0, 10);
+    var today = App.Utils.today();
     var state = App.Store.get();
     var stuClasses = (state.students.find(function(x) { return x.id === studentId; }) || {}).enrolledClasses || [];
     var classOpts = '<option value="">-- select class --</option>'
@@ -1321,7 +1309,7 @@
   }
 
   function _useCreditModal(studentId) {
-    var today = App.Utils.today ? App.Utils.today() : new Date().toISOString().slice(0, 10);
+    var today = App.Utils.today();
     var state = App.Store.get();
     var stuClasses = (state.students.find(function(x) { return x.id === studentId; }) || {}).enrolledClasses || [];
 
@@ -1531,7 +1519,7 @@
       referralHtml = '<div style="margin-top:1rem;padding:1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px">'
         + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">'
         +   '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.05em">Referrals</div>'
-        +   (f.referralCode ? '<button onclick="navigator.clipboard.writeText(\'' + f.referralCode + '\').then(function(){App.Utils.showToast(\'Code copied\',\'success\')})" style="font-size:0.7rem;padding:0.25rem 0.65rem;background:var(--gold);color:#0a0a0a;border:none;border-radius:6px;cursor:pointer;font-weight:700">Copy code</button>' : '')
+        +   (f.referralCode ? '<button data-copy="' + App.Utils.esc(f.referralCode) + '" onclick="App.Utils.copyFrom(this,\'Code copied\')" style="font-size:0.7rem;padding:0.25rem 0.65rem;background:var(--gold);color:#0a0a0a;border:none;border-radius:6px;cursor:pointer;font-weight:700">Copy code</button>' : '')
         + '</div>'
         + (f.referralCode ? '<div style="font-family:var(--serif);font-size:1.2rem;font-weight:700;color:var(--gold);letter-spacing:0.04em">' + App.Utils.esc(f.referralCode) + '</div>' : '')
         + (earnedTotal > 0 ? '<div style="margin-top:0.4rem;font-size:0.72rem;color:#92400e;font-weight:600">Active credit · ' + earnedTotal + ' invoice' + (earnedTotal !== 1 ? 's' : '') + ' remaining</div>' : '')
@@ -1813,8 +1801,6 @@
     _toggleSelectAll: _toggleSelectAll,
     _toggleSelect: _toggleSelect,
     _bulkDeselect: _bulkDeselect,
-    _bulkMessage: _bulkMessage,
-    _bulkSendMessage: _bulkSendMessage,
     _clearFilters: _clearFilters,
     _exportCSV: _exportCSV,
     _setPage: _setStudentPage,
@@ -1899,7 +1885,7 @@
   async function _pdpaDelete(familyId) {
     var ok = await App.Utils.showConfirm({
       title: 'Delete account (PDPA)',
-      message: 'This will permanently anonymise all personal data for this family, their children, and the parent account. Invoices kept for tax purposes but contact details will be redacted.<br><br><strong>This cannot be undone.</strong>',
+      messageHtml: 'This will permanently anonymise all personal data for this family, their children, and the parent account. Invoices kept for tax purposes but contact details will be redacted.<br><br><strong>This cannot be undone.</strong>',
       confirmLabel: 'Delete permanently',
       danger: true
     });
