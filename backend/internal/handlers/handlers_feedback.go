@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"studyhub/internal/core"
 	"studyhub/internal/models"
 	"studyhub/internal/store"
@@ -34,6 +35,11 @@ func listFeedback(db *store.DB, c *core.Claims) []models.Feedback {
 			f.StudentNotes = []models.StudentNote{}
 		}
 		out = append(out, f)
+	}
+	// Teachers see feedback only for classes they teach; the query above is
+	// tenant-wide for every non-parent role.
+	if c != nil && c.Role == "teacher" {
+		return filterFeedbackForParent(out, teacherClassIDSet(db, c))
 	}
 	return out
 }
@@ -146,6 +152,22 @@ func HandleListFeedback(db *store.DB) http.HandlerFunc {
 		if classID != "" {
 			where += ` AND class_id=?`
 			args = append(args, classID)
+		}
+		// Teachers only see their own classes. This filtered/paginated path
+		// builds its own query, so without this it bypassed the scoping applied
+		// in listFeedback above.
+		if c != nil && c.Role == "teacher" {
+			classIDs := teacherClassIDSet(db, c)
+			if len(classIDs) == 0 {
+				core.Respond(w, []models.Feedback{})
+				return
+			}
+			placeholders := make([]string, 0, len(classIDs))
+			for id := range classIDs {
+				placeholders = append(placeholders, "?")
+				args = append(args, id)
+			}
+			where += ` AND class_id IN (` + strings.Join(placeholders, ",") + `)`
 		}
 
 		if p.Active {

@@ -266,7 +266,7 @@
     var dayOrder = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     var todayIdx = dayOrder.indexOf(todayDay);
     var cutoff30 = new Date(now); cutoff30.setDate(cutoff30.getDate() - 30);
-    var cutoff30Str = cutoff30.toISOString().slice(0, 10);
+    var cutoff30Str = App.Utils.localDate(cutoff30);
 
     var overdueInvs = myInvoices.filter(function(i) { return i.status === 'Overdue'; });
     var dueSoonInvs = myInvoices.filter(function(i) {
@@ -755,10 +755,10 @@
     var pendingCount = myRewards.filter(function(r) { return r.status === 'pending'; }).length;
 
     var code = myFamily.referralCode || '';
-    var codeDisplay = code || '<span style="color:#94a3b8;font-size:0.78rem;font-family:var(--sans)">Generating...</span>';
+    var codeDisplay = code ? App.Utils.esc(code) : '<span style="color:#94a3b8;font-size:0.78rem;font-family:var(--sans)">Generating...</span>';
 
     var copyAttr = code
-      ? 'onclick="event.stopPropagation();navigator.clipboard.writeText(\'' + code + '\').then(function(){App.Utils.showToast(\'Code copied — share it with a friend\',\'success\')})"'
+      ? 'data-copy="' + App.Utils.esc(code) + '" onclick="event.stopPropagation();App.Utils.copyFrom(this,\'Code copied — share it with a friend\')"'
       : '';
 
     var creditPill = '';
@@ -852,7 +852,7 @@
     // Churn risk: Active students with no Present record in last 14 days
     if (students && attendance) {
       var cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 14);
-      var cutoffStr = cutoff.toISOString().slice(0,10);
+      var cutoffStr = App.Utils.localDate(cutoff);
       var atRisk = students.filter(function(stu) {
         if (stu.status !== 'Active') return false;
         var recentPresent = attendance.filter(function(a) {
@@ -1192,7 +1192,7 @@
 
     var rows = days.map(function(dayLabel, i) {
       var d = new Date(monday); d.setDate(monday.getDate() + i);
-      var dateStr = d.toISOString().slice(0, 10);
+      var dateStr = App.Utils.localDate(d);
       var dayAtt = attendance.filter(function(a) { return a.personType === 'student' && a.date === dateStr; });
       var presentCount = dayAtt.filter(function(a) { return a.status === 'Present'; }).length;
       var total = students.filter(function(s) { return s.status === 'Active'; }).length;

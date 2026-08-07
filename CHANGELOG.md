@@ -8,6 +8,149 @@ dated section when you cut a deploy.
 
 ## [Unreleased]
 
+### Security — teacher write paths and remaining leaks
+
+- **Teachers can no longer write records for students they don't teach.** The
+  read paths were scoped first, which left creating/deleting self-study sessions,
+  issuing or redeeming replacement credits, and reading a credit balance as the
+  easier route to the same data.
+- **Progress reports can no longer be forged.** A teacher could create a report
+  attributed to a colleague and publish it straight to that family; authorship is
+  now taken from the session and limited to their own students.
+- **Family contact details are hidden from teachers.** Student records already
+  blanked parent name/email/phone, but the family list returned them in full —
+  and students carry `familyId`, so the redaction was cosmetic.
+- **The referral/credit ledger is admin and parent only** — it exposed family
+  names, referred-student names and credit balances to teachers.
+- Progress-report edit checks now respect soft deletes, and the staff lookup
+  behind teacher authorization is tenant-scoped.
+
+### Security — teacher data scoping
+
+- **Teachers are now scoped to their own classes** for feedback, attendance,
+  self-study sessions and replacement credits, on both the REST endpoints and the
+  snapshot. Students were already class-scoped, but these parallel record types
+  were tenant-wide, so a teacher could read data for every family — and staff
+  attendance rows exposed colleagues' work patterns.
+- **Teacher announcements no longer publish unreviewed.** Creation defaulted to
+  `published`, bypassing the admin approval queue that already existed; non-admin
+  authors are now forced to `pending`.
+- **Background push/email tasks can no longer crash the API.** Fire-and-forget
+  goroutines ran outside chi's panic recovery, so one bad push subscription could
+  take down the whole process for every user. They now run under `goSafe`.
+- **Deleting a user reports not-found instead of success** when nothing matched,
+  and the user list no longer panics on a query error.
+
+### Reliability & correctness
+
+- **Dates are recorded in local time.** `today()` used UTC while `nowTime()` used
+  local, so in UTC+8 anything logged before 08:00 (attendance, credits,
+  self-study) got yesterday's date paired with today's time.
+- **Duplicate form submissions are blocked app-wide**, preventing double-clicks
+  from creating duplicate announcements, progress reports and classes.
+- **Failed attendance writes roll back** instead of leaving the table showing a
+  student as present when the server rejected the write.
+- **Removed the bulk "Send Message" feature**, which had no backend endpoint at
+  all: it wrote to local state, reported "Message sent to N parents", and lost
+  everything on the next refresh.
+- Referral-code copy buttons pass the code as a data attribute instead of
+  inlining it into an `onclick` JavaScript string.
+- Added a `(tenant_id, created_at)` index on `audit_logs`, and converted
+  `registrations.school_fees` to `NUMERIC(12,2)` — the one money column the
+  earlier numeric migration missed.
+
+### Security — staff-data RBAC
+
+- **Teachers can no longer read or fabricate staff performance reviews.** Reviews
+  were readable tenant-wide by any teacher (including via the snapshot) and any
+  teacher could POST a review against any colleague's staff id. Writing is now
+  admin-only and a teacher sees only their own reviews.
+- **Teachers can no longer edit other teachers' progress reports.** The update
+  path checked only "is staff", so any teacher could rewrite a colleague's report
+  or flip `published` to push someone else's draft to parents. Edits are now
+  restricted to the report's author (admins keep full rights), matching the
+  existing rule for feedback.
+- **Announcement expiry date is escaped** where it was interpolated raw into a
+  `title` attribute.
+
+### Billing — payment confirmation UX
+
+- **Marking cash paid now requires typing the exact amount received**, so the
+  action is deliberate and the recorded amount is confirmed against the invoice.
+- **Early-bird discount now applies to sibling invoices**, which previously showed
+  the checkbox but silently ignored it.
+- **"Payment received" email only sends when confirming a payment the parent
+  submitted**, so bulk and admin cash mark-paid no longer mail every parent.
+
+### Security
+
+- **Teachers can no longer access any family's billing.** The invoice list,
+  snapshot, payment-proof upload/download, checkout, and invoice/receipt PDF
+  endpoints only gated parents by ownership and let every other authenticated
+  role (including teachers) through to tenant-wide financial data and receipts.
+  All now restrict to admins and the owning parent, matching the pay endpoint.
+- **Stored XSS in Messages fixed.** The conversation-list preview rendered
+  another user's last-message text unescaped, so a crafted message body could
+  execute script in a recipient's (including an admin's) session. Message
+  previews and the shared badge helper are now escaped; the module's local
+  escaper delegates to the canonical one so it can't drift again.
+
+### Billing — behavioral
+
+- **"Payment received" email now sends on confirmation, not submission.** It
+  fired the moment a parent submitted a payment for verification, implying the
+  money had arrived. It now sends when the invoice is actually marked Paid, to
+  the owning parent (regardless of whether an admin verified or logged it).
+- **Editing an invoice no longer destroys its line items** unless the amount
+  changed. A description- or due-date-only edit previously wiped the itemised
+  breakdown, collapsing the receipt/PDF to a single synthesized line.
+- **The Create Invoice modal stays open if creation fails**, so the built line
+  items aren't lost and the admin can correct and resubmit.
+
+### Billing — reliability
+
+- **`paid_on` is only set when an invoice becomes Paid.** It was stamped on
+  every pay-endpoint call, so a parent's "Pending Verification" submission (or an
+  admin setting Overdue) gave an unpaid invoice a paid date.
+- **Parent receipt is now mandatory on upload failure.** The parent flow used to
+  submit the payment without the receipt if the upload failed; it now blocks and
+  asks the parent to retry, matching the admin flow.
+- **Admin confirm no longer gets stuck.** If the pay request failed after a
+  successful receipt upload, the button stayed disabled on "Uploading..."; it now
+  re-enables so the admin can retry.
+- **Undo on invoice delete is honoured.** The delete fired 500ms before the undo
+  toast closed, so a late Undo click still deleted; the delete now runs after the
+  undo window closes.
+- **Pay-online is guarded against double-clicks** that could mint duplicate
+  payment-gateway checkout sessions.
+
+### Billing — money correctness
+
+- **Early-bird discount now applies to the net subtotal.** It was computed on
+  the gross positive line total, so a free/FOC add-on (a +RM40 line cancelled by
+  a -RM40 credit) inflated the discount base and over-credited the parent — and
+  an all-free line could push the total negative and get rejected. The discount
+  now uses the net of all lines.
+- **Bulk "Mark All Paid" is Cash-only.** It offered Bank Transfer / QR Pay, but
+  those require a per-invoice reference the bulk modal can't collect, so they
+  always failed. Bulk is now cash-only; non-cash payments are confirmed per
+  invoice where the receipt and reference are captured.
+
+### Billing — payment confirmation fixes
+
+- **Bulk "Mark All Paid" now persists.** The bulk confirm only updated local
+  state and never called the API, so every invoice reverted to Unpaid on the
+  next data reload. It now records each payment server-side and reports partial
+  failures (e.g. a non-cash invoice missing a reference number) instead of
+  silently claiming success.
+- **Verify Payment now persists.** Approving a parent-submitted payment had the
+  same local-only defect and reverted on reload; it now commits through the pay
+  endpoint.
+- **Receipt uploads no longer fail as a "network error".** The 5MB cap tripped
+  mid-upload on ordinary phone photos, which the browser reported as a lost
+  connection. Raised the limit to 15MB and added a client-side size check that
+  rejects oversized files with a clear message before uploading.
+
 ### Security & correctness — prod-readiness hardening pass
 
 - **Billing data corruption fixed:** a legacy startup migration re-divided every

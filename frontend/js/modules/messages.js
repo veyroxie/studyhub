@@ -174,7 +174,7 @@
         + '<div style="width:2.2rem;height:2.2rem;border-radius:50%;background:' + (active ? 'var(--gold)' : 'var(--gold-dim)') + ';color:' + (active ? '#0a0a0a' : 'var(--gold)') + ';font-weight:800;font-size:0.78rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(201,162,39,0.25)">' + _esc(c.avatar) + '</div>'
         + '<div style="flex:1;min-width:0">'
         +   '<div style="font-size:0.83rem;font-weight:' + (unread > 0 ? '700' : '600') + ';color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _esc(c.label) + '</div>'
-        +   '<div style="font-size:0.7rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (lastMsg ? lastMsg.text.slice(0,35) + (lastMsg.text.length > 35 ? '…' : '') : _esc(c.sublabel)) + '</div>'
+        +   '<div style="font-size:0.7rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (lastMsg ? _esc(lastMsg.text.slice(0,35)) + (lastMsg.text.length > 35 ? '…' : '') : _esc(c.sublabel)) + '</div>'
         + '</div>'
         + (unread > 0 ? '<span style="min-width:1.1rem;height:1.1rem;border-radius:50%;background:var(--gold);color:#0a0a0a;font-size:0.62rem;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 3px;flex-shrink:0">' + unread + '</span>' : '')
         + '</div>';
@@ -201,7 +201,7 @@
         + '<div style="width:2.2rem;height:2.2rem;border-radius:50%;background:' + (active ? 'var(--gold)' : 'var(--gold-dim)') + ';color:' + (active ? '#0a0a0a' : 'var(--gold)') + ';font-weight:800;font-size:0.82rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(201,162,39,0.25)">' + (p.name || '?').charAt(0).toUpperCase() + '</div>'
         + '<div style="flex:1;min-width:0">'
         +   '<div style="font-size:0.83rem;font-weight:' + (unread > 0 ? '700' : '600') + ';color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _esc(p.name) + '</div>'
-        +   '<div style="font-size:0.7rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (lastMsg ? lastMsg.text.slice(0,35) + (lastMsg.text.length > 35 ? '…' : '') : (p.kids || []).join(', ')) + '</div>'
+        +   '<div style="font-size:0.7rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (lastMsg ? _esc(lastMsg.text.slice(0,35)) + (lastMsg.text.length > 35 ? '…' : '') : _esc((p.kids || []).join(', '))) + '</div>'
         + '</div>'
         + (unread > 0 ? '<span style="min-width:1.1rem;height:1.1rem;border-radius:50%;background:var(--gold);color:#0a0a0a;font-size:0.62rem;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 3px;flex-shrink:0">' + unread + '</span>' : '')
         + '</div>';
@@ -361,8 +361,10 @@
     });
   }
 
+  // Delegate to the canonical escaper so this module can't drift (the local
+  // version was missing the single-quote escape used inside onclick attrs).
   function _esc(str) {
-    return String(str || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return App.Utils.esc(str);
   }
   function _fmtTs(ts) {
     if (!ts) return '';

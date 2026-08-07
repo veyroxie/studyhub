@@ -27,7 +27,11 @@ func HandleUsers(db *store.DB) http.HandlerFunc {
 		case http.MethodGet:
 			c := core.ClaimsFrom(r)
 			tw, twArgs := store.ScopeTenant(c, "")
-			rows, _ := db.Query(`SELECT id,email,role,name,COALESCE(status,'active') FROM users WHERE 1=1`+tw+` ORDER BY role,name`, twArgs...)
+			rows, err := db.Query(`SELECT id,email,role,name,COALESCE(status,'active') FROM users WHERE 1=1`+tw+` ORDER BY role,name`, twArgs...)
+			if err != nil {
+				core.RespondError(w, "could not list users", http.StatusInternalServerError)
+				return
+			}
 			defer rows.Close()
 			type userRow struct {
 				ID     int    `json:"id"`
@@ -185,8 +189,15 @@ func HandleUserDelete(db *store.DB) http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		tw, twArgs := store.ScopeTenant(core.ClaimsFrom(r), "")
 		args := append([]any{id}, twArgs...)
-		if _, err := db.Exec(`DELETE FROM users WHERE id=?`+tw, args...); err != nil {
+		res, err := db.Exec(`DELETE FROM users WHERE id=?`+tw, args...)
+		if err != nil {
 			core.RespondError(w, "could not delete user", 500)
+			return
+		}
+		// Don't report success (and don't write an audit line) for a delete that
+		// matched nothing — a wrong or cross-tenant id previously returned 204.
+		if n, _ := res.RowsAffected(); n == 0 {
+			core.RespondError(w, "user not found", http.StatusNotFound)
 			return
 		}
 		if c := core.ClaimsFrom(r); c != nil {

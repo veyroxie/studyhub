@@ -106,6 +106,22 @@ func HandleProgressReports(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, msg, 400)
 				return
 			}
+			// A teacher authors only as themselves, and only for their own
+			// students. Without this, the PUT ownership check was pointless:
+			// creating a report attributed to a colleague (and published, which
+			// makes it immediately visible to that family) was the easier route.
+			if c.Role == "teacher" {
+				myStaffID := staffIDForClaims(db, c)
+				if myStaffID == "" {
+					core.RespondError(w, "no staff record for this account", http.StatusForbidden)
+					return
+				}
+				if !teacherStudentIDSet(db, c)[pr.StudentID] {
+					core.RespondError(w, "you can only write reports for students in your own classes", http.StatusForbidden)
+					return
+				}
+				pr.TeacherID = myStaffID
+			}
 			if pr.ID == "" {
 				pr.ID = core.GenerateID("PR")
 			}
@@ -147,6 +163,22 @@ func HandleProgressReportByID(db *store.DB) http.HandlerFunc {
 			}
 			now := time.Now().UTC().Format(time.RFC3339)
 			tw, twArgs := store.ScopeTenant(c, "")
+			// Ownership: a teacher may only edit reports they authored (mirrors the
+			// feedback rule). Without this, any teacher could rewrite a colleague's
+			// report or flip `published` to push someone else's draft to parents.
+			// teacher_id is never reassignable via PUT — preserves the audit trail.
+			if c.Role == "teacher" {
+				var existingTeacher, myStaffID string
+				ownArgs := append([]any{id}, twArgs...)
+				db.QueryRow(`SELECT teacher_id FROM progress_reports WHERE id=? AND deleted_at IS NULL`+tw, ownArgs...).Scan(&existingTeacher)
+				staffArgs := append([]any{c.Email}, twArgs...)
+				db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL`+tw, staffArgs...).Scan(&myStaffID)
+				if existingTeacher == "" || existingTeacher != myStaffID {
+					core.RespondError(w, "you can only edit progress reports you authored", http.StatusForbidden)
+					return
+				}
+				pr.TeacherID = existingTeacher
+			}
 			args := append([]any{pr.TeacherID, pr.Subject, pr.Grade, pr.Strengths, pr.AreasToImprove,
 				pr.TeacherComment, pr.NextTermFocus, pr.Published, now, id}, twArgs...)
 			if _, err := db.Exec(`

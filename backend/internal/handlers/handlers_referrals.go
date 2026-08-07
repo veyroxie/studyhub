@@ -15,6 +15,12 @@ import (
 // Admins see everything; parents see only rewards where they are the referrer.
 // Joined names are filled for easy rendering on the frontend.
 func listReferralRewards(db *store.DB, c *core.Claims) []models.ReferralReward {
+	// The referral ledger carries family names, referred-student names and credit
+	// balances — billing data. Admins see all, a parent sees their own, everyone
+	// else (teachers) gets nothing.
+	if c == nil || (!core.IsAdminRole(c) && c.Role != "parent") {
+		return []models.ReferralReward{}
+	}
 	tw, twArgs := store.ScopeTenant(c, "r")
 	var rows *sql.Rows
 	var err error

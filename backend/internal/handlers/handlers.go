@@ -291,6 +291,45 @@ func HandleSnapshot(db *store.DB) http.HandlerFunc {
 			// Hide internal performance reviews from parents
 			snap.PerformanceReviews = []models.PerformanceReview{}
 		}
+
+		// Teachers: scope class/student-linked records to the classes they teach.
+		// Students are already class-scoped for teachers, but these parallel
+		// record types were tenant-wide — a teacher could read feedback,
+		// attendance (including staff work patterns), self-study and replacement
+		// credits for every family in the tenant.
+		if c != nil && c.Role == "teacher" {
+			snap.Feedback = filterFeedbackForParent(snap.Feedback, teacherClassIDSet(db, c))
+
+			stuIDs := teacherStudentIDSet(db, c)
+			selfStudy := []models.SelfStudySession{}
+			for _, s := range snap.SelfStudySessions {
+				if stuIDs[s.StudentID] {
+					selfStudy = append(selfStudy, s)
+				}
+			}
+			snap.SelfStudySessions = selfStudy
+
+			myStaffID := staffIDForClaims(db, c)
+			attendance := []models.Attendance{}
+			for _, a := range snap.Attendance {
+				// Their own students, plus their OWN staff row so the teacher
+				// self check-in/out panel still works.
+				if a.PersonType == "student" && stuIDs[a.PersonID] {
+					attendance = append(attendance, a)
+				} else if a.PersonType == "staff" && myStaffID != "" && a.PersonID == myStaffID {
+					attendance = append(attendance, a)
+				}
+			}
+			snap.Attendance = attendance
+
+			credits := []models.ReplacementCredit{}
+			for _, rc := range snap.ReplacementCredits {
+				if stuIDs[rc.StudentID] {
+					credits = append(credits, rc)
+				}
+			}
+			snap.ReplacementCredits = credits
+		}
 		body, err := json.Marshal(snap)
 		if err != nil {
 			store.SnapshotSingleflightDone(cacheKey, nil, err)

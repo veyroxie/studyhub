@@ -15,12 +15,18 @@ import (
 
 // ── Payment Proof Upload ──────────────────────────────────────────────────────
 
+// maxProofBytes caps a payment-proof upload. Phone-camera receipts routinely
+// exceed 5MB; when MaxBytesReader trips mid-stream the browser surfaces it as a
+// connection reset ("network error"), not a clean 400 — so keep it generous
+// enough that legitimate receipts never hit it. Kept in sync with
+// MAX_PROOF_BYTES in the frontend billing module.
+const maxProofBytes = 15 << 20
+
 func HandleUploadProof(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Limit request body to 5MB
-		r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
-		if err := r.ParseMultipartForm(5 << 20); err != nil {
-			core.RespondError(w, "file too large (max 5MB)", 400)
+		r.Body = http.MaxBytesReader(w, r.Body, maxProofBytes)
+		if err := r.ParseMultipartForm(maxProofBytes); err != nil {
+			core.RespondError(w, fmt.Sprintf("file too large (max %dMB)", maxProofBytes>>20), 400)
 			return
 		}
 		invoiceID := r.FormValue("invoiceId")
@@ -35,6 +41,12 @@ func HandleUploadProof(db *store.DB) http.HandlerFunc {
 		c := core.ClaimsFrom(r)
 		if c == nil {
 			core.RespondError(w, "auth required", http.StatusUnauthorized)
+			return
+		}
+		// Payment proofs are admin + own-family-parent only. Teachers and other
+		// roles fall through the parent-ownership check below, so block them here.
+		if c.Role != "parent" && !core.IsAdminRole(c) {
+			core.RespondError(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		tw, twArgs := store.ScopeTenant(c, "")
@@ -84,7 +96,7 @@ func HandleUploadProof(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		// Read file into memory (capped at 5MB by MaxBytesReader above) and
+		// Read file into memory (capped by MaxBytesReader above) and
 		// hand it to the upload driver. Local disk for single-node; S3 in
 		// production multi-pod deploys.
 		ts := time.Now().Unix()
@@ -130,6 +142,10 @@ func HandleServeUpload(db *store.DB) http.HandlerFunc {
 		caller := core.ClaimsFrom(r)
 		if caller == nil {
 			core.RespondError(w, "auth required", http.StatusUnauthorized)
+			return
+		}
+		if caller.Role != "parent" && !core.IsAdminRole(caller) {
+			core.RespondError(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		if !strings.HasPrefix(filename, "proof_") {

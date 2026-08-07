@@ -30,8 +30,12 @@ func teacherClassIDSet(db *store.DB, c *core.Claims) map[string]bool {
 	if c == nil || c.Role != "teacher" {
 		return out
 	}
+	// Tenant-scoped: staff.email is not unique across tenants and this lookup is
+	// now load-bearing for several authorization decisions.
+	twStaff, twStaffArgs := store.ScopeTenant(c, "")
 	var staffID string
-	db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL LIMIT 1`, c.Email).Scan(&staffID)
+	staffLookupArgs := append([]any{c.Email}, twStaffArgs...)
+	db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL`+twStaff+` LIMIT 1`, staffLookupArgs...).Scan(&staffID)
 	if staffID == "" {
 		return out
 	}
@@ -46,6 +50,66 @@ func teacherClassIDSet(db *store.DB, c *core.Claims) map[string]bool {
 		var id string
 		if err := rows.Scan(&id); err == nil {
 			out[id] = true
+		}
+	}
+	return out
+}
+
+// teacherMayActOnStudent reports whether the caller may write records against
+// this student. Admins are unrestricted; a teacher is limited to students in
+// their own classes; anyone else is denied. The read paths were scoped first,
+// which left the write paths as the easier route to the same data.
+func teacherMayActOnStudent(db *store.DB, c *core.Claims, studentID string) bool {
+	if core.IsAdminRole(c) {
+		return true
+	}
+	if c == nil || c.Role != "teacher" {
+		return false
+	}
+	return teacherStudentIDSet(db, c)[studentID]
+}
+
+// staffIDForClaims returns the caller's own staff row id (empty if they have
+// none). Used to let a staff member see their OWN records even when a role
+// filter otherwise scopes them to student data.
+func staffIDForClaims(db *store.DB, c *core.Claims) string {
+	if c == nil {
+		return ""
+	}
+	tw, twArgs := store.ScopeTenant(c, "")
+	var staffID string
+	args := append([]any{c.Email}, twArgs...)
+	db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL`+tw, args...).Scan(&staffID)
+	return staffID
+}
+
+// teacherStudentIDSet returns the IDs of students enrolled in any class this
+// teacher teaches. Used to scope student-linked records (attendance, self-study,
+// replacement credits) so a teacher can't read data for children they don't teach.
+func teacherStudentIDSet(db *store.DB, c *core.Claims) map[string]bool {
+	out := map[string]bool{}
+	classIDs := teacherClassIDSet(db, c)
+	if len(classIDs) == 0 {
+		return out
+	}
+	tw, twArgs := store.ScopeTenant(c, "")
+	rows, err := db.Query(`SELECT id, COALESCE(enrolled_classes,'[]') FROM students WHERE deleted_at IS NULL`+tw, twArgs...)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, ec string
+		if err := rows.Scan(&id, &ec); err != nil {
+			continue
+		}
+		var enrolled []string
+		json.Unmarshal([]byte(ec), &enrolled)
+		for _, cid := range enrolled {
+			if classIDs[cid] {
+				out[id] = true
+				break
+			}
 		}
 	}
 	return out

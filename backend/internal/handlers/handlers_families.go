@@ -37,6 +37,22 @@ func listFamilies(db *store.DB, c *core.Claims) []models.Family {
 		}
 		out = append(out, f)
 	}
+	// Teachers must not see parent contact details. listStudents already blanks
+	// them on the student record (redactContactForTeacher), but students carry
+	// familyId, so leaving families intact made that redaction cosmetic — a
+	// one-line join in devtools recovered every parent's email and phone.
+	// Referral code / credit balance is billing-adjacent, so it goes too.
+	if c != nil && c.Role == "teacher" {
+		for i := range out {
+			out[i].Contact = ""
+			out[i].Phone = ""
+			out[i].ParentName = ""
+			out[i].Address = ""
+			out[i].Notes = ""
+			out[i].ReferralCode = ""
+			out[i].ReferralCreditsRemaining = 0
+		}
+	}
 	return out
 }
 

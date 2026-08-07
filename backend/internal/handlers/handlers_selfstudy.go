@@ -60,15 +60,26 @@ func listSelfStudy(db *store.DB, c *core.Claims) []models.SelfStudySession {
 func HandleListSelfStudy(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := core.ClaimsFrom(r)
-		isParent := c != nil && c.Role != "admin" && c.Role != "superadmin" && c.Role != "teacher"
+		// Parents AND teachers are limited to a subset of students; only admins
+		// are unrestricted. Teachers previously fell through to the admin path
+		// and could read any student's self-study sessions in the tenant.
+		isRestricted := c != nil && !core.IsAdminRole(c)
+		restrictedIDs := map[string]bool{}
+		if isRestricted {
+			if c.Role == "teacher" {
+				restrictedIDs = teacherStudentIDSet(db, c)
+			} else {
+				restrictedIDs = parentStudentIDs(db, c)
+			}
+		}
 
 		studentID := r.URL.Query().Get("studentId")
 
-		// Parents use in-memory filtering — skip pagination
-		if isParent {
+		// Restricted roles use in-memory filtering — skip pagination
+		if isRestricted {
 			if studentID == "" {
 				all := listSelfStudy(db, c)
-				stuIDs := parentStudentIDs(db, c)
+				stuIDs := restrictedIDs
 				filtered := []models.SelfStudySession{}
 				for _, s := range all {
 					if stuIDs[s.StudentID] {
@@ -78,8 +89,7 @@ func HandleListSelfStudy(db *store.DB) http.HandlerFunc {
 				core.Respond(w, filtered)
 				return
 			}
-			stuIDs := parentStudentIDs(db, c)
-			if !stuIDs[studentID] {
+			if !restrictedIDs[studentID] {
 				core.Respond(w, []models.SelfStudySession{})
 				return
 			}
@@ -170,6 +180,10 @@ func HandleCreateSelfStudy(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, msg, 400)
 			return
 		}
+		if !teacherMayActOnStudent(db, c, s.StudentID) {
+			core.RespondError(w, "you can only log sessions for students in your own classes", http.StatusForbidden)
+			return
+		}
 		if s.ID == "" {
 			s.ID = core.GenerateID("SS")
 		}
@@ -187,7 +201,7 @@ func HandleCreateSelfStudy(db *store.DB) http.HandlerFunc {
 		// start but no end yet. A fully backfilled session (end already set) is
 		// historical data entry, so a real-time "checked in" would be wrong.
 		if s.StartTime != "" && s.EndTime == "" {
-			go notify.NotifySelfStudyCheckIn(db, tid, s.StudentID, s.StartTime)
+			goSafe("notify_self_study_check_in", func() { notify.NotifySelfStudyCheckIn(db, tid, s.StudentID, s.StartTime) })
 		}
 		w.WriteHeader(http.StatusCreated)
 		core.Respond(w, s)
@@ -203,6 +217,15 @@ func HandleDeleteSelfStudy(db *store.DB) http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		tw, twArgs := store.ScopeTenant(c, "")
+		// Resolve the session's student so a teacher can't delete another
+		// class's rows (the read path is scoped, the delete path was not).
+		var ownerStudent string
+		ownArgs := append([]any{id}, twArgs...)
+		db.QueryRow(`SELECT student_id FROM self_study_sessions WHERE id=?`+tw, ownArgs...).Scan(&ownerStudent)
+		if !teacherMayActOnStudent(db, c, ownerStudent) {
+			core.RespondError(w, "you can only delete sessions for students in your own classes", http.StatusForbidden)
+			return
+		}
 		args := append([]any{id}, twArgs...)
 		if _, err := db.Exec(`UPDATE self_study_sessions SET deleted_at=NOW() WHERE id=?`+tw, args...); err != nil {
 			core.RespondError(w, "could not delete session", 500)

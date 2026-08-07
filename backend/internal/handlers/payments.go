@@ -63,6 +63,11 @@ func HandlePaymentCheckout(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "auth required", http.StatusUnauthorized)
 			return
 		}
+		// Checkout is admin + own-family-parent only; block teachers/other roles.
+		if c.Role != "parent" && !core.IsAdminRole(c) {
+			core.RespondError(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		id := chi.URLParam(r, "id")
 		tw, twArgs := store.ScopeTenant(c, "")
 		var studentID, description string

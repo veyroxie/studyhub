@@ -38,6 +38,18 @@ func listReplacementCredits(db *store.DB, c *core.Claims) []models.ReplacementCr
 		}
 		out = append(out, rc)
 	}
+	// Teachers see credits only for students in their own classes; the query
+	// above is tenant-wide for every non-parent role.
+	if c != nil && c.Role == "teacher" {
+		stuIDs := teacherStudentIDSet(db, c)
+		scoped := []models.ReplacementCredit{}
+		for _, rc := range out {
+			if stuIDs[rc.StudentID] {
+				scoped = append(scoped, rc)
+			}
+		}
+		return scoped
+	}
 	return out
 }
 
@@ -51,6 +63,15 @@ func HandleListReplacementCredits(db *store.DB) http.HandlerFunc {
 		}
 		if c != nil && c.Role == "parent" {
 			stuIDs := parentStudentIDs(db, c)
+			if !stuIDs[studentID] {
+				core.Respond(w, []models.ReplacementCredit{})
+				return
+			}
+		}
+		// Same owns-check for teachers — previously only parents were verified,
+		// so a teacher could read credits for any student in the tenant.
+		if c != nil && c.Role == "teacher" {
+			stuIDs := teacherStudentIDSet(db, c)
 			if !stuIDs[studentID] {
 				core.Respond(w, []models.ReplacementCredit{})
 				return
@@ -86,6 +107,10 @@ func HandleCreateReplacementCredit(db *store.DB) http.HandlerFunc {
 		var rc models.ReplacementCredit
 		if err := json.NewDecoder(r.Body).Decode(&rc); err != nil {
 			core.RespondError(w, "bad body", 400)
+			return
+		}
+		if !teacherMayActOnStudent(db, c, rc.StudentID) {
+			core.RespondError(w, "you can only manage credits for students in your own classes", http.StatusForbidden)
 			return
 		}
 		if msg := validationError("studentId", rc.StudentID, "type", rc.Type, "date", rc.Date); msg != "" {
@@ -207,6 +232,12 @@ func HandleReplacementBalance(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "not your student", 403)
 				return
 			}
+		}
+		// Same owns-check for teachers — this by-id sibling of the list endpoint
+		// was left open when the list was scoped.
+		if c != nil && c.Role == "teacher" && !teacherMayActOnStudent(db, c, studentID) {
+			core.RespondError(w, "not your student", http.StatusForbidden)
+			return
 		}
 		tw, twArgs := store.ScopeTenant(c, "")
 		var classEarned, classUsed, ssEarned, ssUsed int

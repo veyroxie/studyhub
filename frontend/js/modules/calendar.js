@@ -225,7 +225,7 @@
               +   '<div class="text-xs text-slate-400 mt-0.5">' + weekDates[i].toLocaleDateString('en-MY', {month:'short'}) + '</div>'
               + '</div>'
               + (function() {
-                  var dateStr = weekDates[i].toISOString().slice(0,10);
+                  var dateStr = App.Utils.localDate(weekDates[i]);
                   var hol = isHolidayDate(dateStr, _holidays);
                   return hol ? '<div style="padding:0.25rem 0.5rem">' + _holidayBadge(hol) + '</div>' : '';
                 })()
@@ -271,7 +271,7 @@
           if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
           return true;
         });
-        var cellDateStr = d.toISOString().slice(0,10);
+        var cellDateStr = App.Utils.localDate(d);
         // Local YYYY-MM-DD (toISOString shifts a day back in UTC+8); used for the
         // day-schedule modal so its header and cancellation match line up with
         // how the week view stores dates.
@@ -688,7 +688,7 @@
         message: 'A new ' + newClass.classType.toLowerCase() + ' class "' + newClass.name + '" has been scheduled on ' + newClass.day + 's from ' + App.Utils.formatTime(newClass.time) + ' to ' + App.Utils.formatTime(newClass.endTime) + ' in ' + newClass.classroom + '. Enrolment is now open.',
         audience: 'All Parents',
         type: 'Notice',
-        createdOn: new Date().toISOString().slice(0, 10),
+        createdOn: App.Utils.today(),
         createdBy: 'Admin'
       };
 

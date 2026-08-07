@@ -14,7 +14,25 @@ import (
 
 func listPerformanceReviews(db *store.DB, c *core.Claims) []models.PerformanceReview {
 	tw, twArgs := store.ScopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC LIMIT 5000`, twArgs...)
+	// Admins see every review; a teacher sees only their own; everyone else
+	// (parents) gets nothing. This feeds the snapshot, which previously handed
+	// teachers every colleague's rating and comments.
+	if c == nil || (!core.IsAdminRole(c) && c.Role != "teacher") {
+		return []models.PerformanceReview{}
+	}
+	ownFilter := ""
+	args := twArgs
+	if c.Role == "teacher" {
+		var myStaffID string
+		staffArgs := append([]any{c.Email}, twArgs...)
+		db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL`+tw, staffArgs...).Scan(&myStaffID)
+		if myStaffID == "" {
+			return []models.PerformanceReview{}
+		}
+		ownFilter = ` AND staff_id=?`
+		args = append(append([]any{}, twArgs...), myStaffID)
+	}
+	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE deleted_at IS NULL`+tw+ownFilter+` ORDER BY date DESC LIMIT 5000`, args...)
 	if err != nil {
 		core.Logger.Error("list query failed", "err", err, "type", "PerformanceReview")
 		return []models.PerformanceReview{}
@@ -35,11 +53,25 @@ func HandleListPerformanceReviews(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := core.ClaimsFrom(r)
 		// Parents cannot view staff performance reviews
-		if c != nil && c.Role != "admin" && c.Role != "superadmin" && c.Role != "teacher" {
+		if c == nil || (!core.IsAdminRole(c) && c.Role != "teacher") {
 			core.Respond(w, []models.PerformanceReview{})
 			return
 		}
 		staffID := r.URL.Query().Get("staffId")
+		// A teacher may read only their OWN reviews. Pin the filter to their staff
+		// row and ignore any requested staffId, otherwise they can read every
+		// rating and comment written about a colleague.
+		if c.Role == "teacher" {
+			tw, twArgs := store.ScopeTenant(c, "")
+			var myStaffID string
+			staffArgs := append([]any{c.Email}, twArgs...)
+			db.QueryRow(`SELECT id FROM staff WHERE email=? AND deleted_at IS NULL`+tw, staffArgs...).Scan(&myStaffID)
+			if myStaffID == "" {
+				core.Respond(w, []models.PerformanceReview{})
+				return
+			}
+			staffID = myStaffID
+		}
 		if staffID != "" {
 			// Filtered by staffId — small dataset, no pagination
 			tw, twArgs := store.ScopeTenant(c, "")
@@ -93,8 +125,11 @@ func HandleListPerformanceReviews(db *store.DB) http.HandlerFunc {
 func HandleCreatePerformanceReview(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := core.ClaimsFrom(r)
-		if !core.IsStaffRole(c) {
-			core.RespondError(w, "staff only", 403)
+		// Admin-only: a teacher must never be able to author an evaluation about
+		// a colleague (staff_id is client-supplied, so IsStaffRole let any
+		// teacher fabricate a review for anyone).
+		if !core.IsAdminRole(c) {
+			core.RespondError(w, "admin only", 403)
 			return
 		}
 		var p models.PerformanceReview

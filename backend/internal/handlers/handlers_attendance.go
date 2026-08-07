@@ -48,10 +48,45 @@ func listAttendance(db *store.DB, c *core.Claims) []models.Attendance {
 		}
 		out = append(out, a)
 	}
+	// Teachers see attendance only for students in their own classes, and never
+	// staff rows (which expose colleagues' work patterns). The query above is
+	// tenant-wide for every non-parent role.
+	if c != nil && c.Role == "teacher" {
+		stuIDs := teacherStudentIDSet(db, c)
+		myStaffID := staffIDForClaims(db, c)
+		scoped := []models.Attendance{}
+		for _, a := range out {
+			// Their own students, plus their OWN staff row so the teacher
+			// self check-in/out panel still works.
+			if a.PersonType == "student" && stuIDs[a.PersonID] {
+				scoped = append(scoped, a)
+			} else if a.PersonType == "staff" && myStaffID != "" && a.PersonID == myStaffID {
+				scoped = append(scoped, a)
+			}
+		}
+		return scoped
+	}
 	return out
 }
 
 func listAttendancePaged(db *store.DB, c *core.Claims, p core.Pagination) ([]models.Attendance, int) {
+	// Teachers: reuse the scoped non-paged list and page it in memory. Their
+	// visibility depends on an app-computed student set, so scoping here in SQL
+	// would duplicate that logic — and without this the paginated endpoint was a
+	// clean bypass of the filter in listAttendance.
+	if c != nil && c.Role == "teacher" {
+		all := listAttendance(db, c)
+		total := len(all)
+		start := p.Offset
+		if start > total {
+			start = total
+		}
+		end := start + p.Limit
+		if end > total {
+			end = total
+		}
+		return all[start:end], total
+	}
 	tid := store.TenantID(c)
 	var total int
 	var rows *sql.Rows
@@ -250,7 +285,7 @@ func HandleAttendance(db *store.DB, hub *WSHub) http.HandlerFunc {
 						"date":     a.Date,
 					})
 				}
-				go notify.NotifyParentOnCheck(db, tid, a, isCheckIn)
+				goSafe("notify_parent_on_check", func() { notify.NotifyParentOnCheck(db, tid, a, isCheckIn) })
 			}
 			core.Respond(w, a)
 		}
