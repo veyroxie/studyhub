@@ -474,6 +474,11 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 			for _, cid := range models.ParseArr(s.enrolledClasses) {
 				m := classByID[cid]
 				if m.fee <= 0 {
+					// A class with no level band (or a zeroed pricing tier)
+					// prices at 0 — surface it, or students silently never
+					// get billed and nobody finds out until month-end.
+					core.Logger.Warn("monthly billing: class has no priced tier — line skipped",
+						"class_id", cid, "student_id", s.id, "tenant_id", s.tenantID)
 					continue
 				}
 				base += m.fee
@@ -485,7 +490,11 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 			}
 		}
 		if base <= 0 {
-			continue // no classes priced and no manual amount — nothing to bill
+			// Whole student skipped: log it — "nothing to bill" and "billing
+			// silently broken" look identical without this line.
+			core.Logger.Warn("monthly billing: student skipped — no priced classes and no package amount",
+				"student_id", s.id, "tenant_id", s.tenantID)
+			continue
 		}
 
 		// One referral credit per child-invoice: each enrolled child consumes a

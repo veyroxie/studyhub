@@ -57,10 +57,19 @@ func QueueEmail(db *DB, tenantID int, to, subject, bodyHTML string) (int64, erro
 // processEmailQueue is the worker. Picks pending rows, tries to send,
 // updates state. Returns the count attempted (for log visibility).
 func ProcessEmailQueue(db *DB) int {
+	// Claim-before-send: without this, two workers (rolling deploy overlap,
+	// second instance) SELECT the same batch and every email goes out twice.
+	// The claim flips rows to 'sending' with a 10-minute lease via
+	// next_attempt_at, so a worker that crashes mid-send has its rows
+	// reclaimed by a later tick instead of being stuck forever.
 	rows, err := db.Query(
-		`SELECT id, to_email, subject, body_html, attempts FROM email_queue
-		  WHERE status='pending' AND next_attempt_at <= NOW()
-		  ORDER BY next_attempt_at ASC LIMIT ?`,
+		`UPDATE email_queue SET status='sending', next_attempt_at = NOW() + INTERVAL '10 minutes'
+		  WHERE id IN (
+		    SELECT id FROM email_queue
+		     WHERE status IN ('pending','sending') AND next_attempt_at <= NOW()
+		     ORDER BY next_attempt_at ASC LIMIT ?
+		       FOR UPDATE SKIP LOCKED)
+		  RETURNING id, to_email, subject, body_html, attempts`,
 		emailWorkerBatch,
 	)
 	if err != nil {
@@ -99,7 +108,7 @@ func ProcessEmailQueue(db *DB) int {
 			core.Logger.Error("email_queue: gave up", "id", j.id, "to", j.to, "err", err)
 			continue
 		}
-		db.Exec(`UPDATE email_queue SET attempts=?, next_attempt_at=?, last_error=? WHERE id=?`,
+		db.Exec(`UPDATE email_queue SET status='pending', attempts=?, next_attempt_at=?, last_error=? WHERE id=?`,
 			nextAttempts, nextAttemptAt(nextAttempts), err.Error(), j.id)
 		core.Logger.Warn("email_queue: send failed, will retry", "id", j.id, "attempts", nextAttempts, "err", err)
 	}

@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"html"
 	"os"
@@ -408,10 +409,13 @@ func sendOverdueInvoiceReminders(db *store.DB) {
 		if holidaySkip[p.tenantID] {
 			continue
 		}
-		// Honor parent's notification preference. The default is true
-		// (opt-out) so missing rows behave as before.
-		var wantReminders bool
-		db.QueryRow(`SELECT COALESCE(notify_invoice_reminders,true) FROM users WHERE email=?`, p.parentEmail).Scan(&wantReminders)
+		// Honor parent's notification preference. Default true (opt-out) on a
+		// missing row OR a scan error — the zero value is false, which would
+		// silently mark the invoice reminded without ever sending.
+		wantReminders := true
+		if err := db.QueryRow(`SELECT COALESCE(notify_invoice_reminders,true) FROM users WHERE email=?`, p.parentEmail).Scan(&wantReminders); err != nil && err != sql.ErrNoRows {
+			wantReminders = true
+		}
 		if !wantReminders {
 			// Still mark reminder_sent_on so we don't re-evaluate
 			// this invoice every hour — keeps the query selective.
@@ -426,17 +430,25 @@ func sendOverdueInvoiceReminders(db *store.DB) {
 		} else {
 			label = fmt.Sprintf("%d days overdue", p.daysOverdue)
 		}
+		// Claim BEFORE sending: mark reminder_sent_on first so two overlapping
+		// instances (rolling deploy) can't both email the same parent. The
+		// guarded WHERE makes exactly one claimer win; the loser skips. On a
+		// send failure the claim is released so a later tick retries.
+		res, err := db.Exec(`UPDATE invoices SET reminder_sent_on=? WHERE id=? AND tenant_id=? AND (reminder_sent_on IS NULL OR reminder_sent_on < ?)`,
+			core.Today(), p.invoiceID, p.tenantID, threeDaysAgo())
+		if err != nil {
+			core.Logger.Error("overdue reminder claim failed", "err", err, "invoice_id", p.invoiceID)
+			continue
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			continue // another instance claimed it
+		}
 		billingURL := mailer.AppURL() + "/#billing"
 		body := mailer.RenderInvoiceReminderEmail(p.parentName, p.studentName, p.description, p.amountRM, p.dueDate, label, billingURL)
 		if err := core.SendEmail(p.parentEmail, "Reminder: invoice "+label, body); err != nil {
 			core.Logger.Error("overdue reminder send failed", "err", err, "invoice_id", p.invoiceID, "email", p.parentEmail)
+			db.Exec(`UPDATE invoices SET reminder_sent_on=NULL WHERE id=? AND tenant_id=?`, p.invoiceID, p.tenantID)
 			continue
-		}
-		// Mark this invoice as reminded so it doesn't fire again for 3 days.
-		// Pin to the original tenant so an id collision across tenants cannot
-		// accidentally suppress a different tenant's reminder.
-		if _, err := db.Exec(`UPDATE invoices SET reminder_sent_on=? WHERE id=? AND tenant_id=?`, core.Today(), p.invoiceID, p.tenantID); err != nil {
-			core.Logger.Error("overdue reminder mark failed", "err", err, "invoice_id", p.invoiceID)
 		}
 	}
 }
