@@ -141,8 +141,11 @@ func Build(db *store.DB) http.Handler {
 	// ── Authenticated routes ──────────────────────────────────────────────────
 	r.Group(func(r chi.Router) {
 		r.Use(auth.JWTMiddleware(db))
-		// Bind app.tenant_id GUC per request so RLS policies filter rows
-		// even when the handler forgets a tenant WHERE clause.
+		// NOTE: RLSScope is currently a no-op passthrough (the app connects as a
+		// Postgres superuser and a per-request GUC is unsafe on a shared pool),
+		// so there is NO database-level backstop: every handler MUST apply
+		// store.ScopeTenant itself. Do not rely on RLS to catch a missing tenant
+		// WHERE clause — it will not.
 		r.Use(store.RLSScope(db))
 		// Drop the tenant snapshot cache after every successful write so
 		// admins / parents see their changes on the next dashboard load
@@ -194,6 +197,7 @@ func Build(db *store.DB) http.Handler {
 			r.Put("/{id}/pay", handlers.HandleInvoicePay(db))
 			r.Post("/{id}/checkout", handlers.HandlePaymentCheckout(db))
 			r.Delete("/{id}", handlers.HandleInvoiceDelete(db))
+			r.Post("/bulk-delete", handlers.HandleInvoicesBulkDelete(db))
 			r.Get("/{id}/pdf", pdf.HandleInvoicePDF(db, false))
 			r.Get("/{id}/receipt.pdf", pdf.HandleInvoicePDF(db, true))
 		})

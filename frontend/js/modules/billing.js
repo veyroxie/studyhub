@@ -9,6 +9,11 @@
   var _PAGE_SIZE = 15;
   var SELF_STUDY_SESSION_RATE = 10; // RM per self-study session (manual drop-in billing)
   var SELF_STUDY_HOUR_RATE = 10;    // RM per self-study hour (member included value / add-on)
+  // Keep in sync with maxProofBytes in backend handlers_uploads.go. Oversized
+  // uploads trip the server's MaxBytesReader mid-stream, which the browser
+  // reports as a network error rather than a clean rejection — so we reject
+  // them here first with a readable message.
+  var MAX_PROOF_BYTES = 15 * 1024 * 1024;
 
   // ── Package line-item builder (Create Invoice → Single tab) ──────────────────
   // Line items selected for the invoice under construction. The server derives
@@ -375,6 +380,7 @@
     return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 1rem;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.25);border-radius:10px;margin-bottom:0.75rem">'
       + '<span style="font-size:0.82rem;font-weight:700;color:#92400e">' + count + ' invoice' + (count !== 1 ? 's' : '') + ' selected</span>'
       + '<button onclick="App.Billing._bulkMarkPaid()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Mark All Paid</button>'
+      + '<button onclick="App.Billing._bulkDeleteInv()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:#dc2626;color:#fff;border:none;border-radius:7px;cursor:pointer">Delete Selected</button>'
       + '<button onclick="App.Billing._bulkDeselectInv()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:transparent;color:#92400e;border:1px solid rgba(201,162,39,0.3);border-radius:7px;cursor:pointer">Clear</button>'
       + '</div>';
   }
@@ -412,12 +418,8 @@
     if (ids.length === 0) return;
     var html = '<div class="p-6">'
       + '<h2 class="text-lg font-bold mb-1">Mark ' + ids.length + ' Invoice' + (ids.length !== 1 ? 's' : '') + ' as Paid</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">Select payment method received</p>'
-      + '<div class="grid grid-cols-3 gap-3 mb-5">'
-      + ['Cash', 'Bank Transfer', 'QR Pay'].map(function(m) {
-          return '<button onclick="App.Billing._bulkConfirmPaid(\'' + m + '\')" class="p-3 border-2 border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:border-yellow-400 hover:bg-yellow-50 transition-all text-center">' + m + '</button>';
-        }).join('')
-      + '</div>'
+      + '<p class="text-sm text-slate-500 mb-4">Bulk mark-paid is for cash received. Bank Transfer / QR Pay need a receipt and reference per invoice, so confirm those individually.</p>'
+      + '<button onclick="App.Billing._bulkConfirmPaid(\'Cash\')" class="w-full p-3 mb-3 border-2 border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:border-yellow-400 hover:bg-yellow-50 transition-all text-center">Mark ' + ids.length + ' as paid (Cash)</button>'
       + '<button onclick="App.Utils.hideModal()" class="w-full py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '</div>';
     App.Utils.showModal(html);
@@ -425,17 +427,61 @@
 
   function _bulkConfirmPaid(method) {
     var ids = Object.keys(_selectedInv);
-    var { invoices } = App.Store.get();
-    var today = App.Utils.today();
-    var updated = invoices.map(function(i) {
-      return ids.indexOf(i.id) > -1 ? Object.assign({}, i, { status: 'Paid', paidOn: today, paymentMethod: method }) : i;
-    });
-    App.Store.set({ invoices: updated });
+    if (ids.length === 0) return;
     App.Utils.hideModal(true);
-    App.Utils.showToast('Marked ' + ids.length + ' invoice' + (ids.length !== 1 ? 's' : '') + ' as paid · ' + method, 'success');
-    App.Notifs.refresh();
-    _selectedInv = {};
-    App.Router.refresh();
+    // Persist each invoice to the server. The old version only mutated the
+    // local store, so every "paid" reverted on the next snapshot reload.
+    // Isolate per-invoice failures (silent so we own the messaging) so a
+    // transient error on one invoice doesn't abort the batch or falsely
+    // report the rest as paid.
+    Promise.all(ids.map(function(id) {
+      return App.Api.put('/api/invoices/' + id + '/pay', { status: 'Paid', paymentMethod: method }, { silent: true })
+        .then(function() { return true; })
+        .catch(function() { return false; });
+    })).then(function(results) {
+      var ok = results.filter(Boolean).length;
+      var failed = results.length - ok;
+      _selectedInv = {};
+      return App.Api.loadSnapshot().then(function() {
+        if (failed === 0) {
+          App.Utils.showToast('Marked ' + ok + ' invoice' + (ok !== 1 ? 's' : '') + ' as paid · ' + method, 'success');
+        } else {
+          App.Utils.showToast('Marked ' + ok + ' paid · ' + failed + ' failed — please retry', ok === 0 ? 'error' : 'warning');
+        }
+        App.Notifs.refresh();
+        App.Router.refresh();
+      });
+    });
+  }
+
+  function _bulkDeleteInv() {
+    var ids = Object.keys(_selectedInv);
+    if (ids.length === 0) return;
+    var noun = 'invoice' + (ids.length !== 1 ? 's' : '');
+    App.Utils.showModal(
+      '<div class="p-6">'
+      + '<h2 class="text-lg font-bold mb-1">Delete ' + ids.length + ' ' + noun + '?</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Only unpaid invoices are removed — paid ones are kept as records. Deletes are recoverable by an admin if needed.</p>'
+      + '<button onclick="App.Billing._bulkDeleteInvConfirm()" class="w-full p-3 mb-3 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 transition-all">Delete ' + ids.length + ' ' + noun + '</button>'
+      + '<button onclick="App.Utils.hideModal()" class="w-full py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '</div>'
+    );
+  }
+
+  function _bulkDeleteInvConfirm() {
+    var ids = Object.keys(_selectedInv);
+    if (ids.length === 0) return;
+    App.Utils.hideModal(true);
+    App.Api.post('/api/invoices/bulk-delete', { ids: ids }).then(function(res) {
+      _selectedInv = {};
+      return App.Api.loadSnapshot().then(function() {
+        var msg = 'Deleted ' + res.deleted + ' invoice' + (res.deleted !== 1 ? 's' : '');
+        if (res.skipped > 0) msg += ' · ' + res.skipped + ' kept (paid or already removed)';
+        App.Utils.showToast(msg, res.deleted === 0 ? 'warning' : 'success');
+        App.Notifs.refresh();
+        App.Router.refresh();
+      });
+    });
   }
 
   function _statCard(label, value, textClass, bgClass, filter) {
@@ -487,8 +533,8 @@
       + '<h2 class="text-lg font-bold mb-1">Confirm Payment</h2>'
       + '<p class="text-sm text-slate-500 mb-4">Select payment method received</p>'
       + '<div id="admin-payment-methods-grid" class="grid grid-cols-3 gap-3 mb-5">'
-      // Cash — direct confirm
-      + '<button onclick="App.Billing._confirmPaid(\'' + invId + '\',\'Cash\')" '
+      // Cash — show a confirm screen (no receipt to attach, so make it deliberate)
+      + '<button onclick="App.Billing._confirmCash(\'' + invId + '\')" '
       +   'class="p-3 border-2 border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:border-blue-400 hover:bg-blue-50 transition-all text-center">Cash</button>'
       // Bank Transfer — show admin proof upload
       + '<button onclick="App.Billing._showAdminProofUpload(\'' + invId + '\',\'Bank Transfer\')" '
@@ -586,6 +632,10 @@
       App.Utils.showToast('Receipt upload is required for ' + method, 'error');
       return;
     }
+    if (fileInput.files[0].size > MAX_PROOF_BYTES) {
+      App.Utils.showToast('Receipt must be under ' + (MAX_PROOF_BYTES / 1024 / 1024) + 'MB — try a photo, not a scan', 'error');
+      return;
+    }
 
     if (hasFile) {
       var submitBtn = document.getElementById('admin-proof-submit-btn');
@@ -623,6 +673,39 @@
     }
   }
 
+  function _confirmCash(invId) {
+    var inv = App.Store.get().invoices.find(function(i) { return i.id === invId; });
+    if (!inv) return;
+    var html = '<div class="p-6">'
+      + '<h2 class="text-lg font-bold mb-1">Confirm cash payment</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Type the exact amount received to mark "' + App.Utils.esc(inv.description) + '" as paid.</p>'
+      + '<label class="block text-xs font-semibold text-slate-500 mb-1">Amount received (invoice is ' + App.Utils.formatCurrency(inv.amount) + ')</label>'
+      + '<input id="cash-confirm-amount" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00" autofocus onkeydown="if(event.key===\'Enter\'){event.preventDefault();App.Billing._confirmCashSubmit(\'' + invId + '\')}" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mb-4 focus:border-blue-500 focus:outline-none">'
+      + '<div class="flex gap-2">'
+      + '<button onclick="App.Billing._confirmCashSubmit(\'' + invId + '\')" class="flex-1 py-2 text-sm font-bold text-white rounded-lg bg-blue-600 hover:bg-blue-700">Confirm payment</button>'
+      + '<button onclick="App.Billing._markPaidModal(\'' + invId + '\')" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Back</button>'
+      + '</div>'
+      + '</div>';
+    App.Utils.showModal(html);
+    var el = document.getElementById('cash-confirm-amount');
+    if (el) el.focus();
+  }
+
+  function _confirmCashSubmit(invId) {
+    var inv = App.Store.get().invoices.find(function(i) { return i.id === invId; });
+    if (!inv) return;
+    var el = document.getElementById('cash-confirm-amount');
+    var typed = el ? parseFloat(el.value) : NaN;
+    // Require an exact match (to the cent) so marking paid is deliberate and
+    // the recorded amount is confirmed to equal what was received.
+    if (isNaN(typed) || Math.abs(typed - inv.amount) > 0.005) {
+      App.Utils.showToast('Amount must match the invoice exactly (' + App.Utils.formatCurrency(inv.amount) + ')', 'error');
+      if (el) el.focus();
+      return;
+    }
+    _confirmPaid(invId, 'Cash');
+  }
+
   function _confirmPaid(invId, method, refNo) {
     var { invoices } = App.Store.get();
     var inv = invoices.find(function(i) { return i.id === invId; });
@@ -638,6 +721,12 @@
         App.Utils.showToast('Marked paid · ' + method, 'success');
         App.Notifs.refresh();
         App.Router.refresh();
+      }).catch(function() {
+        // If this came from the proof-upload flow, its submit button was
+        // disabled and relabelled "Uploading..." — re-enable it so the admin
+        // can retry instead of being stuck. App.Api already toasted the error.
+        var btn = document.getElementById('admin-proof-submit-btn');
+        if (btn) { btn.disabled = false; btn.textContent = 'Confirm Payment'; }
       });
     // No local fallback: when the server rejects (e.g. missing reference
     // number for non-cash), App.Api auto-toasts the error and we leave the
@@ -805,6 +894,10 @@
       App.Utils.showToast('Receipt upload is required for ' + method, 'error');
       return;
     }
+    if (fileInput.files[0].size > MAX_PROOF_BYTES) {
+      App.Utils.showToast('Receipt must be under ' + (MAX_PROOF_BYTES / 1024 / 1024) + 'MB — try a photo, not a scan', 'error');
+      return;
+    }
 
     if (hasFile) {
       var submitBtn = document.getElementById('proof-submit-btn');
@@ -832,10 +925,11 @@
         })});
         _parentConfirmSubmit(invId, method, refNo);
       })
-      .catch(function(err) {
+      .catch(function() {
+        // Receipt is mandatory for non-cash — do NOT submit without it (this
+        // matches the admin flow). Re-enable the button so the parent retries.
         if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Payment'; }
-        App.Utils.showToast('Receipt upload failed — submitting without receipt', 'warning');
-        _parentConfirmSubmit(invId, method, refNo);
+        App.Utils.showToast('Receipt upload failed — payment not submitted, please retry', 'error');
       });
     } else {
       // No file — submit anyway
@@ -860,13 +954,9 @@
       App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
       App.Router.refresh();
     }).catch(function() {
-      // Fallback: update locally so the UI isn't stuck
-      var state = App.Store.get();
-      App.Store.set({ invoices: state.invoices.map(function(inv) {
-        return inv.id === invId ? Object.assign({}, inv, { status: 'Pending Verification', paidOn: App.Utils.today(), paymentMethod: method, submittedByParent: true }) : inv;
-      })});
-      App.Utils.showToast('Payment submitted (offline — will sync later)', 'warning');
-      App.Router.refresh();
+      // Honest failure: never fake a submitted state locally — the admin
+      // would never see it and the parent would believe it went through.
+      App.Utils.showToast('Payment submission failed — please check your connection and try again', 'error');
     });
   }
 
@@ -926,16 +1016,19 @@
   }
 
   function _confirmVerify(invId) {
-    const state = App.Store.get();
-    App.Store.set({ invoices: state.invoices.map(function(i) {
-      return i.id === invId
-        ? Object.assign({}, i, { status: 'Paid', verifiedOn: App.Utils.today(), verifiedBy: 'Admin' })
-        : i;
-    })});
-    App.Utils.hideModal(true);
-    App.Utils.showToast('Payment verified — invoice marked as Paid', 'success');
-    App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
-    App.Router.refresh();
+    // Persist via the pay endpoint — the previous version only mutated the
+    // local store, so the next snapshot reload silently reverted the invoice
+    // to Pending Verification. Method/reference already sit on the invoice
+    // from the parent's submission, so an empty-method PUT keeps them (server
+    // COALESCEs). Server auto-stamps paid_on and assigns the receipt number.
+    App.Api.put('/api/invoices/' + invId + '/pay', { status: 'Paid' })
+      .then(function() { return App.Api.loadSnapshot(); })
+      .then(function() {
+        App.Utils.hideModal(true);
+        App.Utils.showToast('Payment verified — invoice marked as Paid', 'success');
+        App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
+        App.Router.refresh();
+      });
   }
 
   async function _deleteInvoice(invoiceId) {
@@ -944,9 +1037,10 @@
     var prev = App.Api.optimisticRemove('invoices', invoiceId);
     App.Router.refresh();
 
-    // Optimistic + undoable: defer the actual DELETE for ~6s so the user
-    // can hit Undo from the toast. Pressing Undo restores the local
-    // store and cancels the pending DELETE.
+    // Optimistic + undoable: defer the actual DELETE until after the 6s undo
+    // toast has closed. Firing before it closed let an Undo click in the final
+    // ~500ms land after the DELETE had already committed. Pressing Undo
+    // restores the local store and cancels the pending DELETE.
     var cancelled = false;
     App.Utils.showToast('Invoice deleted', 'info', 6000, {
       action: {
@@ -967,23 +1061,28 @@
         App.Store.set({ invoices: prev });
         App.Router.refresh();
       }
-    }, 5500);
+    }, 6500);
   }
 
   // _payOnline kicks off a hosted-checkout flow with the configured gateway
   // (Billplz / Stripe). The server returns a redirect URL; we navigate to it
   // and the gateway POSTs back to /api/payments/webhook/* on payment.
+  var _payOnlineInFlight = false;
   async function _payOnline(invoiceId) {
+    // Guard against rapid double-clicks minting duplicate gateway sessions.
+    if (_payOnlineInFlight) return;
+    _payOnlineInFlight = true;
     try {
       var res = await App.Api.post('/api/invoices/' + invoiceId + '/checkout', {});
       if (res && res.url) {
         window.location.href = res.url;
-      } else {
-        App.Utils.showToast('Could not start checkout', 'error');
+        return; // navigating away — keep the guard set so no second POST fires
       }
+      App.Utils.showToast('Could not start checkout', 'error');
     } catch (err) {
       // App.Api auto-toasts; if the gateway is unconfigured it returns 502.
     }
+    _payOnlineInFlight = false;
   }
 
   // _generateMonthly fires the manual cron — useful when admin needs to
@@ -1219,8 +1318,11 @@
       var earlyBirdOn = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked;
       var discountPct = earlyBirdOn ? (parseFloat(fd.get('discountPct')) || 0) : 0;
       if (discountPct > 0) {
-        var posSubtotal = lineItems.reduce(function(a, li) { return a + (li.amount > 0 ? li.amount : 0); }, 0);
-        var eb = parseFloat((posSubtotal * discountPct / 100).toFixed(2));
+        // Discount the NET subtotal so free/FOC lines (a +40 add-on cancelled
+        // by a -40 credit) and existing discounts don't inflate the base. The
+        // early-bird line isn't pushed yet, so this sums everything but it.
+        var netSubtotal = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
+        var eb = parseFloat((netSubtotal * discountPct / 100).toFixed(2));
         if (eb > 0) {
           lineItems.push({ kind: 'discount', name: 'Early bird discount (' + discountPct + '%)', descriptor: '', qty: 1, unitPrice: eb, amount: -eb });
         }
@@ -1235,14 +1337,15 @@
         createdOn: fd.get('invoiceDate') || App.Utils.today(),
         paidOn: null
       };
-      App.Utils.hideModal(true);
       App.Api.post('/api/invoices', newInvoice).then(function() {
         return App.Api.loadSnapshot();
       }).then(function() {
+        App.Utils.hideModal(true);
         App.Utils.showToast('Invoice created', 'success');
         App.Router.refresh();
       }).catch(function() {
-        // Error already toasted by App.Api wrapper.
+        // Keep the modal open on failure so the built line items aren't lost
+        // and the admin can fix and resubmit. App.Api already toasted the error.
       });
     });
   }
@@ -1301,6 +1404,9 @@
     } else {
       preview.textContent = '';
     }
+    // The early-bird control is shared, and sibling invoices now apply it too,
+    // so keep that preview in sync when the checkbox or percentage changes.
+    if (_currentInvMode === 'sibling') _updateSiblingTotal();
   }
 
   function _updateSelfStudyAmount() {
@@ -1416,10 +1522,18 @@
     const count    = checked.length;
     if (count === 0) { preview.style.display = 'none'; return; }
     const discounted = parseFloat((perChild * (1 - discount / 100)).toFixed(2));
-    const total = parseFloat((discounted * count).toFixed(2));
+    let total = parseFloat((discounted * count).toFixed(2));
+    // Early bird is a shared control that stays visible in sibling mode and IS
+    // applied on submit — the preview has to show it or the admin reads a
+    // different figure than the invoice they create.
+    const ebOn = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked;
+    const ebPct = ebOn ? (parseFloat((document.getElementById('discount-pct') || {}).value) || 0) : 0;
+    const eb = ebPct > 0 ? parseFloat((total * ebPct / 100).toFixed(2)) : 0;
+    total = parseFloat((total - eb).toFixed(2));
     preview.style.display = 'block';
     preview.innerHTML = count + ' child' + (count !== 1 ? 'ren' : '') + ' × RM ' + discounted.toFixed(2)
       + (discount > 0 ? ' (' + discount + '% sibling discount applied)' : '')
+      + (eb > 0 ? ' − RM ' + eb.toFixed(2) + ' (' + ebPct + '% early bird)' : '')
       + ' = <strong>RM ' + total.toFixed(2) + ' total</strong>';
   }
 
@@ -1442,7 +1556,6 @@
     }
 
     const children = state.students.filter(function(s) { return childIds.indexOf(s.id) > -1; });
-    const totalAmount = parseFloat((discounted * children.length).toFixed(2));
     const childNames = children.map(function(c) { return c.firstName; }).join(' + ');
     const desc = description + ' — ' + childNames + (discount > 0 ? ' (' + discount + '% sibling discount)' : '');
 
@@ -1455,6 +1568,16 @@
       const totalDisc = parseFloat(((perChild - discounted) * children.length).toFixed(2));
       if (totalDisc > 0) lineItems.push({ kind: 'discount', name: 'Sibling discount (' + discount + '%)', qty: 1, unitPrice: totalDisc, amount: -totalDisc });
     }
+    // Early bird (shared checkbox, visible in sibling mode) applies to the net
+    // subtotal after the sibling discount — same rule as the single-invoice flow.
+    var earlyBirdOn = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked;
+    var ebPct = earlyBirdOn ? (parseFloat(fd.get('discountPct')) || 0) : 0;
+    if (ebPct > 0) {
+      var ebBase = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
+      var eb = parseFloat((ebBase * ebPct / 100).toFixed(2));
+      if (eb > 0) lineItems.push({ kind: 'discount', name: 'Early bird discount (' + ebPct + '%)', qty: 1, unitPrice: eb, amount: -eb });
+    }
+    const finalTotal = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
 
     // Create a single combined invoice linked to the first child, with
     // siblings listed in the description. Persisted to backend so it shows
@@ -1466,20 +1589,22 @@
       type: 'Monthly',
       lineItems: lineItems,
       siblingDiscount: discount || undefined,
+      earlyBirdCutoff: fd.get('earlyBirdCutoff') || undefined,
       dueDate: dueDate,
       status: 'Unpaid',
       createdOn: App.Utils.today(),
       paidOn: null
     };
 
-    App.Utils.hideModal(true);
     App.Api.post('/api/invoices', newInvoice).then(function() {
       return App.Api.loadSnapshot();
     }).then(function() {
-      App.Utils.showToast('Sibling invoice created — RM ' + totalAmount.toFixed(2) + ' for ' + childNames, 'success');
+      App.Utils.hideModal(true);
+      App.Utils.showToast('Sibling invoice created — RM ' + finalTotal.toFixed(2) + ' for ' + childNames, 'success');
       App.Router.refresh();
     }).catch(function() {
-      // Error already toasted by App.Api wrapper.
+      // Keep the modal open on failure so the selected children and amounts
+      // aren't lost. App.Api already toasted the error.
     });
   }
 
@@ -1535,6 +1660,8 @@
     _toggleMenu: _toggleMenu,
     _markPaid: _markPaid,
     _markPaidModal: _markPaidModal,
+    _confirmCash: _confirmCash,
+    _confirmCashSubmit: _confirmCashSubmit,
     _confirmPaid: _confirmPaid,
     _showAdminProofUpload: _showAdminProofUpload,
     _showAdminPaymentMethods: _showAdminPaymentMethods,
@@ -1560,6 +1687,8 @@
     _toggleSelectInv: _toggleSelectInv,
     _bulkDeselectInv: _bulkDeselectInv,
     _bulkMarkPaid: _bulkMarkPaid,
+    _bulkDeleteInv: _bulkDeleteInv,
+    _bulkDeleteInvConfirm: _bulkDeleteInvConfirm,
     _bulkConfirmPaid: _bulkConfirmPaid,
     _setInvMode: _setInvMode,
     _toggleEarlyBird: _toggleEarlyBird,
