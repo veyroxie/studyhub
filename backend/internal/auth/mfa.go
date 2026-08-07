@@ -313,9 +313,24 @@ func HandleMFAVerify(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "code did not match", http.StatusUnauthorized)
 			return
 		}
-		// Issue the real auth cookie now.
+		// Issue the real auth cookie now — and mirror the non-MFA login
+		// response exactly: refresh token (silent re-auth), staffId (teacher
+		// dashboard), and the ToS gate. Without these an MFA teacher lost
+		// their dashboard and every MFA user skipped ToS acceptance.
 		issueAuthCookie(w, r, t.userID, t.tenantID, t.email, t.role, t.name, t.rememberMe)
-		core.Respond(w, LoginResponse{Role: t.role, Name: t.name, Email: t.email})
+		if err := store.IssueRefreshToken(db, w, r, t.userID, t.tenantID, ""); err != nil {
+			core.LogFromReq(r).Error("issue refresh token failed", "err", err, "user_id", t.userID)
+		}
+		base := LoginResponse{Role: t.role, Name: t.name, Email: t.email}
+		if t.role == "teacher" {
+			db.QueryRow(`SELECT id FROM staff WHERE email=? AND tenant_id=? AND deleted_at IS NULL LIMIT 1`, t.email, t.tenantID).Scan(&base.StaffID)
+		}
+		var tosV int
+		db.QueryRow(`SELECT COALESCE(tos_accepted_version,0) FROM users WHERE id=?`, t.userID).Scan(&tosV)
+		core.Respond(w, struct {
+			LoginResponse
+			MustAcceptToS bool `json:"mustAcceptTos"`
+		}{LoginResponse: base, MustAcceptToS: tosV < core.CurrentToSVersion})
 	}
 }
 

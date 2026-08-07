@@ -32,6 +32,55 @@
   // caller is responsible for handling the false path (logout + reload).
   // Modal cannot be dismissed by clicking outside or pressing Esc — those
   // affordances would let a user slip past the gate.
+  // _showMFAGate collects the 6-digit TOTP (or a recovery code) after a login
+  // that returned mfaRequired, and exchanges it via App.Api.mfaVerify.
+  // Resolves with the login user object, or null if the user cancels.
+  function _showMFAGate(interimToken) {
+    return new Promise(function(resolve) {
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,15,15,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(4px)';
+      overlay.innerHTML =
+        '<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;padding:1.75rem;box-shadow:0 20px 60px rgba(0,0,0,0.3)">'
+        + '<h2 style="margin:0 0 0.35rem;font-family:\'Fraunces\',\'Cormorant Garamond\',serif;font-size:1.35rem;font-weight:500;color:#0a0a0a">Two-factor code</h2>'
+        + '<p id="mfa-gate-hint" style="margin:0 0 1rem;font-size:0.8rem;color:#94a3b8">Enter the 6-digit code from your authenticator app.</p>'
+        + '<input id="mfa-gate-code" inputmode="numeric" autocomplete="one-time-code" maxlength="16" style="width:100%;padding:0.6rem 0.75rem;font-size:1.1rem;letter-spacing:0.2em;text-align:center;border:1px solid #e2e8f0;border-radius:10px;outline:none" autofocus>'
+        + '<p id="mfa-gate-err" style="display:none;margin:0.6rem 0 0;font-size:0.78rem;color:#dc2626"></p>'
+        + '<button id="mfa-gate-verify" style="width:100%;margin-top:1rem;padding:0.6rem;font-size:0.9rem;font-weight:700;background:var(--gold,#C9A227);color:#0a0a0a;border:none;border-radius:10px;cursor:pointer">Verify</button>'
+        + '<div style="display:flex;justify-content:space-between;margin-top:0.85rem">'
+        +   '<button id="mfa-gate-recovery" style="background:none;border:none;font-size:0.75rem;color:#64748b;cursor:pointer;text-decoration:underline">Use a recovery code</button>'
+        +   '<button id="mfa-gate-cancel" style="background:none;border:none;font-size:0.75rem;color:#64748b;cursor:pointer">Cancel</button>'
+        + '</div>'
+        + '</div>';
+      document.body.appendChild(overlay);
+      var isRecovery = false;
+      var input = overlay.querySelector('#mfa-gate-code');
+      var errEl = overlay.querySelector('#mfa-gate-err');
+      var done = function(result) { overlay.remove(); resolve(result); };
+      var verify = function() {
+        var code = (input.value || '').trim();
+        if (!code) return;
+        errEl.style.display = 'none';
+        App.Api.mfaVerify(interimToken, code, isRecovery).then(done).catch(function(err) {
+          errEl.textContent = err.message || 'Code did not match';
+          errEl.style.display = 'block';
+          input.select();
+        });
+      };
+      overlay.querySelector('#mfa-gate-verify').addEventListener('click', verify);
+      input.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); verify(); } });
+      overlay.querySelector('#mfa-gate-recovery').addEventListener('click', function() {
+        isRecovery = !isRecovery;
+        this.textContent = isRecovery ? 'Use an authenticator code' : 'Use a recovery code';
+        overlay.querySelector('#mfa-gate-hint').textContent = isRecovery
+          ? 'Enter one of your saved recovery codes.'
+          : 'Enter the 6-digit code from your authenticator app.';
+        input.value = ''; input.focus();
+      });
+      overlay.querySelector('#mfa-gate-cancel').addEventListener('click', function() { done(null); });
+      setTimeout(function() { input.focus(); }, 50);
+    });
+  }
+
   function _showToSGate() {
     return new Promise(function(resolve) {
       var overlay = document.createElement('div');
@@ -119,7 +168,19 @@
       if (resendBanner) resendBanner.classList.add('hidden');
       try {
         _showLoading('Signing in...');
-        const data = await App.Api.login(email, password, remember);
+        let data = await App.Api.login(email, password, remember);
+        // MFA challenge: no session yet — collect the TOTP code and exchange
+        // it for the real cookie. Without this branch an MFA-enabled admin
+        // could never complete login (the missing prompt was a hard lockout).
+        if (data && data.mfaRequired) {
+          _hideLoading();
+          data = await _showMFAGate(data.token);
+          if (!data) {
+            if (btn) { btn.disabled = false; btn.innerHTML = btn._origHTML || 'Sign In'; }
+            return;
+          }
+          _showLoading('Signing in...');
+        }
         try { localStorage.setItem('sh_remember', remember ? '1' : '0'); } catch (e) {}
         App.currentRole = data.role === 'admin' ? 'admin' : (data.role === 'teacher' ? 'teacher' : 'client');
         sessionStorage.setItem('sh_role', App.currentRole);
@@ -328,13 +389,22 @@
       if (!file) return;
       const reader = new FileReader();
       reader.onload = function(ev) {
-        const ok = App.Store.importJSON(ev.target.result);
-        if (ok) {
-          App.Utils.showToast('Data imported successfully!', 'success');
-          App.Router.refresh();
-        } else {
-          App.Utils.showToast('Import failed — invalid file format', 'error');
+        // Server-side import: the old App.Store.importJSON path only wrote
+        // localStorage, so the next snapshot reload silently reverted it.
+        var students;
+        try { students = JSON.parse(ev.target.result); } catch (e) { students = null; }
+        if (!Array.isArray(students) || students.length === 0) {
+          App.Utils.showToast('Import failed — expected a JSON array of students', 'error');
+          return;
         }
+        App.Api.post('/api/admin/import', students).then(function(res) {
+          return App.Api.loadSnapshot().then(function() {
+            var made = res && res.studentsCreated != null ? res.studentsCreated : students.length;
+            var skipped = (res && res.studentsSkipped) || 0;
+            App.Utils.showToast('Imported ' + made + ' students' + (skipped ? ' · ' + skipped + ' skipped (already exist)' : ''), 'success');
+            App.Router.refresh();
+          });
+        });
       };
       reader.readAsText(file);
     };
@@ -342,11 +412,16 @@
   }
 
   async function resetData() {
-    var ok = await App.Utils.showConfirm({ title: 'Reset all data', message: 'This will clear all data and restore defaults. This cannot be undone.', confirmLabel: 'Reset', danger: true });
+    // Honest scope: the server endpoint removes the demo/seed rows, not all
+    // data. The old label promised a full reset and only touched localStorage.
+    var ok = await App.Utils.showConfirm({ title: 'Remove demo data', message: 'This removes the seeded demo students, classes and invoices from the server. Real data is untouched. This cannot be undone.', confirmLabel: 'Remove', danger: true });
     if (!ok) return;
-    App.Store.reset();
-    App.Utils.showToast('Data reset to defaults', 'info');
-    App.Router.refresh();
+    App.Api.post('/api/admin/clear-seed').then(function() {
+      return App.Api.loadSnapshot().then(function() {
+        App.Utils.showToast('Demo data removed', 'success');
+        App.Router.refresh();
+      });
+    });
   }
 
   document.addEventListener('DOMContentLoaded', function() {
@@ -418,7 +493,7 @@
           const msg = data.type === 'CHECK_IN'
             ? data.student + ' arrived at class at ' + App.Utils.formatTime(data.time)
             : data.student + ' has left class at ' + App.Utils.formatTime(data.time);
-          App.Utils.showToast('📱 ' + msg, data.type === 'CHECK_IN' ? 'info' : 'success');
+          App.Utils.showToast(msg, data.type === 'CHECK_IN' ? 'info' : 'success');
         }
       };
     } catch(e) { console.error('BroadcastChannel init failed', e); }

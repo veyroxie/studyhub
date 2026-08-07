@@ -215,6 +215,12 @@ func HandleResetPassword(db *store.DB) http.HandlerFunc {
 		if _, err := db.Exec(`UPDATE users SET ical_token_version = COALESCE(ical_token_version,0) + 1 WHERE id=?`, t.UserID.Int64); err != nil {
 			core.Logger.Error("bump ical_token_version failed", "err", err, "user_id", t.UserID.Int64)
 		}
+		// Kill already-issued access JWTs too — refresh revocation alone left
+		// a stolen "Remember me" token valid for up to 30 days post-reset.
+		if _, err := db.Exec(`UPDATE users SET sessions_invalid_before=NOW() WHERE id=?`, t.UserID.Int64); err != nil {
+			core.Logger.Error("bump sessions_invalid_before failed", "err", err, "user_id", t.UserID.Int64)
+		}
+		auth.InvalidateUserStatusCache(int(t.UserID.Int64))
 		core.LogAudit(db, store.TenantOfUser(db, t.UserID.Int64), t.Email, "password_reset_completed", "user", fmt.Sprintf("%d", t.UserID.Int64), "")
 
 		core.Respond(w, map[string]string{"message": "Password updated. You can now log in with your new password."})

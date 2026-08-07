@@ -83,6 +83,29 @@
         throw new Error(msg || 'Invalid email or password');
       }
       const user = await res.json();
+      // MFA challenge: no cookie was issued; the caller must collect a TOTP
+      // code and call mfaVerify with the intermediate token.
+      if (user.mfaRequired) return user;
+      this._user = user;
+      return user;
+    },
+
+    // mfaVerify exchanges the intermediate token + a 6-digit TOTP code (or a
+    // recovery code) for the real auth cookie. Returns the login user object.
+    async mfaVerify(interimToken, code, isRecovery) {
+      const body = { token: interimToken };
+      if (isRecovery) { body.recoveryCode = code; } else { body.code = code; }
+      const headers = { 'Content-Type': 'application/json' };
+      const csrf = _csrfToken();
+      if (csrf) headers['X-CSRF-Token'] = csrf;
+      const res = await fetch(BASE + '/api/auth/mfa/verify', {
+        method: 'POST', headers: headers, body: JSON.stringify(body), credentials: 'include'
+      });
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || 'Code did not match');
+      }
+      const user = await res.json();
       this._user = user;
       return user;
     },

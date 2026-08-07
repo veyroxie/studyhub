@@ -440,25 +440,31 @@ var userStatusCache sync.Map // map[int]userStatusEntry
 
 type userStatusEntry struct {
 	status string
-	expiry time.Time
+	// invalidBefore rejects JWTs issued before it (password reset/change) —
+	// refresh-token revocation alone left stolen access tokens alive for up
+	// to 30 days after the victim reset their password.
+	invalidBefore time.Time
+	expiry        time.Time
 }
 
 const userStatusTTL = 30 * time.Second
 
-func lookupUserStatus(db *store.DB, userID int) string {
+func lookupUserGate(db *store.DB, userID int) userStatusEntry {
 	if v, ok := userStatusCache.Load(userID); ok {
 		e := v.(userStatusEntry)
 		if time.Now().Before(e.expiry) {
-			return e.status
+			return e
 		}
 	}
 	var status string
-	db.QueryRow(`SELECT COALESCE(status,'active') FROM users WHERE id=?`, userID).Scan(&status)
+	var invalidBefore sql.NullTime
+	db.QueryRow(`SELECT COALESCE(status,'active'), sessions_invalid_before FROM users WHERE id=?`, userID).Scan(&status, &invalidBefore)
 	if status == "" {
 		status = "unknown"
 	}
-	userStatusCache.Store(userID, userStatusEntry{status: status, expiry: time.Now().Add(userStatusTTL)})
-	return status
+	e := userStatusEntry{status: status, invalidBefore: invalidBefore.Time, expiry: time.Now().Add(userStatusTTL)}
+	userStatusCache.Store(userID, e)
+	return e
 }
 
 // invalidateUserStatusCache drops the cached status so the next request
@@ -540,8 +546,17 @@ func JWTMiddleware(db *store.DB) func(http.Handler) http.Handler {
 			}
 
 			if claims.UserID > 0 {
-				if s := lookupUserStatus(db, claims.UserID); s != "active" {
-					core.RespondError(w, "account is "+s, http.StatusForbidden)
+				gate := lookupUserGate(db, claims.UserID)
+				if gate.status != "active" {
+					core.RespondError(w, "account is "+gate.status, http.StatusForbidden)
+					return
+				}
+				// Tokens minted before a password reset/change are dead even
+				// though cryptographically valid — this is what actually
+				// evicts an intruder when the victim resets their password.
+				if !gate.invalidBefore.IsZero() && claims.IssuedAt != nil && claims.IssuedAt.Time.Before(gate.invalidBefore) {
+					http.SetCookie(w, &http.Cookie{Name: "sh_token", Value: "", Path: "/", Expires: time.Unix(0, 0), HttpOnly: true})
+					core.RespondError(w, "session ended — please sign in again", http.StatusUnauthorized)
 					return
 				}
 			}

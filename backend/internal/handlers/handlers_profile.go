@@ -186,6 +186,12 @@ func HandleChangePassword(db *store.DB) http.HandlerFunc {
 		// refresh tokens (and thus the ability to mint new access JWTs) so a
 		// compromise-driven change kicks out the intruder.
 		store.RevokeRefreshFamilyByUser(db, c.UserID, "password_changed")
+		// Also invalidate already-issued access JWTs (incl. this one) — the
+		// user re-authenticates, and any stolen session dies with them.
+		if _, err := db.Exec(`UPDATE users SET sessions_invalid_before=NOW() WHERE id=?`, c.UserID); err != nil {
+			core.Logger.Error("bump sessions_invalid_before failed", "err", err, "user_id", c.UserID)
+		}
+		auth.InvalidateUserStatusCache(c.UserID)
 
 		core.LogAudit(db, store.TenantID(c), c.Email, "password_changed", "user", c.Email, "")
 
