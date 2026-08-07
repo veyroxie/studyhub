@@ -155,11 +155,14 @@
       return prev;
     },
 
-    // Load ALL data in one call and hydrate App.Store
+    // Load ALL data in one call and hydrate App.Store. Routed through
+    // _request so a freshly expired access token gets the silent refresh +
+    // retry every other call already gets — the raw fetch this replaced sent
+    // the user straight to "Session expired" on the first 401, and it runs
+    // immediately after login, which is exactly where that was seen.
     async loadSnapshot() {
-      const res = await fetch(BASE + '/api/snapshot', OPTS);
-      if (res.status === 401) { this._handle401(); return; }
-      const data = await res.json();
+      const data = await this.get('/api/snapshot');
+      if (!data) return; // 401 — _request already ran the logout path
       App.Store.set(data);
       return data;
     },
