@@ -175,7 +175,7 @@ func HandleUpdateWorkshop(db *store.DB) http.HandlerFunc {
 		}
 		tw, twArgs := store.ScopeTenant(c, "")
 		args := append([]any{ws.Name, ws.Description, ws.Date, ws.Time, ws.EndTime, ws.Classroom, ws.Capacity, ws.Enrolled, ws.Fee, models.JSONArr(ws.TeacherIDs), ws.Status, id}, twArgs...)
-		res, err := db.Exec(`UPDATE workshops SET name=?,description=?,date=?,time=?,end_time=?,classroom=?,capacity=?,enrolled=?,fee=?,teacher_ids=?,status=? WHERE id=?`+tw, args...)
+		res, err := db.Exec(`UPDATE workshops SET name=?,description=?,date=?,time=?,end_time=?,classroom=?,capacity=?,enrolled=?,fee=?,teacher_ids=?,status=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 		if err != nil {
 			core.RespondError(w, "server error", 500)
 			return

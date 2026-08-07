@@ -183,7 +183,7 @@ func HandleStaffByID(db *store.DB) http.HandlerFunc {
 			}
 			tw, twArgs := store.ScopeTenant(c, "")
 			args := append([]any{s.Name, s.FullName, s.Role, s.Email, s.Phone, s.Salary, s.JoinDate, s.Status, s.Specialization, s.NRIC, s.EmergencyName, s.EmergencyPhone, s.EmploymentType, s.HourlyRate, s.PerformanceNotes, id}, twArgs...)
-			if _, err := db.Exec(`UPDATE staff SET name=?,full_name=?,role=?,email=?,phone=?,salary=?,join_date=?,status=?,specialization=?,nric=?,emergency_name=?,emergency_phone=?,employment_type=?,hourly_rate=?,performance_notes=? WHERE id=?`+tw, args...); err != nil {
+			if _, err := db.Exec(`UPDATE staff SET name=?,full_name=?,role=?,email=?,phone=?,salary=?,join_date=?,status=?,specialization=?,nric=?,emergency_name=?,emergency_phone=?,employment_type=?,hourly_rate=?,performance_notes=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...); err != nil {
 				core.RespondError(w, "could not update staff", 500)
 				return
 			}

@@ -103,7 +103,7 @@ func HandleUpdateHoliday(db *store.DB) http.HandlerFunc {
 		}
 		tw, twArgs := store.ScopeTenant(c, "")
 		args := append([]any{h.Name, h.Date, h.EndDate, h.Type, h.Notes, id}, twArgs...)
-		res, err := db.Exec(`UPDATE holidays SET name=?,date=?,end_date=?,type=?,notes=? WHERE id=?`+tw, args...)
+		res, err := db.Exec(`UPDATE holidays SET name=?,date=?,end_date=?,type=?,notes=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 		if err != nil {
 			core.RespondError(w, "server error", 500)
 			return

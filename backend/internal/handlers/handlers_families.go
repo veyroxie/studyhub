@@ -191,7 +191,7 @@ func HandleFamilyByID(db *store.DB) http.HandlerFunc {
 			}
 			f.ID = id
 			args := append([]any{f.Name, f.Contact, f.Phone, f.ParentName, f.Address, f.Notes, id}, twArgs...)
-			if _, err := db.Exec(`UPDATE families SET name=?,contact=?,phone=?,parent_name=?,address=?,notes=? WHERE id=?`+tw, args...); err != nil {
+			if _, err := db.Exec(`UPDATE families SET name=?,contact=?,phone=?,parent_name=?,address=?,notes=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...); err != nil {
 				core.RespondError(w, "could not update family", 500)
 				return
 			}

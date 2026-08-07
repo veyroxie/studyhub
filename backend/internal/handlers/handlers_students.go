@@ -398,7 +398,7 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 			}
 
 			args := append([]any{s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, models.JSONArr(s.EnrolledClasses), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.DropinSelfStudy, strings.TrimSpace(s.StudentNo), id}, twArgs...)
-			res, err := tx.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=?,dropin_self_study=?,student_no=? WHERE id=?`+tw, args...)
+			res, err := tx.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=?,dropin_self_study=?,student_no=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 			if err != nil {
 				if strings.Contains(err.Error(), "ux_students_tenant_student_no") {
 					core.RespondError(w, "that student number is already used by another student", http.StatusConflict)
@@ -512,13 +512,13 @@ func HandleStudentSubscription(db *store.DB) http.HandlerFunc {
 		now := time.Now().UTC().Format(time.RFC3339)
 		if newStatus == "active" {
 			args := append([]any{newStatus, now, id}, twArgs...)
-			if _, err := db.Exec(`UPDATE students SET subscription_status=?, resumed_at=? WHERE id=?`+tw, args...); err != nil {
+			if _, err := db.Exec(`UPDATE students SET subscription_status=?, resumed_at=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...); err != nil {
 				core.RespondError(w, "could not update subscription", 500)
 				return
 			}
 		} else {
 			args := append([]any{newStatus, now, id}, twArgs...)
-			if _, err := db.Exec(`UPDATE students SET subscription_status=?, paused_at=? WHERE id=?`+tw, args...); err != nil {
+			if _, err := db.Exec(`UPDATE students SET subscription_status=?, paused_at=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...); err != nil {
 				core.RespondError(w, "could not update subscription", 500)
 				return
 			}
