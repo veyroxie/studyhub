@@ -96,7 +96,7 @@
   function render(container) {
     try {
       if (!_attDate) {
-        try { _attDate = App.Utils.today(); } catch(e) { _attDate = new Date().toISOString().slice(0,10); }
+        try { _attDate = App.Utils.today(); } catch(e) { _attDate = App.Utils.localDate(new Date()); }
       }
       const { classes } = App.Store.get();
       if (!_attClassId && classes.length) _attClassId = classes[0].id;
@@ -460,6 +460,7 @@
       return;
     }
 
+    var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
     // Persist to backend so the parent's device gets the WebSocket
     // notification. Optimistic UI above keeps the kiosk feedback instant.
@@ -477,7 +478,11 @@
       apiBody.checkOut = now;
     }
     App.Api.post('/api/attendance', apiBody, { silent: true }).catch(function(err) {
+      // Roll the optimistic row back — leaving it showed the person as
+      // present even though the server rejected the write.
+      App.Store.set({ attendance: prevAtt });
       App.Utils.showToast('Scan failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
+      App.Router.refresh();
     });
     _kioskLastScan = {
       ok: true,
@@ -745,11 +750,13 @@
       apiCalls.push(App.Api.post('/api/announcements', {
         title: 'Class Cancelled: ' + cls.name,
         message: "Today's " + cls.name + ' class (' + timeRange + ') has been cancelled due to teacher absence. We apologise for the inconvenience.',
-        audience: 'All Parents',
+        audience: 'My Class Parents',
         type: 'Urgent',
         status: 'published',
         createdBy: 'Admin',
-        archiveOn: ''
+        archiveOn: '',
+        // Only parents of the cancelled class need this, not the whole centre.
+        targetClassIds: [classId]
       }));
     });
 
@@ -779,6 +786,7 @@
     if (!existing) {
       newAtt.push({ id: App.Utils.generateId('ATT'), personId: studentId, personType: 'student', date: _attDate, classId: _attClassId, checkIn: now, checkOut: null, status: 'Present' });
     }
+    var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
     const stu = state.students.find(function(s) { return s.id === studentId; });
     const stuName = stu ? stu.firstName + ' ' + stu.lastName : studentId;
@@ -792,7 +800,11 @@
       checkIn: now,
       status: 'Present'
     }, { silent: true }).catch(function(err) {
+      // Roll the optimistic row back — leaving it showed the person as
+      // present even though the server rejected the write.
+      App.Store.set({ attendance: prevAtt });
       App.Utils.showToast('Check-in failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
+      App.Router.refresh();
     });
   }
 
@@ -808,6 +820,7 @@
     const newAtt = state.attendance.map(function(a) {
       return (a.personId === studentId && a.classId === _attClassId && a.date === _attDate) ? Object.assign({}, a, { checkOut: now }) : a;
     });
+    var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
     const stu = state.students.find(function(s) { return s.id === studentId; });
     const stuName = stu ? stu.firstName + ' ' + stu.lastName : studentId;
@@ -822,7 +835,11 @@
       checkOut: now,
       status: 'Present'
     }, { silent: true }).catch(function(err) {
+      // Roll the optimistic row back — leaving it showed the person as
+      // present even though the server rejected the write.
+      App.Store.set({ attendance: prevAtt });
       App.Utils.showToast('Check-out failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
+      App.Router.refresh();
     });
   }
 
@@ -889,6 +906,7 @@
       checkOut: null,
       status: 'Present'
     });
+    var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
     App.Utils.showToast('Checked in at ' + App.Utils.formatTime(now), 'success');
     App.Router.refresh();
@@ -899,7 +917,11 @@
       checkIn: now,
       status: 'Present'
     }, { silent: true }).catch(function(err) {
+      // Roll the optimistic row back — leaving it showed the person as
+      // present even though the server rejected the write.
+      App.Store.set({ attendance: prevAtt });
       App.Utils.showToast('Check-in failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
+      App.Router.refresh();
     });
   }
 
@@ -917,6 +939,7 @@
       }
       return a;
     });
+    var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
     App.Utils.showToast('Checked out at ' + App.Utils.formatTime(now), 'info');
     App.Router.refresh();
@@ -928,7 +951,11 @@
       checkOut: now,
       status: 'Present'
     }, { silent: true }).catch(function(err) {
+      // Roll the optimistic row back — leaving it showed the person as
+      // present even though the server rejected the write.
+      App.Store.set({ attendance: prevAtt });
       App.Utils.showToast('Check-out failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
+      App.Router.refresh();
     });
   }
 

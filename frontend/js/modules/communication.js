@@ -123,16 +123,9 @@
 
   function _annCard(ann, isAdmin, today) {
     today = today || App.Utils.today();
-    const typeColors = {
-      Notice:   { border:'border-blue-300', bg:'bg-blue-50', badge:'blue', icon:'📋' },
-      Reminder: { border:'border-amber-300', bg:'bg-amber-50', badge:'yellow', icon:'🔔' },
-      Urgent:   { border:'border-red-300', bg:'bg-red-50', badge:'red', icon:'🚨' }
-    };
-    const tc = typeColors[ann.type] || typeColors.Notice;
 
     return '<div class="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">'
       + '<div class="flex items-start gap-4 p-5">'
-      +   '<div class="text-2xl mt-0.5">' + tc.icon + '</div>'
       +   '<div class="flex-1 min-w-0">'
       +     '<div class="flex items-start justify-between gap-3 flex-wrap">'
       +       '<h3 class="font-semibold text-slate-800">' + App.Utils.esc(ann.title) + '</h3>'
@@ -147,7 +140,7 @@
       +     '<div class="flex items-center justify-between mt-3">'
       +       '<span class="text-xs text-slate-400">'
       +         App.Utils.formatDate(ann.createdOn) + ' · ' + App.Utils.esc(ann.createdBy)
-      +         (ann.archiveOn ? ' · <span title="Auto-archives on ' + ann.archiveOn + '" style="color:' + (ann.archiveOn < today ? '#ef4444' : '#94a3b8') + '">expires ' + App.Utils.formatDate(ann.archiveOn) + '</span>' : '')
+      +         (ann.archiveOn ? ' · <span title="Auto-archives on ' + App.Utils.esc(ann.archiveOn) + '" style="color:' + (ann.archiveOn < today ? '#ef4444' : '#94a3b8') + '">expires ' + App.Utils.esc(App.Utils.formatDate(ann.archiveOn)) + '</span>' : '')
       +       '</span>'
       +       (isAdmin ? '<button onclick="App.Communication._editModal(\'' + ann.id + '\')" class="text-xs text-blue-400 hover:text-blue-600 mr-2">Edit</button>' : '')
       +       (isAdmin ? '<button onclick="App.Communication._delete(\'' + ann.id + '\')" class="text-xs text-red-400 hover:text-red-600">Delete</button>' : '')
@@ -251,7 +244,10 @@
         type: fd.get('type'),
         status: isTeacher ? 'pending_approval' : 'published',
         createdBy: byline,
-        archiveOn: fd.get('archiveOn') || ''
+        archiveOn: fd.get('archiveOn') || '',
+        // Persisted server-side (0031); without it "My Class Parents" silently
+        // reached every parent in the tenant.
+        targetClassIds: targetClassIds || []
       };
       App.Api.post('/api/announcements', newAnn).then(function() {
         return App.Api.loadSnapshot();

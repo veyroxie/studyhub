@@ -66,6 +66,21 @@ func ParentAnnouncementFilter(rows []models.Announcement, classIDs map[string]bo
 				continue
 			}
 		}
+		// Targeted announcements (teacher "My Class Parents") are visible only
+		// to parents with a child in one of the listed classes. Enforced here,
+		// not just in the client, so the snapshot never leaks them.
+		if len(a.TargetClassIDs) > 0 {
+			match := false
+			for _, cid := range a.TargetClassIDs {
+				if classIDs[cid] {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
 		out = append(out, a)
 	}
 	return out

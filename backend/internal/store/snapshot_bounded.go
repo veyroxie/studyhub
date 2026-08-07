@@ -107,6 +107,10 @@ func ListFeedbackRecent(db *DB, c *core.Claims) []models.Feedback {
 // ── Invoices ────────────────────────────────────────────────────────────────
 
 func ListInvoicesRecent(db *DB, c *core.Claims) []models.Invoice {
+	// Billing snapshot is admin + own-family-parent only; teachers get nothing.
+	if c == nil || (c.Role != "parent" && !core.IsAdminRole(c)) {
+		return []models.Invoice{}
+	}
 	cutoff := recentDateMonths(snapshotInvoicesMonths)
 	tid := TenantID(c)
 	var rows *sql.Rows
@@ -168,7 +172,7 @@ func ListAnnouncementsRecent(db *DB, c *core.Claims) []models.Announcement {
 	tw, twArgs := ScopeTenant(c, "")
 	vw, vwArgs := AnnounceVisibilityClause(c)
 	args := append(append(append([]any{}, twArgs...), vwArgs...), cutoff)
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE 1=1`+tw+vw+` AND (created_on >= ? OR COALESCE(status,'')<>'archived') ORDER BY created_on DESC`, args...)
+	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on,COALESCE(target_class_ids,'') FROM announcements WHERE 1=1`+tw+vw+` AND (created_on >= ? OR COALESCE(status,'')<>'archived') ORDER BY created_on DESC`, args...)
 	if err != nil {
 		return []models.Announcement{}
 	}
@@ -177,9 +181,11 @@ func ListAnnouncementsRecent(db *DB, c *core.Claims) []models.Announcement {
 	for rows.Next() {
 		var a models.Announcement
 		var status, archiveOn sql.NullString
-		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn); err != nil {
+		var targets string
+		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn, &targets); err != nil {
 			continue
 		}
+		a.TargetClassIDs = models.ParseArr(targets)
 		a.Status = models.NullStr(status)
 		if a.Status == "" {
 			a.Status = "published"

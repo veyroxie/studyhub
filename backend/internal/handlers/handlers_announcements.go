@@ -17,7 +17,7 @@ func listAnnouncements(db *store.DB, c *core.Claims) []models.Announcement {
 	tw, twArgs := store.ScopeTenant(c, "")
 	vw, vwArgs := store.AnnounceVisibilityClause(c)
 	args := append(append([]any{}, twArgs...), vwArgs...)
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT 5000`, args...)
+	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on,COALESCE(target_class_ids,'') FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT 5000`, args...)
 	if err != nil {
 		core.Logger.Error("list query failed", "err", err, "type", "Announcement")
 		return []models.Announcement{}
@@ -27,9 +27,11 @@ func listAnnouncements(db *store.DB, c *core.Claims) []models.Announcement {
 	for rows.Next() {
 		var a models.Announcement
 		var status, archiveOn sql.NullString
-		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn); err != nil {
+		var targets string
+		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn, &targets); err != nil {
 			continue
 		}
+		a.TargetClassIDs = models.ParseArr(targets)
 		a.Status = models.NullStr(status)
 		if a.Status == "" {
 			a.Status = "published"
@@ -50,7 +52,7 @@ func listAnnouncementsPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]
 	var total int
 	db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE 1=1`+tw+vw, baseArgs...).Scan(&total)
 	pageArgs := append(append([]any{}, baseArgs...), p.Limit, p.Offset)
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
+	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on,COALESCE(target_class_ids,'') FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
 	if err != nil {
 		core.Logger.Error("list query failed", "err", err, "type", "Announcement")
 		return []models.Announcement{}, total
@@ -60,9 +62,11 @@ func listAnnouncementsPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]
 	for rows.Next() {
 		var a models.Announcement
 		var status, archiveOn sql.NullString
-		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn); err != nil {
+		var targets string
+		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn, &targets); err != nil {
 			continue
 		}
+		a.TargetClassIDs = models.ParseArr(targets)
 		a.Status = models.NullStr(status)
 		if a.Status == "" {
 			a.Status = "published"
@@ -111,12 +115,23 @@ func HandleAnnouncements(db *store.DB) http.HandlerFunc {
 			if a.CreatedBy == "" {
 				a.CreatedBy = c.Name
 			}
-			if a.Status == "" {
-				a.Status = "published"
+			// Only admins publish directly. Teacher-created announcements are
+			// forced into the approval queue regardless of the submitted status —
+			// the approve endpoint and the pending visibility filter already exist,
+			// but the old default let a teacher publish to every parent unreviewed.
+			if core.IsAdminRole(c) {
+				if a.Status == "" {
+					a.Status = "published"
+				}
+			} else {
+				// Must match the value the admin approval queue filters on
+				// (communication.js) — "pending" would hide the submission
+				// from the queue entirely, which is worse than publishing it.
+				a.Status = "pending_approval"
 			}
 			tid := store.TenantID(c)
-			if _, err := db.Exec(`INSERT INTO announcements(id,tenant_id,title,message,audience,type,created_on,created_by,status,archive_on) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-				a.ID, tid, a.Title, a.Message, a.Audience, a.Type, a.CreatedOn, a.CreatedBy, a.Status, a.ArchiveOn); err != nil {
+			if _, err := db.Exec(`INSERT INTO announcements(id,tenant_id,title,message,audience,type,created_on,created_by,status,archive_on,target_class_ids) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+				a.ID, tid, a.Title, a.Message, a.Audience, a.Type, a.CreatedOn, a.CreatedBy, a.Status, a.ArchiveOn, models.JSONArr(a.TargetClassIDs)); err != nil {
 				core.RespondError(w, "could not create announcement", 500)
 				return
 			}

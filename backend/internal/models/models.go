@@ -250,15 +250,18 @@ type Invoice struct {
 }
 
 type Announcement struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Message   string `json:"message"`
-	Audience  string `json:"audience"`
-	Type      string `json:"type"`
-	Status    string `json:"status,omitempty"`
-	ArchiveOn string `json:"archiveOn,omitempty"`
-	CreatedOn string `json:"createdOn"`
-	CreatedBy string `json:"createdBy"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Message  string `json:"message"`
+	Audience string `json:"audience"`
+	// TargetClassIDs limits visibility to parents of these classes; empty
+	// means the audience string alone decides (e.g. "All Parents").
+	TargetClassIDs []string `json:"targetClassIds,omitempty"`
+	Type           string   `json:"type"`
+	Status         string   `json:"status,omitempty"`
+	ArchiveOn      string   `json:"archiveOn,omitempty"`
+	CreatedOn      string   `json:"createdOn"`
+	CreatedBy      string   `json:"createdBy"`
 }
 
 type Attendance struct {
