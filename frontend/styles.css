@@ -401,8 +401,8 @@ body.theme-b .dash-card {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #C9A227 0%, #b08d20 100%);
-  box-shadow: 0 2px 8px rgba(201,162,39,0.2);
+  /* The logo is gold on transparent — a gold tile behind it just muddies it. */
+  background: transparent;
   flex-shrink: 0;
 }
 .dock-topbar-title {

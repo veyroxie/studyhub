@@ -10,7 +10,7 @@
 // Versioned cache name so a deploy invalidates the old shell. Bump SW_VERSION
 // on every release (release-please can wire this).
 
-const SW_VERSION = 'v2026-06-17-3';
+const SW_VERSION = 'v2026-08-07-1';
 const SHELL_CACHE = 'sh-shell-' + SW_VERSION;
 
 // Files that must be available offline for the app to render its empty shell.

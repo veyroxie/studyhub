@@ -268,7 +268,7 @@ func renderLetterhead(pdf *gofpdf.Fpdf, s *store.TenantSettings, logoPath string
 // (../frontend) vs Docker (./frontend) working-directory split. Empty when not
 // found, which renderLogo treats as "no logo" (skips silently).
 func bundledLogoPath() string {
-	for _, p := range []string{"../frontend/logo.jpg", "frontend/logo.jpg"} {
+	for _, p := range []string{"../frontend/logo.png", "frontend/logo.png"} {
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
@@ -290,7 +290,7 @@ func renderLogo(pdf *gofpdf.Fpdf, logoPath string) {
 	if imgType != "png" && imgType != "jpg" {
 		return
 	}
-	const logoW = 18.0
+	const logoW = 30.0
 	opts := gofpdf.ImageOptions{ImageType: imgType, ReadDpi: true}
 	pdf.RegisterImageOptions(logoPath, opts)
 	if !pdf.Ok() {
