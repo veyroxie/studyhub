@@ -54,7 +54,7 @@ func loadInvoicePDFData(db *store.DB, c *core.Claims, invoiceID string) (invoice
 		       COALESCE(i.payment_method,''), COALESCE(i.reference_no,''),
 		       COALESCE(i.discount_pct,0), COALESCE(i.sibling_discount,0), COALESCE(i.referral_credit,0),
 		       COALESCE(i.line_items,'[]'),
-		       s.id, s.first_name || ' ' || s.last_name,
+		       COALESCE(NULLIF(s.student_no,''), s.id), s.first_name || ' ' || s.last_name,
 		       COALESCE(s.parent_name,''), COALESCE(s.contact,'')
 		FROM invoices i
 		JOIN students s ON s.id = i.student_id
@@ -264,6 +264,18 @@ func renderLetterhead(pdf *gofpdf.Fpdf, s *store.TenantSettings, logoPath string
 // renderLogo embeds the tenant logo centered above the letterhead. A missing or
 // malformed file must never abort the render, so the image error state is
 // cleared and the logo silently skipped.
+// bundledLogoPath resolves the shipped default logo, mirroring server.go's dev
+// (../frontend) vs Docker (./frontend) working-directory split. Empty when not
+// found, which renderLogo treats as "no logo" (skips silently).
+func bundledLogoPath() string {
+	for _, p := range []string{"../frontend/logo.jpg", "frontend/logo.jpg"} {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
 func renderLogo(pdf *gofpdf.Fpdf, logoPath string) {
 	if logoPath == "" {
 		return
@@ -639,6 +651,12 @@ func twoDigitWords(n int) string {
 func HandleInvoicePDF(db *store.DB, receipt bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := core.ClaimsFrom(r)
+		// Invoice/receipt PDFs are admin + own-family-parent only; teachers and
+		// other roles must not be able to pull another family's billing document.
+		if c == nil || (c.Role != "parent" && !core.IsAdminRole(c)) {
+			core.RespondError(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		id := chi.URLParam(r, "id")
 
 		d, err := loadInvoicePDFData(db, c, id)
@@ -657,6 +675,9 @@ func HandleInvoicePDF(db *store.DB, receipt bool) http.HandlerFunc {
 
 		s := store.LoadTenantSettings(db, store.TenantID(c))
 		d.LogoPath = s.LogoPath
+		if d.LogoPath == "" {
+			d.LogoPath = bundledLogoPath()
+		}
 		bytes, err := renderInvoicePDF(d, s, receipt)
 		if err != nil {
 			core.RespondError(w, "could not render PDF", 500)
