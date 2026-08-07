@@ -106,7 +106,10 @@ func runFileMigrations(db *DB) error {
 			// dangerous mistake (different envs end up at different states)
 			// so we surface it loudly but don't crash on it.
 			if existing != checksum {
-				log.Printf("MIGRATIONS: WARNING — checksum mismatch on %s; the file has been edited after being applied. This is unsafe across environments.", version)
+				// Fatal, not a warning: an edited historical migration means
+				// environments silently diverge, and a boot-log warning is
+				// invisible in practice. Fix the file or the tracking row.
+				return fmt.Errorf("checksum mismatch on %s: the file was edited after being applied", version)
 			}
 			continue
 		}
@@ -119,7 +122,10 @@ func runFileMigrations(db *DB) error {
 		if err != nil {
 			return fmt.Errorf("begin tx for %s: %w", version, err)
 		}
-		if _, err := tx.Exec(string(body)); err != nil {
+		// tx.Tx.Exec, NOT tx.Exec: migration bodies must bypass the ?->$N
+		// rewriter, whose naive quote tracking is defeated by apostrophes in
+		// SQL comments and would corrupt a literal ? (jsonb operator, LIKE).
+		if _, err := tx.Tx.Exec(string(body)); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("apply %s: %w", version, err)
 		}
