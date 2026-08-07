@@ -36,6 +36,13 @@ var pushCfg pushConfig
 
 // initPush loads the VAPID keys. Called from main() alongside initMailer.
 func InitPush() {
+	// Same outbound gate as the mailer: key presence alone must never enable
+	// a live channel — a dev box with prod VAPID keys would push straight to
+	// real parents' phones (the email half of this bit us on 2026-07-31).
+	if core.AppEnv() != "production" || os.Getenv("OUTBOUND_ENABLED") != "1" {
+		core.Logger.Warn("web push disabled — outbound gated (need APP_ENV=production and OUTBOUND_ENABLED=1)")
+		return
+	}
 	pushCfg = pushConfig{
 		publicKey:  os.Getenv("VAPID_PUBLIC_KEY"),
 		privateKey: os.Getenv("VAPID_PRIVATE_KEY"),

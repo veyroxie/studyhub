@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"flag"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"sync"
@@ -59,6 +60,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	guardEnvDBCombo(env, *dbDSN)
+
 	db := store.InitDB(*dbDSN)
 	defer db.Close()
 	jobs.SeedIfEmpty(db)
@@ -73,8 +76,15 @@ func main() {
 	// mid-write.
 	bgCtx, cancelBG := context.WithCancel(context.Background())
 	var bgWG sync.WaitGroup
-	jobs.StartJobs(bgCtx, &bgWG, db)
-	jobs.StartCron(bgCtx, &bgWG, db)
+	// Jobs fire within milliseconds of boot (reminders, email queue, billing
+	// cron). A dev box must never run them against whatever DB it's pointed
+	// at — production only, or explicit ENABLE_JOBS=1 for local testing.
+	if env == "production" || os.Getenv("ENABLE_JOBS") == "1" {
+		jobs.StartJobs(bgCtx, &bgWG, db)
+		jobs.StartCron(bgCtx, &bgWG, db)
+	} else {
+		core.Logger.Info("background jobs disabled outside production (set ENABLE_JOBS=1 to enable)")
+	}
 
 	r := server.Build(db)
 
@@ -118,4 +128,24 @@ func main() {
 		core.Logger.Warn("background jobs did not stop within 15s — exiting anyway")
 	}
 	core.Logger.Info("server stopped")
+}
+
+// guardEnvDBCombo refuses the environment/database combination behind the
+// 2026-07-31 incident: a non-production box pointed at a remote database (a
+// shell-exported prod DATABASE_URL silently overriding the compose default).
+// Local hosts cover bare-metal dev and the compose service name. Override for
+// a deliberate remote-DB session (e.g. a restore drill) with ALLOW_REMOTE_DB=1.
+func guardEnvDBCombo(env, dsn string) {
+	localHosts := map[string]bool{"localhost": true, "127.0.0.1": true, "postgres": true, "::1": true}
+	host := ""
+	if u, err := url.Parse(dsn); err == nil {
+		host = u.Hostname()
+	}
+	core.Logger.Info("effective config", "env", env, "db_host", host,
+		"outbound_enabled", os.Getenv("OUTBOUND_ENABLED") == "1" && env == "production")
+	if env == "production" || localHosts[host] || os.Getenv("ALLOW_REMOTE_DB") == "1" {
+		return
+	}
+	core.Logger.Error("refusing to start: non-production env pointed at a remote database — unset DATABASE_URL or set ALLOW_REMOTE_DB=1 if deliberate", "env", env, "db_host", host)
+	os.Exit(1)
 }

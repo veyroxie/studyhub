@@ -1,6 +1,15 @@
-# Secrets — never commit
-backend/.env
+# Secrets — never commit. .env.* covers .env.production (loaded by main.go via
+# godotenv), which the old "*.env" pattern missed.
+.env
+.env.*
 *.env
+backend/.env
+backend/.env.*
+!.env.example
+!backend/.env.example
+
+# Uploaded payment proofs — parent PII, never commit
+uploads/
 
 # SQLite database files
 *.db

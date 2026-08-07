@@ -19,8 +19,11 @@ func InitDB(dsn string) *DB {
 	// × ~10 concurrent dashboard sessions before we hit the ceiling. The
 	// previous 50/10 sat under that load and caused pool exhaustion when
 	// admins refreshed simultaneously.
-	db.SetMaxOpenConns(150)
-	db.SetMaxIdleConns(25)
+	// 40 open × work_mem=8MB fits the 768M Postgres container; the previous 150
+	// exceeded Postgres's max_connections (now pinned to 60 in compose), so
+	// load spikes hit "too many clients" instead of briefly queueing here.
+	db.SetMaxOpenConns(40)
+	db.SetMaxIdleConns(10)
 	db.SetConnMaxIdleTime(5 * time.Minute)
 	if err := db.Ping(); err != nil {
 		log.Fatalf("ping db: %v", err)
@@ -303,7 +306,7 @@ func createSchema(db *sql.DB) error {
 		year_grade           TEXT,
 		class_type_interest  TEXT,
 		subject_interest     TEXT,
-		school_fees          DOUBLE PRECISION DEFAULT 0,
+		school_fees          NUMERIC(12,2) DEFAULT 0,
 		registration_date    TEXT,
 		workshop_interest    TEXT,
 		class_interest       TEXT,

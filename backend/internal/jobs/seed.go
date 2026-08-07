@@ -22,7 +22,11 @@ func seedAdminPassword() string {
 	}
 	if core.AppEnv() == "production" {
 		b := make([]byte, 12)
-		rand.Read(b)
+		if _, err := rand.Read(b); err != nil {
+			// A failed read would otherwise yield the deterministic
+			// password "sh-000..." on a production bootstrap.
+			log.Fatalf("seed admin password: crypto/rand failed: %v", err)
+		}
 		generated := "sh-" + hex.EncodeToString(b)
 		log.Printf("WARNING: SEED_ADMIN_PASSWORD not set; generated one-time admin password: %s", generated)
 		return generated

@@ -23,9 +23,15 @@ services:
       args:
         VERSION: ${VERSION:-dev}
     ports:
-      - "8080:8080"
+      # Loopback-only: Docker's DNAT rules bypass ufw, so a plain "8080:8080"
+      # exposes the API over cleartext to the internet. Caddy proxies to
+      # localhost:8080, which this still serves.
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./backups:/app/backups
+      # Payment proofs live here; without this mount every deploy recreated the
+      # container and silently destroyed all uploaded files.
+      - ./uploads:/app/uploads
     environment:
       PORT: 8080
       # Business runs in Malaysia (UTC+8). Without this the container is UTC and
@@ -37,12 +43,22 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://studyhub:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/studyhub?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (use a long random value, min 16 chars)}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:8080}
-      APP_ENV: ${APP_ENV:-production}
+      # Development by default: production is opt-in (set in the droplet's .env).
+      # A forgotten variable must fail SAFE — the July 31 incident was a dev box
+      # booting as production and draining the real email queue.
+      APP_ENV: ${APP_ENV:-development}
       ANALYTICS_SERVICE_URL: http://analytics:8001
       # Email (Resend) — leave blank to run in dev mode (emails logged to stdout)
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      EMAIL_FROM: ${EMAIL_FROM:-The Study Hub <hello@studyhub.fit>}
-      APP_URL: ${APP_URL:-https://studyhub.fit}
+      # Dev-safe defaults: production values (live sender, real domain) are set
+      # explicitly in the droplet's .env, never inherited from a fallback.
+      EMAIL_FROM: ${EMAIL_FROM:-StudyHub Dev <dev@localhost>}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      # Recipient for the built-in health self-check alerts (disk, backups,
+      # stuck email queue). Empty disables alerting.
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-}
       # Web push (VAPID) — leave blank to disable push (email + in-app still work)
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
@@ -98,6 +114,11 @@ services:
     # the bulk SELECTs without OOM-killing the box.
     command:
       - postgres
+      # Cap below the Go pool's headroom: 60 connections x work_mem=8MB fits the
+      # 768M limit; the old default (100) exceeded it and the app pool (150)
+      # exceeded even that, turning load spikes into hard connection errors.
+      - -c
+      - max_connections=60
       - -c
       - shared_buffers=256MB
       - -c

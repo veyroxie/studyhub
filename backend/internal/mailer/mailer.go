@@ -40,8 +40,17 @@ func Init() {
 		from = "The Study Hub <hello@studyhub.fit>"
 	}
 
-	if apiKey == "" {
-		core.Logger.Warn("mailer in dev mode — RESEND_API_KEY not set, emails will be logged instead of sent")
+	// Live sending requires BOTH production env and an explicit opt-in flag.
+	// Key presence alone must never be enough: on 2026-07-31 a dev box with
+	// prod env vars started draining the real email queue at real parents,
+	// stopped only by an unverified sender domain.
+	liveOK := core.AppEnv() == "production" && os.Getenv("OUTBOUND_ENABLED") == "1"
+	if apiKey == "" || !liveOK {
+		if apiKey != "" {
+			core.Logger.Warn("mailer in dev mode — RESEND_API_KEY set but outbound gated (need APP_ENV=production and OUTBOUND_ENABLED=1)")
+		} else {
+			core.Logger.Warn("mailer in dev mode — RESEND_API_KEY not set, emails will be logged instead of sent")
+		}
 		core.SetMailer(&devMailer{from: from})
 		return
 	}

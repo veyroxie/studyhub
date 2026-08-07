@@ -41,3 +41,16 @@ backups/
 
 # Claude / AI
 .claude/
+
+# Secrets — never bake into an image (keep example templates)
+.env
+.env.*
+*.env
+!.env.example
+backend/.env
+backend/.env.*
+*.pem
+*.key
+
+# Uploaded payment proofs (mounted as volume, not baked in)
+uploads/
