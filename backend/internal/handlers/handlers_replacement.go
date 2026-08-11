@@ -25,19 +25,11 @@ func listReplacementCredits(db *store.DB, c *core.Claims) []models.ReplacementCr
 		tw, twArgs := store.ScopeTenant(c, "")
 		rows, err = db.Query(`SELECT id,student_id,type,minutes,note,class_id,date,created_by,COALESCE(category,'class') FROM replacement_credits WHERE 1=1`+tw+` ORDER BY created_at DESC LIMIT 5000`, twArgs...)
 	}
-	if err != nil {
-		core.Logger.Error("list query failed", "err", err, "type", "ReplacementCredit")
-		return []models.ReplacementCredit{}
-	}
-	defer rows.Close()
-	out := []models.ReplacementCredit{}
-	for rows.Next() {
+	out := store.CollectRows(rows, err, "ReplacementCredit", func(r *sql.Rows) (models.ReplacementCredit, error) {
 		var rc models.ReplacementCredit
-		if err := rows.Scan(&rc.ID, &rc.StudentID, &rc.Type, &rc.Minutes, &rc.Note, &rc.ClassID, &rc.Date, &rc.CreatedBy, &rc.Category); err != nil {
-			continue
-		}
-		out = append(out, rc)
-	}
+		err := r.Scan(&rc.ID, &rc.StudentID, &rc.Type, &rc.Minutes, &rc.Note, &rc.ClassID, &rc.Date, &rc.CreatedBy, &rc.Category)
+		return rc, err
+	})
 	// Teachers see credits only for students in their own classes; the query
 	// above is tenant-wide for every non-parent role.
 	if c != nil && c.Role == "teacher" {

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"studyhub/internal/core"
@@ -33,20 +34,11 @@ func listPerformanceReviews(db *store.DB, c *core.Claims) []models.PerformanceRe
 		args = append(append([]any{}, twArgs...), myStaffID)
 	}
 	rows, err := db.Query(`SELECT id,staff_id,reviewer_email,date,rating,parent_rating,notes FROM performance_reviews WHERE deleted_at IS NULL`+tw+ownFilter+` ORDER BY date DESC LIMIT 5000`, args...)
-	if err != nil {
-		core.Logger.Error("list query failed", "err", err, "type", "PerformanceReview")
-		return []models.PerformanceReview{}
-	}
-	defer rows.Close()
-	out := []models.PerformanceReview{}
-	for rows.Next() {
+	return store.CollectRows(rows, err, "PerformanceReview", func(r *sql.Rows) (models.PerformanceReview, error) {
 		var p models.PerformanceReview
-		if err := rows.Scan(&p.ID, &p.StaffID, &p.ReviewerEmail, &p.Date, &p.Rating, &p.ParentRating, &p.Notes); err != nil {
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
+		err := r.Scan(&p.ID, &p.StaffID, &p.ReviewerEmail, &p.Date, &p.Rating, &p.ParentRating, &p.Notes)
+		return p, err
+	})
 }
 
 func HandleListPerformanceReviews(db *store.DB) http.HandlerFunc {

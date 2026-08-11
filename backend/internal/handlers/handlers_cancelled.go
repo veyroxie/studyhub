@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -14,20 +15,11 @@ import (
 func listCancelledClasses(db *store.DB, c *core.Claims) []models.CancelledClass {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,class_id,date,reason,cancelled_by,created_on FROM cancelled_classes WHERE 1=1`+tw+` ORDER BY date DESC LIMIT 5000`, twArgs...)
-	if err != nil {
-		core.Logger.Error("list query failed", "err", err, "type", "CancelledClass")
-		return []models.CancelledClass{}
-	}
-	defer rows.Close()
-	out := []models.CancelledClass{}
-	for rows.Next() {
+	return store.CollectRows(rows, err, "CancelledClass", func(r *sql.Rows) (models.CancelledClass, error) {
 		var cc models.CancelledClass
-		if err := rows.Scan(&cc.ID, &cc.ClassID, &cc.Date, &cc.Reason, &cc.CancelledBy, &cc.CreatedOn); err != nil {
-			continue
-		}
-		out = append(out, cc)
-	}
-	return out
+		err := r.Scan(&cc.ID, &cc.ClassID, &cc.Date, &cc.Reason, &cc.CancelledBy, &cc.CreatedOn)
+		return cc, err
+	})
 }
 
 func HandleListCancelledClasses(db *store.DB) http.HandlerFunc {
