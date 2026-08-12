@@ -241,7 +241,10 @@
       return (names[parseInt(m,10)-1] || m) + ' ' + y;
     },
     formatCurrency(amount) {
-      return 'RM ' + parseFloat(amount || 0).toFixed(2);
+      // `amount || 0` caught null/''/undefined but not a non-numeric string,
+      // so a bad value reached parents as "RM NaN" on an invoice.
+      var n = parseFloat(amount);
+      return 'RM ' + (isFinite(n) ? n : 0).toFixed(2);
     },
     formatTime(timeStr) {
       if (!timeStr) return '\u2014';
