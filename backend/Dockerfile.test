@@ -1,0 +1,29 @@
+# Lean image for the LOCAL TEST STACK only — never deployed.
+#
+# Deliberately skips the Tailwind/esbuild asset stages in backend/Dockerfile:
+# the test stack bind-mounts ./frontend (which already carries a built
+# tailwind.css), so those stages would be immediately shadowed by the mount
+# AND make every local rebuild depend on downloading binaries from GitHub.
+# That download is exactly what fails on a slow or restricted network.
+#
+# Production keeps using backend/Dockerfile — this file must not be used there:
+# it serves unminified assets and omits the backup tooling.
+FROM golang:1.25.12-alpine AS builder
+WORKDIR /app
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend/ .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o studyhub ./cmd/api
+
+FROM alpine:3.21
+# tzdata: without it TZ=Asia/Kuala_Lumpur silently falls back to UTC and every
+# date in the test data lands in the wrong day for the 00:00-08:00 window.
+RUN apk add --no-cache ca-certificates tzdata && \
+    addgroup -g 1000 studyhub && adduser -D -u 1000 -G studyhub studyhub
+WORKDIR /app
+COPY --from=builder /app/studyhub .
+RUN mkdir -p /app/uploads /app/frontend && chown -R studyhub:studyhub /app
+USER 1000:1000
+EXPOSE 8080
+HEALTHCHECK --interval=5s --timeout=3s --retries=10 CMD wget -qO- http://localhost:8080/api/health || exit 1
+CMD ["./studyhub"]

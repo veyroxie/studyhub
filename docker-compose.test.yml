@@ -1,0 +1,67 @@
+# Local TEST stack — a complete, throwaway copy of StudyHub.
+#
+#   ./scripts/test-env.sh up      -> http://localhost:8081
+#
+# Fully isolated from anything else on the machine:
+#   - its own compose project name, so its network and volume never collide
+#   - its own Postgres volume (studyhub-test data, never the real database)
+#   - port 8081, so it can run beside the normal stack on 8080
+#
+# Safety posture is deliberately the opposite of production:
+#   APP_ENV=development     -> demo data seeded, background jobs OFF
+#   OUTBOUND_ENABLED unset  -> email and web push are logged, never sent
+# so nothing here can reach a real parent even if prod credentials leak in.
+#
+# The frontend is bind-mounted, so editing js/html and refreshing the browser
+# is enough — no rebuild to see a change.
+name: studyhub-test
+
+services:
+  api:
+    build:
+      context: .
+      # Lean test image: no Tailwind/esbuild stages, so a rebuild needs no
+      # network beyond Go modules and the bind-mounted frontend is authoritative.
+      dockerfile: backend/Dockerfile.test
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - ./frontend:/app/frontend:ro
+      - test_uploads:/app/uploads
+    environment:
+      PORT: 8080
+      TZ: Asia/Kuala_Lumpur
+      APP_ENV: development
+      DATABASE_URL: postgres://studyhub:testonly@postgres:5432/studyhub?sslmode=disable
+      # Throwaway credentials — this stack is local, disposable and offline.
+      JWT_SECRET: test-only-secret-not-for-production-use
+      SEED_ADMIN_PASSWORD: admin123
+      SEED_DEMO_DATA: "1"
+      ALLOWED_ORIGIN: http://localhost:8081
+      APP_URL: http://localhost:8081
+      EMAIL_FROM: StudyHub Test <test@localhost>
+      # Left unset on purpose: OUTBOUND_ENABLED, ENABLE_JOBS, RESEND_API_KEY,
+      # VAPID_*, S3_*. Setting any of them here would let a test run send.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: studyhub
+      POSTGRES_USER: studyhub
+      POSTGRES_PASSWORD: testonly
+    volumes:
+      - test_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studyhub -d studyhub"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+    restart: "no"
+
+volumes:
+  test_pgdata:
+  test_uploads:
