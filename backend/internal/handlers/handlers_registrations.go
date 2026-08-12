@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -29,20 +30,11 @@ func listParentEnrollments(db *store.DB, c *core.Claims) []models.Registration {
 	tw, twArgs := store.ScopeTenant(c, "")
 	args := append([]any{c.Email}, twArgs...)
 	rows, err := db.Query(`SELECT id,parent_name,email,COALESCE(student_first_name,''),COALESCE(student_last_name,''),submitted_on,status,COALESCE(type,'enrollment') FROM registrations WHERE email=? AND type='enrollment'`+tw+` ORDER BY submitted_on DESC`, args...)
-	if err != nil {
-		core.Logger.Error("list query failed", "err", err, "type", "Registration")
-		return []models.Registration{}
-	}
-	defer rows.Close()
-	out := []models.Registration{}
-	for rows.Next() {
+	return store.CollectRows(rows, err, "Registration", func(r *sql.Rows) (models.Registration, error) {
 		var reg models.Registration
-		if err := rows.Scan(&reg.ID, &reg.ParentName, &reg.Email, &reg.StudentFirstName, &reg.StudentLastName, &reg.SubmittedOn, &reg.Status, &reg.Type); err != nil {
-			continue
-		}
-		out = append(out, reg)
-	}
-	return out
+		err := r.Scan(&reg.ID, &reg.ParentName, &reg.Email, &reg.StudentFirstName, &reg.StudentLastName, &reg.SubmittedOn, &reg.Status, &reg.Type)
+		return reg, err
+	})
 }
 
 func listRegistrations(db *store.DB, c *core.Claims) []models.Registration {

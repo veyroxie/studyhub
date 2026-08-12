@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"studyhub/internal/core"
@@ -41,20 +42,11 @@ func parentStudentIDs(db *store.DB, c *core.Claims) map[string]bool {
 func listSelfStudy(db *store.DB, c *core.Claims) []models.SelfStudySession {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,student_id,date,start_time,end_time,duration_min,notes FROM self_study_sessions WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC`, twArgs...)
-	if err != nil {
-		core.Logger.Error("list query failed", "err", err, "type", "SelfStudySession")
-		return []models.SelfStudySession{}
-	}
-	defer rows.Close()
-	out := []models.SelfStudySession{}
-	for rows.Next() {
+	return store.CollectRows(rows, err, "SelfStudySession", func(r *sql.Rows) (models.SelfStudySession, error) {
 		var s models.SelfStudySession
-		if err := rows.Scan(&s.ID, &s.StudentID, &s.Date, &s.StartTime, &s.EndTime, &s.DurationMin, &s.Notes); err != nil {
-			continue
-		}
-		out = append(out, s)
-	}
-	return out
+		err := r.Scan(&s.ID, &s.StudentID, &s.Date, &s.StartTime, &s.EndTime, &s.DurationMin, &s.Notes)
+		return s, err
+	})
 }
 
 func HandleListSelfStudy(db *store.DB) http.HandlerFunc {

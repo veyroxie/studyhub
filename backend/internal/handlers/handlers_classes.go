@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"studyhub/internal/core"
@@ -61,20 +62,11 @@ func listClasses(db *store.DB, c *core.Claims) []models.Class {
 func listPricingTiers(db *store.DB, c *core.Claims) []models.PricingTier {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,class_type,level_band,COALESCE(monthly_fee,0) FROM pricing_tiers WHERE deleted_at IS NULL`+tw+` ORDER BY class_type, level_band`, twArgs...)
-	if err != nil {
-		core.Logger.Error("list query failed", "err", err, "type", "PricingTier")
-		return []models.PricingTier{}
-	}
-	defer rows.Close()
-	out := []models.PricingTier{}
-	for rows.Next() {
+	return store.CollectRows(rows, err, "PricingTier", func(r *sql.Rows) (models.PricingTier, error) {
 		var p models.PricingTier
-		if err := rows.Scan(&p.ID, &p.ClassType, &p.LevelBand, &p.MonthlyFee); err != nil {
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
+		err := r.Scan(&p.ID, &p.ClassType, &p.LevelBand, &p.MonthlyFee)
+		return p, err
+	})
 }
 
 func HandleClasses(db *store.DB) http.HandlerFunc {

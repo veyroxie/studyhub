@@ -128,20 +128,11 @@ func logAudit(db execer, actorEmail, action, entityType, entityID, detail string
 func listPendingUsers(db *store.DB, c *core.Claims) []models.PendingUser {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id, email, name, role FROM users WHERE status='pending_verification'`+tw+` ORDER BY id DESC`, twArgs...)
-	if err != nil {
-		core.Logger.Error("list query failed", "err", err, "type", "PendingUser")
-		return []models.PendingUser{}
-	}
-	defer rows.Close()
-	out := []models.PendingUser{}
-	for rows.Next() {
+	return store.CollectRows(rows, err, "PendingUser", func(r *sql.Rows) (models.PendingUser, error) {
 		var u models.PendingUser
-		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role); err != nil {
-			continue
-		}
-		out = append(out, u)
-	}
-	return out
+		err := r.Scan(&u.ID, &u.Email, &u.Name, &u.Role)
+		return u, err
+	})
 }
 
 // ── Pagination ───────────────────────────────────────────────────────────────
