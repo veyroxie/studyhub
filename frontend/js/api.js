@@ -1,11 +1,12 @@
 (function() {
   window.App = window.App || {};
 
-  // In production, frontend and backend are same origin (Go serves both).
-  // In local dev, backend runs on :8080.
-  const BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:8080'
-    : ''; // same origin in production
+  // Same origin: the Go server serves this page and the API together, on
+  // whatever port it was started on. The old code hardcoded :8080 for any
+  // localhost page, so the test stack on :8081 sent its auth calls to a
+  // different server and every request there came back 401.
+  // Override only if the frontend is ever served separately from the API.
+  const BASE = window.API_BASE || '';
 
   // All fetch calls include credentials so the browser sends the HttpOnly cookie.
   // The JWT token lives in an HttpOnly cookie — JS never touches it directly.
