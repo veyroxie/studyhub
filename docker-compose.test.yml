@@ -49,6 +49,10 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    # Loopback-only publish so `test-env.sh dev` can run the API straight on
+    # the host (3s rebuild) instead of through a container image (~60s).
+    ports:
+      - "127.0.0.1:55433:5432"
     environment:
       POSTGRES_DB: studyhub
       POSTGRES_USER: studyhub
