@@ -295,6 +295,54 @@ required-level-band lands with B5.
 
 ---
 
+## 8.6 Centre requests — 2026-08-07..12 (Nadine, Ying Quah)
+
+Committed to the centre for "end of this week". Ordered by dependency, not by
+the order they were asked.
+
+R1. **Subjects: Math and Mandarin, for both Group and Private.** Pricing today
+    is strictly 2D — pricing_tiers(class_type, level_band), 4 rows, and 0016
+    states "the centre doesn't have subjects, it has levels". That assumption
+    is now dead. If a subject changes the price this becomes
+    (subject × type × level) = 8+ rows and lands as the products catalog (B5);
+    if it does not, subject is an attribute of the class and only R2 is needed.
+    BLOCKED ON: does Math cost the same as Mandarin?
+
+R2. **Invoice shows the class name** ("Math group lessons"). The monthly line
+    already renders from monthlyClassLineName(); this is a naming/description
+    change, cheap, and independent of R1's pricing question.
+
+R3. **Early bird as flat RM10, not a percentage.** The cron ALREADY uses flat
+    RM10 (cron.go EarlyBirdRM); only the manual invoice builder still applies a
+    percentage (billing.js discountPct). So this is removing an inconsistency
+    the audit already flagged, not new behaviour. Smallest item on the list.
+
+R4. **Prorating on the invoice** — bill a partial month for a student who
+    joins or leaves mid-month. Needs a stated rule (see open question) and a
+    line-item shape that shows the basis, or parents will query it.
+
+R5. **Generate invoices for an arbitrary month**, not just the current one.
+    The cron is date-driven (days 1-7) with a dedup key of tenant|student for
+    the current period; generating March from August needs the period to be an
+    explicit input. Pairs with B5's (student, period) UNIQUE idempotency.
+
+R6. **Freeze / resume a student's billing for a month.** Half-built already:
+    students.subscription_status + paused_at + resumed_at exist and the cron
+    skips non-active students. Needs the button, and a decision on what
+    happens to an invoice that was already issued for the frozen month.
+
+R7. **Quit reasons + inactive date** (Ying Quah, seconded). When a student goes
+    inactive, record why (migrated overseas, different educational goals, went
+    quiet, cost, ...) and when, for retention analysis. Wants a fixed list, not
+    free text, or it cannot be analysed. Independent of everything above —
+    students table + the deactivate flow + a breakdown in analytics.
+
+Sequencing note: R3 and R2 are hours. R7 is self-contained. R1/R4/R5/R6 all
+touch invoice generation, which is exactly what B5 rewrites — doing them on
+the current schema means doing them twice.
+
+---
+
 ## 9. Open decisions for you
 
 1. **Stack: stay REST + vanilla JS, or adopt GraphQL / a frontend build step?**

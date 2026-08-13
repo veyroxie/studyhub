@@ -628,6 +628,12 @@
       + _field('Capacity', '<input id="cap-input" name="capacity" type="number" min="1" max="5" class="form-input" value="5" readonly style="background:#f8fafc;color:#64748b">')
       + _field('Level band (sets monthly fee)', '<select name="levelBand" class="form-input">' + _levelBandOptions('') + '</select>')
       + '</div>'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Subject', '<select name="subject" class="form-input">'
+      +   '<option value="">\u2014</option>'
+      +   ['Math','Mandarin'].map(function(sj) { return '<option value="' + sj + '">' + sj + '</option>'; }).join('')
+      +   '</select>')
+      + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Class</button>'
@@ -678,7 +684,10 @@
         enrolled: 0,
         color: ctx.classType === 'Private' ? 'purple' : 'blue',
         category: '',
-        levelBand: fd.get('levelBand') || ''
+        levelBand: fd.get('levelBand') || '',
+        // Label only — pricing stays (classType x levelBand). Shows on the
+        // invoice line as e.g. "Math group lessons".
+        subject: fd.get('subject') || ''
       };
 
       // Send in-app announcement to notify parents of the new class

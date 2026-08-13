@@ -45,6 +45,7 @@ type classMeta struct {
 	name      string
 	classType string
 	band      string
+	subject   string
 }
 
 // appendDiscount adds a negative "discount" line item when amt > 0. Keeps the
@@ -59,6 +60,14 @@ func appendDiscount(items []models.InvoiceLineItem, name string, amt float64) []
 // monthlyClassLineName renders the bold line-item heading for an enrolled
 // class, e.g. "Singapore Math - Group".
 func monthlyClassLineName(m classMeta) string {
+	// Parents read this line on the invoice, so lead with what was taught:
+	// "Math group lessons" rather than the internal class name.
+	if m.subject != "" && m.classType != "" {
+		return m.subject + " " + strings.ToLower(m.classType) + " lessons"
+	}
+	if m.subject != "" {
+		return m.subject + " lessons"
+	}
 	if m.classType == "" {
 		return m.name
 	}
@@ -331,11 +340,11 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	// (a class joins pricing_tiers on its class_type + level_band). Class IDs are
 	// unique, so a flat map keyed by class id is enough (cron spans all tenants).
 	classByID := map[string]classMeta{}
-	if frows, ferr := db.Query(`SELECT c.id, COALESCE(pt.monthly_fee,0), COALESCE(c.name,''), COALESCE(c.class_type,''), COALESCE(c.level_band,'') FROM classes c LEFT JOIN pricing_tiers pt ON pt.class_type = c.class_type AND pt.level_band = c.level_band AND pt.tenant_id = c.tenant_id AND pt.deleted_at IS NULL WHERE c.deleted_at IS NULL`); ferr == nil {
+	if frows, ferr := db.Query(`SELECT c.id, COALESCE(pt.monthly_fee,0), COALESCE(c.name,''), COALESCE(c.class_type,''), COALESCE(c.level_band,''), COALESCE(c.subject,'') FROM classes c LEFT JOIN pricing_tiers pt ON pt.class_type = c.class_type AND pt.level_band = c.level_band AND pt.tenant_id = c.tenant_id AND pt.deleted_at IS NULL WHERE c.deleted_at IS NULL`); ferr == nil {
 		for frows.Next() {
 			var cid string
 			var m classMeta
-			if err := frows.Scan(&cid, &m.fee, &m.name, &m.classType, &m.band); err == nil {
+			if err := frows.Scan(&cid, &m.fee, &m.name, &m.classType, &m.band, &m.subject); err == nil {
 				classByID[cid] = m
 			}
 		}

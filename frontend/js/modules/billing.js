@@ -1271,7 +1271,7 @@
       +   '</div>'
       +   '<div id="early-bird-fields" style="display:none;margin-top:0.5rem">'
       +     '<div class="grid grid-cols-2 gap-3">'
-      +       _field('Discount %', '<input id="discount-pct" name="discountPct" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateNetAmount()">')
+      +       _field('Discount (RM)', '<input id="discount-rm" name="discountRM" type="number" min="0" step="0.01" class="form-input" value="10" oninput="App.Billing._updateNetAmount()">')
       +       _field('Pay by (cutoff)', '<input name="earlyBirdCutoff" type="date" class="form-input">')
       +     '</div>'
       +     '<div id="net-amount-preview" style="margin-top:0.5rem;font-size:0.82rem;color:#6b7280"></div>'
@@ -1316,15 +1316,17 @@
           qty: parseFloat(li.qty) || 0, unitPrice: parseFloat(li.unitPrice) || 0, amount: _lineItemAmount(li) };
       });
       var earlyBirdOn = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked;
-      var discountPct = earlyBirdOn ? (parseFloat(fd.get('discountPct')) || 0) : 0;
-      if (discountPct > 0) {
+      var discountRM = earlyBirdOn ? (parseFloat(fd.get('discountRM')) || 0) : 0;
+      if (discountRM > 0) {
         // Discount the NET subtotal so free/FOC lines (a +40 add-on cancelled
         // by a -40 credit) and existing discounts don't inflate the base. The
         // early-bird line isn't pushed yet, so this sums everything but it.
         var netSubtotal = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
-        var eb = parseFloat((netSubtotal * discountPct / 100).toFixed(2));
+        // Flat ringgit off, matching the monthly cron's EarlyBirdRM. Clamped
+        // to the subtotal so a discount larger than the bill can't invert it.
+        var eb = Math.min(discountRM, netSubtotal);
         if (eb > 0) {
-          lineItems.push({ kind: 'discount', name: 'Early bird discount (' + discountPct + '%)', descriptor: '', qty: 1, unitPrice: eb, amount: -eb });
+          lineItems.push({ kind: 'discount', name: 'Early bird discount', descriptor: '', qty: 1, unitPrice: eb, amount: -eb });
         }
       }
       var newInvoice = {
@@ -1396,11 +1398,11 @@
       base = _lineItems.reduce(function(a, li) { var amt = _lineItemAmount(li); return a + (amt > 0 ? amt : 0); }, 0);
     }
     var cb = document.getElementById('early-bird-cb');
-    var pctEl = document.getElementById('discount-pct');
-    if (cb && cb.checked && pctEl && base > 0) {
-      var pct = parseFloat(pctEl.value) || 0;
-      var net = (base * (1 - pct / 100)).toFixed(2);
-      preview.textContent = 'After early bird: RM ' + net + ' (saving RM ' + (base - parseFloat(net)).toFixed(2) + ')';
+    var rmEl = document.getElementById('discount-rm');
+    if (cb && cb.checked && rmEl && base > 0) {
+      // Flat ringgit, clamped so a large discount can't drive a negative total.
+      var off = Math.min(parseFloat(rmEl.value) || 0, base);
+      preview.textContent = 'After early bird: RM ' + (base - off).toFixed(2) + ' (saving RM ' + off.toFixed(2) + ')';
     } else {
       preview.textContent = '';
     }
@@ -1527,13 +1529,13 @@
     // applied on submit — the preview has to show it or the admin reads a
     // different figure than the invoice they create.
     const ebOn = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked;
-    const ebPct = ebOn ? (parseFloat((document.getElementById('discount-pct') || {}).value) || 0) : 0;
-    const eb = ebPct > 0 ? parseFloat((total * ebPct / 100).toFixed(2)) : 0;
+    const ebRM = ebOn ? (parseFloat((document.getElementById('discount-rm') || {}).value) || 0) : 0;
+    const eb = Math.min(ebRM, total);
     total = parseFloat((total - eb).toFixed(2));
     preview.style.display = 'block';
     preview.innerHTML = count + ' child' + (count !== 1 ? 'ren' : '') + ' × RM ' + discounted.toFixed(2)
       + (discount > 0 ? ' (' + discount + '% sibling discount applied)' : '')
-      + (eb > 0 ? ' − RM ' + eb.toFixed(2) + ' (' + ebPct + '% early bird)' : '')
+      + (eb > 0 ? ' − RM ' + eb.toFixed(2) + ' early bird' : '')
       + ' = <strong>RM ' + total.toFixed(2) + ' total</strong>';
   }
 
@@ -1571,11 +1573,11 @@
     // Early bird (shared checkbox, visible in sibling mode) applies to the net
     // subtotal after the sibling discount — same rule as the single-invoice flow.
     var earlyBirdOn = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked;
-    var ebPct = earlyBirdOn ? (parseFloat(fd.get('discountPct')) || 0) : 0;
-    if (ebPct > 0) {
+    var ebRM = earlyBirdOn ? (parseFloat(fd.get('discountRM')) || 0) : 0;
+    if (ebRM > 0) {
       var ebBase = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
-      var eb = parseFloat((ebBase * ebPct / 100).toFixed(2));
-      if (eb > 0) lineItems.push({ kind: 'discount', name: 'Early bird discount (' + ebPct + '%)', qty: 1, unitPrice: eb, amount: -eb });
+      var eb = Math.min(ebRM, ebBase);
+      if (eb > 0) lineItems.push({ kind: 'discount', name: 'Early bird discount', qty: 1, unitPrice: eb, amount: -eb });
     }
     const finalTotal = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
 

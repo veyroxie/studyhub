@@ -177,8 +177,11 @@ type Class struct {
 	Enrolled   int      `json:"enrolled"`
 	Color      string   `json:"color"`
 	Category   string   `json:"category"`
-	ClassType  string   `json:"classType"` // 'Group' | 'Private' — drives pricing tier + capacity
-	LevelBand  string   `json:"levelBand"` // '1-3' | '4-6' — drives pricing tier
+	// Subject is a label (Math, Mandarin) shown on the invoice line. It is
+	// deliberately NOT part of the pricing key — see migration 0034.
+	Subject   string `json:"subject"`
+	ClassType string `json:"classType"` // 'Group' | 'Private' — drives pricing tier + capacity
+	LevelBand string `json:"levelBand"` // '1-3' | '4-6' — drives pricing tier
 }
 
 // PricingTier is one cell of the type×level fee matrix. The monthly cron looks

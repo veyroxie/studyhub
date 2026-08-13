@@ -1,0 +1,11 @@
+-- 0034_class_subject.sql
+--
+-- The centre teaches Math and Mandarin, in both Group and Private form. 0016
+-- removed the old per-subject fee model on the grounds that "the centre
+-- doesn't have subjects, it has levels" — that is no longer true.
+--
+-- Subject is a LABEL, not a pricing dimension: Math and Mandarin cost the same
+-- at a given (class_type, level_band), so pricing_tiers is unchanged and this
+-- only affects how a class is described on the invoice. Keeping it out of the
+-- pricing key is what stops this from becoming an 8-row matrix to maintain.
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS subject TEXT DEFAULT '';
