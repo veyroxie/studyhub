@@ -12,6 +12,9 @@
   // Status tabs: [display label, _statusFilter value]. Value matches the
   // student.status string so _onFilter works unchanged ('Waitlist' shows as
   // the label, 'Waitlisted' is the stored status).
+  // Fixed vocabulary for why a student left — free text can't be grouped
+  // in a retention report, which is the whole point of collecting it.
+  var _INACTIVE_REASONS = ['','Moved overseas','Moved away locally','Different educational goals','Cost','Schedule conflict','Completed programme','Lost contact','Other'];
   var _STATUS_TABS = [['All','All'],['Active','Active'],['Inactive','Inactive'],['New','New'],['Waitlist','Waitlisted']];
   var _STATUS_DOT = { All:'#2563eb', Active:'#059669', Inactive:'#ef4444', New:'#3b82f6', Waitlisted:'#f59e0b' };
 
@@ -647,9 +650,15 @@
       + _field('Phone', '<input name="phone" class="form-input" value="' + App.Utils.esc(_contactPhone(s)) + '">')
       + '</div>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Status</label>'
-      + '<select name="status" class="form-input">'
+      + '<select name="status" class="form-input" onchange="var f=document.getElementById(\'inactive-fields\'); if(f) f.style.display = this.value===\'Inactive\' ? \'grid\' : \'none\'">'
       + ['Active','Inactive','New','Waitlisted'].map(function(st) { return '<option' + (s.status===st?' selected':'') + '>' + st + '</option>'; }).join('')
       + '</select></div>'
+      // Churn tracking: a fixed vocabulary, because free text cannot be
+      // grouped in a report. Only shown when the student is Inactive.
+      + '<div id="inactive-fields" style="display:' + (s.status === 'Inactive' ? 'grid' : 'none') + ';grid-template-columns:1fr 1fr;gap:1rem">'
+      +   _field('Reason for leaving', '<select name="inactiveReason" class="form-input">' + _INACTIVE_REASONS.map(function(r) { return '<option value="' + App.Utils.esc(r) + '"' + (s.inactiveReason === r ? ' selected' : '') + '>' + (r || '\u2014') + '</option>'; }).join('') + '</select>')
+      +   _field('Stopped on', '<input name="inactiveOn" type="date" class="form-input" value="' + App.Utils.esc(s.inactiveOn || '') + '">')
+      + '</div>'
       + _multiClassField(s.enrolledClasses, state.classes, state.staff)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="' + (s.packageAmount || 0) + '">')
@@ -685,6 +694,8 @@
         contact: fd.get('contact'),
         phone: fd.get('phone'),
         status: fd.get('status'),
+        inactiveReason: fd.get('inactiveReason') || '',
+        inactiveOn: fd.get('inactiveOn') || '',
         enrolledClasses: newClasses,
         notes: fd.get('notes'),
         emergency2Name: fd.get('emergency2Name') || '',

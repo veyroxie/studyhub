@@ -148,9 +148,12 @@ type Student struct {
 	// package). Only these appear in the manual self-study invoice picker, so a
 	// package student — already auto-billed for overflow by the cron — can't be
 	// manually billed and double-charged.
-	DropinSelfStudy bool    `json:"dropinSelfStudy"`
-	PausedAt        *string `json:"pausedAt,omitempty"`
-	ResumedAt       *string `json:"resumedAt,omitempty"`
+	DropinSelfStudy bool `json:"dropinSelfStudy"`
+	// Why and when a student stopped attending, for retention analysis.
+	InactiveReason string  `json:"inactiveReason,omitempty"`
+	InactiveOn     string  `json:"inactiveOn,omitempty"`
+	PausedAt       *string `json:"pausedAt,omitempty"`
+	ResumedAt      *string `json:"resumedAt,omitempty"`
 }
 
 type Family struct {
