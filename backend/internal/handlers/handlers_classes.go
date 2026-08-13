@@ -48,7 +48,7 @@ func listClasses(db *store.DB, c *core.Claims) []models.Class {
 	for rows.Next() {
 		var c models.Class
 		var tids string
-		if err := rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color, &c.Category, &c.ClassType, &c.LevelBand); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color, &c.Category, &c.ClassType, &c.LevelBand, &c.Subject); err != nil {
 			continue
 		}
 		c.TeacherIDs = models.ParseArr(tids)
