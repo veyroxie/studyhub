@@ -631,7 +631,7 @@
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Subject', '<select name="subject" class="form-input">'
       +   '<option value="">\u2014</option>'
-      +   ['Math','Mandarin'].map(function(sj) { return '<option value="' + sj + '">' + sj + '</option>'; }).join('')
+      +   ['Math','Mandarin','Phonics'].map(function(sj) { return '<option value="' + sj + '">' + sj + '</option>'; }).join('')
       +   '</select>')
       + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
