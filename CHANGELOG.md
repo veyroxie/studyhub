@@ -8,6 +8,37 @@ dated section when you cut a deploy.
 
 ## [Unreleased]
 
+### Fixed — class enrolment, and prices that silently came out as RM 0
+
+- **Enrolling a student into a class works again.** The Add Class form never
+  captured a teacher, and the enrolment picker matched a class by slot + type +
+  teacher — so a class created in Calendar could never be found once a teacher
+  was selected, reporting "create it in Calendar first" for a class that already
+  existed. The form now takes teachers, and the picker lists the real classes
+  instead of reconstructing one from three dropdowns.
+- **Editing a class no longer wipes its subject**, which is what names the
+  monthly invoice line ("Math group lessons").
+- **Classes the pricing matrix cannot price no longer bill RM 0.** Phonics has
+  no level band and a 30-minute group runs below the Level 1 rate; both missed
+  the `(class_type, level_band)` lookup. A class can now carry its own monthly
+  fee, which wins over the matrix when set.
+- **Level is read from the class's level band, not parsed out of its name.** The
+  old `/level (\d+)/` regex hid Phonics from the make-up class picker entirely
+  and mis-grouped it in analytics. Level reporting now groups by pricing band
+  (1-3 / 4-6) instead of levels 1..6.
+
+### Added
+
+- **A products catalogue** for the things the centre sells — tuition seeded from
+  the live pricing matrix, plus Registration (RM250) and level-based Deposit.
+  Deposit ships inactive until its amounts are set, so it cannot reach an
+  invoice unpriced.
+- **Long dropdowns are now typeable.** A shared filter box narrows class and
+  student lists in place, keeping the native select underneath.
+- The replacement-credit buttons state their direction — "Mark absent
+  (+ credit)" and "Book make-up (- credit)" — after the spend button was clicked
+  in place of the earn one.
+
 ### Security — teacher write paths and remaining leaks
 
 - **Teachers can no longer write records for students they don't teach.** The
