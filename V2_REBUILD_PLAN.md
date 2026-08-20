@@ -295,6 +295,62 @@ required-level-band lands with B5.
 
 ---
 
+## 8.55 B5 progress (2026-08-20)
+
+**Shipped.**
+
+- **Migration 0036 — `products`.** Catalogue of sellable items (`tuition`,
+  `registration`, `deposit`, `material`, `selfstudy`, `addon`). Tuition rows
+  seeded with `INSERT ... SELECT` from `pricing_tiers` so per-tenant edited
+  prices carry over; Registration seeded at RM250 active; the two level-based
+  Deposit rows seeded **inactive** because the amounts are unconfirmed. Nothing
+  reads `products` yet — `pricing_tiers` is still the cron's source of truth.
+- **Migration 0037 — `classes.monthly_fee_override`.** Wins over the matrix when
+  `> 0`; `0` means unset. Exists because the 2x2 matrix cannot price Phonics (no
+  level band) or a 30-minute group, and both were billing RM 0.
+- **Migration 0038 — `invoices.period`.** Explicit `YYYY-MM` billing month,
+  backfilled with `substr(created_on,1,7)` to exactly match what the old dedup
+  keyed on. Cron dedups on it; both write paths maintain it; the update endpoint
+  recomputes it since it can change `type` and `created_on`.
+
+**Deliberately dropped from step 2.** The `draft|issued|paid|void` status
+rename is a vocabulary sweep across ~6 sites in `handlers_invoices.go` plus
+`billing.js` and the cron, not a migration. The four current statuses are ugly
+and they work. Do it as its own commit with a mapping table, or not at all.
+
+**Next, and blocked on a production check.** The partial unique index
+`(tenant_id, student_id, period) WHERE type='Monthly' AND deleted_at IS NULL`
+is what makes the monthly run race-free via `ON CONFLICT DO NOTHING` instead of
+the preloaded dedup map, and it is what makes R5 (generate for an arbitrary
+month) trivial. It is NOT written yet because a pre-existing duplicate fails the
+migration, and a failed migration stops the API booting. Run first:
+
+```sql
+SELECT tenant_id, student_id, period, count(*) AS copies, string_agg(id, ', ')
+FROM invoices
+WHERE type='Monthly' AND deleted_at IS NULL AND period <> ''
+GROUP BY tenant_id, student_id, period HAVING count(*) > 1;
+```
+
+Empty means the index is safe to add. Verified locally against a database
+carrying a planted duplicate; the query catches it.
+
+**Structural finding.** 30 production classes have no level band, so they price
+at 0. Five are Self-Study and correctly unpriced. The rest split into private
+one-to-one classes named `Teacher X (Student)` and level classes named
+"Level 1 & 2" / "Level 3 & 4". The latter **straddle both pricing bands**
+(`1-3` and `4-6`), so no band is correct for them. This is the same mismatch as
+Phonics: the matrix assumes one band per class and the centre's classes do not
+work that way. Their own numbers imply an hourly model (RM60/hr group, RM65/hr
+for the upper band) — worth pricing per hour x duration x sessions in v2 rather
+than extending the matrix. `monthly_fee_override` covers it in the meantime.
+
+Severity note: `package_amount > 0` short-circuits class-fee pricing entirely,
+so only students with no package amount are exposed. Those get **no invoice at
+all** (a logged warning), not an RM 0 one.
+
+---
+
 ## 8.6 Centre requests — 2026-08-07..12 (Nadine, Ying Quah)
 
 Committed to the centre for "end of this week". Ordered by dependency, not by
