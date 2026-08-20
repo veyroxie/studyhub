@@ -414,6 +414,19 @@ type CancelledClass struct {
 	CreatedOn   string `json:"createdOn"`
 }
 
+// SessionOverride is one dated session that differs from its recurring class.
+// Absence of a row means the class template applies, so swapping a teacher for
+// one week leaves every other week alone. See migration 0040.
+type SessionOverride struct {
+	ID         string   `json:"id"`
+	ClassID    string   `json:"classId"`
+	Date       string   `json:"date"`
+	TeacherIDs []string `json:"teacherIds"`
+	Note       string   `json:"note"`
+	CreatedBy  string   `json:"createdBy"`
+	CreatedOn  string   `json:"createdOn"`
+}
+
 type Holiday struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -480,6 +493,7 @@ type Snapshot struct {
 	SelfStudySessions  []SelfStudySession  `json:"selfStudySessions"`
 	PerformanceReviews []PerformanceReview `json:"performanceReviews"`
 	CancelledClasses   []CancelledClass    `json:"cancelledClasses"`
+	SessionOverrides   []SessionOverride   `json:"sessionOverrides"`
 	Holidays           []Holiday           `json:"holidays"`
 	ReplacementCredits []ReplacementCredit `json:"replacementCredits"`
 	Families           []Family            `json:"families"`
