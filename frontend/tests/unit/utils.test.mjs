@@ -162,6 +162,33 @@ describe('filterFor / filterSelect — the shared entity picker', () => {
     assert.equal(opts[0].hidden, false, 'an empty query must reveal everything again');
   });
 
+  test('clears the selection when the chosen option is filtered away', () => {
+    // Otherwise FormData still submits the hidden choice and the admin saves a
+    // class she can no longer see.
+    const opts = [
+      { value: '', text: '-- select a class --', hidden: false },
+      { value: 'c1', text: 'Mandarin L1', hidden: false },
+      { value: 'c2', text: 'Phonics A', hidden: false },
+    ];
+    const sel = { options: opts, selectedIndex: 2 };
+    sandbox.document.getElementById = () => sel;
+
+    U.filterSelect('x', 'mandarin');
+    assert.equal(sel.selectedIndex, 0, 'the filtered-away choice must not stay selected');
+  });
+
+  test('keeps the selection when it still matches the filter', () => {
+    const opts = [
+      { value: '', text: '-- select a class --', hidden: false },
+      { value: 'c2', text: 'Phonics A', hidden: false },
+    ];
+    const sel = { options: opts, selectedIndex: 1 };
+    sandbox.document.getElementById = () => sel;
+
+    U.filterSelect('x', 'phon');
+    assert.equal(sel.selectedIndex, 1);
+  });
+
   test('does nothing when the select is absent instead of throwing', () => {
     sandbox.document.getElementById =() => null;
     assert.doesNotThrow(() => U.filterSelect('missing', 'abc'));

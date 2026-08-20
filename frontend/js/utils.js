@@ -317,6 +317,11 @@
         if (!opt.value) return;
         opt.hidden = opt.text.toLowerCase().indexOf(needle) === -1;
       });
+      // A hidden option stays selected, and FormData would still submit it —
+      // the admin could filter away her choice, see only other classes, and
+      // save the one she can no longer see. Clear it instead.
+      var chosen = sel.options[sel.selectedIndex];
+      if (chosen && chosen.hidden) sel.selectedIndex = 0;
     },
     // Local calendar date, NOT toISOString() (which is UTC). In UTC+8 the UTC
     // date is still "yesterday" until 08:00 local, so every check-in, credit and
