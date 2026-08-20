@@ -586,8 +586,8 @@
       +     '</div>'
       +   '</div>'
       +   ((isAdmin || isTeacher) ? '<div style="display:flex;gap:0.5rem">'
-      +     '<button onclick="App.Students._addCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer;white-space:nowrap">Mark absent</button>'
-      +     '<button onclick="App.Students._useCreditModal(\'' + studentId + '\')" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;white-space:nowrap">Use credit</button>'
+      +     '<button onclick="App.Students._addCreditModal(\'' + studentId + '\')" title="Student missed a class — records the absence and gives them a credit" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer;white-space:nowrap">Mark absent (+ credit)</button>'
+      +     '<button onclick="App.Students._useCreditModal(\'' + studentId + '\')" title="Student is attending a make-up session — spends a credit they already have" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;white-space:nowrap">Book make-up (− credit)</button>'
       +   '</div>' : '')
       + '</div>'
       + (stuCredits.length === 0
@@ -821,25 +821,24 @@
   // Multi-select class field — renders checkboxes for each class
   var _DAY_ORDER = { Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6, Sunday:7 };
 
-  // Enrollment picker: three dropdowns (slot, type, teacher) resolve to an
-  // existing class, and "Add class" appends it as a removable chip. Each chip
-  // carries a hidden classIds input so the surrounding form's FormData.getAll
-  // ('classIds') keeps working unchanged.
+  // Enrollment picker: pick the class directly. This used to be three
+  // dropdowns (slot, type, teacher) that had to resolve to a class, which
+  // failed whenever any one of them disagreed with the record — most often the
+  // teacher, since classes created from the calendar carried none. Listing the
+  // classes removes the whole class of "no match" failures. Each chip carries a
+  // hidden classIds input so the surrounding form's FormData.getAll('classIds')
+  // keeps working unchanged.
   function _multiClassField(selected, classes, staff) {
-    staff = staff || [];
     var chips = (selected || []).map(function(cid) {
-      var c = classes.find(function(x) { return x.id === cid; });
+      var c = (classes || []).find(function(x) { return x.id === cid; });
       return c ? _enrollChip(c) : '';
     }).join('');
     return '<div><label class="block text-sm font-medium text-slate-700 mb-1">Enrolled Classes</label>'
       + '<div class="border border-slate-200 rounded-xl p-3 bg-white">'
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">'
-      + '<select id="enr-slot" class="form-input">' + _slotOptions(classes) + '</select>'
-      + '<select id="enr-type" class="form-input"><option value="Group">Group</option><option value="Private">Private</option></select>'
-      + '<select id="enr-teacher" class="form-input"><option value="">Any teacher</option>'
-      +   staff.map(function(s) { return '<option value="' + s.id + '">' + App.Utils.esc(s.name || s.fullName || s.id) + '</option>'; }).join('')
-      + '</select>'
-      + '<button type="button" onclick="App.Students._addEnrollment()" style="padding:0.5rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add class</button>'
+      + App.Utils.filterFor('enr-class', 'Type to filter classes (name, day, teacher)...')
+      + '<div style="display:grid;grid-template-columns:1fr auto;gap:0.5rem">'
+      + '<select id="enr-class" class="form-input">' + _classOptions(classes, staff) + '</select>'
+      + '<button type="button" onclick="App.Students._addEnrollment()" style="padding:0.5rem 0.9rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add class</button>'
       + '</div>'
       + '<div id="enr-list" style="margin-top:0.6rem;display:flex;flex-direction:column;gap:0.35rem">'
       +   (chips || '<p class="text-xs text-slate-400" data-empty>No classes added yet</p>')
@@ -847,21 +846,26 @@
       + '</div></div>';
   }
 
-  function _slotOptions(classes) {
-    var seen = {};
-    var slots = [];
-    (classes || []).forEach(function(c) {
-      var key = c.day + '|' + c.time + '|' + (c.endTime || '');
-      if (seen[key]) return;
-      seen[key] = true;
-      slots.push({ key: key, day: c.day, time: c.time, endTime: c.endTime });
+  function _classOptions(classes, staff) {
+    var list = (classes || []).slice().sort(function(a, b) {
+      return (_DAY_ORDER[a.day] || 9) - (_DAY_ORDER[b.day] || 9) || (a.time || '').localeCompare(b.time || '');
     });
-    slots.sort(function(a, b) { return (_DAY_ORDER[a.day] || 9) - (_DAY_ORDER[b.day] || 9) || a.time.localeCompare(b.time); });
-    if (slots.length === 0) return '<option value="" disabled>No class slots yet</option>';
-    return slots.map(function(s) {
-      var range = App.Utils.formatTime(s.time) + (s.endTime ? '–' + App.Utils.formatTime(s.endTime) : '');
-      return '<option value="' + s.key + '">' + s.day + ' ' + range + '</option>';
-    }).join('');
+    if (list.length === 0) return '<option value="" disabled>No classes yet — create one in Calendar</option>';
+    return '<option value="">-- select a class --</option>'
+      + list.map(function(c) {
+          return '<option value="' + c.id + '">' + App.Utils.esc(_classLabel(c, staff)) + '</option>';
+        }).join('');
+  }
+
+  // Every attribute the old three dropdowns asked the admin to reproduce is
+  // shown here instead, so she can see which class she is picking.
+  function _classLabel(c, staff) {
+    var when = c.day + ' ' + App.Utils.formatTime(c.time) + (c.endTime ? '–' + App.Utils.formatTime(c.endTime) : '');
+    var names = (c.teacherIds || []).map(function(tid) {
+      var s = (staff || []).find(function(x) { return x.id === tid; });
+      return s ? (s.name || s.fullName || tid) : tid;
+    }).join(', ');
+    return c.name + ' · ' + when + ' · ' + (c.classType || 'Group') + ' · ' + (names || 'no teacher assigned');
   }
 
   function _enrollChip(c) {
@@ -874,19 +878,11 @@
   }
 
   function _addEnrollment() {
-    var slotEl = document.getElementById('enr-slot');
-    if (!slotEl || !slotEl.value) { App.Utils.showToast('Pick a slot first', 'error'); return; }
-    var parts = slotEl.value.split('|');
-    var type = document.getElementById('enr-type').value;
-    var teacher = document.getElementById('enr-teacher').value;
-    var classes = App.Store.get().classes || [];
-    var matches = classes.filter(function(c) {
-      var slotOk = c.day === parts[0] && c.time === parts[1] && (c.endTime || '') === parts[2];
-      var teacherOk = !teacher || (c.teacherIds || []).indexOf(teacher) > -1;
-      return slotOk && c.classType === type && teacherOk;
-    });
-    if (matches.length === 0) { App.Utils.showToast('No class matches that slot, type and teacher. Create it in Calendar first.', 'error'); return; }
-    _appendEnrollments(matches);
+    var sel = document.getElementById('enr-class');
+    if (!sel || !sel.value) { App.Utils.showToast('Pick a class first', 'error'); return; }
+    var c = (App.Store.get().classes || []).find(function(x) { return x.id === sel.value; });
+    if (!c) { App.Utils.showToast('That class no longer exists — refresh and try again', 'error'); return; }
+    _appendEnrollments([c]);
   }
 
   function _appendEnrollments(matches) {
@@ -1267,7 +1263,7 @@
       + '<h2 class="text-lg font-bold mb-1">Mark child absent</h2>'
       + '<p class="text-sm text-slate-500 mb-4">If informed at least 3 hours before class start, the child earns a replacement credit. If informed late, tick "Late absence" to skip the credit.</p>'
       + '<form id="add-credit-form" class="space-y-4">'
-      + _field('Class', '<select name="classId" class="form-input">' + classOpts + '</select>')
+      + _field('Class', App.Utils.filterFor('cred-class', 'Filter classes...') + '<select id="cred-class" name="classId" class="form-input">' + classOpts + '</select>')
       + '<label style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;color:#374151;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:0.55rem 0.75rem;cursor:pointer">'
       +   '<input type="checkbox" name="lateAbsence" style="cursor:pointer">'
       +   'Late absence (informed less than 3 hours before — no credit)'
@@ -1324,23 +1320,19 @@
     var state = App.Store.get();
     var stuClasses = (state.students.find(function(x) { return x.id === studentId; }) || {}).enrolledClasses || [];
 
-    // Filter the extension class picker to levels the student is already
-    // enrolled in. Level is parsed from the "Level N" pattern in class
-    // names; if the student has no recognised level, we fall back to all
-    // classes so admin can still pick something.
-    var enrolledLevels = {};
+    // Filter the make-up class picker to the level bands the student is already
+    // enrolled in. Read from the levelBand field, never from the class name: a
+    // Phonics class carries no level at all and a name regex hid every such
+    // class from this picker entirely. Classes without a band stay selectable
+    // for the same reason.
+    var enrolledBands = {};
     stuClasses.forEach(function(cid) {
       var c = state.classes.find(function(x) { return x.id === cid; });
-      if (!c) return;
-      var m = (c.name || '').match(/level\s*(\d+)/i);
-      if (m) enrolledLevels[m[1]] = true;
+      if (c && c.levelBand) enrolledBands[c.levelBand] = true;
     });
-    var hasLevels = Object.keys(enrolledLevels).length > 0;
-    var allowed = state.classes.filter(function(c) {
-      if (!hasLevels) return true;
-      var m = (c.name || '').match(/level\s*(\d+)/i);
-      return m && enrolledLevels[m[1]];
-    });
+    var allowed = Object.keys(enrolledBands).length === 0
+      ? state.classes
+      : state.classes.filter(function(c) { return !c.levelBand || enrolledBands[c.levelBand]; });
 
     var classOpts = '<option value="">-- none --</option>'
       + allowed.map(function(c) {
@@ -1348,12 +1340,12 @@
         }).join('');
     App.Utils.showModal(
       '<div class="p-6">'
-      + '<h2 class="text-lg font-bold mb-1">Use replacement credit</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">Apply earned credits to an extension class (1-4 credits per session).</p>'
+      + '<h2 class="text-lg font-bold mb-1">Book make-up class</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Spends credits the student already earned. If they have none yet, mark them absent first.</p>'
       + '<form id="use-credit-form" class="space-y-4">'
       + _field('Credits', '<select name="minutes" class="form-input"><option value="1">1 credit</option><option value="2">2 credits</option><option value="3">3 credits</option><option value="4">4 credits</option></select>')
       + _field('Category', '<select name="category" class="form-input"><option value="class" selected>Class</option><option value="self-study">Self-study</option></select>')
-      + _field('Class (optional)', '<select name="classId" class="form-input">' + classOpts + '</select>')
+      + _field('Class (optional)', App.Utils.filterFor('usecred-class', 'Filter classes...') + '<select id="usecred-class" name="classId" class="form-input">' + classOpts + '</select>')
       + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Extended English session">')
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
       + '<div class="flex justify-end gap-2 pt-2">'

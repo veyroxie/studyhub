@@ -8,10 +8,10 @@
 // TZ these tests would pass locally and fail there (or worse, vice versa).
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadApp } from './_load.mjs';
+import { loadSandbox } from './_load.mjs';
 
-const App = loadApp(['js/utils.js']);
-const U = App.Utils;
+const sandbox = loadSandbox(['js/utils.js']);
+const U = sandbox.App.Utils;
 
 describe('esc — the XSS primitive', () => {
   test('escapes every character that can break out of HTML or an attribute', () => {
@@ -125,6 +125,46 @@ describe('badge / colorClasses fallbacks', () => {
 
   test('badge escapes its label', () => {
     assert.ok(!U.badge('<img src=x>', 'blue').includes('<img'));
+  });
+});
+
+describe('filterFor / filterSelect — the shared entity picker', () => {
+  test('escapes the placeholder so it cannot break out of the attribute', () => {
+    const html = U.filterFor('enr-class', '" onfocus=alert(1) x="');
+    assert.ok(!html.includes('" onfocus'), 'placeholder must not escape its attribute');
+  });
+
+  test('wires the oninput handler to the select it filters', () => {
+    assert.ok(U.filterFor('cred-class').includes("filterSelect('cred-class'"));
+  });
+
+  test('hides only the options that do not match, never the blank one', () => {
+    const opts = [
+      { value: '', text: '-- select a class --', hidden: false },
+      { value: 'c1', text: 'Mandarin L1 · Monday · Ms Lee', hidden: false },
+      { value: 'c2', text: 'Phonics · Tuesday · Ms Tan', hidden: false },
+    ];
+    sandbox.document.getElementById =() => ({ options: opts });
+
+    U.filterSelect('x', 'phon');
+    assert.equal(opts[0].hidden, false, 'the placeholder must stay selectable');
+    assert.equal(opts[1].hidden, true);
+    assert.equal(opts[2].hidden, false);
+  });
+
+  test('matches case-insensitively and clears when the query empties', () => {
+    const opts = [{ value: 'c1', text: 'Mandarin L1', hidden: true }];
+    sandbox.document.getElementById =() => ({ options: opts });
+
+    U.filterSelect('x', 'MANDARIN');
+    assert.equal(opts[0].hidden, false);
+    U.filterSelect('x', '');
+    assert.equal(opts[0].hidden, false, 'an empty query must reveal everything again');
+  });
+
+  test('does nothing when the select is absent instead of throwing', () => {
+    sandbox.document.getElementById =() => null;
+    assert.doesNotThrow(() => U.filterSelect('missing', 'abc'));
   });
 });
 

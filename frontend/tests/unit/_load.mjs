@@ -33,6 +33,13 @@ function domStub() {
 
 // loadApp runs the given frontend js files in one sandbox and returns window.App.
 export function loadApp(files = ['js/utils.js']) {
+  return loadSandbox(files).App;
+}
+
+// loadSandbox returns the whole sandbox as well, for helpers that reach for
+// document — filterSelect looks its target up by id, so a test has to be able
+// to stub getElementById.
+export function loadSandbox(files = ['js/utils.js']) {
   // The sandbox must BE its own `window`: the modules do `window.App = ...`
   // and then reference bare `App`, which only resolves because in a browser
   // window is the global object. A plain { window: {} } stub breaks that.
@@ -51,5 +58,5 @@ export function loadApp(files = ['js/utils.js']) {
   for (const f of files) {
     vm.runInContext(fs.readFileSync(path.join(FRONTEND, f), 'utf8'), ctx, { filename: f });
   }
-  return sandbox.App;
+  return sandbox;
 }

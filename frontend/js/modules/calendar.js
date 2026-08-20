@@ -596,7 +596,23 @@
     return opts;
   }
 
+  // Subject is a label on the invoice line, not a pricing key (migration 0034).
+  var _SUBJECTS = ['Math', 'Mandarin', 'Phonics'];
+
+  function _subjectOptions(selected) {
+    return '<option value="">—</option>'
+      + _SUBJECTS.map(function(sj) {
+          return '<option value="' + sj + '"' + (sj === selected ? ' selected' : '') + '>' + sj + '</option>';
+        }).join('');
+  }
+
   function _addClassModal() {
+    // Without a teacher the class cannot be found by the enrolment picker,
+    // which matches on (slot, type, teacher) — so this field is not optional
+    // decoration, it is what makes the class enrollable.
+    var teacherCheckboxes = (App.Store.get().staff || []).map(function(s) {
+      return '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem"><input type="checkbox" name="teacherIds" value="' + s.id + '" style="accent-color:var(--gold)">' + App.Utils.esc(s.name) + '</label>';
+    }).join('');
     App.Utils.showModal(
       '<div class="p-6">'
       + '<h2 class="text-xl font-bold mb-4">Add New Class</h2>'
@@ -629,10 +645,13 @@
       + _field('Level band (sets monthly fee)', '<select name="levelBand" class="form-input">' + _levelBandOptions('') + '</select>')
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Subject', '<select name="subject" class="form-input">'
-      +   '<option value="">\u2014</option>'
-      +   ['Math','Mandarin','Phonics'].map(function(sj) { return '<option value="' + sj + '">' + sj + '</option>'; }).join('')
-      +   '</select>')
+      + _field('Monthly fee override (RM) <span class="text-slate-400 font-normal">— leave 0 to use the level band price</span>', '<input name="monthlyFeeOverride" type="number" min="0" step="0.01" class="form-input" value="0" placeholder="0">')
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Subject', '<select name="subject" class="form-input">' + _subjectOptions('') + '</select>')
+      + '</div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Teacher(s)</label>'
+      +   (teacherCheckboxes || '<p class="text-xs text-slate-400">No staff yet — add staff first, or assign a teacher later from Edit Class.</p>')
       + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -675,7 +694,7 @@
         id: App.Utils.generateId('c'),
         name: fd.get('name'),
         classType: ctx.classType,
-        teacherIds: [],
+        teacherIds: fd.getAll('teacherIds'),
         classroom: ctx.classroom,
         day: ctx.day,
         time: ctx.time,
@@ -685,6 +704,7 @@
         color: ctx.classType === 'Private' ? 'purple' : 'blue',
         category: '',
         levelBand: fd.get('levelBand') || '',
+        monthlyFeeOverride: parseFloat(fd.get('monthlyFeeOverride')) || 0,
         // Label only — pricing stays (classType x levelBand). Shows on the
         // invoice line as e.g. "Math group lessons".
         subject: fd.get('subject') || ''
@@ -1170,6 +1190,10 @@
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Class Type</label><select name="classType" class="form-input"><option' + ((c.classType||'Group')==='Group'?' selected':'') + '>Group</option><option' + ((c.classType||'Group')==='Private'?' selected':'') + '>Private</option></select></div>'
       + _field('Level band (sets fee)', '<select name="levelBand" class="form-input">' + _levelBandOptions(c.levelBand || '') + '</select>')
       + '</div>'
+      + '<div class="grid grid-cols-2 gap-3">'
+      + _field('Subject', '<select name="subject" class="form-input">' + _subjectOptions(c.subject || '') + '</select>')
+      + _field('Monthly fee override (RM) <span class="text-slate-400 font-normal">— 0 uses the band price</span>', '<input name="monthlyFeeOverride" type="number" min="0" step="0.01" class="form-input" value="' + (c.monthlyFeeOverride || 0) + '">')
+      + '</div>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Teacher(s)</label>' + teacherCheckboxes + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -1200,7 +1224,12 @@
         color: fd.get('color'),
         category: c.category || '',
         classType: fd.get('classType') || 'Group',
-        levelBand: fd.get('levelBand') || ''
+        levelBand: fd.get('levelBand') || '',
+        // Both must be sent: the API replaces the whole row, so omitting a
+        // field blanks it. Subject was missing here, which quietly cleared the
+        // invoice line name every time a class was edited.
+        subject: fd.get('subject') || '',
+        monthlyFeeOverride: parseFloat(fd.get('monthlyFeeOverride')) || 0
       };
       App.Api.put('/api/classes/' + classId, updated).then(function() {
         // Re-read classes at write time — the `state` captured at modal open

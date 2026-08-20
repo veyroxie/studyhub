@@ -297,6 +297,27 @@
     esc(str) {
       return String(str == null ? '' : str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     },
+    // Search box wired to a native <select>. Deliberately not a custom dropdown
+    // widget: the select keeps holding the value, so every existing submit
+    // handler and FormData.get call works unchanged. selectId must be a literal
+    // the caller controls — it lands inside a JS string in the oninput
+    // attribute, where esc() would not protect it (see copyFrom below).
+    filterFor(selectId, placeholder) {
+      return '<input type="text" class="form-input" style="margin-bottom:0.35rem" autocomplete="off"'
+        + ' placeholder="' + App.Utils.esc(placeholder || 'Type to filter...') + '"'
+        + ' oninput="App.Utils.filterSelect(\'' + selectId + '\', this.value)">';
+    },
+    // Hides options that don't match. The blank placeholder option is always
+    // kept so the field can still be cleared after filtering.
+    filterSelect(selectId, query) {
+      var sel = document.getElementById(selectId);
+      if (!sel) return;
+      var needle = String(query == null ? '' : query).toLowerCase();
+      Array.prototype.forEach.call(sel.options, function(opt) {
+        if (!opt.value) return;
+        opt.hidden = opt.text.toLowerCase().indexOf(needle) === -1;
+      });
+    },
     // Local calendar date, NOT toISOString() (which is UTC). In UTC+8 the UTC
     // date is still "yesterday" until 08:00 local, so every check-in, credit and
     // self-study row logged in the morning got yesterday's date paired with
