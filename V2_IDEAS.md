@@ -25,6 +25,7 @@ L = multi-day). Items marked [BUG] are broken today, not design choices.
 | A12 | Admin Import / Reset-all-data buttons only touch localStorage (silent placebo). Wire to /api/admin/import + /api/admin/clear-seed or remove. | MED | S |
 | A13 | Password reset leaves stolen access JWTs valid up to 30 days. Add users.session_epoch claim check. | HIGH | M |
 | A14 | Announcements privacy sibling: attendance quick-announce hardcodes audience 'All Parents'. Fix with A2. | MED | S |
+| A15 | Parent iCal feed shows cancelled sessions: `handlers_ical.go:150-169` expands a class's weekday into dates but never consults `cancelled_classes` or `holidays`, so a subscribed parent still sees a class the centre cancelled and turns up for it. Wrong today, independent of v2. Fix with the shared session expander (`V2_REBUILD_PLAN.md` 8.7.1) so billing and the feed agree on what a session is. | HIGH | M |
 
 ## Tier 1 — v2 billing/data core (structural; mostly already in plan, now sharpened)
 
@@ -35,7 +36,7 @@ L = multi-day). Items marked [BUG] are broken today, not design choices.
 | B3 | One migration source of truth: retire createSchema ALTERs + error-swallowing runMigrations into numbered migrations (goose-style; keep the existing good runner). CI gate on destructive statements. | HIGH | L |
 | B4 | Schema integrity: FK constraints (invoices.student_id, payroll.staff_id first; '' -> NULL cleanup then NOT VALID/VALIDATE); CHECK constraints on every status enum; real DATE/TIMESTAMPTZ types for business dates; anchor all cron date math to tenants.timezone. | HIGH | L |
 | B5 | Stripe-style invoice state machine: draft -> open (finalize assigns number from a locked counter row, freezes lines) -> paid/void; credit notes; (student, period) UNIQUE + ON CONFLICT for race-free cron idempotency. Replaces plan 3/4 details. | HIGH | L |
-| B6 | enrolled_classes JSON-in-TEXT -> proper enrollment join table (kills LIKE matching, counter drift, orphan class ids). | HIGH | M |
+| B6 | enrolled_classes JSON-in-TEXT -> proper enrollment join table (kills LIKE matching, counter drift, orphan class ids). **Promoted to a hard prerequisite for session billing (2026-08-20):** the join carries no start date, so there is no way to know a student joined a class mid-month. Prorating a joiner — the thing Nadine asked for — is impossible until the join table exists with `started_on` / `ended_on`. Not optional cleanup; it blocks 8.7. | HIGH | M |
 | B7 | Money end-to-end: NUMERIC in DB stays, Go switches to integer cents or shopspring/decimal; one shared formatter (currency/date/amount-in-words) used by PDF, UI, email. | MED | M |
 | B8 | Soft-delete cascade policy: deleting a student consistently hides/handles invoices, attendance, credits (today parent and admin lists disagree). | HIGH | M |
 | B9 | Missing composite indexes (invoices tenant+created_on partial first; 5 more); drop duplicate/redundant indexes. | MED | S |
