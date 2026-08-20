@@ -360,6 +360,60 @@ all** (a logged warning), not an RM 0 one.
 
 ---
 
+## 8.7 Session-based billing (decided 2026-08-20) — NOT STARTED
+
+**Decision: retire monthly fees. Price is rate x sessions actually scheduled.**
+
+The centre prices per session and always has. `pricing_tiers` stores a monthly
+figure, and every awkward case is the same mismatch showing through:
+
+| Symptom | Same root cause |
+|---|---|
+| Phonics RM60/hr, no level band | priced per session, matrix wants a month |
+| 30-minute Math RM30 | priced per session |
+| "Level 3 & 4" straddles both bands | class isn't one band, it's a set of sessions |
+| Five-week months bill the same as four | a month is not a fixed number of sessions |
+| Prorating a mid-month joiner | needs a session count, not a fraction |
+| One-off / extra classes | no way to bill a single session |
+| `monthly_fee_override` (0037) | a patch over the same gap |
+
+Confirmed by Nadine 2026-08-17..20: the 30-minute class and Phonics are both per
+session. Their own numbers already imply the rate — RM240/month over 4 weekly
+one-hour sessions is RM60/hr, matching Phonics exactly; the RM260 band is
+RM65/hr.
+
+**Shape (to be designed, not yet built).**
+
+- A class carries a session rate and a duration, not a monthly fee.
+- The monthly run counts the sessions that actually fall in the period for each
+  enrolled student — from the class schedule, minus `cancelled_classes`, minus
+  `holidays` — and bills `rate x count`, one line per class showing the count.
+- Prorating stops being a feature: a student who joins mid-month simply has
+  fewer sessions in their first period.
+- One-off classes become a session with no recurring parent, or an ad-hoc line
+  at the same rate.
+- `monthly_fee_override` and `pricing_tiers` both retire once this lands.
+
+**Consequences that need deciding before any code.**
+
+1. **Invoice totals will vary month to month.** Parents used to a flat RM240 will
+   see RM300 in a five-week month. The centre has to tell families first. This is
+   a business decision, not a technical one.
+2. **Migration of historical invoices.** Existing invoices stay as they are; only
+   generation changes. Reporting that compares months must expect variation.
+3. **Holidays and cancellations become load-bearing for money.** Today a missing
+   holiday row is cosmetic. After this it changes what a parent is charged, so
+   the holiday calendar needs to be right before go-live.
+4. **The early-bird, sibling and referral discounts** are flat RM amounts and are
+   unaffected, but the base they come off now moves.
+
+**Sequencing.** This supersedes B5 step 3 (`NormalizeInvoice`) — normalising the
+totals is worth doing as part of this rather than twice. It does not block B5
+step 4 (products CRUD, one-off lines), which is useful either way and should
+land first.
+
+---
+
 ## 8.6 Centre requests — 2026-08-07..12 (Nadine, Ying Quah)
 
 Committed to the centre for "end of this week". Ordered by dependency, not by
