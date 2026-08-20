@@ -432,11 +432,11 @@
 
       + '<div id="tab-panel-details">'
       +   '<div class="grid grid-cols-2 gap-3 text-sm">'
-      +   _infoRow('Date of Birth', App.Utils.formatDate(s.dob))
-      +   _infoRow('Gender', App.Utils.esc(s.gender))
-      +   (isTeacher ? '' : _infoRow('Parent / Guardian', App.Utils.esc(s.parentName)))
-      +   (isTeacher ? '' : _infoRow('Email', App.Utils.esc(s.contact)))
-      +   (isTeacher ? '' : _infoRow('Phone', App.Utils.esc(_contactPhone(s))))
+      +   _detailRow(isAdmin, studentId, 'dob', App.Utils.formatDate(s.dob))
+      +   _detailRow(isAdmin, studentId, 'gender', App.Utils.esc(s.gender))
+      +   (isTeacher ? '' : _detailRow(isAdmin, studentId, 'parentName', App.Utils.esc(s.parentName)))
+      +   (isTeacher ? '' : _detailRow(isAdmin, studentId, 'contact', App.Utils.esc(s.contact)))
+      +   (isTeacher ? '' : _detailRow(isAdmin, studentId, 'phone', App.Utils.esc(_contactPhone(s))))
       +   _infoRow('Branch', App.Utils.esc(s.branch))
       +   (isTeacher ? '' : (function() {
             var fam = (App.Store.get().families || []).find(function(x) { return x.id === s.familyId; });
@@ -457,7 +457,7 @@
             }).join(', ');
           })()) : '')
       +   (!isTeacher && s.emergency2Name ? _infoRow('Emergency Contact', App.Utils.esc(s.emergency2Name) + (s.emergency2Phone ? ' · ' + App.Utils.esc(s.emergency2Phone) : '')) : '')
-      +   (!isTeacher && s.notes ? _infoRow('Notes', '<div style="white-space:pre-wrap">' + App.Utils.esc(s.notes) + '</div>') : '')
+      +   (isTeacher ? '' : _detailRow(isAdmin, studentId, 'notes', s.notes ? '<div style="white-space:pre-wrap">' + App.Utils.esc(s.notes) + '</div>' : ''))
       +   '</div>'
       +   (isAdmin ? (function() {
             // Admin-only: surface the parent linkage as its own card with a
@@ -874,6 +874,10 @@
       if (t === tab) { btn.classList.add('border-b-2','border-blue-600','text-blue-600'); btn.classList.remove('text-slate-500'); }
       else { btn.classList.remove('border-b-2','border-blue-600','text-blue-600'); btn.classList.add('text-slate-500'); }
     });
+    // The header Edit button only ever edited the Details fields, so showing it
+    // on Classes/Invoices/Replacements just promised something it never did.
+    var editBtn = document.getElementById('inline-edit-btn');
+    if (editBtn) editBtn.style.display = tab === 'details' ? '' : 'none';
   }
 
   function _pendingModal() {
@@ -1057,6 +1061,13 @@
     }
     return (fam && fam.phone) || '';
   }
+  // Editable for admins, plain for everyone else. Teachers never reach these
+  // rows anyway, but the role check is what keeps the click handler off.
+  function _detailRow(canEdit, studentId, field, displayHtml) {
+    if (canEdit) return _editableRow(studentId, field, displayHtml);
+    return _infoRow(_EDITABLE_FIELDS[field].label, displayHtml);
+  }
+
   function _infoRow(label, value) {
     return '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-0.5">' + label + '</div><div class="font-medium text-slate-700">' + value + '</div></div>';
   }
@@ -1080,6 +1091,88 @@
   }
   function _eta(name, value) {
     return '<textarea name="' + name + '" rows="2" class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm text-slate-700 focus:border-blue-500 focus:outline-none">' + App.Utils.esc(value || '') + '</textarea>';
+  }
+
+  // Per-field editing: click a detail, edit just that one, save just that one.
+  // Each field declares its control so a date gets a date picker and a fixed
+  // vocabulary gets a select — a text box for everything is how "Male" becomes
+  // "male" and stops grouping in reports.
+  var _EDITABLE_FIELDS = {
+    dob:             { label: 'Date of Birth',     type: 'date' },
+    gender:          { label: 'Gender',            type: 'select', options: ['Male', 'Female'] },
+    parentName:      { label: 'Parent / Guardian', type: 'text' },
+    contact:         { label: 'Email',             type: 'email' },
+    phone:           { label: 'Phone',             type: 'text' },
+    notes:           { label: 'Notes',             type: 'textarea' }
+  };
+
+  // No pencil affordance by request; the hover highlight and the pointer cursor
+  // are the only hints that a field is editable.
+  function _editableRow(studentId, field, displayHtml) {
+    return '<div id="fld-' + field + '" class="bg-slate-50 rounded-lg p-3" title="Click to edit"'
+      + ' style="cursor:pointer;transition:background 0.12s"'
+      + ' onclick="App.Students._editField(\'' + studentId + '\',\'' + field + '\')"'
+      + ' onmouseover="if(this.dataset.editing!==\'1\')this.style.background=\'#f1f5f9\'" onmouseout="this.style.background=\'\'">'
+      + '<div class="text-xs text-slate-400 mb-0.5">' + _EDITABLE_FIELDS[field].label + '</div>'
+      + '<div class="font-medium text-slate-700" data-value>' + (displayHtml || '<span style="color:#cbd5e1">Not set</span>') + '</div>'
+      + '</div>';
+  }
+
+  function _editField(studentId, field) {
+    var row = document.getElementById('fld-' + field);
+    var s = App.Store.get().students.find(function(x) { return x.id === studentId; });
+    if (!row || !s || row.dataset.editing === '1') return;
+    var spec = _EDITABLE_FIELDS[field];
+    row.dataset.editing = '1';
+    row.onclick = null;
+    row.style.cursor = 'default';
+    row.style.background = '';
+
+    var raw = field === 'phone' ? _contactPhone(s) : (s[field] == null ? '' : s[field]);
+    var control = spec.type === 'select' ? _es(field, raw, spec.options)
+      : spec.type === 'textarea' ? _eta(field, raw)
+      : _ei(field, raw, spec.type);
+    row.querySelector('[data-value]').innerHTML = control
+      + '<div style="display:flex;gap:0.35rem;margin-top:0.45rem">'
+      +   '<button type="button" onclick="event.stopPropagation();App.Students._saveField(\'' + studentId + '\',\'' + field + '\')" style="padding:0.25rem 0.7rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:6px;cursor:pointer">Save</button>'
+      +   '<button type="button" onclick="event.stopPropagation();App.Students._cancelField(\'' + studentId + '\')" style="padding:0.25rem 0.7rem;font-size:0.75rem;border:1px solid #e2e8f0;background:#fff;color:#64748b;border-radius:6px;cursor:pointer">Cancel</button>'
+      + '</div>';
+
+    var input = row.querySelector('[name="' + field + '"]');
+    if (!input) return;
+    input.focus();
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { _cancelField(studentId); return; }
+      // Enter in a textarea should make a new line, not save.
+      if (e.key === 'Enter' && spec.type !== 'textarea') {
+        e.preventDefault();
+        _saveField(studentId, field);
+      }
+    });
+  }
+
+  function _cancelField(studentId) {
+    _viewModal(studentId);
+    _switchTab('details');
+  }
+
+  async function _saveField(studentId, field) {
+    var s = App.Store.get().students.find(function(x) { return x.id === studentId; });
+    var input = document.querySelector('#fld-' + field + ' [name="' + field + '"]');
+    if (!s || !input) return;
+    var value = String(input.value == null ? '' : input.value).trim();
+    var patch = {};
+    patch[field] = value;
+    try {
+      await App.Api.put('/api/students/' + studentId, Object.assign({}, s, patch));
+      await App.Api.loadSnapshot();
+      App.Utils.showToast(_EDITABLE_FIELDS[field].label + ' updated', 'success');
+      App.Router.refresh();
+      _viewModal(studentId);
+      _switchTab('details');
+    } catch (err) {
+      // App.Api auto-toasts; leave the field open so the value isn't lost.
+    }
   }
 
   // _toggleInlineEdit swaps the Details tab into editable fields in place. The
@@ -1744,6 +1837,9 @@
     _viewModal: _viewModal,
     _editModal: _editModal,
     _toggleInlineEdit: _toggleInlineEdit,
+    _editField: _editField,
+    _saveField: _saveField,
+    _cancelField: _cancelField,
     _saveInlineEdit: _saveInlineEdit,
     _subscriptionAction: _subscriptionAction,
     _activateStudent: _activateStudent,
