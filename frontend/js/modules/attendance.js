@@ -1080,8 +1080,9 @@
     try {
       await App.Api.post('/api/attendance', { personId: studentId, personType: 'student', date: _attDate, classId: _attClassId, status: 'Absent' });
       App.Utils.showToast(stuName + ' marked absent (no credit — late notice)', 'info');
-    } catch(e) {
-      App.Utils.showToast(stuName + ' marked absent — sync failed: ' + e.message, 'warning');
+    } catch (e) {
+      App.Store.set({ attendance: state.attendance });
+      App.Utils.showToast('Could not save the absence for ' + stuName + ', please try again', 'error');
     }
 
     App.Router.refresh();
@@ -1110,10 +1111,18 @@
     }
     App.Store.set({ attendance: newAtt });
 
-    // Post attendance to backend
+    // A failed save here used to be swallowed: the row read Absent locally, the
+    // credit was still issued, and the absence disappeared on the next refresh,
+    // leaving a credit for a class nobody was ever marked absent from. Roll the
+    // optimistic update back and stop before granting anything.
     try {
       await App.Api.post('/api/attendance', { personId: studentId, personType: 'student', date: _attDate, classId: _attClassId, status: 'Absent' });
-    } catch(e) {}
+    } catch (e) {
+      App.Store.set({ attendance: state.attendance });
+      App.Utils.showToast('Could not save the absence for ' + stuName + '. No credit was issued, please try again.', 'error');
+      App.Router.refresh();
+      return;
+    }
 
     // Add 4 credits replacement
     try {
