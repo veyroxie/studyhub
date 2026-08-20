@@ -128,14 +128,14 @@ describe('badge / colorClasses fallbacks', () => {
   });
 });
 
-describe('filterFor / filterSelect — the shared entity picker', () => {
+describe('filterFor / filterTarget — the shared entity picker', () => {
   test('escapes the placeholder so it cannot break out of the attribute', () => {
     const html = U.filterFor('enr-class', '" onfocus=alert(1) x="');
     assert.ok(!html.includes('" onfocus'), 'placeholder must not escape its attribute');
   });
 
   test('wires the oninput handler to the select it filters', () => {
-    assert.ok(U.filterFor('cred-class').includes("filterSelect('cred-class'"));
+    assert.ok(U.filterFor('cred-class').includes("filterTarget('cred-class'"));
   });
 
   test('hides only the options that do not match, never the blank one', () => {
@@ -144,9 +144,9 @@ describe('filterFor / filterSelect — the shared entity picker', () => {
       { value: 'c1', text: 'Mandarin L1 · Monday · Ms Lee', hidden: false },
       { value: 'c2', text: 'Phonics · Tuesday · Ms Tan', hidden: false },
     ];
-    sandbox.document.getElementById =() => ({ options: opts });
+    sandbox.document.getElementById =() => ({ tagName: 'SELECT', options: opts });
 
-    U.filterSelect('x', 'phon');
+    U.filterTarget('x', 'phon');
     assert.equal(opts[0].hidden, false, 'the placeholder must stay selectable');
     assert.equal(opts[1].hidden, true);
     assert.equal(opts[2].hidden, false);
@@ -154,11 +154,11 @@ describe('filterFor / filterSelect — the shared entity picker', () => {
 
   test('matches case-insensitively and clears when the query empties', () => {
     const opts = [{ value: 'c1', text: 'Mandarin L1', hidden: true }];
-    sandbox.document.getElementById =() => ({ options: opts });
+    sandbox.document.getElementById =() => ({ tagName: 'SELECT', options: opts });
 
-    U.filterSelect('x', 'MANDARIN');
+    U.filterTarget('x', 'MANDARIN');
     assert.equal(opts[0].hidden, false);
-    U.filterSelect('x', '');
+    U.filterTarget('x', '');
     assert.equal(opts[0].hidden, false, 'an empty query must reveal everything again');
   });
 
@@ -170,10 +170,10 @@ describe('filterFor / filterSelect — the shared entity picker', () => {
       { value: 'c1', text: 'Mandarin L1', hidden: false },
       { value: 'c2', text: 'Phonics A', hidden: false },
     ];
-    const sel = { options: opts, selectedIndex: 2 };
+    const sel = { tagName: 'SELECT', options: opts, selectedIndex: 2 };
     sandbox.document.getElementById = () => sel;
 
-    U.filterSelect('x', 'mandarin');
+    U.filterTarget('x', 'mandarin');
     assert.equal(sel.selectedIndex, 0, 'the filtered-away choice must not stay selected');
   });
 
@@ -182,16 +182,37 @@ describe('filterFor / filterSelect — the shared entity picker', () => {
       { value: '', text: '-- select a class --', hidden: false },
       { value: 'c2', text: 'Phonics A', hidden: false },
     ];
-    const sel = { options: opts, selectedIndex: 1 };
+    const sel = { tagName: 'SELECT', options: opts, selectedIndex: 1 };
     sandbox.document.getElementById = () => sel;
 
-    U.filterSelect('x', 'phon');
+    U.filterTarget('x', 'phon');
     assert.equal(sel.selectedIndex, 1);
+  });
+
+  test('filters checkbox rows by their data-search text', () => {
+    // The enrolment list is rows, not options — same search box, other branch.
+    const rows = [
+      { attrs: 'mandarin l1 monday ms lee', hidden: false },
+      { attrs: 'phonics a thursday no teacher assigned', hidden: false },
+    ].map(r => ({ hidden: r.hidden, getAttribute: () => r.attrs }));
+    sandbox.document.getElementById = () => ({ tagName: 'DIV', querySelectorAll: () => rows });
+
+    U.filterTarget('enr-list', 'thursday');
+    assert.equal(rows[0].hidden, true);
+    assert.equal(rows[1].hidden, false);
+  });
+
+  test('row filtering matches on teacher name, not just class name', () => {
+    const rows = [{ hidden: false, getAttribute: () => 'mandarin l1 monday ms lee' }];
+    sandbox.document.getElementById = () => ({ tagName: 'DIV', querySelectorAll: () => rows });
+
+    U.filterTarget('enr-list', 'ms lee');
+    assert.equal(rows[0].hidden, false, 'searching a teacher must keep their classes visible');
   });
 
   test('does nothing when the select is absent instead of throwing', () => {
     sandbox.document.getElementById =() => null;
-    assert.doesNotThrow(() => U.filterSelect('missing', 'abc'));
+    assert.doesNotThrow(() => U.filterTarget('missing', 'abc'));
   });
 });
 

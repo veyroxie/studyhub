@@ -302,26 +302,33 @@
     // handler and FormData.get call works unchanged. selectId must be a literal
     // the caller controls — it lands inside a JS string in the oninput
     // attribute, where esc() would not protect it (see copyFrom below).
-    filterFor(selectId, placeholder) {
+    filterFor(targetId, placeholder) {
       return '<input type="text" class="form-input" style="margin-bottom:0.35rem" autocomplete="off"'
         + ' placeholder="' + App.Utils.esc(placeholder || 'Type to filter...') + '"'
-        + ' oninput="App.Utils.filterSelect(\'' + selectId + '\', this.value)">';
+        + ' oninput="App.Utils.filterTarget(\'' + targetId + '\', this.value)">';
     },
-    // Hides options that don't match. The blank placeholder option is always
-    // kept so the field can still be cleared after filtering.
-    filterSelect(selectId, query) {
-      var sel = document.getElementById(selectId);
-      if (!sel) return;
+    // Filters either a <select>'s options or a list of rows carrying
+    // data-search, so one search box serves both shapes.
+    filterTarget(targetId, query) {
+      var el = document.getElementById(targetId);
+      if (!el) return;
       var needle = String(query == null ? '' : query).toLowerCase();
-      Array.prototype.forEach.call(sel.options, function(opt) {
+      if (el.tagName !== 'SELECT') {
+        Array.prototype.forEach.call(el.querySelectorAll('[data-search]'), function(row) {
+          row.hidden = row.getAttribute('data-search').indexOf(needle) === -1;
+        });
+        return;
+      }
+      Array.prototype.forEach.call(el.options, function(opt) {
+        // The blank placeholder always stays, so the field can still be cleared.
         if (!opt.value) return;
         opt.hidden = opt.text.toLowerCase().indexOf(needle) === -1;
       });
       // A hidden option stays selected, and FormData would still submit it —
       // the admin could filter away her choice, see only other classes, and
       // save the one she can no longer see. Clear it instead.
-      var chosen = sel.options[sel.selectedIndex];
-      if (chosen && chosen.hidden) sel.selectedIndex = 0;
+      var chosen = el.options[el.selectedIndex];
+      if (chosen && chosen.hidden) el.selectedIndex = 0;
     },
     // Local calendar date, NOT toISOString() (which is UTC). In UTC+8 the UTC
     // date is still "yesterday" until 08:00 local, so every check-in, credit and

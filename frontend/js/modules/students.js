@@ -829,85 +829,40 @@
   // hidden classIds input so the surrounding form's FormData.getAll('classIds')
   // keeps working unchanged.
   function _multiClassField(selected, classes, staff) {
-    var chips = (selected || []).map(function(cid) {
-      var c = (classes || []).find(function(x) { return x.id === cid; });
-      return c ? _enrollChip(c) : '';
-    }).join('');
-    return '<div><label class="block text-sm font-medium text-slate-700 mb-1">Enrolled Classes</label>'
-      + '<div class="border border-slate-200 rounded-xl p-3 bg-white">'
-      + App.Utils.filterFor('enr-class', 'Type to filter classes (name, day, teacher)...')
-      + '<div style="display:grid;grid-template-columns:1fr auto;gap:0.5rem">'
-      + '<select id="enr-class" class="form-input">' + _classOptions(classes, staff) + '</select>'
-      + '<button type="button" onclick="App.Students._addEnrollment()" style="padding:0.5rem 0.9rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add class</button>'
-      + '</div>'
-      + '<div id="enr-list" style="margin-top:0.6rem;display:flex;flex-direction:column;gap:0.35rem">'
-      +   (chips || '<p class="text-xs text-slate-400" data-empty>No classes added yet</p>')
-      + '</div>'
-      + '</div></div>';
-  }
-
-  function _classOptions(classes, staff) {
+    var chosen = {};
+    (selected || []).forEach(function(cid) { chosen[cid] = true; });
     var list = (classes || []).slice().sort(function(a, b) {
       return (_DAY_ORDER[a.day] || 9) - (_DAY_ORDER[b.day] || 9) || (a.time || '').localeCompare(b.time || '');
     });
-    if (list.length === 0) return '<option value="" disabled>No classes yet — create one in Calendar</option>';
-    return '<option value="">-- select a class --</option>'
-      + list.map(function(c) {
-          return '<option value="' + c.id + '">' + App.Utils.esc(_classLabel(c, staff)) + '</option>';
-        }).join('');
+    var rows = list.map(function(c) { return _enrollRow(c, staff, !!chosen[c.id]); }).join('');
+    return '<div><label class="block text-sm font-medium text-slate-700 mb-1">Enrolled Classes</label>'
+      + '<div class="border border-slate-200 rounded-xl p-3 bg-white">'
+      + (list.length === 0
+        ? '<p class="text-xs text-slate-400">No classes yet. Create one in Calendar first.</p>'
+        : App.Utils.filterFor('enr-list', 'Filter by class, day or teacher...')
+          + '<div id="enr-list" style="max-height:15rem;overflow-y:auto;display:flex;flex-direction:column;gap:0.2rem">' + rows + '</div>'
+          + '<p style="margin-top:0.5rem;font-size:0.72rem;color:#94a3b8">Tick a class to enrol, untick to remove.</p>')
+      + '</div></div>';
   }
 
-  // Every attribute the old three dropdowns asked the admin to reproduce is
-  // shown here instead, so she can see which class she is picking.
-  function _classLabel(c, staff) {
+  // One tickable row per class. The checkbox is the value itself, so the
+  // surrounding form's FormData.getAll('classIds') still returns exactly the
+  // enrolled ids with no intermediate state to fall out of sync.
+  function _enrollRow(c, staff, isChecked) {
     var when = c.day + ' ' + App.Utils.formatTime(c.time) + (c.endTime ? '–' + App.Utils.formatTime(c.endTime) : '');
     var names = (c.teacherIds || []).map(function(tid) {
       var s = (staff || []).find(function(x) { return x.id === tid; });
       return s ? (s.name || s.fullName || tid) : tid;
     }).join(', ');
-    return c.name + ' · ' + when + ' · ' + (c.classType || 'Group') + ' · ' + (names || 'no teacher assigned');
-  }
-
-  function _enrollChip(c) {
-    var label = App.Utils.esc(c.name) + ' · ' + c.day + ' ' + App.Utils.formatTime(c.time);
-    return '<div data-cid="' + c.id + '" style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.6rem;border:1px solid #eceae5;border-radius:8px;background:#faf9f7">'
-      + '<input type="hidden" name="classIds" value="' + c.id + '">'
-      + '<span style="flex:1;font-size:0.82rem;color:#334155">' + label + '</span>'
-      + '<button type="button" onclick="App.Students._removeEnrollment(\'' + c.id + '\')" title="Remove" style="border:none;background:none;color:#94a3b8;cursor:pointer;font-size:1.05rem;line-height:1">×</button>'
-      + '</div>';
-  }
-
-  function _addEnrollment() {
-    var sel = document.getElementById('enr-class');
-    if (!sel || !sel.value) { App.Utils.showToast('Pick a class first', 'error'); return; }
-    var c = (App.Store.get().classes || []).find(function(x) { return x.id === sel.value; });
-    if (!c) { App.Utils.showToast('That class no longer exists — refresh and try again', 'error'); return; }
-    _appendEnrollments([c]);
-  }
-
-  function _appendEnrollments(matches) {
-    var list = document.getElementById('enr-list');
-    if (!list) return;
-    var existing = {};
-    list.querySelectorAll('input[name="classIds"]').forEach(function(i) { existing[i.value] = true; });
-    var added = 0;
-    matches.forEach(function(c) {
-      if (existing[c.id]) return;
-      var emptyMsg = list.querySelector('[data-empty]');
-      if (emptyMsg) emptyMsg.remove();
-      list.insertAdjacentHTML('beforeend', _enrollChip(c));
-      existing[c.id] = true;
-      added++;
-    });
-    if (added === 0) App.Utils.showToast('That class is already added', 'info');
-  }
-
-  function _removeEnrollment(cid) {
-    var list = document.getElementById('enr-list');
-    if (!list) return;
-    var chip = list.querySelector('[data-cid="' + cid + '"]');
-    if (chip) chip.remove();
-    if (list.children.length === 0) list.innerHTML = '<p class="text-xs text-slate-400" data-empty>No classes added yet</p>';
+    var sub = when + ' · ' + (c.classType || 'Group') + ' · ' + (names || 'no teacher assigned');
+    return '<label data-search="' + App.Utils.esc((c.name + ' ' + sub).toLowerCase()) + '"'
+      + ' style="display:flex;align-items:flex-start;gap:0.55rem;padding:0.45rem 0.5rem;border-radius:8px;cursor:pointer"'
+      + ' onmouseover="this.style.background=\'#faf9f7\'" onmouseout="this.style.background=\'\'">'
+      + '<input type="checkbox" name="classIds" value="' + c.id + '"' + (isChecked ? ' checked' : '') + ' style="margin-top:0.15rem;accent-color:var(--gold);cursor:pointer">'
+      + '<span style="flex:1;line-height:1.3">'
+      +   '<span style="display:block;font-size:0.82rem;color:#1e293b">' + App.Utils.esc(c.name) + '</span>'
+      +   '<span style="display:block;font-size:0.72rem;color:#94a3b8">' + App.Utils.esc(sub) + '</span>'
+      + '</span></label>';
   }
 
   function _switchTab(tab) {
@@ -1794,8 +1749,6 @@
     _activateStudent: _activateStudent,
     _deactivateStudent: _deactivateStudent,
     _enrollClassesModal: _enrollClassesModal,
-    _addEnrollment: _addEnrollment,
-    _removeEnrollment: _removeEnrollment,
     _switchTab: _switchTab,
     _addModal: _addModal,
     _pendingModal: _pendingModal,

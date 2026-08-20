@@ -642,10 +642,11 @@
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Capacity', '<input id="cap-input" name="capacity" type="number" min="1" max="5" class="form-input" value="5" readonly style="background:#f8fafc;color:#64748b">')
-      + _field('Level band (sets monthly fee)', '<select name="levelBand" class="form-input">' + _levelBandOptions('') + '</select>')
+      + _field('Level band (sets monthly fee)', '<select name="levelBand" class="form-input" onchange="App.Calendar._refreshFeeHint()">' + _levelBandOptions('') + '</select>')
       + '</div>'
-      + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Monthly fee override (RM) <span class="text-slate-400 font-normal">— leave 0 to use the level band price</span>', '<input name="monthlyFeeOverride" type="number" min="0" step="0.01" class="form-input" value="0" placeholder="0">')
+      + '<div>'
+      + _field('Custom monthly fee (RM)', '<input name="monthlyFeeOverride" type="number" min="0" step="0.01" class="form-input" placeholder="Leave empty for the standard price">')
+      + '<p id="fee-hint" style="margin-top:0.3rem;font-size:0.72rem;color:#94a3b8">' + _feeHint('Group', '') + '</p>'
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Subject', '<select name="subject" class="form-input">' + _subjectOptions('') + '</select>')
@@ -736,6 +737,29 @@
   function _onTypeChange(radio) {
     const capInput = document.getElementById('cap-input');
     if (capInput) capInput.value = radio.dataset.cap;
+    _refreshFeeHint();
+  }
+
+  // Spells out what the class costs when no custom fee is given, so "leave
+  // empty" is a visible number instead of a guess. A class with no level band
+  // has no standard price at all, which is precisely when a custom one is
+  // required — that combination is what billed Phonics at RM 0.
+  function _feeHint(classType, levelBand) {
+    if (!levelBand) return 'This class has no level band, so there is no standard price. Enter a fee here or it will bill RM 0.';
+    var t = (App.Store.get().pricingTiers || []).find(function(x) {
+      return x.classType === classType && x.levelBand === levelBand;
+    });
+    if (!t) return 'No standard price is set for ' + classType + ' Level ' + levelBand + '. Enter a fee here or it will bill RM 0.';
+    return 'Leave empty to use the standard price, ' + App.Utils.formatCurrency(t.monthlyFee) + ' for ' + classType + ' Level ' + levelBand + '.';
+  }
+
+  function _refreshFeeHint() {
+    var hint = document.getElementById('fee-hint');
+    if (!hint) return;
+    var form = hint.closest('form');
+    if (!form) return;
+    var fd = new FormData(form);
+    hint.textContent = _feeHint(fd.get('classType') || 'Group', fd.get('levelBand') || '');
   }
 
   function _field(label, inputHtml) {
@@ -1188,12 +1212,13 @@
       + '</div>'
       + '<div class="grid grid-cols-2 gap-3">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Class Type</label><select name="classType" class="form-input"><option' + ((c.classType||'Group')==='Group'?' selected':'') + '>Group</option><option' + ((c.classType||'Group')==='Private'?' selected':'') + '>Private</option></select></div>'
-      + _field('Level band (sets fee)', '<select name="levelBand" class="form-input">' + _levelBandOptions(c.levelBand || '') + '</select>')
+      + _field('Level band (sets fee)', '<select name="levelBand" class="form-input" onchange="App.Calendar._refreshFeeHint()">' + _levelBandOptions(c.levelBand || '') + '</select>')
       + '</div>'
       + '<div class="grid grid-cols-2 gap-3">'
       + _field('Subject', '<select name="subject" class="form-input">' + _subjectOptions(c.subject || '') + '</select>')
-      + _field('Monthly fee override (RM) <span class="text-slate-400 font-normal">— 0 uses the band price</span>', '<input name="monthlyFeeOverride" type="number" min="0" step="0.01" class="form-input" value="' + (c.monthlyFeeOverride || 0) + '">')
+      + _field('Custom monthly fee (RM)', '<input name="monthlyFeeOverride" type="number" min="0" step="0.01" class="form-input" placeholder="Leave empty for the standard price" value="' + (c.monthlyFeeOverride ? c.monthlyFeeOverride : '') + '">')
       + '</div>'
+      + '<p id="fee-hint" style="font-size:0.72rem;color:#94a3b8;margin:-0.35rem 0 0">' + _feeHint(c.classType || 'Group', c.levelBand || '') + '</p>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Teacher(s)</label>' + teacherCheckboxes + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -1376,5 +1401,5 @@
     });
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _saveBusinessSettings: _saveBusinessSettings };
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _refreshFeeHint: _refreshFeeHint, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _saveBusinessSettings: _saveBusinessSettings };
 })();
