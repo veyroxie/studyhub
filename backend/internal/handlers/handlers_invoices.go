@@ -173,6 +173,13 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 
 			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,line_items,period) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount, inv.ReferralCredit, inv.ReferenceNo, models.MarshalLineItems(inv.LineItems), monthlyPeriod(inv.Type, inv.CreatedOn)); err != nil {
+				// One monthly invoice per student per month (migration 0039).
+				// Without this the admin gets an opaque 500 for a situation that
+				// has an obvious explanation and an obvious fix.
+				if strings.Contains(err.Error(), "idx_invoices_monthly_unique") {
+					core.RespondError(w, "This student already has a monthly invoice for "+monthlyPeriod(inv.Type, inv.CreatedOn)+". Edit that invoice, or set a different issue date.", http.StatusConflict)
+					return
+				}
 				core.RespondError(w, "could not create invoice", 500)
 				return
 			}

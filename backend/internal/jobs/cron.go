@@ -569,15 +569,28 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		invID := core.GenerateID("INV")
 		desc := "Monthly tuition — " + monthLabel + " — " + s.firstName + " " + s.lastName
 
-		_, err := tx.Exec(`
+		// ON CONFLICT closes the gap between the preloaded dedup read and this
+		// write: two overlapping runs can both see "not yet invoiced". The unique
+		// index (migration 0039) makes the loser a no-op instead of a second
+		// invoice to the same parent.
+		res, err := tx.Exec(`
 			INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,early_bird_cutoff,early_bird_discount,line_items,period)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			ON CONFLICT DO NOTHING`,
 			invID, s.tenantID, s.id, desc, "Monthly", discounted, dueDate, "Unpaid",
 			createdOn, nil, "", 0.0, false, siblingIDsJSON, siblingDiscount, referralCredit, "",
 			earlyBirdCutoff, earlyBirdApplied, models.MarshalLineItems(items), monthPrefix,
 		)
 		if err != nil {
 			core.Logger.Error("could not insert monthly invoice", "err", err, "student_id", s.id)
+			continue
+		}
+		// No row means a concurrent run already invoiced this student. Skip the
+		// email and the count, or the parent is told about an invoice this run
+		// did not create.
+		if n, raErr := res.RowsAffected(); raErr == nil && n == 0 {
+			core.Logger.Info("monthly invoice already existed — concurrent run",
+				"student_id", s.id, "period", monthPrefix)
 			continue
 		}
 		if s.contact != "" {

@@ -352,12 +352,16 @@ func TestReferralMilestone_FullLifecycle(t *testing.T) {
 
 	// Step 3: create + pay 3 monthly invoices for the referred student.
 	for i := 0; i < 3; i++ {
+		// Distinct issue dates: these are three consecutive months, and one
+		// monthly invoice per student per month is now enforced by the database
+		// (migration 0039). Without this they all defaulted to today.
 		w := authedJSON(t, r, "POST", "/api/invoices", tok, map[string]any{
 			"studentId":   stuID,
 			"description": fmt.Sprintf("Month %d", i+1),
 			"type":        "Monthly",
 			"amount":      300.00,
-			"dueDate":     "2026-04-30",
+			"createdOn":   fmt.Sprintf("2026-%02d-01", i+1),
+			"dueDate":     fmt.Sprintf("2026-%02d-07", i+1),
 			"status":      "Unpaid",
 		})
 		if w.Code != http.StatusOK && w.Code != http.StatusCreated {
