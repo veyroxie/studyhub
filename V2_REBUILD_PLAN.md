@@ -318,7 +318,16 @@ rename is a vocabulary sweep across ~6 sites in `handlers_invoices.go` plus
 `billing.js` and the cron, not a migration. The four current statuses are ugly
 and they work. Do it as its own commit with a mapping table, or not at all.
 
-**Next, and blocked on a production check.** The partial unique index
+- **Migration 0039 — one monthly invoice per student per month.** Partial unique
+  index on `(tenant_id, student_id, period)`, and the cron insert is now
+  `ON CONFLICT DO NOTHING` with the losing run skipping its email. Production
+  duplicate check returned 0 rows on 2026-08-20 before this was written.
+  Behaviour verified against a live database: duplicate rejected; `ON CONFLICT`
+  a no-op; different month allowed; two Registration invoices in one month
+  allowed; re-issue after voiding allowed. The API answers 409 naming the month
+  rather than a 500.
+
+**Superseded — the check below has been run and passed.** The partial unique index
 `(tenant_id, student_id, period) WHERE type='Monthly' AND deleted_at IS NULL`
 is what makes the monthly run race-free via `ON CONFLICT DO NOTHING` instead of
 the preloaded dedup map, and it is what makes R5 (generate for an arbitrary
