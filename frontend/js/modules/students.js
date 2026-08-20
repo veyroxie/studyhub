@@ -413,7 +413,6 @@
       +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.statusBadge(s.status) + '<span class="text-xs text-slate-400">ID: ' + App.Utils.esc(_studentDisplayId(s)) + '</span></div>'
       +   '</div>'
       +   (isAdmin ? '<div style="margin-left:auto;display:flex;gap:1rem;align-items:flex-end">'
-      +     '<button onclick="App.Students._toggleInlineEdit(\'' + studentId + '\')" id="inline-edit-btn" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Edit</button>'
       +     '<div style="text-align:right">'
       +       '<div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem">Auto-bill</div>'
       +       '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;font-size:0.72rem;font-weight:700">'
@@ -432,6 +431,10 @@
 
       + '<div id="tab-panel-details">'
       +   '<div class="grid grid-cols-2 gap-3 text-sm">'
+      +   (isTeacher ? '' : _detailRow(isAdmin, studentId, 'studentNo', App.Utils.esc(s.studentNo || '')))
+      +   _detailRow(isAdmin, studentId, 'status', App.Utils.esc(s.status))
+      +   _detailRow(isAdmin, studentId, 'firstName', App.Utils.esc(s.firstName))
+      +   _detailRow(isAdmin, studentId, 'lastName', App.Utils.esc(s.lastName))
       +   _detailRow(isAdmin, studentId, 'dob', App.Utils.formatDate(s.dob))
       +   _detailRow(isAdmin, studentId, 'gender', App.Utils.esc(s.gender))
       +   (isTeacher ? '' : _detailRow(isAdmin, studentId, 'parentName', App.Utils.esc(s.parentName)))
@@ -456,7 +459,10 @@
               return sib ? App.Utils.esc(sib.firstName + ' ' + sib.lastName) : sibId;
             }).join(', ');
           })()) : '')
-      +   (!isTeacher && s.emergency2Name ? _infoRow('Emergency Contact', App.Utils.esc(s.emergency2Name) + (s.emergency2Phone ? ' · ' + App.Utils.esc(s.emergency2Phone) : '')) : '')
+      +   (isTeacher ? '' : _detailRow(isAdmin, studentId, 'emergency2Name', App.Utils.esc(s.emergency2Name || '')))
+      +   (isTeacher ? '' : _detailRow(isAdmin, studentId, 'emergency2Phone', App.Utils.esc(s.emergency2Phone || '')))
+      +   (isTeacher ? '' : _detailRow(isAdmin, studentId, 'medicalInfo', App.Utils.esc(s.medicalInfo || '')))
+      +   (isTeacher ? '' : _detailRow(isAdmin, studentId, 'allergies', App.Utils.esc(s.allergies || '')))
       +   (isTeacher ? '' : _detailRow(isAdmin, studentId, 'notes', s.notes ? '<div style="white-space:pre-wrap">' + App.Utils.esc(s.notes) + '</div>' : ''))
       +   '</div>'
       +   (isAdmin ? (function() {
@@ -874,10 +880,6 @@
       if (t === tab) { btn.classList.add('border-b-2','border-blue-600','text-blue-600'); btn.classList.remove('text-slate-500'); }
       else { btn.classList.remove('border-b-2','border-blue-600','text-blue-600'); btn.classList.add('text-slate-500'); }
     });
-    // The header Edit button only ever edited the Details fields, so showing it
-    // on Classes/Invoices/Replacements just promised something it never did.
-    var editBtn = document.getElementById('inline-edit-btn');
-    if (editBtn) editBtn.style.display = tab === 'details' ? '' : 'none';
   }
 
   function _pendingModal() {
@@ -1079,9 +1081,6 @@
   // Same card layout as the read-only _infoRow, but the value is an editable
   // control. Lets the Details tab flip to edit-in-place without a separate,
   // differently-formatted edit modal.
-  function _editRow(label, inputHtml) {
-    return '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">' + App.Utils.esc(label) + '</div>' + inputHtml + '</div>';
-  }
   function _ei(name, value, type) {
     return '<input name="' + name + '" type="' + (type || 'text') + '" value="' + App.Utils.esc(value == null ? '' : String(value)) + '" class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm font-medium text-slate-700 focus:border-blue-500 focus:outline-none">';
   }
@@ -1098,13 +1097,33 @@
   // vocabulary gets a select — a text box for everything is how "Male" becomes
   // "male" and stops grouping in reports.
   var _EDITABLE_FIELDS = {
-    dob:             { label: 'Date of Birth',     type: 'date' },
-    gender:          { label: 'Gender',            type: 'select', options: ['Male', 'Female'] },
-    parentName:      { label: 'Parent / Guardian', type: 'text' },
-    contact:         { label: 'Email',             type: 'email' },
-    phone:           { label: 'Phone',             type: 'text' },
-    notes:           { label: 'Notes',             type: 'textarea' }
+    studentNo:       { label: 'Student ID',         type: 'text' },
+    status:          { label: 'Status',             type: 'select', options: ['Active', 'Inactive', 'New', 'Waitlisted'] },
+    firstName:       { label: 'First Name',         type: 'text' },
+    lastName:        { label: 'Last Name',          type: 'text' },
+    dob:             { label: 'Date of Birth',      type: 'date' },
+    gender:          { label: 'Gender',             type: 'select', options: ['Male', 'Female'] },
+    parentName:      { label: 'Parent / Guardian',  type: 'text' },
+    contact:         { label: 'Email',              type: 'email' },
+    phone:           { label: 'Phone',              type: 'text' },
+    emergency2Name:  { label: 'Emergency Name',     type: 'text' },
+    emergency2Phone: { label: 'Emergency Phone',    type: 'text' },
+    medicalInfo:     { label: 'Medical Conditions', type: 'textarea' },
+    allergies:       { label: 'Allergies',          type: 'textarea' },
+    notes:           { label: 'Notes',              type: 'textarea' }
   };
+
+  // Checked at save rather than on every keystroke, so the field stays freely
+  // clearable while being retyped.
+  function _fieldProblem(field, value, studentId) {
+    if ((field === 'firstName' || field === 'lastName') && !value) return _EDITABLE_FIELDS[field].label + ' cannot be empty';
+    if (field !== 'studentNo') return '';
+    if (!value) return 'Student ID is required';
+    var taken = App.Store.get().students.some(function(x) {
+      return x.id !== studentId && (x.studentNo || '').toLowerCase() === value.toLowerCase();
+    });
+    return taken ? 'Student ID "' + value + '" is already in use' : '';
+  }
 
   // No pencil affordance by request; the hover highlight and the pointer cursor
   // are the only hints that a field is editable.
@@ -1161,6 +1180,8 @@
     var input = document.querySelector('#fld-' + field + ' [name="' + field + '"]');
     if (!s || !input) return;
     var value = String(input.value == null ? '' : input.value).trim();
+    var problem = _fieldProblem(field, value, studentId);
+    if (problem) { App.Utils.showToast(problem, 'error'); return; }
     var patch = {};
     patch[field] = value;
     try {
@@ -1175,94 +1196,6 @@
     }
   }
 
-  // _toggleInlineEdit swaps the Details tab into editable fields in place. The
-  // header Edit button is hidden while editing; Cancel re-opens the read-only
-  // view. Classes/billing keep their own dedicated actions and are untouched.
-  function _toggleInlineEdit(studentId) {
-    var s = App.Store.get().students.find(function(x) { return x.id === studentId; });
-    if (!s) return;
-    _switchTab('details');
-    var panel = document.getElementById('tab-panel-details');
-    if (!panel) return;
-    var editBtn = document.getElementById('inline-edit-btn');
-    if (editBtn) editBtn.style.display = 'none';
-    panel.innerHTML =
-      '<form id="inline-edit-form">'
-      + '<div class="grid grid-cols-2 gap-3 text-sm">'
-      +   _editRow('Student ID', '<input name="studentNo" type="text" value="' + App.Utils.esc(s.studentNo || '') + '" placeholder="e.g. 2024-001" class="w-full bg-white border border-slate-200 rounded px-2 py-1 text-sm font-medium text-slate-700 focus:border-blue-500 focus:outline-none">')
-      +   _editRow('Status', _es('status', s.status, ['Active', 'Inactive', 'New', 'Waitlisted']))
-      +   _editRow('First Name', _ei('firstName', s.firstName))
-      +   _editRow('Last Name', _ei('lastName', s.lastName))
-      +   _editRow('Date of Birth', _ei('dob', s.dob, 'date'))
-      +   _editRow('Gender', _es('gender', s.gender, ['Male', 'Female']))
-      +   _editRow('Parent / Guardian', _ei('parentName', s.parentName))
-      +   _editRow('Email', _ei('contact', s.contact, 'email'))
-      +   _editRow('Phone', _ei('phone', _contactPhone(s)))
-      +   _editRow('Emergency Name', _ei('emergency2Name', s.emergency2Name || ''))
-      +   _editRow('Emergency Phone', _ei('emergency2Phone', s.emergency2Phone || ''))
-      + '</div>'
-      + '<div class="grid grid-cols-1 gap-3 text-sm mt-3">'
-      +   _editRow('Medical Conditions', _eta('medicalInfo', s.medicalInfo))
-      +   _editRow('Allergies', _eta('allergies', s.allergies))
-      +   _editRow('Notes', _eta('notes', s.notes))
-      + '</div>'
-      + '<div class="mt-4 flex justify-end gap-2">'
-      +   '<button type="button" onclick="App.Students._viewModal(\'' + studentId + '\')" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      +   '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>'
-      + '</div>'
-      + '</form>';
-    document.getElementById('inline-edit-form').addEventListener('submit', function(e) {
-      e.preventDefault();
-      _saveInlineEdit(studentId, e.target);
-    });
-  }
-
-  async function _saveInlineEdit(studentId, form) {
-    var s = App.Store.get().students.find(function(x) { return x.id === studentId; });
-    if (!s) return;
-    var fd = new FormData(form);
-    if (!fd.get('firstName') || !fd.get('lastName')) {
-      App.Utils.showToast('First and last name are required', 'error');
-      return;
-    }
-    // Validate at save (not via a live handler) so the field stays freely
-    // clearable while editing — it only has to be non-empty and unique on Save.
-    var studentNo = (fd.get('studentNo') || '').trim();
-    if (!studentNo) {
-      App.Utils.showToast('Student ID is required', 'error');
-      return;
-    }
-    if (App.Store.get().students.some(function(x) { return x.id !== studentId && (x.studentNo || '').toLowerCase() === studentNo.toLowerCase(); })) {
-      App.Utils.showToast('Student ID "' + studentNo + '" is already in use', 'error');
-      return;
-    }
-    var updated = Object.assign({}, s, {
-      studentNo: studentNo,
-      firstName: fd.get('firstName'),
-      lastName: fd.get('lastName'),
-      dob: fd.get('dob'),
-      gender: fd.get('gender'),
-      parentName: fd.get('parentName'),
-      contact: fd.get('contact'),
-      phone: fd.get('phone'),
-      status: fd.get('status'),
-      emergency2Name: fd.get('emergency2Name') || '',
-      emergency2Phone: fd.get('emergency2Phone') || '',
-      medicalInfo: fd.get('medicalInfo') || '',
-      allergies: fd.get('allergies') || '',
-      notes: fd.get('notes') || ''
-    });
-    var submitBtn = form.querySelector('button[type="submit"]');
-    try {
-      await App.Utils.withLoading(submitBtn, async function() {
-        await App.Api.put('/api/students/' + studentId, updated);
-        await App.Api.loadSnapshot();
-      });
-      App.Utils.showToast(App.Utils.esc(updated.firstName) + ' ' + App.Utils.esc(updated.lastName) + ' updated', 'success');
-      _viewModal(studentId);
-      App.Router.refresh();
-    } catch (err) { /* auto-toasted */ }
-  }
 
   // _dropinField renders the "pay-per-session drop-in" toggle. Drop-in students
   // are the only ones billable via the manual self-study invoice option (package
@@ -1836,11 +1769,9 @@
     _onFilter: _onFilter,
     _viewModal: _viewModal,
     _editModal: _editModal,
-    _toggleInlineEdit: _toggleInlineEdit,
     _editField: _editField,
     _saveField: _saveField,
     _cancelField: _cancelField,
-    _saveInlineEdit: _saveInlineEdit,
     _subscriptionAction: _subscriptionAction,
     _activateStudent: _activateStudent,
     _deactivateStudent: _deactivateStudent,
