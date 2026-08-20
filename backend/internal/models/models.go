@@ -185,6 +185,10 @@ type Class struct {
 	Subject   string `json:"subject"`
 	ClassType string `json:"classType"` // 'Group' | 'Private' — drives pricing tier + capacity
 	LevelBand string `json:"levelBand"` // '1-3' | '4-6' — drives pricing tier
+	// MonthlyFeeOverride wins over the (classType, levelBand) matrix when > 0.
+	// Exists for classes the matrix cannot price — Phonics has no level band,
+	// and a 30-minute group runs below the Level 1 rate. See migration 0037.
+	MonthlyFeeOverride float64 `json:"monthlyFeeOverride"`
 }
 
 // PricingTier is one cell of the type×level fee matrix. The monthly cron looks

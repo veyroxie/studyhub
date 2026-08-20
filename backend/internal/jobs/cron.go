@@ -337,10 +337,12 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	}
 
 	// Pre-load classID → monthly fee, derived from the type×level pricing matrix
-	// (a class joins pricing_tiers on its class_type + level_band). Class IDs are
+	// (a class joins pricing_tiers on its class_type + level_band), unless the
+	// class carries its own monthly_fee_override — Phonics and the 30-minute
+	// group have no matching tier and would otherwise price at 0.  Class IDs are
 	// unique, so a flat map keyed by class id is enough (cron spans all tenants).
 	classByID := map[string]classMeta{}
-	if frows, ferr := db.Query(`SELECT c.id, COALESCE(pt.monthly_fee,0), COALESCE(c.name,''), COALESCE(c.class_type,''), COALESCE(c.level_band,''), COALESCE(c.subject,'') FROM classes c LEFT JOIN pricing_tiers pt ON pt.class_type = c.class_type AND pt.level_band = c.level_band AND pt.tenant_id = c.tenant_id AND pt.deleted_at IS NULL WHERE c.deleted_at IS NULL`); ferr == nil {
+	if frows, ferr := db.Query(`SELECT c.id, COALESCE(NULLIF(c.monthly_fee_override,0), pt.monthly_fee, 0), COALESCE(c.name,''), COALESCE(c.class_type,''), COALESCE(c.level_band,''), COALESCE(c.subject,'') FROM classes c LEFT JOIN pricing_tiers pt ON pt.class_type = c.class_type AND pt.level_band = c.level_band AND pt.tenant_id = c.tenant_id AND pt.deleted_at IS NULL WHERE c.deleted_at IS NULL`); ferr == nil {
 		for frows.Next() {
 			var cid string
 			var m classMeta

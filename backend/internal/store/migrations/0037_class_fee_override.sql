@@ -1,0 +1,14 @@
+-- 0037_class_fee_override.sql
+--
+-- Not every class fits the 2x2 pricing matrix. Phonics is priced per hour with
+-- no level band at all, and a 30-minute Math group runs at RM30 for a student
+-- below Level 1. Both join pricing_tiers on (class_type, level_band) and miss,
+-- so the monthly cron prices them at 0 and the parent receives an RM 0 invoice
+-- — the exact failure the centre already reported once.
+--
+-- An override on the class is the smallest fix that covers both: when set it
+-- wins, when unset the matrix still decides, so every existing class is
+-- unaffected. 0 means "not set" rather than "free" — a genuinely free class is
+-- not a thing the centre sells, and treating 0 as unset avoids threading a
+-- nullable through every scan.
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS monthly_fee_override NUMERIC(12,2) NOT NULL DEFAULT 0;
