@@ -570,11 +570,11 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		desc := "Monthly tuition — " + monthLabel + " — " + s.firstName + " " + s.lastName
 
 		_, err := tx.Exec(`
-			INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,early_bird_cutoff,early_bird_discount,line_items)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,early_bird_cutoff,early_bird_discount,line_items,period)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			invID, s.tenantID, s.id, desc, "Monthly", discounted, dueDate, "Unpaid",
 			createdOn, nil, "", 0.0, false, siblingIDsJSON, siblingDiscount, referralCredit, "",
-			earlyBirdCutoff, earlyBirdApplied, models.MarshalLineItems(items),
+			earlyBirdCutoff, earlyBirdApplied, models.MarshalLineItems(items), monthPrefix,
 		)
 		if err != nil {
 			core.Logger.Error("could not insert monthly invoice", "err", err, "student_id", s.id)
@@ -633,10 +633,13 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 // pairs that already have a Monthly invoice for the given YYYY-MM prefix.
 func loadExistingMonthlyInvoiceStudentIDs(db *store.DB, monthPrefix string) (map[string]bool, error) {
 	out := map[string]bool{}
+	// Keyed on period, not the created_on prefix: an invoice raised in September
+	// for August is an August invoice, and matching on when it was created would
+	// let the August run issue a second one.
 	rows, err := db.Query(`
 		SELECT DISTINCT tenant_id, student_id FROM invoices
-		WHERE type='Monthly' AND created_on LIKE ? AND deleted_at IS NULL`,
-		monthPrefix+"%")
+		WHERE type='Monthly' AND period=? AND deleted_at IS NULL`,
+		monthPrefix)
 	if err != nil {
 		return out, err
 	}

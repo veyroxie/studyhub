@@ -171,8 +171,8 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 				}
 			}
 
-			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,line_items) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount, inv.ReferralCredit, inv.ReferenceNo, models.MarshalLineItems(inv.LineItems)); err != nil {
+			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,line_items,period) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount, inv.ReferralCredit, inv.ReferenceNo, models.MarshalLineItems(inv.LineItems), monthlyPeriod(inv.Type, inv.CreatedOn)); err != nil {
 				core.RespondError(w, "could not create invoice", 500)
 				return
 			}
@@ -180,6 +180,17 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 			core.Respond(w, inv)
 		}
 	}
+}
+
+// monthlyPeriod is the billing month a Monthly invoice covers, taken from its
+// issue date. Only Monthly invoices carry one: a registration fee or a
+// self-study overflow line is not "for" a month, and giving it a period would
+// put it in the way of the monthly run's one-per-student-per-month rule.
+func monthlyPeriod(invoiceType, createdOn string) string {
+	if invoiceType != "Monthly" || len(createdOn) < 7 {
+		return ""
+	}
+	return createdOn[:7]
 }
 
 // handleInvoiceUpdate edits the safe, admin-facing fields of an invoice:
@@ -212,8 +223,11 @@ func HandleInvoiceUpdate(db *store.DB) http.HandlerFunc {
 		// override makes the itemisation inconsistent, but a description/due-date
 		// edit must preserve the breakdown the PDF and detail view rely on. The
 		// CASE compares the pre-update amount (SET RHS sees old row values).
-		args := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn, inv.Amount, id}, twArgs...)
-		res, err := db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, line_items=CASE WHEN ROUND(amount::numeric,2)<>ROUND(?::numeric,2) THEN '[]' ELSE line_items END WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+		// period is recomputed rather than carried: this endpoint can change both
+		// type and created_on, and a stale period would hide the invoice from the
+		// monthly run's duplicate check.
+		args := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn, monthlyPeriod(inv.Type, inv.CreatedOn), inv.Amount, id}, twArgs...)
+		res, err := db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, period=?, line_items=CASE WHEN ROUND(amount::numeric,2)<>ROUND(?::numeric,2) THEN '[]' ELSE line_items END WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 		if err != nil {
 			core.RespondError(w, "could not update invoice", http.StatusInternalServerError)
 			return
