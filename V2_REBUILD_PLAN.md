@@ -407,6 +407,69 @@ RM65/hr.
 4. **The early-bird, sibling and referral discounts** are flat RM amounts and are
    unaffected, but the base they come off now moves.
 
+### 8.7.1 Audit — the full change surface (2026-08-20)
+
+**Everything that reads a monthly price.** This is the complete list; there is no
+shared helper, so each is its own edit.
+
+| Site | What it does | After |
+|---|---|---|
+| `jobs/cron.go:345` | `COALESCE(NULLIF(monthly_fee_override,0), pt.monthly_fee, 0)` per class | replaced by rate x session count |
+| `jobs/cron.go:~505` | one invoice line per enrolled class at `m.fee` | line gains a session count and rate |
+| `handlers_classes.go:64` | `listPricingTiers` feeds the snapshot | retires with `pricing_tiers` |
+| `handlers_pricing.go:37` | admin edits a tier's `monthly_fee` | becomes editing a session rate |
+| `handlers_classes.go:41/145/213` | class CRUD carries `monthly_fee_override` | becomes `session_rate` + duration |
+| `billing.js:31` | `feeFor()` looks up the tier for the invoice builder | reads the rate instead |
+| `calendar.js:957/1101/1109` | the pricing-matrix editor UI | becomes a rate editor |
+| `calendar.js:648/708/1219/1257` | the custom monthly fee field (0037) | retires |
+| `models.go:191/200` | `MonthlyFeeOverride`, `MonthlyFee` | retire |
+
+**The pattern already exists in the codebase.** Self-study overflow
+(`cron.go:266`) already bills `hours x SelfStudyOverflowRatePerHour` and builds a
+line item carrying `Qty`, `UnitPrice` and a descriptor. Session billing is that
+same shape applied to tuition, so `InvoiceLineItem` needs no change: `Qty`
+becomes the session count and `UnitPrice` the rate. The PDF and the frontend
+already render `Qty x UnitPrice`, so neither needs reworking.
+
+**What is genuinely missing: a session expander.** Nothing server-side turns "a
+class on Mondays" into "these dates in this month".
+
+`handlers_ical.go:150-169` is the closest thing — it walks a date range and keeps
+days matching `parseDayName(cls.Day)`. It is the right skeleton and
+`parseDayName` is reusable, but it is **holiday-blind and cancellation-blind**.
+
+> **Separate live bug, found during this audit.** Because the iCal feed does not
+> consult `cancelled_classes` or `holidays`, a parent subscribed to the calendar
+> still sees sessions that were cancelled. That is wrong today, independently of
+> billing. Worth fixing on its own; the fix is the same filter session billing
+> needs, so build the expander once and use it in both.
+
+Proposed shape: `jobs.SessionsInPeriod(classID, from, to) []time.Time`, filtering
+`cancelled_classes` and `holidays`, used by the cron, the iCal feed, and the
+"how many sessions" hint in the invoice UI. One function, three callers, which
+is what makes it worth extracting rather than inlining.
+
+**Risk register.**
+
+1. **Holidays become money.** `holidays` is currently cosmetic; after this a
+   missing row overcharges a parent. The calendar must be correct and complete
+   for the billing period *before* go-live, and adding a holiday retroactively
+   changes what someone owed.
+2. **Cancellations become money, and already grant credits.** A cancelled session
+   both removes a charge and issues a replacement credit. Decide whether that is
+   double compensation, because today the credit is the only compensation.
+3. **Enrolment has no start date.** `students.enrolled_classes` is a bare id
+   list, so there is no way to know a student joined a class mid-month. Prorating
+   a joiner needs an enrolment date, which means the join table from B6 is a
+   prerequisite, not an optional cleanup.
+4. **Five-week months raise bills ~25%.** Parent-facing, needs telling first.
+5. **`package_amount` short-circuits everything** (`cron.go:~505`). Decide whether
+   a manual package amount still overrides a computed session total, or retires.
+
+**Prerequisites, in order.** B6 enrolment join table (risk 3) -> session expander
++ iCal fix -> rate fields on classes -> cron switchover -> retire
+`pricing_tiers` / `monthly_fee_override`.
+
 **Sequencing.** This supersedes B5 step 3 (`NormalizeInvoice`) — normalising the
 totals is worth doing as part of this rather than twice. It does not block B5
 step 4 (products CRUD, one-off lines), which is useful either way and should
