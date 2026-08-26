@@ -526,7 +526,10 @@
   // Students enrolled in any class get 4 free hours of self study per month.
   // Extra hours are billed at RM10/hr (RM40 = 4hr equivalent).
   var SELF_STUDY_RATE   = 10;    // RM per hour
-  var SELF_STUDY_FREE_H = 4;     // free hours per month for enrolled students
+  // Free hours come from the student's package (default 4): the cron bills
+  // overflow per student, so a flat constant here showed wrong numbers for
+  // anyone on a non-default package.
+  var _freeHours = function(s) { return s.packageSelfStudyHours == null ? 4 : s.packageSelfStudyHours; };
 
   function _selfStudyTab() {
     const state = App.Store.get();
@@ -547,9 +550,10 @@
       });
       const usedMin  = myMonth.reduce(function(acc, ss) { return acc + (ss.durationMin || 0); }, 0);
       const usedHr   = usedMin / 60;
-      const freeRem  = Math.max(0, SELF_STUDY_FREE_H - usedHr);
-      const billable = Math.max(0, usedHr - SELF_STUDY_FREE_H);
-      const pct      = Math.min(100, (usedHr / SELF_STUDY_FREE_H) * 100);
+      const freeH    = _freeHours(s);
+      const freeRem  = Math.max(0, freeH - usedHr);
+      const billable = Math.max(0, usedHr - freeH);
+      const pct      = freeH > 0 ? Math.min(100, (usedHr / freeH) * 100) : 100;
       const barCol   = pct >= 100 ? '#ef4444' : pct >= 75 ? '#f59e0b' : '#22c55e';
 
       return '<div style="' + ROW_STYLE + '">'
@@ -584,7 +588,7 @@
     const billableTotal = eligible.reduce(function(acc, s) {
       const myHr = sessions.filter(function(ss) { return ss.studentId === s.id && ss.date.startsWith(thisMonth); })
         .reduce(function(a, ss) { return a + (ss.durationMin || 0); }, 0) / 60;
-      return acc + Math.max(0, myHr - SELF_STUDY_FREE_H);
+      return acc + Math.max(0, myHr - _freeHours(s));
     }, 0);
 
     return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
@@ -600,7 +604,7 @@
             ? '<div style="text-align:center"><div style="font-size:0.65rem;font-weight:700;color:#dc2626;text-transform:uppercase">Billable</div>'
             +   '<div style="font-size:1rem;font-weight:800;color:#dc2626">RM' + (billableTotal * SELF_STUDY_RATE).toFixed(0) + '</div></div>'
             : '<div style="text-align:center"><div style="font-size:0.65rem;font-weight:700;color:#94a3b8;text-transform:uppercase">Value given</div>'
-            +   '<div style="font-size:1rem;font-weight:800;color:#15803d">RM' + (Math.min(eligible.length * SELF_STUDY_FREE_H, monthTotal / 60) * SELF_STUDY_RATE) + '</div></div>')
+            +   '<div style="font-size:1rem;font-weight:800;color:#15803d">RM' + (Math.min(eligible.reduce(function(a, s) { return a + _freeHours(s); }, 0), monthTotal / 60) * SELF_STUDY_RATE) + '</div></div>')
       +   '</div>'
       + '</div>'
       + '<div style="padding:0.6rem 1rem;background:#fffbeb;border-bottom:1px solid #fef3c7;font-size:0.78rem;color:#92400e">'
@@ -631,7 +635,7 @@
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Notes <span class="text-xs text-slate-400 font-normal">(optional)</span></label>'
       + '<input name="notes" class="form-input" placeholder="e.g. Worked on kanji revision" maxlength="200"></div>'
       + '<div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:10px;padding:0.75rem;font-size:0.82rem;color:#92400e">'
-      + 'Free allowance: ' + SELF_STUDY_FREE_H + 'hr/month per enrolled student = <strong>RM40 equivalent</strong>. Extra hours billed at RM' + SELF_STUDY_RATE + '/hr.'
+      + 'Free allowance: per student package (default 4hr/month). Extra hours billed at RM' + SELF_STUDY_RATE + '/hr.'
       + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -735,29 +739,14 @@
     if (typeof classIds === 'string') classIds = classIds.split(',').filter(Boolean);
     const state = App.Store.get();
 
-    // Post the cancellation AND a real parent-facing announcement per class.
-    // Everything goes through the API so it survives the next snapshot \u2014 the
-    // previous localStorage-only writes were wiped and never reached parents.
+    // Only the cancellation is posted: the backend cancellation handler
+    // creates the class-scoped parent announcement and the replacement
+    // credits itself. Posting an announcement here too sent parents two
+    // notices for one cancellation.
     var apiCalls = [];
     classIds.forEach(function(classId) {
       var cancellation = { id: App.Utils.generateId('cancel'), classId: classId, date: _attDate, reason: 'Teacher absent' };
       apiCalls.push(App.Api.post('/api/cancelled-classes', cancellation));
-
-      const cls = state.classes.find(function(c) { return c.id === classId; });
-      if (!cls) return;
-
-      const timeRange = App.Utils.formatTime(cls.time) + '\u2013' + App.Utils.formatTime(cls.endTime);
-      apiCalls.push(App.Api.post('/api/announcements', {
-        title: 'Class Cancelled: ' + cls.name,
-        message: "Today's " + cls.name + ' class (' + timeRange + ') has been cancelled due to teacher absence. We apologise for the inconvenience.',
-        audience: 'My Class Parents',
-        type: 'Urgent',
-        status: 'published',
-        createdBy: 'Admin',
-        archiveOn: '',
-        // Only parents of the cancelled class need this, not the whole centre.
-        targetClassIds: [classId]
-      }));
     });
 
     App.Utils.hideModal(true);
@@ -1124,18 +1113,19 @@
       return;
     }
 
-    // Add 4 credits replacement
+    // Credit the class's duration: 1 credit = 15 minutes, so 1hr = 4.
+    var credits = App.Utils.creditsForClass(cls);
     try {
       await App.Api.post('/api/replacement-credits', {
         studentId: studentId,
         type: 'earned',
-        minutes: 4,
+        minutes: credits,
         category: 'class',
         note: 'Absent from ' + clsName + ' on ' + _attDate,
         classId: _attClassId,
         date: _attDate
       });
-      App.Utils.showToast(stuName + ' marked absent — 4 credits added', 'info');
+      App.Utils.showToast(stuName + ' marked absent — ' + credits + ' credit' + (credits === 1 ? '' : 's') + ' added', 'info');
     } catch(e) {
       App.Utils.showToast(stuName + ' marked absent (replacement failed: ' + e.message + ')', 'warning');
     }

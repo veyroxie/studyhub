@@ -222,3 +222,24 @@ describe('emptyState / showConfirm escaping contract', () => {
     assert.ok(!html.includes('<script>'), 'empty-state text must be escaped');
   });
 });
+
+describe('creditsForClass', () => {
+  // 1 credit = 15 minutes, agreed with the centre 02/04/2026. The backend
+  // mirror is creditsForDuration in handlers_cancelled.go - keep them in sync.
+  const U = () => loadSandbox().App.Utils;
+  test('a 1-hour class earns 4 credits', () => {
+    assert.equal(U().creditsForClass({ time: '10:00', endTime: '11:00' }), 4);
+  });
+  test('a 30-minute class earns 2 credits', () => {
+    assert.equal(U().creditsForClass({ time: '15:00', endTime: '15:30' }), 2);
+  });
+  test('a 45-minute class earns 3 credits', () => {
+    assert.equal(U().creditsForClass({ time: '09:15', endTime: '10:00' }), 3);
+  });
+  test('missing or unparsable times fall back to the standard 4', () => {
+    assert.equal(U().creditsForClass(null), 4);
+    assert.equal(U().creditsForClass({}), 4);
+    assert.equal(U().creditsForClass({ time: 'abc', endTime: '11:00' }), 4);
+    assert.equal(U().creditsForClass({ time: '11:00', endTime: '10:00' }), 4);
+  });
+});

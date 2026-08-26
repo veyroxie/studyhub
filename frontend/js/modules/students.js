@@ -1250,7 +1250,7 @@
       +   'Late absence (informed less than 3 hours before — no credit)'
       + '</label>'
       + _field('Credits <span class="text-slate-400 font-normal">(ignored if late absence)</span>', '<select name="minutes" class="form-input"><option value="1">1 credit</option><option value="2">2 credits</option><option value="3">3 credits</option><option value="4" selected>4 credits</option></select>')
-      + _field('Category', '<select name="category" class="form-input"><option value="class" selected>Class</option><option value="self-study">Self-study</option></select>')
+
       + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Sick, family event">')
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
       + '<div class="flex justify-end gap-2 pt-2">'
@@ -1325,7 +1325,7 @@
       + '<p class="text-sm text-slate-500 mb-4">Spends credits the student already earned. If they have none yet, mark them absent first.</p>'
       + '<form id="use-credit-form" class="space-y-4">'
       + _field('Credits', '<select name="minutes" class="form-input"><option value="1">1 credit</option><option value="2">2 credits</option><option value="3">3 credits</option><option value="4">4 credits</option></select>')
-      + _field('Category', '<select name="category" class="form-input"><option value="class" selected>Class</option><option value="self-study">Self-study</option></select>')
+
       + _field('Class (optional)', App.Utils.filterFor('usecred-class', 'Filter classes...') + '<select id="usecred-class" name="classId" class="form-input">' + classOpts + '</select>')
       + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Extended English session">')
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')

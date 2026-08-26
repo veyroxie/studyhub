@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
+
 	"studyhub/internal/core"
 	"studyhub/internal/models"
 	"studyhub/internal/store"
@@ -81,11 +83,12 @@ func HandleCreateCancelledClass(db *store.DB) http.HandlerFunc {
 // the cancellation row is already committed and the admin will see the
 // outcome in the next snapshot.
 func applyCancelledClassSideEffects(db *store.DB, c *core.Claims, cc models.CancelledClass, tid int) {
-	var className string
-	db.QueryRow(`SELECT name FROM classes WHERE id=? AND tenant_id=?`, cc.ClassID, tid).Scan(&className)
+	var className, classStart, classEnd string
+	db.QueryRow(`SELECT name, COALESCE(time,''), COALESCE(end_time,'') FROM classes WHERE id=? AND tenant_id=?`, cc.ClassID, tid).Scan(&className, &classStart, &classEnd)
 	if className == "" {
 		className = cc.ClassID
 	}
+	credits := creditsForDuration(classStart, classEnd)
 
 	// Announcement — created as published, audience scoped to the class so
 	// only enrolled parents get the notification.
@@ -111,9 +114,9 @@ func applyCancelledClassSideEffects(db *store.DB, c *core.Claims, cc models.Canc
 		core.LogAudit(db, store.TenantID(c), c.Email, "announcement_created", "announcement", annID, "auto: class cancellation "+cc.ClassID)
 	}
 
-	// Replacement credits — one "class" credit per enrolled student. We
-	// rely on the JSON-string LIKE match used elsewhere in the codebase;
-	// the schema stores enrolled_classes as TEXT '["<id>",...]'.
+	// Replacement credits — the class's duration in 15-min credits, per
+	// enrolled student. We rely on the JSON-string LIKE match used elsewhere
+	// in the codebase; enrolled_classes is TEXT '["<id>",...]'.
 	rows, err := db.Query(
 		`SELECT id FROM students WHERE tenant_id=? AND deleted_at IS NULL AND enrolled_classes LIKE '%"'||?||'"%'`,
 		tid, cc.ClassID,
@@ -132,9 +135,25 @@ func applyCancelledClassSideEffects(db *store.DB, c *core.Claims, cc models.Canc
 		rcID := core.GenerateID("RC")
 		if _, err := db.Exec(
 			`INSERT INTO replacement_credits(id,tenant_id,student_id,type,minutes,note,class_id,date,created_by,category) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-			rcID, tid, sid, "earned", 1, note, cc.ClassID, cc.Date, actor, "class",
+			rcID, tid, sid, "earned", credits, note, cc.ClassID, cc.Date, actor, "class",
 		); err != nil {
 			core.Logger.Error("cancellation credit insert failed", "err", err, "student_id", sid)
 		}
 	}
+}
+
+// creditsForDuration converts a class's HH:MM start/end into replacement
+// credits at the agreed unit of 1 credit = 15 minutes (a 1-hour class = 4).
+// Unparsable or missing times fall back to 4, the standard 1-hour class.
+func creditsForDuration(start, end string) int {
+	s, errS := time.Parse("15:04", start)
+	e, errE := time.Parse("15:04", end)
+	if errS != nil || errE != nil {
+		return 4
+	}
+	mins := int(e.Sub(s).Minutes())
+	if mins < 15 {
+		return 4
+	}
+	return mins / 15
 }

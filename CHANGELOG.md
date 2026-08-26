@@ -8,6 +8,21 @@ dated section when you cut a deploy.
 
 ## [Unreleased]
 
+### Fixed
+- Cancelling a class now grants replacement credits matching the class's
+  duration (1 credit = 15 minutes, so a 1-hour class earns 4) instead of a
+  flat 1; existing shortchanged credits are topped up by migration 0041.
+- Marking a student absent credits the class's actual duration, so the
+  30-minute class earns 2 credits instead of 4.
+- Parents no longer receive two announcements for one class cancellation.
+- The self-study tab now shows each student's own package hours instead of
+  assuming 4 free hours for everyone.
+
+### Changed
+- Replacement credits are for make-up classes only: the self-study category
+  is no longer offered when granting or redeeming credits (existing
+  self-study credit rows still display).
+
 ### Fixed — class enrolment, and prices that silently came out as RM 0
 
 - **Enrolling a student into a class works again.** The Add Class form never

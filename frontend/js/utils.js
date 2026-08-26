@@ -294,6 +294,17 @@
       };
       return map[color] || map.blue;
     },
+    // creditsForClass converts a class's HH:MM start/end into replacement
+    // credits at the agreed unit of 1 credit = 15 minutes (1hr class = 4).
+    // Missing or unparsable times fall back to 4, the standard 1-hour class.
+    creditsForClass(cls) {
+      if (!cls || !cls.time || !cls.endTime) return 4;
+      var p = function(t) { var m = /^(\d{1,2}):(\d{2})$/.exec(t); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+      var start = p(cls.time), end = p(cls.endTime);
+      if (start == null || end == null || end - start < 15) return 4;
+      return Math.floor((end - start) / 15);
+    },
+
     esc(str) {
       return String(str == null ? '' : str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     },
