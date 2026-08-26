@@ -9,7 +9,8 @@ before editing that subsystem. This file is the workflow; that is the detail.
 
 ## Before committing
 
-- `cd backend && go build ./... && go vet ./...` must exit clean.
+- `make check` must exit clean (build, vet, gofmt, JS syntax, unit tests,
+  compose config). `make check-full` adds the DB-backed Go tests.
 - `cd backend && go test ./...` — needs a Postgres; CI spins one up and sets
   `TEST_DATABASE_URL` + `APP_ENV=test`.
 - Frontend unit tests: `TZ=Asia/Kuala_Lumpur node --test frontend/tests/unit/`.
@@ -19,7 +20,10 @@ before editing that subsystem. This file is the workflow; that is the detail.
 - Update `CHANGELOG.md` if the change is user-visible (new feature, bug fix,
   schema change, security tweak). Ops-only or pure refactors don't need an
   entry.
-- Push to `prod` from your terminal (not from WSL — line endings get weird).
+- Ship with `make ship` (full checks -> fast-forward prod -> droplet deploy ->
+  verify), or step by step: `make release`, `make deploy`, `make verify`.
+  Compose/env-only changes: `make deploy-nobuild`. `make verify` fails unless
+  the container rebooted recently, so a forgotten deploy can't look green.
 
 ## Where to add things
 
