@@ -360,7 +360,16 @@ all** (a logged warning), not an RM 0 one.
 
 ---
 
-## 8.7 Session-based billing (decided 2026-08-20) — NOT STARTED
+## 8.7 Session-based billing (decided 2026-08-20) — GREENLIT 2026-08-26
+
+**Nadine acked the parent-facing consequence on 26/08** (amounts vary with the
+session count; invoices still generate on the 1st; holidays must be entered
+before the month starts). **Per-student rates confirmed:** in a mixed L3&4
+class, each student pays their own band (L3 RM60/hr, L4 RM65/hr), so the rate
+resolves from (student's level band x class type) with a per-class
+`session_rate` override for specials. Every decision gate is now closed:
+F1 credits-only, F8 per-session storage, rate resolution, and the go itself.
+Prerequisite chain (8.7.2) can start.
 
 **Decision: retire monthly fees. Price is rate x sessions actually scheduled.**
 
@@ -474,6 +483,151 @@ is what makes it worth extracting rather than inlining.
 totals is worth doing as part of this rather than twice. It does not block B5
 step 4 (products CRUD, one-off lines), which is useful either way and should
 land first.
+
+### 8.7.2 Second audit — plan vs the AI_DOCS invariants (2026-08-21)
+
+**Status 2026-08-21 (evening): F1 and F8 are decided (see inline), the credit
+conflict is resolved (unit = 15 min, backend grant is the bug — A16), leaving F2
+(freeze session dates on the line), F3 (cancellation hardening), F4 (holiday
+predicate), F5 (zero-session rules), F6 (expander shape), F7 (change surface),
+and the package_amount decision open.**
+
+Checked 8.7/8.7.1 against `AI_DOCS/` (billing, calendar-and-sessions, database,
+jobs-and-outbound). Findings ranked. F1 and F2 are design holes that change the
+shape of the feature; the rest are gaps in the change surface or prerequisites.
+
+**F1 — RESOLVED 2026-08-21: credits-only, always.** Ely decided: cancellations
+never reduce an invoice, whenever they are logged; the replacement credit is the
+sole compensation; only holidays reduce the billed session count. The billing
+expander therefore subtracts holidays only, and `cancelled_classes` stays out of
+the money path entirely. Fits the advance-billing model (invoice on the 1st) and
+the early-bird incentive. Original analysis kept below for the record.
+
+**F1 (original) — The plan bills "sessions actually scheduled", but the cron bills in
+advance. (CRIT — decide before the expander is specced.)** Invoices are issued
+on the 1st for the *current* month (`cron.go:444-460`: due the 7th, period =
+1st..last day of the same month). On the 1st, the month's cancellations mostly
+have not happened yet, so "minus `cancelled_classes`" subtracts almost nothing —
+the count is a forecast, not an actual. Consequences:
+
+- A session cancelled *after* issue does not reduce the invoice; the replacement
+  credit stays the only compensation. One cancelled *before* issue reduces the
+  invoice AND still grants a credit (`handlers_cancelled.go:64-69` grants
+  unconditionally). Same event, different compensation depending on when the row
+  was written — that inconsistency is a dispute generator, and it is the real
+  form of risk 2's "double compensation" question.
+- Options: (a) bill in arrears on actuals — the payroll half of the cron already
+  bills the *previous* month (`cron.go:807`), so the pattern exists, but due
+  dates and early-bird ("paid by the 7th of the billed month") shift meaning;
+  (b) bill the forecast and reconcile next month with a credit line;
+  (c) keep credits as the only cancellation compensation and make the expander
+  ignore cancellations for money (holidays only). Pick one first; it decides
+  what the expander must return.
+- If (a): `monthlyPeriod` derives `period` from `createdOn[:7]`
+  (`handlers_invoices.go:196-201`) — wrong under arrears (an October-issued
+  September invoice must carry `2026-09`). The 0039 dedup itself still works.
+
+**F2 — The schedule is a mutable template; billing from it has no history.
+(HIGH.)** Sessions are computed from the *current* class row. Migration 0040's
+own warning — editing a class "rewrites every Monday, past and future" — now
+rewrites money: change a class from Monday to Tuesday and every past month's
+count becomes unreproducible. The invoice must be the frozen record: the line
+item should carry the actual session *dates* (in the descriptor), not just
+`Qty x rate`, so a dispute six weeks later is answerable without replaying a
+schedule that no longer exists. Same reason B5 freezes lines on issue.
+
+**F3 — Cancellations are not undo-able and not idempotent; both become money
+bugs. (HIGH — promote to prerequisite.)** Per `AI_DOCS/calendar-and-sessions.md`:
+`cancelled_classes` has no unique `(class_id, date)`, no `deleted_at`, and no
+DELETE/PUT route — every POST re-grants credits, and a mistaken cancellation can
+never be reversed through the API. Cosmetic today; after 8.7 an accidental
+cancellation permanently cuts a parent's bill with no undo. Needs: unique index
+(own migration, after a production duplicate check — same playbook as 0039), an
+undo route, and idempotent credit grants. Add to the prerequisite chain before
+"cron switchover".
+
+**F4 — Holiday range semantics differ frontend vs backend, and become money.
+(MED-HIGH.)** Frontend: multi-day only when `endDate >= date`
+(`calendar.js:33-43`); backend: `date <= ? AND (end_date='' OR end_date >= ?)`
+(`jobs.go:337-341`). A holiday with `end_date < date` silently degrades — today
+cosmetic, after 8.7 it changes a charge. The expander must own ONE canonical
+range predicate and both sides must use it. Holidays are per-tenant: each tenant
+must maintain their own calendar for billing to be right (risk 1 assumed one
+calendar).
+
+**F5 — Zero-session months hit `ValidAmount`. (MED.)** `core.ValidAmount` is
+strictly `> 0`. A count-0 class line and an all-lines-zero student need explicit
+rules (skip line / skip student, mirroring today's `fee <= 0` skip at
+`cron.go:487-493`) — and a skipped student must not burn that month's referral
+credit.
+
+**F6 — Expander shape: classify, don't filter. (MED.)**
+`SessionsInPeriod(classID, from, to) []time.Time` has three problems:
+
+- The iCal fix (A15) wants to emit `STATUS:CANCELLED` on the *same UID*, not
+  omit the event — a filter that drops cancelled dates cannot produce that.
+  Return classified dates (`held | cancelled | holiday`); billing counts `held`,
+  iCal renders all three.
+- `[]time.Time` re-imports the timezone bug class the repo spent effort
+  banishing: every consumer compares TEXT `YYYY-MM-DD` in MYT
+  (`AI_DOCS/database.md`). Return local date strings, or format exactly once
+  inside the expander.
+- Tenant scoping: holidays queries need the tenant id — derive it from the class
+  row inside the function, not from claims (the iCal caller has synthetic
+  claims).
+
+**F7 — Change-surface omissions in the 8.7.1 table. (MED.)** Verified by grep:
+
+| Missed site | Why it matters |
+| --- | --- |
+| `jobs/seed.go` | seeds `pricing_tiers` (and recomputes enrolment via LIKE at :228) — breaks on retire |
+| `store/database.go:241` | `createSchema` still defines `pricing_tiers`; retiring needs a deprecation migration + createSchema edit for fresh DBs |
+| `handlers_registrations.go:307/449` | student inserts write `enrolled_classes` — B6 surface |
+| `AI_DOCS/billing.md`, `calendar-and-sessions.md`, `database.md` | document the matrix as current; must be updated in the same change (doc-drift rule) |
+| `subjects.monthly_fee` | dead legacy (0002/0013), zero readers — deletable, not a blocker |
+
+**B6 is mis-sized.** `enrolled_classes` has ~30 backend references across 8
+files plus 12 frontend modules reading `enrolledClasses`. That is an L, not an
+M. Consider staging: create the join table, dual-write, migrate readers
+incrementally, keep the JSON column as a maintained mirror until the last LIKE
+dies (`handlers_classes.go:108-117`, `handlers_cancelled.go:118`,
+`parent_scope.go:20`, `seed.go:228`).
+
+**F8 — CLOSED 2026-08-26: per-student rates confirmed by Ely.** Build the rate
+lookup as (student band x class type) matrix with per-class `session_rate`
+override. Earlier amendment kept for the reasoning:
+
+**F8 (amended 2026-08-21 after Nadine's answers):** private is confirmed double group (RM120/130 per hour), and mixed
+L3&4 classes appear to charge by the STUDENT's level (L3 pays RM60/hr, L4 pays
+RM65/hr in one class — her "Yes" was clearer about class-sharing than rates, so
+re-confirm before building). Consequence if it holds: `pricing_tiers` does NOT
+retire — it converts to an hourly matrix (class_type x level_band) as the
+default rate source, and the per-class `session_rate` becomes the override for
+specials (Phonics RM60 no-level, 30-min Math RM30, negotiated). Rate resolution:
+per-class override, else (student band x class type) matrix. The deposit is also
+settled: applied to the final month (held liability), so the 0036 deposit
+products activate rather than delete. Per-session billing itself is still
+awaiting her go ("let me get back to you") — do not switch the cron until then.
+
+**F8 (superseded detail) — store per session.** Ely confirmed per-session rates
+("no way it's that low for a whole month"), and the chat corroborates: RM240/mo
+= 4 x RM60/hr sessions, Phonics RM60/hr, the 30-min class RM30 = 0.5h x RM60,
+private = exactly double group (11/06 chat). Store `session_rate NUMERIC(12,2)`
+per session; the UI enters/displays per-hour + duration. Original reasoning:
+
+**F8 (original) — Rate unit decision. (LOW, but decide early.)** Nadine quotes per hour
+(RM60/hr x duration); the simplest storage is per *session*. If rate-per-hour x
+duration derived from `time`/`end_time`, then editing a class's times silently
+changes its price (F2 again). Recommend: store `session_rate NUMERIC(12,2)` per
+session (0 = unset, matching 0037's convention), show the per-hour equivalence
+in the UI. Never `DOUBLE PRECISION` (0025); new columns go in a numbered
+migration only, never `createSchema` alone (`AI_DOCS/database.md`).
+
+**Revised prerequisite chain.** F1 decision -> B6 join table (`started_on`/
+`ended_on`, expander intersects the enrolment window with session dates) ->
+cancellation hardening (F3) + canonical holiday predicate (F4) -> classifying
+expander + iCal A15 fix -> rate fields (F8) -> cron switchover (F5 rules) ->
+retire `pricing_tiers` / `monthly_fee_override` + seed/doc sweep (F7).
 
 ---
 
