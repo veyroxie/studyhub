@@ -8,7 +8,8 @@ referrals, parent dashboards.
 ## Stack
 
 - **Backend:** Go + chi router, PostgreSQL via pgx, JWT in HttpOnly cookies
-- **Frontend:** Vanilla JS (`window.App` namespace, no build step), Tailwind via CDN
+- **Frontend:** Vanilla JS (`window.App` namespace, no npm/bundler), Tailwind v4
+  compiled by the standalone CLI in the Dockerfile
 - **Email:** Resend (free tier) — falls back to stdout in dev mode
 - **Deploy:** Docker Compose on DigitalOcean droplet, Caddy reverse proxy + HTTPS
 - **Domain:** studyhub.fit (Namecheap)
@@ -95,7 +96,7 @@ shared defaults in `.env` and overrides in `.env.production` etc.
 
 There are two migration paths, both run on every startup:
 
-1. **Legacy** (`runMigrations` in `database.go`) — idempotent
+1. **Legacy** (`applyColumnBackfills` in `database.go`) — idempotent
    `ALTER TABLE ... IF NOT EXISTS` blocks. Existing prod databases were
    provisioned this way. Do **not** add new ones here.
 2. **Atlas-style** (`runFileMigrations` in `internal/store/migrate.go` +
