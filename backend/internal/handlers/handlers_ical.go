@@ -152,6 +152,12 @@ func HandleParentCalendarFeed(db *store.DB) http.HandlerFunc {
 		start := now.AddDate(0, 0, -7)
 		end := now.AddDate(0, 0, 42)
 
+		// Cancelled sessions must still be emitted, as STATUS:CANCELLED under
+		// the SAME UID — omitting them would leave the stale event in every
+		// calendar that already synced it, which is how parents turned up to
+		// cancelled classes (V2_IDEAS A15).
+		cancelled := cancelledDatesInWindow(db, tenantID, start, end)
+
 		for _, cls := range classes {
 			if !relevantClassIDs[cls.ID] {
 				continue
@@ -165,7 +171,7 @@ func HandleParentCalendarFeed(db *store.DB) http.HandlerFunc {
 				if int(d.Weekday()) != weekday {
 					continue
 				}
-				writeEvent(&b, cls, d)
+				writeEvent(&b, cls, d, cancelled[cls.ID+"|"+d.Format("2006-01-02")])
 			}
 		}
 
@@ -174,7 +180,7 @@ func HandleParentCalendarFeed(db *store.DB) http.HandlerFunc {
 	}
 }
 
-func writeEvent(b *strings.Builder, cls models.Class, day time.Time) {
+func writeEvent(b *strings.Builder, cls models.Class, day time.Time, isCancelled bool) {
 	// Parse HH:MM start / end into the day's local time. iCal floats local
 	// when there's no TZID — many parents are in MY, the X-WR-TIMEZONE
 	// hint above gets calendars to interpret naive times as Asia/KL.
@@ -192,11 +198,41 @@ func writeEvent(b *strings.Builder, cls models.Class, day time.Time) {
 	b.WriteString("DTSTAMP:" + time.Now().UTC().Format("20060102T150405Z") + "\r\n")
 	b.WriteString("DTSTART:" + startT.Format("20060102T150405") + "\r\n")
 	b.WriteString("DTEND:" + endT.Format("20060102T150405") + "\r\n")
-	b.WriteString("SUMMARY:" + icsEscape(cls.Name) + "\r\n")
+	if isCancelled {
+		// STATUS is the standards-compliant signal; the SUMMARY prefix is for
+		// clients that render cancelled events without any visual distinction.
+		b.WriteString("STATUS:CANCELLED\r\n")
+		b.WriteString("SUMMARY:" + icsEscape("Cancelled: "+cls.Name) + "\r\n")
+	} else {
+		b.WriteString("SUMMARY:" + icsEscape(cls.Name) + "\r\n")
+	}
 	if cls.Classroom != "" {
 		b.WriteString("LOCATION:" + icsEscape(cls.Classroom) + "\r\n")
 	}
 	b.WriteString("END:VEVENT\r\n")
+}
+
+// cancelledDatesInWindow returns "classID|YYYY-MM-DD" keys for every
+// cancellation in the feed window. Dates are TEXT compared lexically,
+// matching the schema convention.
+func cancelledDatesInWindow(db *store.DB, tenantID int, start, end time.Time) map[string]bool {
+	out := map[string]bool{}
+	rows, err := db.Query(
+		`SELECT class_id, date FROM cancelled_classes WHERE tenant_id=? AND date >= ? AND date <= ?`,
+		tenantID, start.Format("2006-01-02"), end.Format("2006-01-02"),
+	)
+	if err != nil {
+		core.Logger.Error("ical cancelled-classes lookup failed", "err", err)
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, date string
+		if rows.Scan(&cid, &date) == nil {
+			out[cid+"|"+date] = true
+		}
+	}
+	return out
 }
 
 func combineDateTime(day time.Time, hm string) (time.Time, bool) {

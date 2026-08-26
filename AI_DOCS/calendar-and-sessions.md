@@ -103,10 +103,11 @@ back to 42 days forward**, by scanning every calendar day and matching the weekd
 no RRULE (`handlers_ical.go:149-170`). Events beyond six weeks simply do not exist in the
 feed -- check the window first when debugging "missing events".
 
-**Known bug (filed as A15):** the feed queries only classes and enrolment. It never consults
-`cancelled_classes`, `holidays`, or `class_session_overrides`, so a cancelled session still
-appears as a normal event in parents' subscribed calendars (`handlers_ical.go:127-170`). A fix
-must emit `STATUS:CANCELLED` or omit the VEVENT under the **same UID**.
+**A15 -- FIXED 2026-08-26:** the feed now loads the window's `cancelled_classes` and emits
+those occurrences under the **same UID** with `STATUS:CANCELLED` plus a "Cancelled: " summary
+prefix (`cancelledDatesInWindow` in `handlers_ical.go`), so already-synced calendars update in
+place. Holidays and `class_session_overrides` are still not consulted -- holidays are
+display-only by design, and override rendering arrives with the session expander.
 
 UID format is `class-<classID>-<YYYYMMDD>@studyhub.fit` (`handlers_ical.go:189`) -- the
 `(class_id, date)` key re-expressed for calendar clients. Changing it orphans every event

@@ -9,6 +9,13 @@ L = multi-day). Items marked [BUG] are broken today, not design choices.
 
 ## Tier 0 — broken now; fix regardless of v2 (all [BUG])
 
+**Reconciled 2026-08-26: every item below is closed.** A1 (MFA prompt in
+api.js/main.js), A2/A14 (target_class_ids stored + filtered server-side),
+A3 (honest failure toast, no fake local submit), A4-A10 and A13 verified
+shipped on 2026-08-21, A11 (search box escaped), A12 (buttons wired to
+/api/admin/import and /api/admin/clear-seed), A15 and A16 fixed 2026-08-26.
+This table is now history, not a to-do list.
+
 | ID | Item | Sev | Effort |
 |----|------|-----|--------|
 | A1 | MFA login lockout: frontend never handles the mfaRequired challenge; an admin who enables MFA can never log in. Build the 6-digit prompt (or hide the MFA toggle until built). | CRIT | M |
@@ -25,7 +32,7 @@ L = multi-day). Items marked [BUG] are broken today, not design choices.
 | A12 | Admin Import / Reset-all-data buttons only touch localStorage (silent placebo). Wire to /api/admin/import + /api/admin/clear-seed or remove. | MED | S |
 | A13 | Password reset leaves stolen access JWTs valid up to 30 days. Add users.session_epoch claim check. | HIGH | M |
 | A14 | Announcements privacy sibling: attendance quick-announce hardcodes audience 'All Parents'. Fix with A2. | MED | S |
-| A15 | Parent iCal feed shows cancelled sessions: `handlers_ical.go:150-169` expands a class's weekday into dates but never consults `cancelled_classes` or `holidays`, so a subscribed parent still sees a class the centre cancelled and turns up for it. Wrong today, independent of v2. Fix with the shared session expander (`V2_REBUILD_PLAN.md` 8.7.1) so billing and the feed agree on what a session is. | HIGH | M |
+| A15 | **FIXED 2026-08-26** (feed emits STATUS:CANCELLED + summary prefix under the same UID; locked by TestICalFeed_CancelledSessionEmitsStatusCancelled). Was: Parent iCal feed shows cancelled sessions: `handlers_ical.go:150-169` expands a class's weekday into dates but never consults `cancelled_classes` or `holidays`, so a subscribed parent still sees a class the centre cancelled and turns up for it. Wrong today, independent of v2. Fix with the shared session expander (`V2_REBUILD_PLAN.md` 8.7.1) so billing and the feed agree on what a session is. | HIGH | M |
 | A16 | **FIXED 2026-08-26** (duration-based grant + migration 0041 top-up + absent flow + shared creditsForClass helper). Was: Cancellation credit grant is 4x too small: `handlers_cancelled.go` hardcodes `minutes=1` per student, but the agreed unit (WhatsApp 02/04/2026, Nadine-confirmed) is 1 credit = 15 min, so a 1-hour class must grant 4 (duration/15). The frontend absent flow's 4 is correct. Live impact: Nadine's 19/08 "insufficient credit" when redeeming a replacement. Fix = grant (end_time-time)/15, and backfill or top up credits granted at 1. Blocks replying to her 17/08 "which button" question. | HIGH | S |
 | B9 | Reschedule a class session (decided 2026-08-26): alongside cancel+credit (per-student make-ups at different times), admin can move ONE dated session wholesale to another date for all students. Shape: a `class_session_moves` exception row (tenant_id, class_id, from_date, to_date) in the 0040 keyed-by-(class_id,date) family — NOT a cancellation (no credits granted: the class still happens). Touches: calendar render (strike original, show moved), the 8.7 session expander (classify dates held/cancelled/holiday/moved-out/moved-in; cross-month moves change billed counts), iCal (same UID, new DTSTART), and parent announcement on move. Build with/after the session expander so billing and display agree. | MED | M |
 
