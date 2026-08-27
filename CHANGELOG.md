@@ -9,6 +9,10 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- Enrollment history table (migration 0043): every class a student joins or
+  leaves is now recorded with a start and end date, backfilled from current
+  enrolments. Invisible in the UI for now; it is the foundation session
+  billing needs to prorate students who join or leave mid-month.
 - A session can be rescheduled to another date for all students at once,
   alongside cancel + credit for per-student make-ups. Admins reschedule
   from the calendar (week view or a day's schedule); parents are notified

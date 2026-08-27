@@ -127,6 +127,12 @@ by `substr(created_on, 1, 7)`.
 `LIKE '%"<id>"%'` in several places. Normalizing them into join tables means updating every
 reader at once.
 
+**`enrolled_classes` has a shadow join table** (`enrollments`, migration `0043`): dual-written
+by `store.SyncEnrollments` / `EndAllEnrollments` (`store/enrollments.go`) at every mutation
+site, with `started_on` / `ended_on` history and a partial unique index on live rows
+(`ended_on IS NULL`). The JSON column is still the ONLY read path -- any new enrolment
+mutation MUST call `SyncEnrollments` after writing the JSON, or the tables drift.
+
 ## Tenant scoping
 
 Covered in full in `AI_DOCS/auth-and-tenancy.md`. The short version: `store.ScopeTenant`

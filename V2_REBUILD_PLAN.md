@@ -593,6 +593,16 @@ incrementally, keep the JSON column as a maintained mirror until the last LIKE
 dies (`handlers_classes.go:108-117`, `handlers_cancelled.go:118`,
 `parent_scope.go:20`, `seed.go:228`).
 
+**B6 stage 1 SHIPPED 2026-08-28.** Migration `0043_enrollments_table.sql`
+creates `enrollments` (`started_on` / `ended_on`, partial unique index on live
+rows) and backfills from the JSON with deterministic `ENR_<student>_<class>`
+ids. `store.SyncEnrollments` / `EndAllEnrollments` dual-write at all five
+mutation sites (student create / update / delete, import pass-4, registration
+approve post-commit); removal ENDS a row, never deletes it, so the enrolment
+window survives for proration. The JSON column is still the only read path —
+stage 2 migrates readers, stage 3 kills the LIKE matching. Locked by
+`TestEnrollments_DualWriteLifecycle`.
+
 **F8 — CLOSED 2026-08-26: per-student rates confirmed by Ely.** Build the rate
 lookup as (student band x class type) matrix with per-class `session_rate`
 override. Earlier amendment kept for the reasoning:

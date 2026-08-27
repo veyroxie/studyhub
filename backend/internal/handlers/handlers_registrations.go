@@ -259,6 +259,8 @@ func HandleRegistrationApprove(db *store.DB) http.HandlerFunc {
 			enrollParentName  string
 			enrollStudentName string
 			enrollClassHTML   string
+			enrollStudentID   string
+			enrollClassIDs    []string
 		)
 
 		// Atomically claim the registration: flip pending→approved up front so a
@@ -375,6 +377,8 @@ func HandleRegistrationApprove(db *store.DB) http.HandlerFunc {
 			enrollEmail = strings.ToLower(strings.TrimSpace(reg.Email))
 			enrollParentName = reg.ParentName
 			enrollStudentName = reg.StudentFirstName + " " + reg.StudentLastName
+			enrollStudentID = stuID
+			enrollClassIDs = approveBody.ClassIds
 			enrollClassHTML = classListHTML
 		} else if reg.Type == "teacher" {
 			// Teacher approval: create staff + user records, then email a
@@ -529,6 +533,12 @@ func HandleRegistrationApprove(db *store.DB) http.HandlerFunc {
 		if err := tx.Commit(); err != nil {
 			core.RespondError(w, "server error", 500)
 			return
+		}
+
+		// Post-commit: shadow the new enrolment into the join table (B6
+		// dual-write). After commit so a rollback never leaves orphan rows.
+		if enrollStudentID != "" {
+			store.SyncEnrollments(db, store.TenantID(c), enrollStudentID, enrollClassIDs, c.Email)
 		}
 
 		// Post-commit: enrollment-approved email. Fired only now so a rolled-back

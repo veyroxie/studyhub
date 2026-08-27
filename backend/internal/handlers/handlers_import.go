@@ -271,6 +271,7 @@ func HandleImport(db *store.DB) http.HandlerFunc {
 					classJSON, _ := json.Marshal(classList)
 					updArgs := append([]any{string(classJSON), stuID}, twArgs...)
 					db.Exec(`UPDATE students SET enrolled_classes=? WHERE id=?`+tw, updArgs...)
+					store.SyncEnrollments(db, tid, stuID, classList, "import")
 					enrollments++
 				}
 			}

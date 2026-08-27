@@ -327,6 +327,7 @@ func HandleStudents(db *store.DB) http.HandlerFunc {
 			}
 			recomputeFamilySiblings(db, c, s.FamilyID)
 			recomputeClassEnrollment(db, c, s.EnrolledClasses)
+			store.SyncEnrollments(db, tid, s.ID, s.EnrolledClasses, c.Email)
 			// Ensure the parent (matched by contact email) has a login account.
 			// If not, create one in pending_verification status and email a
 			// set-password link so the parent can claim the account.
@@ -459,6 +460,7 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 			if oldFamilyID != "" && oldFamilyID != s.FamilyID {
 				recomputeFamilySiblings(db, c, oldFamilyID)
 			}
+			store.SyncEnrollments(db, tid, id, s.EnrolledClasses, c.Email)
 			core.LogAudit(db, tid, c.Email, "student_updated", "student", id, s.FirstName+" "+s.LastName)
 			core.Respond(w, s)
 		case http.MethodDelete:
@@ -481,6 +483,7 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 			}
 			recomputeClassEnrollment(db, c, classIDs)
 			recomputeFamilySiblings(db, c, famID)
+			store.EndAllEnrollments(db, store.TenantID(c), id)
 			core.LogAudit(db, store.TenantID(c), c.Email, "student_deleted", "student", id, "soft deleted")
 			w.WriteHeader(http.StatusNoContent)
 		}

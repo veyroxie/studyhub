@@ -30,7 +30,7 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 	// Reset every table the feature tests touch.
 	tables := []string{
 		"replacement_credits", "audit_logs", "feedback", "attendance",
-		"invoices", "referral_rewards", "email_tokens",
+		"invoices", "referral_rewards", "email_tokens", "enrollments",
 		"announcements", "registrations", "students", "families",
 		"classes", "staff", "users",
 	}
@@ -62,6 +62,8 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 		r.Get("/api/snapshot", HandleSnapshot(db))
 		r.Get("/api/students", HandleStudents(db))
 		r.Post("/api/students", HandleStudents(db))
+		r.Put("/api/students/{id}", HandleStudent(db))
+		r.Delete("/api/students/{id}", HandleStudent(db))
 		r.Get("/api/families", HandleFamilies(db))
 		r.Post("/api/families", HandleFamilies(db))
 		r.Get("/api/families/{id}/referral", HandleFamilyReferral(db))
