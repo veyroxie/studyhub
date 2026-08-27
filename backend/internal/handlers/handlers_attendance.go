@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+
+	"github.com/go-chi/chi/v5"
+
 	"studyhub/internal/core"
 	"studyhub/internal/models"
 	"studyhub/internal/notify"
@@ -289,5 +292,34 @@ func HandleAttendance(db *store.DB, hub *WSHub) http.HandlerFunc {
 			}
 			core.Respond(w, a)
 		}
+	}
+}
+
+// HandleDeleteAttendance removes one attendance row — the undo for a
+// mis-tapped check-in or absence. Hard delete: the table has no deleted_at,
+// and an undone record should vanish from payroll hours and parent views
+// alike. Credits granted alongside an absence are NOT clawed back here; that
+// policy is still open with the centre, so the admin adjusts them from the
+// student's profile when needed.
+func HandleDeleteAttendance(db *store.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := core.ClaimsFrom(r)
+		if !core.IsAdminRole(c) {
+			core.RespondError(w, "admin only", http.StatusForbidden)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		tw, twArgs := store.ScopeTenant(c, "")
+		res, err := db.Exec(`DELETE FROM attendance WHERE id=?`+tw, append([]any{id}, twArgs...)...)
+		if err != nil {
+			core.RespondError(w, "server error", http.StatusInternalServerError)
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			core.RespondError(w, "not found", http.StatusNotFound)
+			return
+		}
+		core.LogAudit(db, store.TenantID(c), c.Email, "attendance_undone", "attendance", id, "")
+		w.WriteHeader(http.StatusNoContent)
 	}
 }

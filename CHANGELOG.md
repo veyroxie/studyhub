@@ -9,6 +9,11 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- Attendance can be undone: admins get an Undo button on any marked record
+  (a mis-tapped check-in or absence) that removes it as if never marked.
+  Credits already granted with an absence stay on the account.
+- Invoice line names are editable in the builder, so one-off lines like
+  Phonics or the 30-minute Math class can be labelled properly.
 - The invoice builder has a "New student" section: registration fee (RM250)
   and a one-month deposit priced by class type and level band.
 

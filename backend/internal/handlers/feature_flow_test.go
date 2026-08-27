@@ -70,6 +70,7 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 		r.Put("/api/invoices/{id}/pay", HandleInvoicePay(db))
 		r.Get("/api/attendance", HandleAttendance(db, hub))
 		r.Post("/api/attendance", HandleAttendance(db, hub))
+		r.Delete("/api/attendance/{id}", HandleDeleteAttendance(db))
 		r.Get("/api/referrals", HandleReferrals(db))
 		r.Post("/api/referrals/{id}/earn", HandleReferralEarn(db))
 		r.Post("/api/referrals/{id}/consume", HandleReferralConsume(db))
@@ -452,5 +453,49 @@ func TestReferralMilestone_ConsumeWithoutEarned_Returns400(t *testing.T) {
 	w := authedJSON(t, r, "POST", "/api/referrals/REF_noconsume/consume", tok, nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 consuming non-earned reward, got %d %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAttendance_UndoDeletesRow locks the undo endpoint: admins can remove a
+// mis-tapped record entirely; parents cannot.
+func TestAttendance_UndoDeletesRow(t *testing.T) {
+	r, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+
+	tok := getToken(t, r, "admin@studyhub.com", "admin123")
+	var studentID string
+	db.QueryRow(`SELECT id FROM students LIMIT 1`).Scan(&studentID)
+	if studentID == "" {
+		t.Skip("no seeded students")
+	}
+	today := time.Now().Format("2006-01-02")
+	w := authedJSON(t, r, "POST", "/api/attendance", tok, map[string]any{
+		"personId": studentID, "personType": "student", "date": today,
+		"checkIn": time.Now().Format("15:04"), "status": "Present",
+	})
+	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+		t.Fatalf("check-in failed: %d %s", w.Code, w.Body.String())
+	}
+	var recID string
+	db.QueryRow(`SELECT id FROM attendance WHERE person_id=? AND date=? LIMIT 1`, studentID, today).Scan(&recID)
+	if recID == "" {
+		t.Fatal("attendance row not found after check-in")
+	}
+
+	parentTok := getToken(t, r, "seeduser27@example.com", "parent123")
+	if w := authedJSON(t, r, "DELETE", "/api/attendance/"+recID, parentTok, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("parent delete should be 403, got %d", w.Code)
+	}
+
+	if w := authedJSON(t, r, "DELETE", "/api/attendance/"+recID, tok, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("admin delete failed: %d %s", w.Code, w.Body.String())
+	}
+	var count int
+	db.QueryRow(`SELECT COUNT(*) FROM attendance WHERE id=?`, recID).Scan(&count)
+	if count != 0 {
+		t.Fatal("attendance row still present after undo")
+	}
+	if w := authedJSON(t, r, "DELETE", "/api/attendance/"+recID, tok, nil); w.Code != http.StatusNotFound {
+		t.Fatalf("second delete should be 404, got %d", w.Code)
 	}
 }

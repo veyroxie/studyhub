@@ -136,9 +136,19 @@
       ? '<input type="number" min="1" step="1" value="' + (li.qty || 1)
         + '" oninput="App.Billing._editLineItem(' + li.id + ',\'qty\',this.value)" style="width:48px;padding:0.25rem 0.4rem;border:1px solid #e2e8f0;border-radius:6px;font-size:0.78rem" title="Quantity"> ×'
       : '';
+    // The name is editable so one-off lines (Phonics, the 30-minute Math
+    // class) can be labelled properly until session billing carries real
+    // class names. esc() is attribute-safe: it escapes quotes.
+    var nameCell = isDiscount
+      ? '<div style="font-size:0.84rem;font-weight:600;color:#166534">' + App.Utils.esc(li.name) + '</div>'
+      : '<input type="text" value="' + App.Utils.esc(li.name)
+        + '" oninput="App.Billing._editLineItem(' + li.id + ',\'name\',this.value)" '
+        + 'style="width:100%;padding:0.2rem 0.3rem;border:1px solid transparent;border-radius:6px;font-size:0.84rem;font-weight:600;color:#111;background:transparent" '
+        + 'onfocus="this.style.borderColor=\'#e2e8f0\';this.style.background=\'#fff\'" onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'" '
+        + 'title="Line name, click to edit">';
     return '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0;border-bottom:1px solid #f2efea">'
       + '<div style="flex:1;min-width:0">'
-      +   '<div style="font-size:0.84rem;font-weight:600;color:' + (isDiscount ? '#166534' : '#111') + '">' + App.Utils.esc(li.name) + '</div>'
+      +   nameCell
       +   (li.descriptor ? '<div style="font-size:0.72rem;color:#94a3b8">' + App.Utils.esc(li.descriptor) + '</div>' : '')
       + '</div>'
       + qtyInput

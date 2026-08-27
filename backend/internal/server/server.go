@@ -221,6 +221,7 @@ func Build(db *store.DB) http.Handler {
 		r.Route("/api/attendance", func(r chi.Router) {
 			r.Get("/", handlers.HandleAttendance(db, hub))
 			r.Post("/", handlers.HandleAttendance(db, hub))
+			r.Delete("/{id}", handlers.HandleDeleteAttendance(db))
 		})
 
 		r.Route("/api/feedback", func(r chi.Router) {

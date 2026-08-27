@@ -44,11 +44,16 @@
       : checkedIn ? 'In: ' + App.Utils.formatTime(rec.checkIn) + '  · still in'
       : 'Not checked in';
 
+    var undoBtn = (rec && App.currentRole === 'admin')
+      ? '<button onclick="App.Attendance._undoAttendance(\'' + rec.id + '\',\'' + s.id + '\',' + (isAbsent ? 'true' : 'false') + ')" style="'
+        + 'min-height:30px;width:100%;margin-top:0.3rem;padding:0.25rem 0.6rem;background:none;color:#94a3b8;border:1px dashed #e2e8f0;'
+        + 'border-radius:8px;font-size:0.7rem;font-weight:600;cursor:pointer" title="Remove this record as if it was never marked">Undo</button>'
+      : '';
     var actionBtn;
     if (isAbsent) {
       actionBtn = '<div style="display:flex;align-items:center;justify-content:center;padding:0.6rem 1rem;'
         + 'background:#fee2e2;border-radius:12px;min-height:52px">'
-        + '<span style="font-size:0.95rem;font-weight:700;color:#dc2626">Absent</span></div>';
+        + '<span style="font-size:0.95rem;font-weight:700;color:#dc2626">Absent</span></div>' + undoBtn;
     } else if (!checkedIn) {
       actionBtn = '<button onclick="App.Attendance._checkInStudent(\'' + s.id + '\')" style="'
         + 'min-height:52px;width:100%;padding:0.6rem 1.1rem;background:#22c55e;color:#fff;border:none;'
@@ -70,11 +75,11 @@
       actionBtn = '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" style="'
         + 'min-height:52px;width:100%;padding:0.6rem 1.1rem;background:#64748b;color:#fff;border:none;'
         + 'border-radius:12px;font-size:0.95rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
-        + 'onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check Out</button>';
+        + 'onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check Out</button>' + undoBtn;
     } else {
       actionBtn = '<div style="display:flex;align-items:center;justify-content:center;padding:0.6rem 1rem;'
         + 'background:#dcfce7;border-radius:12px;min-height:52px">'
-        + '<span style="font-size:0.95rem;font-weight:700;color:#15803d">Done</span></div>';
+        + '<span style="font-size:0.95rem;font-weight:700;color:#15803d">Done</span></div>' + undoBtn;
     }
 
     return '<div style="' + ROW_STYLE + ';background:' + rowBg + '">'
@@ -1047,6 +1052,24 @@
     });
   }
 
+  async function _undoAttendance(recId, studentId, wasAbsent) {
+    var stu = (App.Store.get().students || []).find(function(x) { return x.id === studentId; });
+    var name = stu ? stu.firstName + ' ' + stu.lastName : 'this student';
+    var ok = await App.Utils.showConfirm({
+      title: 'Undo attendance?',
+      message: wasAbsent
+        ? 'Removes the absence for ' + name + '. Any replacement credits already granted stay on the account; adjust them from the student profile if needed.'
+        : 'Removes the check-in record for ' + name + ' as if it was never marked.',
+      confirmLabel: 'Undo', danger: true
+    });
+    if (!ok) return;
+    try {
+      await App.Api.del('/api/attendance/' + recId);
+      await App.Api.refresh();
+      App.Utils.showToast('Attendance record removed', 'success');
+    } catch (e) { /* App.Api already toasted */ }
+  }
+
   async function _markAbsentNoCredit(studentId) {
     var lockKey = 'noc|' + studentId + '|' + _attClassId + '|' + _attDate;
     if (_absenceLock[lockKey]) return;
@@ -1237,5 +1260,5 @@
     }
   }
 
-  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit, _markAbsentNoCredit: _markAbsentNoCredit, _markAllPresent: _markAllPresent, _quickFeedback: _quickFeedback, _savePostAttFeedback: _savePostAttFeedback };
+  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit, _markAbsentNoCredit: _markAbsentNoCredit, _undoAttendance: _undoAttendance, _markAllPresent: _markAllPresent, _quickFeedback: _quickFeedback, _savePostAttFeedback: _savePostAttFeedback };
 })();
