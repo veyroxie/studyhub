@@ -232,7 +232,7 @@
               + '<div class="p-2 space-y-2 min-h-24">'
               + (dayClasses.length === 0
                 ? '<div class="border border-dashed border-slate-200 rounded-lg p-2 text-center mt-1"><p class="text-xs text-slate-300">—</p></div>'
-                : dayClasses.map(function(c) { return _classCard(c, staff, _cancelledClasses, weekDates, i, students); }).join(''))
+                : dayClasses.map(function(c) { return _classCard(c, staff, _cancelledClasses, weekDates, i, students); }).join('') + _movedInCards(weekDates, i, staff, students))
               + '</div>'
               + '</div>';
           }).join('')
@@ -276,6 +276,12 @@
         // day-schedule modal so its header and cancellation match line up with
         // how the week view stores dates.
         var cellLocalDate = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+        var cellMoves = App.Utils.movesForDate(App.Store.get().sessionMoves, cellLocalDate);
+        dayCls = dayCls.filter(function(c) { return !cellMoves.movedOut[c.id]; });
+        cellMoves.movedIn.forEach(function(m) {
+          var mc = classes.find(function(c) { return c.id === m.classId; });
+          if (mc && dayCls.indexOf(mc) === -1) dayCls.push(mc);
+        });
         var cellHol = isHolidayDate(cellDateStr, allHolidays);
         weekCells += '<td style="border:1px solid #f0ede8;vertical-align:top;width:' + (100/7) + '%;min-height:90px;padding:0.35rem;background:' + (cellHol ? (cellHol.type === 'closure' ? '#fef2f2' : '#fffbeb') : !inMonth ? '#fafaf8' : '#fff') + '">'
           + '<div style="font-size:0.72rem;font-weight:' + (isToday ? '800' : '500') + ';color:' + (isToday ? 'var(--gold, #f59e0b)' : inMonth ? '#374151' : '#cbd5e1') + ';margin-bottom:3px;width:1.4rem;height:1.4rem;display:flex;align-items:center;justify-content:center;border-radius:50%;background:' + (isToday ? 'var(--gold-dim, #fef3c7)' : 'transparent') + '">' + d.getDate() + '</div>'
@@ -337,6 +343,13 @@
     var isClient = App.currentRole === 'client';
     var header = new Date(dateStr + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
+    var mv = App.Utils.movesForDate(state.sessionMoves, dateStr);
+    mv.movedIn.forEach(function(m) {
+      var mc = byId[m.classId];
+      if (mc && classes.indexOf(mc) === -1) classes.push(mc);
+    });
+    classes = classes.filter(function(c) { return !mv.movedOut[c.id] || mv.movedIn.some(function(m) { return m.classId === c.id; }); });
+    var isAdmin = App.currentRole === 'admin';
     var rows = classes.map(function(c) {
       var colors = App.Utils.colorClasses(c.color);
       var teachers = c.teacherIds.map(function(tid) {
@@ -358,7 +371,10 @@
         +   '<span style="display:block;font-size:0.72rem;color:#94a3b8;margin-top:1px">' + meta + '</span>'
         + '</span>'
         + '<span style="color:#cbd5e1;font-size:0.95rem">&#8250;</span>'
-        + '</button>';
+        + '</button>'
+        + (isAdmin && !isCancelled ? '<div style="text-align:right;margin:-0.2rem 0 0.4rem">'
+          + '<button type="button" onclick="App.Utils.hideModal(true);App.Calendar._moveSessionModal(\'' + c.id + '\',\'' + dateStr + '\')" style="font-size:0.66rem;font-weight:700;color:#0369a1;background:none;border:1px dashed #bae6fd;border-radius:5px;padding:1px 7px;cursor:pointer">Reschedule</button>'
+          + '</div>' : '');
     }).join('');
 
     App.Utils.showModal(
@@ -369,6 +385,61 @@
       + '<div class="flex justify-end mt-4"><button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Close</button></div>'
       + '</div>'
     );
+  }
+
+  // ── Session moves (reschedule one dated session for everyone) ────────────
+  function _moveSessionModal(classId, fromDate) {
+    var cls = (App.Store.get().classes || []).find(function(c) { return c.id === classId; });
+    if (!cls) return;
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:320px">'
+      + '<h2 class="text-lg font-bold mb-1">Reschedule session</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">' + App.Utils.esc(cls.name) + ' on ' + App.Utils.formatDate(fromDate) + ' moves to the new date for every student. Parents are notified; no credits are involved because the class still happens.</p>'
+      + '<form id="move-session-form" class="space-y-4">'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">New date</label><input name="toDate" type="date" class="form-input" required></div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Reason (optional, shown to parents)</label><input name="reason" class="form-input" placeholder="e.g. Public holiday make-up"></div>'
+      + '<div class="flex justify-end gap-2 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Reschedule</button>'
+      + '</div></form></div>'
+    );
+    document.getElementById('move-session-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      try {
+        await App.Api.post('/api/session-moves', { classId: classId, fromDate: fromDate, toDate: fd.get('toDate'), reason: fd.get('reason') || '' });
+        App.Utils.hideModal(true);
+        await App.Api.refresh();
+        App.Utils.showToast('Session rescheduled — parents notified', 'success');
+      } catch (err) { /* App.Api already toasted (e.g. cancelled-session conflict) */ }
+    });
+  }
+
+  async function _undoMove(moveId) {
+    var ok = await App.Utils.showConfirm({ title: 'Undo reschedule?', message: 'The session returns to its original date. Parents are notified.', confirmLabel: 'Undo', danger: true });
+    if (!ok) return;
+    try {
+      await App.Api.del('/api/session-moves/' + moveId);
+      await App.Api.refresh();
+      App.Utils.showToast('Move undone — session back on its usual date', 'success');
+    } catch (e) { /* auto-toasted */ }
+  }
+
+  // Cards for sessions relocated INTO this weekday column.
+  function _movedInCards(weekDates, dayIndex, staff, students) {
+    if (!weekDates || !weekDates[dayIndex]) return '';
+    var d = weekDates[dayIndex];
+    var dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    var state = App.Store.get();
+    var mv = App.Utils.movesForDate(state.sessionMoves, dateStr);
+    return mv.movedIn.map(function(m) {
+      var c = (state.classes || []).find(function(x) { return x.id === m.classId; });
+      if (!c) return '';
+      // Same-weekday move: the natural card already renders (with its
+      // moved-from badge) — a second card here would duplicate it.
+      if (c.day === DAYS[dayIndex]) return '';
+      return _classCard(c, staff, state.cancelledClasses || [], weekDates, dayIndex, students);
+    }).join('');
   }
 
   function _statCard(label, value, colorClass, action) {
@@ -412,6 +483,24 @@
     }
     const isCancelled = dateStr && cancelledClasses && cancelledClasses.some(function(cc) { return cc.classId === c.id && cc.date === dateStr; });
 
+    // Session moves for this specific date: away from it, or landing on it.
+    var _move = dateStr ? App.Utils.movesForDate(App.Store.get().sessionMoves, dateStr) : { movedOut: {}, movedIn: [] };
+    var movedOut = _move.movedOut[c.id];
+    var movedFrom = null;
+    _move.movedIn.forEach(function(m) { if (m.classId === c.id) movedFrom = m; });
+
+    if (movedOut && !movedFrom) {
+      return '<div class="bg-slate-50 border-l-4 border-slate-300 rounded-lg p-2 opacity-70 relative">'
+        + '<div style="position:absolute;top:3px;right:4px;font-size:0.6rem;font-weight:700;color:#475569;background:#e2e8f0;padding:1px 5px;border-radius:4px">Moved</div>'
+        + '<div class="font-semibold text-xs text-slate-400 leading-tight truncate line-through">' + U.esc(c.name) + '</div>'
+        + '<div class="text-xs text-slate-400 mt-0.5">Now on ' + U.formatDate(movedOut.toDate) + '</div>'
+        + childBadges
+        + (App.currentRole === 'admin'
+          ? '<button onclick="event.stopPropagation();App.Calendar._undoMove(\'' + movedOut.id + '\')" style="margin-top:4px;font-size:0.62rem;font-weight:700;color:#64748b;background:none;border:1px dashed #cbd5e1;border-radius:5px;padding:1px 6px;cursor:pointer">Undo move</button>'
+          : '')
+        + '</div>';
+    }
+
     if (isCancelled) {
       return '<div class="bg-red-50 border-l-4 border-red-300 rounded-lg p-2 opacity-60 relative">'
         + '<div style="position:absolute;top:3px;right:4px;font-size:0.6rem;font-weight:700;color:#ef4444;background:#fee2e2;padding:1px 5px;border-radius:4px">Cancelled</div>'
@@ -427,11 +516,13 @@
       ? '<div style="display:flex;gap:2px;position:absolute;top:3px;right:3px">'
         + '<button onclick="event.stopPropagation();App.Calendar._editClassModal(\'' + c.id + '\')" style="width:20px;height:20px;border:none;background:rgba(255,255,255,0.85);border-radius:4px;cursor:pointer;font-size:0.6rem;line-height:1;display:flex;align-items:center;justify-content:center;color:#64748b" title="Edit">&#9998;</button>'
         + '<button onclick="event.stopPropagation();App.Calendar._deleteClass(\'' + c.id + '\')" style="width:20px;height:20px;border:none;background:rgba(255,255,255,0.85);border-radius:4px;cursor:pointer;font-size:0.6rem;line-height:1;display:flex;align-items:center;justify-content:center;color:#ef4444" title="Delete">&#10005;</button>'
+        + (dateStr ? '<button onclick="event.stopPropagation();App.Calendar._moveSessionModal(\'' + c.id + '\',\'' + dateStr + '\')" style="width:20px;height:20px;border:none;background:rgba(255,255,255,0.85);border-radius:4px;cursor:pointer;font-size:0.6rem;line-height:1;display:flex;align-items:center;justify-content:center;color:#0369a1" title="Reschedule this session">&#8631;</button>' : '')
         + '</div>'
       : '';
 
     return '<div class="' + colors.bg + ' border-l-4 ' + colors.border + ' rounded-lg p-2 cursor-pointer hover:shadow-sm transition-shadow relative" onclick="App.Calendar._classModal(\'' + c.id + '\')">'
       + adminBtns
+      + (movedFrom ? '<div style="font-size:0.58rem;font-weight:700;color:#0369a1;background:#e0f2fe;display:inline-block;padding:1px 5px;border-radius:4px;margin-bottom:2px">Moved from ' + U.formatDate(movedFrom.fromDate) + '</div>' : '')
       + '<div class="font-semibold text-xs ' + colors.text + ' leading-tight truncate">' + U.esc(c.name) + '</div>'
       + '<div class="text-xs ' + colors.text + ' opacity-70 mt-0.5">' + U.formatTime(c.time) + ' – ' + U.formatTime(c.endTime) + '</div>'
       + '<div class="text-xs text-slate-500 mt-0.5 truncate">' + U.esc(teachers) + '</div>'
@@ -1401,5 +1492,5 @@
     });
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _refreshFeeHint: _refreshFeeHint, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _saveBusinessSettings: _saveBusinessSettings };
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _refreshFeeHint: _refreshFeeHint, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _saveBusinessSettings: _saveBusinessSettings, _moveSessionModal: _moveSessionModal, _undoMove: _undoMove };
 })();

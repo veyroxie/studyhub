@@ -294,7 +294,14 @@
   function _studentTab() {
     const { classes, students, attendance } = App.Store.get();
     const dayOfWeek = new Date(_attDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
-    const scheduledClasses = classes.filter(function(c) { return c.day === dayOfWeek; });
+    // A session moved away from today doesn't take attendance today; one
+    // moved TO today does, even though the weekday doesn't match.
+    const _mv = App.Utils.movesForDate(App.Store.get().sessionMoves, _attDate);
+    const scheduledClasses = classes.filter(function(c) { return c.day === dayOfWeek && !_mv.movedOut[c.id]; });
+    _mv.movedIn.forEach(function(m) {
+      var mc = classes.find(function(c) { return c.id === m.classId; });
+      if (mc && scheduledClasses.indexOf(mc) === -1) scheduledClasses.push(mc);
+    });
     const displayClasses = _showAllClasses ? classes : (scheduledClasses.length > 0 ? scheduledClasses : classes);
 
     // Auto-correct selection if current class not in display list

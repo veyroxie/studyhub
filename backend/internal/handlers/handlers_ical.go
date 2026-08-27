@@ -157,6 +157,7 @@ func HandleParentCalendarFeed(db *store.DB) http.HandlerFunc {
 		// calendar that already synced it, which is how parents turned up to
 		// cancelled classes (V2_IDEAS A15).
 		cancelled := cancelledDatesInWindow(db, tenantID, start, end)
+		moves := movedDatesInWindow(db, tenantID, start, end)
 
 		for _, cls := range classes {
 			if !relevantClassIDs[cls.ID] {
@@ -170,6 +171,14 @@ func HandleParentCalendarFeed(db *store.DB) http.HandlerFunc {
 			for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 				if int(d.Weekday()) != weekday {
 					continue
+				}
+				if to, ok := moves[cls.ID+"|"+d.Format("2006-01-02")]; ok {
+					// Same UID, new DTSTART: synced calendars relocate the
+					// event instead of keeping a stale copy on the old date.
+					if newDay, err := time.ParseInLocation("2006-01-02", to, d.Location()); err == nil {
+						writeMovedEvent(&b, cls, d, newDay)
+						continue
+					}
 				}
 				writeEvent(&b, cls, d, cancelled[cls.ID+"|"+d.Format("2006-01-02")])
 			}
@@ -210,6 +219,52 @@ func writeEvent(b *strings.Builder, cls models.Class, day time.Time, isCancelled
 		b.WriteString("LOCATION:" + icsEscape(cls.Classroom) + "\r\n")
 	}
 	b.WriteString("END:VEVENT\r\n")
+}
+
+// writeMovedEvent emits a rescheduled occurrence under its ORIGINAL date's
+// UID, with start/end on the new date, so calendar clients move the event.
+func writeMovedEvent(b *strings.Builder, cls models.Class, origDay, newDay time.Time) {
+	startT, ok := combineDateTime(newDay, cls.Time)
+	if !ok {
+		return
+	}
+	endT, ok := combineDateTime(newDay, cls.EndTime)
+	if !ok {
+		endT = startT.Add(1 * time.Hour)
+	}
+	uid := fmt.Sprintf("class-%s-%s@studyhub.fit", cls.ID, origDay.Format("20060102"))
+	b.WriteString("BEGIN:VEVENT\r\n")
+	b.WriteString("UID:" + uid + "\r\n")
+	b.WriteString("DTSTAMP:" + time.Now().UTC().Format("20060102T150405Z") + "\r\n")
+	b.WriteString("DTSTART:" + startT.Format("20060102T150405") + "\r\n")
+	b.WriteString("DTEND:" + endT.Format("20060102T150405") + "\r\n")
+	b.WriteString("SUMMARY:" + icsEscape(cls.Name+" (moved from "+origDay.Format("2 Jan")+")") + "\r\n")
+	if cls.Classroom != "" {
+		b.WriteString("LOCATION:" + icsEscape(cls.Classroom) + "\r\n")
+	}
+	b.WriteString("END:VEVENT\r\n")
+}
+
+// movedDatesInWindow returns "classID|from-date" -> to-date for live moves
+// whose ORIGINAL date falls in the feed window.
+func movedDatesInWindow(db *store.DB, tenantID int, start, end time.Time) map[string]string {
+	out := map[string]string{}
+	rows, err := db.Query(
+		`SELECT class_id, from_date, to_date FROM class_session_moves WHERE tenant_id=? AND deleted_at IS NULL AND from_date >= ? AND from_date <= ?`,
+		tenantID, start.Format("2006-01-02"), end.Format("2006-01-02"),
+	)
+	if err != nil {
+		core.Logger.Error("ical session-moves lookup failed", "err", err)
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, from, to string
+		if rows.Scan(&cid, &from, &to) == nil {
+			out[cid+"|"+from] = to
+		}
+	}
+	return out
 }
 
 // cancelledDatesInWindow returns "classID|YYYY-MM-DD" keys for every

@@ -499,3 +499,93 @@ func TestAttendance_UndoDeletesRow(t *testing.T) {
 		t.Fatalf("second delete should be 404, got %d", w.Code)
 	}
 }
+
+// TestSessionMove_FullLifecycle: a move notifies parents via a class-scoped
+// announcement, grants NO credits, upserts on re-move, refuses a cancelled
+// session, and undoing announces the reversal.
+func TestSessionMove_FullLifecycle(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+
+	r := chi.NewRouter()
+	r.Post("/api/auth/login", auth.HandleLogin(db))
+	r.Group(func(g chi.Router) {
+		g.Use(auth.JWTMiddleware(db))
+		g.Post("/api/session-moves", HandleCreateSessionMove(db))
+		g.Delete("/api/session-moves/{id}", HandleDeleteSessionMove(db))
+	})
+	tok := getToken(t, r, "admin@studyhub.com", "admin123")
+
+	classID := core.GenerateID("CLS")
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time) VALUES(?,?,?,?,?,?)`,
+		classID, 1, "Move Test Class", "Monday", "10:00", "11:00")
+	from := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+	to := time.Now().AddDate(0, 0, 9).Format("2006-01-02")
+
+	var creditsBefore int
+	db.QueryRow(`SELECT COUNT(*) FROM replacement_credits`).Scan(&creditsBefore)
+
+	w := authedJSON(t, r, "POST", "/api/session-moves", tok, map[string]any{
+		"classId": classID, "fromDate": from, "toDate": to, "reason": "Holiday make-up",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("move failed: %d %s", w.Code, w.Body.String())
+	}
+	var moveID string
+	db.QueryRow(`SELECT id FROM class_session_moves WHERE class_id=? AND from_date=? AND deleted_at IS NULL`, classID, from).Scan(&moveID)
+	if moveID == "" {
+		t.Fatal("move row missing")
+	}
+
+	var annCount int
+	db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE audience=? AND type='Reschedule'`, "class:"+classID).Scan(&annCount)
+	if annCount != 1 {
+		t.Fatalf("expected 1 reschedule announcement, got %d", annCount)
+	}
+	var creditsAfter int
+	db.QueryRow(`SELECT COUNT(*) FROM replacement_credits`).Scan(&creditsAfter)
+	if creditsAfter != creditsBefore {
+		t.Fatal("a move must not grant credits")
+	}
+
+	// Re-moving the same session replaces the target, no duplicate row.
+	to2 := time.Now().AddDate(0, 0, 10).Format("2006-01-02")
+	if w := authedJSON(t, r, "POST", "/api/session-moves", tok, map[string]any{
+		"classId": classID, "fromDate": from, "toDate": to2,
+	}); w.Code != http.StatusCreated {
+		t.Fatalf("re-move failed: %d %s", w.Code, w.Body.String())
+	}
+	var live int
+	db.QueryRow(`SELECT COUNT(*) FROM class_session_moves WHERE class_id=? AND from_date=? AND deleted_at IS NULL`, classID, from).Scan(&live)
+	if live != 1 {
+		t.Fatalf("expected 1 live move after upsert, got %d", live)
+	}
+	var gotTo string
+	db.QueryRow(`SELECT to_date FROM class_session_moves WHERE class_id=? AND from_date=? AND deleted_at IS NULL`, classID, from).Scan(&gotTo)
+	if gotTo != to2 {
+		t.Fatalf("upsert did not replace target: %s", gotTo)
+	}
+
+	// A cancelled session cannot be rescheduled.
+	cancelledDate := time.Now().AddDate(0, 0, 14).Format("2006-01-02")
+	db.Exec(`INSERT INTO cancelled_classes(id,tenant_id,class_id,date,reason,cancelled_by,created_on) VALUES(?,?,?,?,?,?,?)`,
+		core.GenerateID("CC"), 1, classID, cancelledDate, "test", "test", core.Today())
+	if w := authedJSON(t, r, "POST", "/api/session-moves", tok, map[string]any{
+		"classId": classID, "fromDate": cancelledDate, "toDate": to,
+	}); w.Code != http.StatusConflict {
+		t.Fatalf("moving a cancelled session should be 409, got %d", w.Code)
+	}
+
+	// Undo soft-deletes and announces the reversal.
+	if w := authedJSON(t, r, "DELETE", "/api/session-moves/"+moveID, tok, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("undo failed: %d %s", w.Code, w.Body.String())
+	}
+	db.QueryRow(`SELECT COUNT(*) FROM class_session_moves WHERE class_id=? AND from_date=? AND deleted_at IS NULL`, classID, from).Scan(&live)
+	if live != 0 {
+		t.Fatal("move still live after undo")
+	}
+	db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE audience=? AND type='Reschedule'`, "class:"+classID).Scan(&annCount)
+	if annCount != 3 {
+		t.Fatalf("expected 3 reschedule announcements (move, re-move, undo), got %d", annCount)
+	}
+}

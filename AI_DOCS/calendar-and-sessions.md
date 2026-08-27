@@ -16,8 +16,9 @@ Per-date divergence is modelled as **exception rows**, all keyed `(tenant_id, cl
 
 | Table | Models |
 |---|---|
-| `cancelled_classes` | this session did not happen |
+| `cancelled_classes` | this session did not happen (credits granted) |
 | `class_session_overrides` | this session differs from the template (migration `0040`) |
+| `class_session_moves` | this session runs on another date (migration `0042`) — soft-deletable so a move can be undone; NO credits (the class still happens); a cancelled session cannot be moved (409); move and undo each auto-announce to the class |
 | `holidays` | this date is a holiday (display + reminder suppression only) |
 
 Migration `0040_class_session_overrides.sql:5-14` states the reasoning: classes "carry a day
@@ -109,7 +110,8 @@ prefix (`cancelledDatesInWindow` in `handlers_ical.go`), so already-synced calen
 place. Holidays and `class_session_overrides` are still not consulted -- holidays are
 display-only by design, and override rendering arrives with the session expander.
 
-UID format is `class-<classID>-<YYYYMMDD>@studyhub.fit` (`handlers_ical.go:189`) -- the
+Moved sessions are emitted under their ORIGINAL date's UID with `DTSTART` on the new
+date, so synced calendars relocate the event. UID format is `class-<classID>-<YYYYMMDD>@studyhub.fit` (`handlers_ical.go:189`) -- the
 `(class_id, date)` key re-expressed for calendar clients. Changing it orphans every event
 already synced into parents' calendar apps.
 

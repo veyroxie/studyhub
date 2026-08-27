@@ -98,4 +98,27 @@ func TestICalFeed_CancelledSessionEmitsStatusCancelled(t *testing.T) {
 	if strings.Contains(normalBlock, "STATUS:CANCELLED") {
 		t.Error("non-cancelled occurrence wrongly marked cancelled")
 	}
+
+	// Move the occurrence two weeks out: same UID, DTSTART on the new date.
+	fromDay := today.AddDate(0, 0, 14)
+	newDay := fromDay.AddDate(0, 0, 2)
+	if _, err := db.Exec(
+		`INSERT INTO class_session_moves(id,tenant_id,class_id,from_date,to_date,created_on) VALUES(?,?,?,?,?,?)`,
+		core.GenerateID("MOV"), tenantID, classID, fromDay.Format("2006-01-02"), newDay.Format("2006-01-02"), core.Today(),
+	); err != nil {
+		t.Fatalf("insert move: %v", err)
+	}
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, httptest.NewRequest("GET", fmt.Sprintf("/api/calendar/%d/%s.ics", userID, tok), nil))
+	body = w2.Body.String()
+	movedBlock := blockFor(fmt.Sprintf("class-%s-%s@studyhub.fit", classID, fromDay.Format("20060102")))
+	if movedBlock == "" {
+		t.Fatal("moved occurrence missing from feed")
+	}
+	if !strings.Contains(movedBlock, "DTSTART:"+newDay.Format("20060102")) {
+		t.Error("moved occurrence does not start on the new date")
+	}
+	if !strings.Contains(movedBlock, "moved from") {
+		t.Error("moved occurrence lacks the moved-from note")
+	}
 }

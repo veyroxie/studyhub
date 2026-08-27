@@ -9,6 +9,14 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- A session can be rescheduled to another date for all students at once,
+  alongside cancel + credit for per-student make-ups. Admins reschedule
+  from the calendar (week view or a day's schedule); parents are notified
+  by a class announcement on the move and again if it is undone; no
+  replacement credits are involved because the class still happens.
+  The moved session relocates in the parents' subscribed calendars, shows
+  on its new date in the app calendar and attendance, and a cancelled
+  session cannot be rescheduled.
 - Attendance can be undone: admins get an Undo button on any marked record
   (a mis-tapped check-in or absence) that removes it as if never marked.
   Credits already granted with an absence stay on the account.

@@ -427,6 +427,18 @@ type SessionOverride struct {
 	CreatedOn  string   `json:"createdOn"`
 }
 
+// SessionMove relocates one dated session of a recurring class to another
+// date for all students. No credits are granted: the session still happens.
+type SessionMove struct {
+	ID        string `json:"id"`
+	ClassID   string `json:"classId"`
+	FromDate  string `json:"fromDate"`
+	ToDate    string `json:"toDate"`
+	Reason    string `json:"reason"`
+	MovedBy   string `json:"movedBy"`
+	CreatedOn string `json:"createdOn"`
+}
+
 type Holiday struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -493,6 +505,7 @@ type Snapshot struct {
 	SelfStudySessions  []SelfStudySession  `json:"selfStudySessions"`
 	PerformanceReviews []PerformanceReview `json:"performanceReviews"`
 	CancelledClasses   []CancelledClass    `json:"cancelledClasses"`
+	SessionMoves       []SessionMove       `json:"sessionMoves"`
 	SessionOverrides   []SessionOverride   `json:"sessionOverrides"`
 	Holidays           []Holiday           `json:"holidays"`
 	ReplacementCredits []ReplacementCredit `json:"replacementCredits"`

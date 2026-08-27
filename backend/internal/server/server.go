@@ -267,6 +267,12 @@ func Build(db *store.DB) http.Handler {
 			r.Post("/", handlers.HandleCreateCancelledClass(db))
 		})
 
+		r.Route("/api/session-moves", func(r chi.Router) {
+			r.Get("/", handlers.HandleListSessionMoves(db))
+			r.Post("/", handlers.HandleCreateSessionMove(db))
+			r.Delete("/{id}", handlers.HandleDeleteSessionMove(db))
+		})
+
 		r.Route("/api/session-overrides", func(r chi.Router) {
 			r.Get("/", handlers.HandleListSessionOverrides(db))
 			r.Post("/", handlers.HandleUpsertSessionOverride(db))

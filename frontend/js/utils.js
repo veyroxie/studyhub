@@ -294,6 +294,18 @@
       };
       return map[color] || map.blue;
     },
+    // movesForDate splits session moves relative to one date: movedOut maps
+    // classId -> move for sessions that normally run on dateStr but were
+    // rescheduled away; movedIn lists moves landing ON dateStr.
+    movesForDate(moves, dateStr) {
+      var out = {}, incoming = [];
+      (moves || []).forEach(function(m) {
+        if (m.fromDate === dateStr) out[m.classId] = m;
+        if (m.toDate === dateStr) incoming.push(m);
+      });
+      return { movedOut: out, movedIn: incoming };
+    },
+
     // creditsForClass converts a class's HH:MM start/end into replacement
     // credits at the agreed unit of 1 credit = 15 minutes (1hr class = 4).
     // Missing or unparsable times fall back to 4, the standard 1-hour class.
