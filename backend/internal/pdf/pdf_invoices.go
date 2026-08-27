@@ -516,10 +516,16 @@ func centeredLine(pdf *gofpdf.Fpdf, text string, h float64) {
 }
 
 // prefixed returns "<prefix><value>" or "" when value is empty, so a label
-// never prints with a missing value.
+// never prints with a missing value. When the admin typed the label into the
+// field itself ("Contact: 011-..."), the value wins — production printed
+// "Contact: Contact: 011-2862 0038" on every invoice before this guard.
 func prefixed(prefix, value string) string {
 	if value == "" {
 		return ""
+	}
+	label := strings.ToLower(strings.TrimSuffix(prefix, " "))
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), label) {
+		return strings.TrimSpace(value)
 	}
 	return prefix + value
 }

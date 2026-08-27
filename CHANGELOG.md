@@ -13,6 +13,8 @@ dated section when you cut a deploy.
   and a one-month deposit priced by class type and level band.
 
 ### Fixed
+- Invoices no longer print "Contact: Contact: ..." when the label was typed
+  into the settings field along with the phone number.
 - Confirming a parent-submitted payment no longer dead-ends when the invoice
   has no reference number: the verify dialog now takes the reference from
   the receipt and sends it with the confirmation.
