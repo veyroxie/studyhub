@@ -31,6 +31,7 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 	tables := []string{
 		"replacement_credits", "audit_logs", "feedback", "attendance",
 		"invoices", "referral_rewards", "email_tokens", "enrollments",
+		"cancelled_classes", "class_session_moves",
 		"announcements", "registrations", "students", "families",
 		"classes", "staff", "users",
 	}
@@ -589,5 +590,89 @@ func TestSessionMove_FullLifecycle(t *testing.T) {
 	db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE audience=? AND type='Reschedule'`, "class:"+classID).Scan(&annCount)
 	if annCount != 3 {
 		t.Fatalf("expected 3 reschedule announcements (move, re-move, undo), got %d", annCount)
+	}
+}
+
+// TestCancellation_IdempotentAndUndoable locks the F3 hardening: a duplicate
+// cancel POST must not re-grant credits (409), a cancellation can be undone
+// (credits clawed back, parents notified), and a moved session refuses to be
+// cancelled until the move is undone.
+func TestCancellation_IdempotentAndUndoable(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+
+	r := chi.NewRouter()
+	r.Post("/api/auth/login", auth.HandleLogin(db))
+	r.Group(func(g chi.Router) {
+		g.Use(auth.JWTMiddleware(db))
+		g.Post("/api/cancelled-classes", HandleCreateCancelledClass(db))
+		g.Delete("/api/cancelled-classes/{id}", HandleDeleteCancelledClass(db))
+	})
+	tok := getToken(t, r, "admin@studyhub.com", "admin123")
+
+	classID := core.GenerateID("CLS")
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time) VALUES(?,?,?,?,?,?)`,
+		classID, 1, "Cancel Test Class", "Monday", "10:00", "11:00")
+	stuID := core.GenerateID("STU")
+	db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,contact,enrolled_classes) VALUES(?,?,?,?,?,?)`,
+		stuID, 1, "Cancel", "Kid", "cancelkid@example.com", `["`+classID+`"]`)
+	date := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+
+	credits := func() int {
+		var n int
+		db.QueryRow(`SELECT COUNT(*) FROM replacement_credits WHERE student_id=?`, stuID).Scan(&n)
+		return n
+	}
+	announcements := func() int {
+		var n int
+		db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE audience=?`, "class:"+classID).Scan(&n)
+		return n
+	}
+
+	w := authedJSON(t, r, "POST", "/api/cancelled-classes", tok, map[string]any{"classId": classID, "date": date})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("cancel failed: %d %s", w.Code, w.Body.String())
+	}
+	var cc struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &cc)
+	if credits() != 1 || announcements() != 1 {
+		t.Fatalf("after cancel: want 1 credit + 1 announcement, got %d + %d", credits(), announcements())
+	}
+
+	// Duplicate POST: 409, and neither credits nor announcements grow.
+	if w := authedJSON(t, r, "POST", "/api/cancelled-classes", tok, map[string]any{"classId": classID, "date": date}); w.Code != http.StatusConflict {
+		t.Fatalf("duplicate cancel should be 409, got %d %s", w.Code, w.Body.String())
+	}
+	if credits() != 1 || announcements() != 1 {
+		t.Fatalf("duplicate cancel re-granted: %d credits, %d announcements", credits(), announcements())
+	}
+
+	// Undo: credits clawed back, reversal announced, row soft-deleted.
+	if w := authedJSON(t, r, "DELETE", "/api/cancelled-classes/"+cc.ID, tok, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("undo failed: %d %s", w.Code, w.Body.String())
+	}
+	if credits() != 0 {
+		t.Fatalf("undo should claw back the credit, got %d", credits())
+	}
+	if announcements() != 2 {
+		t.Fatalf("undo should announce the reversal, got %d announcements", announcements())
+	}
+	if w := authedJSON(t, r, "DELETE", "/api/cancelled-classes/"+cc.ID, tok, nil); w.Code != http.StatusNotFound {
+		t.Fatalf("second undo should be 404, got %d", w.Code)
+	}
+
+	// After the undo the same date can be cancelled again (partial index).
+	if w := authedJSON(t, r, "POST", "/api/cancelled-classes", tok, map[string]any{"classId": classID, "date": date}); w.Code != http.StatusCreated {
+		t.Fatalf("re-cancel after undo should succeed, got %d %s", w.Code, w.Body.String())
+	}
+
+	// A session moved away cannot be cancelled until the move is undone.
+	movedDate := time.Now().AddDate(0, 0, 14).Format("2006-01-02")
+	db.Exec(`INSERT INTO class_session_moves(id,tenant_id,class_id,from_date,to_date,created_on) VALUES(?,?,?,?,?,?)`,
+		core.GenerateID("MOV"), 1, classID, movedDate, time.Now().AddDate(0, 0, 16).Format("2006-01-02"), core.Today())
+	if w := authedJSON(t, r, "POST", "/api/cancelled-classes", tok, map[string]any{"classId": classID, "date": movedDate}); w.Code != http.StatusConflict {
+		t.Fatalf("cancelling a moved session should be 409, got %d %s", w.Code, w.Body.String())
 	}
 }

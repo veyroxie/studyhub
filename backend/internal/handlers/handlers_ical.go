@@ -273,7 +273,7 @@ func movedDatesInWindow(db *store.DB, tenantID int, start, end time.Time) map[st
 func cancelledDatesInWindow(db *store.DB, tenantID int, start, end time.Time) map[string]bool {
 	out := map[string]bool{}
 	rows, err := db.Query(
-		`SELECT class_id, date FROM cancelled_classes WHERE tenant_id=? AND date >= ? AND date <= ?`,
+		`SELECT class_id, date FROM cancelled_classes WHERE tenant_id=? AND deleted_at IS NULL AND date >= ? AND date <= ?`,
 		tenantID, start.Format("2006-01-02"), end.Format("2006-01-02"),
 	)
 	if err != nil {

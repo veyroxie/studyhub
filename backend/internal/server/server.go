@@ -265,6 +265,7 @@ func Build(db *store.DB) http.Handler {
 		r.Route("/api/cancelled-classes", func(r chi.Router) {
 			r.Get("/", handlers.HandleListCancelledClasses(db))
 			r.Post("/", handlers.HandleCreateCancelledClass(db))
+			r.Delete("/{id}", handlers.HandleDeleteCancelledClass(db))
 		})
 
 		r.Route("/api/session-moves", func(r chi.Router) {

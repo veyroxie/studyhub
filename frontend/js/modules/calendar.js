@@ -32,12 +32,7 @@
 
   function isHolidayDate(dateStr, holidays) {
     for (var i = 0; i < holidays.length; i++) {
-      var h = holidays[i];
-      if (h.endDate && h.endDate >= h.date) {
-        if (dateStr >= h.date && dateStr <= h.endDate) return h;
-      } else {
-        if (dateStr === h.date) return h;
-      }
+      if (App.Utils.holidayCovers(holidays[i], dateStr)) return holidays[i];
     }
     return null;
   }
@@ -356,7 +351,8 @@
         var s = staff.find(function(x) { return x.id === tid; });
         return s ? s.name : tid;
       }).join(', ');
-      var isCancelled = cancelled.some(function(cc) { return cc.classId === c.id && cc.date === dateStr; });
+      var ccRow = cancelled.find(function(cc) { return cc.classId === c.id && cc.date === dateStr; });
+      var isCancelled = !!ccRow;
       var childTags = '';
       if (isClient && App.clientParent) {
         var kids = students.filter(function(st) { return st.contact === App.clientParent && (st.enrolledClasses || []).indexOf(c.id) > -1; });
@@ -374,6 +370,9 @@
         + '</button>'
         + (isAdmin && !isCancelled ? '<div style="text-align:right;margin:-0.2rem 0 0.4rem">'
           + '<button type="button" onclick="App.Utils.hideModal(true);App.Calendar._moveSessionModal(\'' + c.id + '\',\'' + dateStr + '\')" style="font-size:0.66rem;font-weight:700;color:#0369a1;background:none;border:1px dashed #bae6fd;border-radius:5px;padding:1px 7px;cursor:pointer">Reschedule</button>'
+          + '</div>' : '')
+        + (isAdmin && isCancelled ? '<div style="text-align:right;margin:-0.2rem 0 0.4rem">'
+          + '<button type="button" onclick="App.Utils.hideModal(true);App.Calendar._undoCancellation(\'' + ccRow.id + '\')" style="font-size:0.66rem;font-weight:700;color:#64748b;background:none;border:1px dashed #cbd5e1;border-radius:5px;padding:1px 7px;cursor:pointer">Undo cancellation</button>'
           + '</div>' : '');
     }).join('');
 
@@ -422,6 +421,16 @@
       await App.Api.del('/api/session-moves/' + moveId);
       await App.Api.refresh();
       App.Utils.showToast('Move undone — session back on its usual date', 'success');
+    } catch (e) { /* auto-toasted */ }
+  }
+
+  async function _undoCancellation(ccId) {
+    var ok = await App.Utils.showConfirm({ title: 'Undo cancellation?', message: 'The session runs as scheduled again. The make-up credits granted for this cancellation are removed, and parents are notified.', confirmLabel: 'Undo', danger: true });
+    if (!ok) return;
+    try {
+      await App.Api.del('/api/cancelled-classes/' + ccId);
+      await App.Api.refresh();
+      App.Utils.showToast('Cancellation undone — session back on', 'success');
     } catch (e) { /* auto-toasted */ }
   }
 
@@ -481,7 +490,8 @@
       const d = weekDates[dayIndex];
       dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
     }
-    const isCancelled = dateStr && cancelledClasses && cancelledClasses.some(function(cc) { return cc.classId === c.id && cc.date === dateStr; });
+    const ccRow = (dateStr && cancelledClasses) ? cancelledClasses.find(function(cc) { return cc.classId === c.id && cc.date === dateStr; }) : null;
+    const isCancelled = !!ccRow;
 
     // Session moves for this specific date: away from it, or landing on it.
     var _move = dateStr ? App.Utils.movesForDate(App.Store.get().sessionMoves, dateStr) : { movedOut: {}, movedIn: [] };
@@ -508,6 +518,9 @@
         + '<div class="text-xs text-red-200 mt-0.5">' + U.formatTime(c.time) + ' – ' + U.formatTime(c.endTime) + '</div>'
         + '<div class="text-xs text-red-200 mt-0.5 truncate">' + U.esc(teachers) + '</div>'
         + childBadges
+        + (App.currentRole === 'admin'
+          ? '<button onclick="event.stopPropagation();App.Calendar._undoCancellation(\'' + ccRow.id + '\')" style="margin-top:4px;font-size:0.62rem;font-weight:700;color:#64748b;background:none;border:1px dashed #cbd5e1;border-radius:5px;padding:1px 6px;cursor:pointer">Undo cancellation</button>'
+          : '')
         + '</div>';
     }
 
@@ -1492,5 +1505,5 @@
     });
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _refreshFeeHint: _refreshFeeHint, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _saveBusinessSettings: _saveBusinessSettings, _moveSessionModal: _moveSessionModal, _undoMove: _undoMove };
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _refreshFeeHint: _refreshFeeHint, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _saveBusinessSettings: _saveBusinessSettings, _moveSessionModal: _moveSessionModal, _undoMove: _undoMove, _undoCancellation: _undoCancellation };
 })();

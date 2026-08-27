@@ -536,7 +536,13 @@ item should carry the actual session *dates* (in the descriptor), not just
 `Qty x rate`, so a dispute six weeks later is answerable without replaying a
 schedule that no longer exists. Same reason B5 freezes lines on issue.
 
-**F3 — Cancellations are not undo-able and not idempotent; both become money
+**F3 — CLOSED 2026-08-28 (migration 0044).** Unique partial index +
+`deleted_at` + dedupe/claw-back of historical duplicates; create is idempotent
+(409, no re-grant); `DELETE /api/cancelled-classes/{id}` undoes with credit
+claw-back and a reversal announcement; undo buttons in the calendar. Original
+finding kept for the reasoning:
+
+**F3 (original) — Cancellations are not undo-able and not idempotent; both become money
 bugs. (HIGH — promote to prerequisite.)** Per `AI_DOCS/calendar-and-sessions.md`:
 `cancelled_classes` has no unique `(class_id, date)`, no `deleted_at`, and no
 DELETE/PUT route — every POST re-grants credits, and a mistaken cancellation can
@@ -546,7 +552,13 @@ cancellation permanently cuts a parent's bill with no undo. Needs: unique index
 undo route, and idempotent credit grants. Add to the prerequisite chain before
 "cron switchover".
 
-**F4 — Holiday range semantics differ frontend vs backend, and become money.
+**F4 — CLOSED 2026-08-28.** Canonical predicate pair `core.HolidayCovers` /
+`App.Utils.holidayCovers`, unit-locked on both sides; the backend's
+open-ended-empty-end_date bug (reminders suppressed forever after any past
+single-day holiday) is fixed. The expander must use the Go helper. Original
+finding:
+
+**F4 (original) — Holiday range semantics differ frontend vs backend, and become money.
 (MED-HIGH.)** Frontend: multi-day only when `endDate >= date`
 (`calendar.js:33-43`); backend: `date <= ? AND (end_date='' OR end_date >= ?)`
 (`jobs.go:337-341`). A holiday with `end_date < date` silently degrades — today

@@ -331,18 +331,22 @@ func archiveExpiredAnnouncements(db *store.DB) {
 // emails on public holidays (e.g. Hari Raya). end_date is optional — a single
 // day holiday has end_date NULL/empty and matches only when date == today.
 func isHolidayToday(db *store.DB, tenantID string) bool {
+	// The old SQL predicate treated an empty end_date as open-ended, so one
+	// past single-day holiday suppressed reminders forever. Filter through
+	// the canonical core.HolidayCovers instead.
 	t := core.Today()
-	var cnt int
-	if err := db.QueryRow(
-		`SELECT COUNT(*) FROM holidays
-		  WHERE tenant_id=? AND deleted_at IS NULL
-		    AND date <= ?
-		    AND (COALESCE(end_date,'') = '' OR end_date >= ?)`,
-		tenantID, t, t,
-	).Scan(&cnt); err != nil {
+	rows, err := db.Query(`SELECT date, COALESCE(end_date,'') FROM holidays WHERE tenant_id=? AND deleted_at IS NULL`, tenantID)
+	if err != nil {
 		return false
 	}
-	return cnt > 0
+	defer rows.Close()
+	for rows.Next() {
+		var date, endDate string
+		if rows.Scan(&date, &endDate) == nil && core.HolidayCovers(date, endDate, t) {
+			return true
+		}
+	}
+	return false
 }
 
 func sendOverdueInvoiceReminders(db *store.DB) {

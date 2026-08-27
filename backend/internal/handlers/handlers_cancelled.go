@@ -10,13 +10,15 @@ import (
 	"studyhub/internal/core"
 	"studyhub/internal/models"
 	"studyhub/internal/store"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // ── Cancelled Classes ─────────────────────────────────────────────────────────
 
 func listCancelledClasses(db *store.DB, c *core.Claims) []models.CancelledClass {
 	tw, twArgs := store.ScopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,class_id,date,reason,cancelled_by,created_on FROM cancelled_classes WHERE 1=1`+tw+` ORDER BY date DESC LIMIT 5000`, twArgs...)
+	rows, err := db.Query(`SELECT id,class_id,date,reason,cancelled_by,created_on FROM cancelled_classes WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC LIMIT 5000`, twArgs...)
 	return store.CollectRows(rows, err, "CancelledClass", func(r *sql.Rows) (models.CancelledClass, error) {
 		var cc models.CancelledClass
 		err := r.Scan(&cc.ID, &cc.ClassID, &cc.Date, &cc.Reason, &cc.CancelledBy, &cc.CreatedOn)
@@ -57,10 +59,23 @@ func HandleCreateCancelledClass(db *store.DB) http.HandlerFunc {
 			cc.CancelledBy = c.Email
 		}
 		tid := store.TenantID(c)
-		_, err := db.Exec(`INSERT INTO cancelled_classes(id,tenant_id,class_id,date,reason,cancelled_by,created_on) VALUES(?,?,?,?,?,?,?)`,
+		var moved int
+		db.QueryRow(`SELECT COUNT(*) FROM class_session_moves WHERE tenant_id=? AND class_id=? AND from_date=? AND deleted_at IS NULL`, tid, cc.ClassID, cc.Date).Scan(&moved)
+		if moved > 0 {
+			core.RespondError(w, "session was rescheduled to another date — undo the move first", http.StatusConflict)
+			return
+		}
+		res, err := db.Exec(`INSERT INTO cancelled_classes(id,tenant_id,class_id,date,reason,cancelled_by,created_on) VALUES(?,?,?,?,?,?,?)
+			ON CONFLICT (tenant_id, class_id, date) WHERE deleted_at IS NULL DO NOTHING`,
 			cc.ID, tid, cc.ClassID, cc.Date, cc.Reason, cc.CancelledBy, cc.CreatedOn)
 		if err != nil {
 			core.RespondError(w, "server error", 500)
+			return
+		}
+		// Idempotency: a duplicate POST must not re-announce or re-grant
+		// credits — before 0044 every retry double-granted every student.
+		if n, _ := res.RowsAffected(); n == 0 {
+			core.RespondError(w, "this session is already cancelled", http.StatusConflict)
 			return
 		}
 		// Side-effects: announce the cancellation to parents and grant each
@@ -139,6 +154,45 @@ func applyCancelledClassSideEffects(db *store.DB, c *core.Claims, cc models.Canc
 		); err != nil {
 			core.Logger.Error("cancellation credit insert failed", "err", err, "student_id", sid)
 		}
+	}
+}
+
+func HandleDeleteCancelledClass(db *store.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := core.ClaimsFrom(r)
+		if !core.IsAdminRole(c) {
+			core.RespondError(w, "admin only", 403)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		tid := store.TenantID(c)
+		var classID, date string
+		if err := db.QueryRow(`SELECT class_id, date FROM cancelled_classes WHERE id=? AND tenant_id=? AND deleted_at IS NULL`, id, tid).Scan(&classID, &date); err != nil {
+			core.RespondError(w, "not found", http.StatusNotFound)
+			return
+		}
+		if _, err := db.Exec(`UPDATE cancelled_classes SET deleted_at=NOW() WHERE id=? AND tenant_id=?`, id, tid); err != nil {
+			core.RespondError(w, "server error", 500)
+			return
+		}
+		// Claw back the grants this cancellation created. A credit already
+		// spent leaves the ledger negative — visible, and right for undo-a-mistake.
+		if _, err := db.Exec(`DELETE FROM replacement_credits WHERE tenant_id=? AND class_id=? AND date=? AND type='earned' AND category='class' AND note=?`,
+			tid, classID, date, "Class cancelled on "+date); err != nil {
+			core.Logger.Error("cancellation credit claw-back failed", "err", err, "class_id", classID)
+		}
+		var className string
+		db.QueryRow(`SELECT name FROM classes WHERE id=? AND tenant_id=?`, classID, tid).Scan(&className)
+		if className == "" {
+			className = classID
+		}
+		announceMove(db, c, tid, className, classID, "Cancellation",
+			"Class back on — "+className,
+			className+" on "+date+" will run as scheduled after all; the cancellation has been reversed and the make-up credit added for it has been removed.")
+		if c != nil {
+			core.LogAudit(db, tid, c.Email, "cancellation_undone", "cancelled_class", id, "class="+classID+" date="+date)
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

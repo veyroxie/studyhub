@@ -64,6 +64,18 @@ func RespondError(w http.ResponseWriter, msg string, code int) {
 
 func Today() string { return time.Now().Format("2006-01-02") }
 
+// HolidayCovers is THE holiday range predicate (F4) -- every consumer, Go or
+// SQL-adjacent, must use it so billing and display can never disagree.
+// Kept in sync with App.Utils.holidayCovers in frontend/js/utils.js.
+// An empty or malformed endDate (before date) means a single-day holiday.
+// Lexical compares are safe: all dates are TEXT YYYY-MM-DD.
+func HolidayCovers(date, endDate, day string) bool {
+	if endDate != "" && endDate >= date {
+		return day >= date && day <= endDate
+	}
+	return day == date
+}
+
 // ValidationError returns a comma-joined list of missing/invalid field names, or "".
 func ValidationError(checks ...string) string {
 	var errs []string

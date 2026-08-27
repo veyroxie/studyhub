@@ -9,6 +9,10 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- A cancellation can be undone: the session shows an "Undo cancellation"
+  button (calendar week view and day schedule) that restores it, removes
+  the make-up credits it granted, and notifies the class's parents that
+  it is back on.
 - Enrollment history table (migration 0043): every class a student joins or
   leaves is now recorded with a start and end date, backfilled from current
   enrolments. Invisible in the UI for now; it is the foundation session
@@ -30,6 +34,13 @@ dated section when you cut a deploy.
   and a one-month deposit priced by class type and level band.
 
 ### Fixed
+- Cancelling the same session twice no longer double-grants make-up
+  credits: the duplicate is rejected, and historical duplicate grants are
+  cleaned up by migration 0044. A session that was rescheduled cannot
+  also be cancelled until the move is undone.
+- A past single-day holiday no longer suppresses overdue-invoice reminder
+  emails forever; holiday date ranges now behave identically in the
+  calendar and in the reminder job.
 - Invoices no longer print "Contact: Contact: ..." when the label was typed
   into the settings field along with the phone number.
 - Confirming a parent-submitted payment no longer dead-ends when the invoice

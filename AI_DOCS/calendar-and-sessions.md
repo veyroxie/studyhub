@@ -53,11 +53,15 @@ published class-scoped announcement, and grants each enrolled student a replacem
 Any new cancellation path (bulk cancel, holiday-driven) that inserts directly into the table
 skips the announcement and the credits.
 
-`cancelled_classes` has **no unique constraint on `(class_id, date)`, no `deleted_at`, and no
-DELETE or PUT route** (`database.go:287-295`, `server.go:264-267`). Every POST inserts a new
-row and re-runs the credit grant. Cancelling the same session twice double-grants credits,
-and a cancellation cannot be undone through the API. Unlike overrides (upsert) and holidays
-(soft delete), this table is append-only and duplicable.
+**F3 hardening (2026-08-28, migration `0044`):** `cancelled_classes` now has `deleted_at`
+and a partial unique index on `(tenant_id, class_id, date) WHERE deleted_at IS NULL`. The
+create is idempotent -- a duplicate POST hits `ON CONFLICT DO NOTHING` and returns 409 with
+no re-grant (`handlers_cancelled.go`). `DELETE /api/cancelled-classes/{id}` undoes one:
+soft-deletes the row, claws back the exact credit grants (fingerprint: earned / class /
+`'Class cancelled on <date>'`), and announces the reversal. Cancelling a date with a live
+session move returns 409 (undo the move first), mirroring the move handler's check in the
+other direction. Every reader filters `deleted_at IS NULL` (list, iCal window, move-conflict
+check). Locked by `TestCancellation_IdempotentAndUndoable`.
 
 ### Two verified conflicts here
 
@@ -92,10 +96,14 @@ The calendar renders a badge/tint but **still shows the classes**
 overdue-invoice reminder emails (`jobs.go:329-345`). A holiday does not cancel sessions, grant
 credits, or affect the iCal feed.
 
-Range semantics differ subtly between the two sides -- the frontend treats a holiday as
-multi-day only when `endDate >= date` (`calendar.js:33-43`), the backend uses
-`date <= today AND (end_date = '' OR end_date >= today)` (`jobs.go:337-341`). Both compare
-strings. Keep them in sync.
+**F4 -- FIXED 2026-08-28: one canonical range predicate.** `core.HolidayCovers(date,
+endDate, day)` (`core/respond.go`) and its mirror `App.Utils.holidayCovers` (`js/utils.js`)
+are the only holiday range predicates; both treat empty or malformed `endDate` (before
+`date`) as single-day. The old backend SQL treated empty `end_date` as open-ended, so one
+past single-day holiday suppressed reminder emails forever -- `isHolidayToday` now filters
+through the helper. Unit-locked on both sides (`core/respond_test.go`,
+`tests/unit/utils.test.mjs`). Any new holiday consumer (the session expander) must call
+these, never inline the comparison.
 
 ## iCal feed
 

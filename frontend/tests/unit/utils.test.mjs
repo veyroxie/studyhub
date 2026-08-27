@@ -243,3 +243,33 @@ describe('creditsForClass', () => {
     assert.equal(U().creditsForClass({ time: '11:00', endTime: '10:00' }), 4);
   });
 });
+
+describe('holidayCovers', () => {
+  // THE holiday range predicate (F4). The backend mirror is core.HolidayCovers
+  // in Go - keep them in sync. Malformed endDate (before date) means single-day:
+  // the old backend SQL treated it as open-ended and suppressed reminders forever.
+  const U = () => loadSandbox().App.Utils;
+  test('a range holiday covers every day from date to endDate inclusive', () => {
+    const h = { date: '2026-03-15', endDate: '2026-03-17' };
+    assert.equal(U().holidayCovers(h, '2026-03-15'), true);
+    assert.equal(U().holidayCovers(h, '2026-03-16'), true);
+    assert.equal(U().holidayCovers(h, '2026-03-17'), true);
+    assert.equal(U().holidayCovers(h, '2026-03-14'), false);
+    assert.equal(U().holidayCovers(h, '2026-03-18'), false);
+  });
+  test('no endDate means single day, never open-ended', () => {
+    const h = { date: '2026-03-15' };
+    assert.equal(U().holidayCovers(h, '2026-03-15'), true);
+    assert.equal(U().holidayCovers(h, '2026-03-16'), false);
+    assert.equal(U().holidayCovers({ date: '2026-03-15', endDate: '' }, '2026-04-01'), false);
+  });
+  test('endDate before date degrades to single day, matching the backend', () => {
+    const h = { date: '2026-03-15', endDate: '2026-03-10' };
+    assert.equal(U().holidayCovers(h, '2026-03-15'), true);
+    assert.equal(U().holidayCovers(h, '2026-03-12'), false);
+  });
+  test('null holiday or missing date never matches', () => {
+    assert.equal(U().holidayCovers(null, '2026-03-15'), false);
+    assert.equal(U().holidayCovers({}, '2026-03-15'), false);
+  });
+});

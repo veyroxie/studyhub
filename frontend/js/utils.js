@@ -306,6 +306,15 @@
       return { movedOut: out, movedIn: incoming };
     },
 
+    // holidayCovers is THE holiday range predicate (F4), mirrored by
+    // core.HolidayCovers in Go -- keep the two in sync. Missing or malformed
+    // endDate (before date) means single-day. Lexical compares: YYYY-MM-DD.
+    holidayCovers(h, dateStr) {
+      if (!h || !h.date) return false;
+      if (h.endDate && h.endDate >= h.date) return dateStr >= h.date && dateStr <= h.endDate;
+      return dateStr === h.date;
+    },
+
     // creditsForClass converts a class's HH:MM start/end into replacement
     // credits at the agreed unit of 1 credit = 15 minutes (1hr class = 4).
     // Missing or unparsable times fall back to 4, the standard 1-hour class.

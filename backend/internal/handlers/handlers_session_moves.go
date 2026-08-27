@@ -70,7 +70,7 @@ func HandleCreateSessionMove(db *store.DB) http.HandlerFunc {
 		// A cancelled session has already told parents "no class, credit
 		// added" — silently turning that into a move would contradict it.
 		var cancelled int
-		db.QueryRow(`SELECT COUNT(*) FROM cancelled_classes WHERE tenant_id=? AND class_id=? AND date=?`, tid, m.ClassID, m.FromDate).Scan(&cancelled)
+		db.QueryRow(`SELECT COUNT(*) FROM cancelled_classes WHERE tenant_id=? AND class_id=? AND date=? AND deleted_at IS NULL`, tid, m.ClassID, m.FromDate).Scan(&cancelled)
 		if cancelled > 0 {
 			core.RespondError(w, "this session is cancelled; a cancelled session cannot be rescheduled", http.StatusConflict)
 			return
@@ -93,7 +93,7 @@ func HandleCreateSessionMove(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "server error", http.StatusInternalServerError)
 			return
 		}
-		announceMove(db, c, tid, className, m.ClassID,
+		announceMove(db, c, tid, className, m.ClassID, "Reschedule",
 			"Class rescheduled — "+className,
 			buildMoveMessage(className, m.FromDate, m.ToDate, m.Reason))
 		core.LogAudit(db, tid, m.MovedBy, "session_moved", "session_move", m.ID, "class="+m.ClassID+" "+m.FromDate+" -> "+m.ToDate)
@@ -125,7 +125,7 @@ func HandleDeleteSessionMove(db *store.DB) http.HandlerFunc {
 		if className == "" {
 			className = classID
 		}
-		announceMove(db, c, tid, className, classID,
+		announceMove(db, c, tid, className, classID, "Reschedule",
 			"Class back to schedule — "+className,
 			className+" will run on "+fromDate+" as usual after all; the move to "+toDate+" is cancelled.")
 		actor := ""
@@ -148,7 +148,7 @@ func buildMoveMessage(className, from, to, reason string) string {
 // announceMove mirrors the cancellation flow's parent notification: a
 // published, class-scoped announcement that lands in enrolled parents'
 // in-app notifications on their next load.
-func announceMove(db *store.DB, c *core.Claims, tid int, className, classID, title, message string) {
+func announceMove(db *store.DB, c *core.Claims, tid int, className, classID, annType, title, message string) {
 	annID := core.GenerateID("ANN")
 	actor := ""
 	if c != nil {
@@ -156,7 +156,7 @@ func announceMove(db *store.DB, c *core.Claims, tid int, className, classID, tit
 	}
 	if _, err := db.Exec(
 		`INSERT INTO announcements(id,tenant_id,title,message,audience,type,created_on,created_by,status) VALUES(?,?,?,?,?,?,?,?,?)`,
-		annID, tid, title, message, "class:"+classID, "Reschedule", core.Today(), actor, "published",
+		annID, tid, title, message, "class:"+classID, annType, core.Today(), actor, "published",
 	); err != nil {
 		core.Logger.Error("session move announcement failed", "err", err, "class_id", classID)
 		return
