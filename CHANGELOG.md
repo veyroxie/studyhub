@@ -8,7 +8,14 @@ dated section when you cut a deploy.
 
 ## [Unreleased]
 
+### Added
+- The invoice builder has a "New student" section: registration fee (RM250)
+  and a one-month deposit priced by class type and level band.
+
 ### Fixed
+- Confirming a parent-submitted payment no longer dead-ends when the invoice
+  has no reference number: the verify dialog now takes the reference from
+  the receipt and sends it with the confirmation.
 - The parent calendar feed now marks cancelled sessions as cancelled
   (same event, STATUS:CANCELLED and a "Cancelled:" title) instead of
   showing them as still happening.

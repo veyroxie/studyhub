@@ -7,6 +7,7 @@
   let _selectedInv = {};
   let _billingPage = 0;
   var _PAGE_SIZE = 15;
+  var REGISTRATION_FEE = 250;       // RM, matches the seeded Registration product
   var SELF_STUDY_SESSION_RATE = 10; // RM per self-study session (manual drop-in billing)
   var SELF_STUDY_HOUR_RATE = 10;    // RM per self-study hour (member included value / add-on)
   // Keep in sync with maxProofBytes in backend handlers_uploads.go. Oversized
@@ -47,12 +48,27 @@
     cat.push({ key: 'ss-addon', group: 'Self-study', label: 'Self-study add-on (extra hours)',
       name: 'Self-study add-on', descriptor: 'Extra self-study hours',
       qty: 1, unitPrice: SELF_STUDY_HOUR_RATE, kind: 'item', editableQty: true });
+    // New-student lines. Registration matches the seeded product (RM250).
+    // The deposit is one month's fee, held and applied to the student's last
+    // month (Nadine, 27/08), so it mirrors the tuition price for the band.
+    cat.push({ key: 'reg-fee', group: 'New student', label: 'Registration fee',
+      name: 'Registration Fee', descriptor: 'One-time registration',
+      qty: 1, unitPrice: REGISTRATION_FEE, kind: 'item', editableQty: false });
+    ['Group', 'Private'].forEach(function(type) {
+      ['1-3', '4-6'].forEach(function(band) {
+        cat.push({ key: 'dep-' + type + '-' + band, group: 'New student',
+          label: 'Deposit (1 month) — ' + type + ' Level ' + band,
+          name: 'Deposit (1 month) — ' + type + ' Level ' + band,
+          descriptor: 'Refunded against the final month',
+          qty: 1, unitPrice: feeFor(type, band), kind: 'item', editableQty: false });
+      });
+    });
     return cat;
   }
 
   function _packageCatalogOptions() {
     var cat = _packageCatalog();
-    var groups = ['Group', 'Private', 'Self-study'];
+    var groups = ['Group', 'Private', 'Self-study', 'New student'];
     var html = '<option value="">Select a package…</option>';
     groups.forEach(function(g) {
       html += '<optgroup label="' + g + '">';
@@ -1006,6 +1022,12 @@
       +   _invoiceBreakdownHtml(inv)
       + '</div>'
       + proofSection
+      // Older invoices can sit in Pending Verification with a non-cash method
+      // and no reference (submitted before the reference became mandatory).
+      // The server rejects confirming those, so let the admin supply the
+      // reference from the receipt right here.
+      + '<div style="margin-bottom:0.75rem"><p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.4rem">Reference number' + ((inv.paymentMethod && inv.paymentMethod !== 'Cash') ? ' <span style="color:#dc2626">*required for ' + App.Utils.esc(inv.paymentMethod) + '</span>' : '') + '</p>'
+      +   '<input id="verify-ref" class="form-input" value="' + App.Utils.esc(inv.referenceNo || '') + '" placeholder="From the receipt or bank statement"></div>'
       + '<div style="display:flex;gap:0.5rem">'
       +   '<button onclick="App.Billing._confirmVerify(\'' + invId + '\')" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer">Confirm Payment</button>'
       +   '<button onclick="App.Billing._markUnpaid(\'' + invId + '\')" style="padding:0.55rem 1rem;font-size:0.83rem;border:1px solid #fca5a5;border-radius:8px;background:#fff;cursor:pointer;color:#dc2626;font-weight:600">Reject</button>'
@@ -1018,17 +1040,27 @@
   function _confirmVerify(invId) {
     // Persist via the pay endpoint — the previous version only mutated the
     // local store, so the next snapshot reload silently reverted the invoice
-    // to Pending Verification. Method/reference already sit on the invoice
-    // from the parent's submission, so an empty-method PUT keeps them (server
-    // COALESCEs). Server auto-stamps paid_on and assigns the receipt number.
-    App.Api.put('/api/invoices/' + invId + '/pay', { status: 'Paid' })
+    // to Pending Verification. Server auto-stamps paid_on and assigns the
+    // receipt number. The reference travels with the confirm so invoices
+    // stuck without one (pre-mandatory-reference submissions) are fixable.
+    var inv = (App.Store.get().invoices || []).find(function(i) { return i.id === invId; }) || {};
+    var refEl = document.getElementById('verify-ref');
+    var refNo = refEl ? refEl.value.trim() : '';
+    if (inv.paymentMethod && inv.paymentMethod !== 'Cash' && !refNo) {
+      App.Utils.showToast('Enter the reference number from the receipt — required for ' + inv.paymentMethod, 'error');
+      return;
+    }
+    var payload = { status: 'Paid' };
+    if (refNo) payload.referenceNo = refNo;
+    App.Api.put('/api/invoices/' + invId + '/pay', payload)
       .then(function() { return App.Api.loadSnapshot(); })
       .then(function() {
         App.Utils.hideModal(true);
         App.Utils.showToast('Payment verified — invoice marked as Paid', 'success');
         App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
         App.Router.refresh();
-      });
+      })
+      .catch(function() { /* App.Api already toasted; keep the modal open for a retry */ });
   }
 
   async function _deleteInvoice(invoiceId) {
