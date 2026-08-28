@@ -622,7 +622,14 @@ window survives for proration. The JSON column is still the only read path —
 stage 2 migrates readers, stage 3 kills the LIKE matching. Locked by
 `TestEnrollments_DualWriteLifecycle`.
 
-**F8 — CLOSED 2026-08-26: per-student rates confirmed by Ely.** Build the rate
+**F8 — BUILT 2026-08-28 (migration 0045).** `pricing_tiers.hourly_rate`
+(backfilled monthly/4 = the quoted 60/65/120/130), `classes.session_rate`
+override, `students.level_band` (band only, Ely-confirmed; '' = class's
+band), resolver `store.SessionRateFor` with no-silent-zeros errors, and the
+admin UI for all three. The cron still bills monthly until F5. Decision
+trail below:
+
+**F8 (decision) — CLOSED 2026-08-26: per-student rates confirmed by Ely.** Build the rate
 lookup as (student band x class type) matrix with per-class `session_rate`
 override. Earlier amendment kept for the reasoning:
 

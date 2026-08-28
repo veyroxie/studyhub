@@ -141,6 +141,10 @@ type Student struct {
 	FamilyID           string   `json:"familyId,omitempty"`
 	ReferredByFamilyID string   `json:"referredByFamilyId,omitempty"`
 
+	// LevelBand is the student's OWN pricing band ('1-3' | '4-6'), for mixed
+	// classes straddling the boundary. '' = use the class's band (0045).
+	LevelBand string `json:"levelBand"`
+
 	PackageAmount         float64 `json:"packageAmount"`
 	PackageSelfStudyHours int     `json:"packageSelfStudyHours"`
 	SubscriptionStatus    string  `json:"subscriptionStatus"`
@@ -189,6 +193,9 @@ type Class struct {
 	// Exists for classes the matrix cannot price — Phonics has no level band,
 	// and a 30-minute group runs below the Level 1 rate. See migration 0037.
 	MonthlyFeeOverride float64 `json:"monthlyFeeOverride"`
+	// SessionRate prices ONE session of this class outright (0045), winning
+	// over the (classType, band) hourly matrix. 0 = unset.
+	SessionRate float64 `json:"sessionRate"`
 }
 
 // PricingTier is one cell of the type×level fee matrix. The monthly cron looks
@@ -198,6 +205,9 @@ type PricingTier struct {
 	ClassType  string  `json:"classType"`
 	LevelBand  string  `json:"levelBand"`
 	MonthlyFee float64 `json:"monthlyFee"`
+	// HourlyRate prices one hour of a session (0045). Session billing bills
+	// hourly_rate x class duration; MonthlyFee stays until the F5 switchover.
+	HourlyRate float64 `json:"hourlyRate"`
 }
 
 type Staff struct {

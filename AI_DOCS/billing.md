@@ -45,6 +45,24 @@ thing the centre sells, and treating 0 as unset avoids threading a nullable thro
 scan" (`0037_class_fee_override.sql:11-14`). Treating 0 as a real price recreates the RM 0
 invoice bug that migration was written to fix.
 
+**Session pricing (F8, migration `0045`, not yet consumed by the cron).** The parallel
+per-SESSION price source for the 8.7 switchover is `store.SessionRateFor(db, classID,
+studentBand)` (`store/rates.go`):
+
+```
+classes.session_rate            > 0  ->  use it (one session, outright)
+  -> pricing_tiers[class_type][band].hourly_rate x class duration (time..end_time)
+     where band = students.level_band, falling back to classes.level_band
+  -> any hole (no band, no tier, rate 0, bad times)  ->  ERROR, never RM 0
+```
+
+The student's own `level_band` exists for mixed classes straddling the 1-3 / 4-6 boundary
+(the L4 student in an L3&4 class pays RM65/hr). `hourly_rate` was backfilled as
+`monthly_fee / 4` (four weekly 1-hour sessions), reproducing the centre's quoted
+60/65/120/130. Unlike the monthly path's skip-with-warning, the resolver RETURNS an error --
+the future cron decides whether to skip the line or flag the invoice, but it can never
+silently price at 0. Locked by `TestSessionRateFor`.
+
 ## Discount stacking order
 
 Fixed, and the order is load-bearing for the clawback (`cron.go:537-545`):

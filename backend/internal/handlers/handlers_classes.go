@@ -38,7 +38,7 @@ func (e errClassTeacherNotFound) Error() string { return "teacher not found in t
 
 func listClasses(db *store.DB, c *core.Claims) []models.Class {
 	tw, twArgs := store.ScopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,COALESCE(class_type,'Group'),COALESCE(level_band,''),COALESCE(subject,''),COALESCE(monthly_fee_override,0) FROM classes WHERE deleted_at IS NULL`+tw, twArgs...)
+	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,COALESCE(class_type,'Group'),COALESCE(level_band,''),COALESCE(subject,''),COALESCE(monthly_fee_override,0),COALESCE(session_rate,0) FROM classes WHERE deleted_at IS NULL`+tw, twArgs...)
 	if err != nil {
 		core.Logger.Error("list query failed", "err", err, "type", "Class")
 		return []models.Class{}
@@ -48,7 +48,7 @@ func listClasses(db *store.DB, c *core.Claims) []models.Class {
 	for rows.Next() {
 		var c models.Class
 		var tids string
-		if err := rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color, &c.Category, &c.ClassType, &c.LevelBand, &c.Subject, &c.MonthlyFeeOverride); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color, &c.Category, &c.ClassType, &c.LevelBand, &c.Subject, &c.MonthlyFeeOverride, &c.SessionRate); err != nil {
 			continue
 		}
 		c.TeacherIDs = models.ParseArr(tids)
@@ -61,10 +61,10 @@ func listClasses(db *store.DB, c *core.Claims) []models.Class {
 // class form + Pricing screen can show fees and the cron can price students.
 func listPricingTiers(db *store.DB, c *core.Claims) []models.PricingTier {
 	tw, twArgs := store.ScopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,class_type,level_band,COALESCE(monthly_fee,0) FROM pricing_tiers WHERE deleted_at IS NULL`+tw+` ORDER BY class_type, level_band`, twArgs...)
+	rows, err := db.Query(`SELECT id,class_type,level_band,COALESCE(monthly_fee,0),COALESCE(hourly_rate,0) FROM pricing_tiers WHERE deleted_at IS NULL`+tw+` ORDER BY class_type, level_band`, twArgs...)
 	return store.CollectRows(rows, err, "PricingTier", func(r *sql.Rows) (models.PricingTier, error) {
 		var p models.PricingTier
-		err := r.Scan(&p.ID, &p.ClassType, &p.LevelBand, &p.MonthlyFee)
+		err := r.Scan(&p.ID, &p.ClassType, &p.LevelBand, &p.MonthlyFee, &p.HourlyRate)
 		return p, err
 	})
 }
@@ -142,8 +142,8 @@ func HandleClasses(db *store.DB) http.HandlerFunc {
 				c.Category = "Academic"
 			}
 			tid := store.TenantID(cl)
-			if _, err := db.Exec(`INSERT INTO classes(id,tenant_id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,class_type,level_band,subject,monthly_fee_override) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				c.ID, tid, c.Name, models.JSONArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color, c.Category, c.ClassType, c.LevelBand, c.Subject, c.MonthlyFeeOverride); err != nil {
+			if _, err := db.Exec(`INSERT INTO classes(id,tenant_id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,class_type,level_band,subject,monthly_fee_override,session_rate) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				c.ID, tid, c.Name, models.JSONArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color, c.Category, c.ClassType, c.LevelBand, c.Subject, c.MonthlyFeeOverride, c.SessionRate); err != nil {
 				core.RespondError(w, "could not create class", 500)
 				return
 			}
@@ -209,8 +209,8 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 			// (student add/edit/delete, registration approve). Trusting the
 			// client-supplied cl.Enrolled here let a class edit silently
 			// overwrite the true count, drifting capacity enforcement.
-			args := append([]any{cl.Name, models.JSONArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Color, cl.Category, cl.ClassType, cl.LevelBand, cl.Subject, cl.MonthlyFeeOverride, id}, twArgs...)
-			res, err := db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,color=?,category=?,class_type=?,level_band=?,subject=?,monthly_fee_override=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+			args := append([]any{cl.Name, models.JSONArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Color, cl.Category, cl.ClassType, cl.LevelBand, cl.Subject, cl.MonthlyFeeOverride, cl.SessionRate, id}, twArgs...)
+			res, err := db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,color=?,category=?,class_type=?,level_band=?,subject=?,monthly_fee_override=?,session_rate=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 			if err != nil {
 				core.RespondError(w, "could not update class", 500)
 				return

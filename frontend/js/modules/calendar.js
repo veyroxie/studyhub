@@ -750,6 +750,7 @@
       + '</div>'
       + '<div>'
       + _field('Custom monthly fee (RM)', '<input name="monthlyFeeOverride" type="number" min="0" step="0.01" class="form-input" placeholder="Leave empty for the standard price">')
+      + _field('Session rate (RM per session)', '<input name="sessionRate" type="number" min="0" step="0.01" class="form-input" placeholder="Only for classes the hourly matrix cannot price">')
       + '<p id="fee-hint" style="margin-top:0.3rem;font-size:0.72rem;color:#94a3b8">' + _feeHint('Group', '') + '</p>'
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
@@ -810,6 +811,7 @@
         category: '',
         levelBand: fd.get('levelBand') || '',
         monthlyFeeOverride: parseFloat(fd.get('monthlyFeeOverride')) || 0,
+        sessionRate: parseFloat(fd.get('sessionRate')) || 0,
         // Label only — pricing stays (classType x levelBand). Shows on the
         // invoice line as e.g. "Math group lessons".
         subject: fd.get('subject') || ''
@@ -1059,6 +1061,7 @@
       if (!t) return '<td style="padding:0.7rem 1rem;text-align:center;color:#cbd5e1">—</td>';
       return '<td style="padding:0.7rem 1rem;text-align:center">'
         + '<span style="font-weight:800;color:#111">RM ' + (t.monthlyFee || 0) + '</span>'
+        + '<span style="display:block;font-size:0.68rem;color:#94a3b8">RM ' + (t.hourlyRate || 0) + '/hr</span>'
         + (isAdmin ? ' <button onclick="App.Calendar._editPricingModal(\'' + t.id + '\')" style="font-size:0.68rem;color:#64748b;background:none;border:none;cursor:pointer" title="Edit">&#9998;</button>' : '')
         + '</td>';
     };
@@ -1203,6 +1206,7 @@
       + '<p style="font-size:0.8rem;color:#94a3b8;margin:0 0 1.25rem">' + App.Utils.esc(label) + '</p>'
       + '<form id="pricing-form" class="space-y-3">'
       + _field('Monthly Fee (RM)', '<input name="monthlyFee" type="number" min="0" step="0.01" class="form-input" value="' + (t.monthlyFee != null ? t.monthlyFee : '') + '" required autofocus>')
+      + _field('Hourly Rate (RM, for session billing)', '<input name="hourlyRate" type="number" min="0" step="0.01" class="form-input" value="' + (t.hourlyRate != null ? t.hourlyRate : '') + '" required>')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save</button>'
@@ -1210,10 +1214,12 @@
     );
     document.getElementById('pricing-form').addEventListener('submit', function(e) {
       e.preventDefault();
-      var fee = parseFloat(new FormData(e.target).get('monthlyFee'));
-      if (isNaN(fee) || fee < 0) { App.Utils.showToast('Enter a valid fee', 'warning'); return; }
+      var fd = new FormData(e.target);
+      var fee = parseFloat(fd.get('monthlyFee'));
+      var hourly = parseFloat(fd.get('hourlyRate'));
+      if (isNaN(fee) || fee < 0 || isNaN(hourly) || hourly < 0) { App.Utils.showToast('Enter a valid fee', 'warning'); return; }
       App.Utils.hideModal(true);
-      App.Api.put('/api/pricing/' + tierId, { monthlyFee: fee }).then(function() {
+      App.Api.put('/api/pricing/' + tierId, { monthlyFee: fee, hourlyRate: hourly }).then(function() {
         return App.Api.loadSnapshot();
       }).then(function() {
         App.Utils.showToast('Price updated', 'success');
@@ -1321,6 +1327,7 @@
       + '<div class="grid grid-cols-2 gap-3">'
       + _field('Subject', '<select name="subject" class="form-input">' + _subjectOptions(c.subject || '') + '</select>')
       + _field('Custom monthly fee (RM)', '<input name="monthlyFeeOverride" type="number" min="0" step="0.01" class="form-input" placeholder="Leave empty for the standard price" value="' + (c.monthlyFeeOverride ? c.monthlyFeeOverride : '') + '">')
+      + _field('Session rate (RM per session)', '<input name="sessionRate" type="number" min="0" step="0.01" class="form-input" placeholder="Only for classes the hourly matrix cannot price" value="' + (c.sessionRate ? c.sessionRate : '') + '">')
       + '</div>'
       + '<p id="fee-hint" style="font-size:0.72rem;color:#94a3b8;margin:-0.35rem 0 0">' + _feeHint(c.classType || 'Group', c.levelBand || '') + '</p>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Teacher(s)</label>' + teacherCheckboxes + '</div>'
@@ -1358,7 +1365,8 @@
         // field blanks it. Subject was missing here, which quietly cleared the
         // invoice line name every time a class was edited.
         subject: fd.get('subject') || '',
-        monthlyFeeOverride: parseFloat(fd.get('monthlyFeeOverride')) || 0
+        monthlyFeeOverride: parseFloat(fd.get('monthlyFeeOverride')) || 0,
+        sessionRate: parseFloat(fd.get('sessionRate')) || 0
       };
       App.Api.put('/api/classes/' + classId, updated).then(function() {
         // Re-read classes at write time — the `state` captured at modal open

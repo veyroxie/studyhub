@@ -670,6 +670,11 @@
       + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="' + (s.packageAmount || 0) + '">')
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="' + (s.packageSelfStudyHours == null ? 4 : s.packageSelfStudyHours) + '">')
       + '</div>'
+      + _field('Pricing level band', '<select name="levelBand" class="form-input">'
+        + '<option value=""' + (s.levelBand ? '' : ' selected') + '>Same as class</option>'
+        + '<option value="1-3"' + (s.levelBand === '1-3' ? ' selected' : '') + '>Level 1-3</option>'
+        + '<option value="4-6"' + (s.levelBand === '4-6' ? ' selected' : '') + '>Level 4-6</option>'
+        + '</select>')
       + _dropinField(s.dropinSelfStudy)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" value="' + App.Utils.esc(s.emergency2Name||'') + '" placeholder="e.g. Uncle David">')
@@ -709,6 +714,7 @@
         medicalInfo: fd.get('medicalInfo') || '',
         allergies: fd.get('allergies') || '',
         packageAmount: parseFloat(fd.get('packageAmount')) || 0,
+        levelBand: fd.get('levelBand') || '',
         packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4,
         dropinSelfStudy: !!fd.get('dropinSelfStudy')
       });
@@ -753,6 +759,11 @@
       + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="0" placeholder="e.g. 380">')
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="4">')
       + '</div>'
+      + _field('Pricing level band', '<select name="levelBand" class="form-input">'
+        + '<option value=""' + ('' ? '' : ' selected') + '>Same as class</option>'
+        + '<option value="1-3"' + ('' === '1-3' ? ' selected' : '') + '>Level 1-3</option>'
+        + '<option value="4-6"' + ('' === '4-6' ? ' selected' : '') + '>Level 4-6</option>'
+        + '</select>')
       + _dropinField(false)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" placeholder="e.g. Uncle David">')
@@ -805,6 +816,7 @@
         medicalInfo: fd.get('medicalInfo') || '',
         allergies: fd.get('allergies') || '',
         packageAmount: parseFloat(fd.get('packageAmount')) || 0,
+        levelBand: fd.get('levelBand') || '',
         packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4,
         dropinSelfStudy: !!fd.get('dropinSelfStudy'),
         subscriptionStatus: 'active'

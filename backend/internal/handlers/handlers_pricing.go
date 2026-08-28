@@ -28,13 +28,13 @@ func HandleUpdatePricingTier(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "bad body", 400)
 			return
 		}
-		if p.MonthlyFee < 0 {
-			core.RespondError(w, "monthly fee cannot be negative", 400)
+		if p.MonthlyFee < 0 || p.HourlyRate < 0 {
+			core.RespondError(w, "fees cannot be negative", 400)
 			return
 		}
 		tw, twArgs := store.ScopeTenant(c, "")
-		args := append([]any{p.MonthlyFee, id}, twArgs...)
-		res, err := db.Exec(`UPDATE pricing_tiers SET monthly_fee=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+		args := append([]any{p.MonthlyFee, p.HourlyRate, id}, twArgs...)
+		res, err := db.Exec(`UPDATE pricing_tiers SET monthly_fee=?, hourly_rate=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 		if err != nil {
 			core.RespondError(w, "server error", 500)
 			return

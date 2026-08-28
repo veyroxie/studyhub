@@ -9,6 +9,12 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- Groundwork for per-session billing (not yet billing anyone): the pricing
+  matrix gains an hourly rate per cell (pre-filled from the monthly fees,
+  editable), a class can carry its own per-session rate for specials the
+  matrix cannot price, and a student can carry their own level band so a
+  Level 4 child in a mixed Level 3 and 4 class is priced at the Level 4-6
+  rate. Monthly invoicing is unchanged.
 - A cancellation can be undone: the session shows an "Undo cancellation"
   button (calendar week view and day schedule) that restores it, removes
   the make-up credits it granted, and notifies the class's parents that
