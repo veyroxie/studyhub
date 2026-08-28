@@ -567,7 +567,16 @@ range predicate and both sides must use it. Holidays are per-tenant: each tenant
 must maintain their own calendar for billing to be right (risk 1 assumed one
 calendar).
 
-**F5 — Zero-session months hit `ValidAmount`. (MED.)** `core.ValidAmount` is
+**F5 (rules) — BUILT 2026-08-28 in the dry run.** `jobs.SessionBillingPreview`
+(GET /api/admin/billing/session-preview?month=YYYY-MM) computes session-based
+invoices beside the live monthly fees without writing anything. The F5 rules
+are encoded there and carry into the switchover: zero-billable line skipped
+(never billed 0), no-package zero-line student skipped entirely (no invoice,
+so no referral credit burns), pricing holes FLAG the line for a human. The
+cron itself still bills monthly — the switchover happens only after the
+centre has compared a real month in the preview. Original finding:
+
+**F5 (original) — Zero-session months hit `ValidAmount`. (MED.)** `core.ValidAmount` is
 strictly `> 0`. A count-0 class line and an all-lines-zero student need explicit
 rules (skip line / skip student, mirroring today's `fee <= 0` skip at
 `cron.go:487-493`) — and a skipped student must not burn that month's referral

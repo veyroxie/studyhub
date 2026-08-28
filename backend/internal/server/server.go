@@ -203,6 +203,7 @@ func Build(db *store.DB) http.Handler {
 		})
 
 		// Manual trigger for the monthly invoice + payroll cron — admin-only.
+		r.Get("/api/admin/billing/session-preview", jobs.HandleSessionBillingPreview(db))
 		r.Post("/api/admin/cron/run-monthly-invoices", jobs.HandleRunMonthlyCron(db))
 		r.Post("/api/admin/cron/regenerate-payroll", jobs.HandleRegeneratePayroll(db))
 

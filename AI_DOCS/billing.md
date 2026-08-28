@@ -63,6 +63,13 @@ The student's own `level_band` exists for mixed classes straddling the 1-3 / 4-6
 the future cron decides whether to skip the line or flag the invoice, but it can never
 silently price at 0. Locked by `TestSessionRateFor`.
 
+**Dry run:** `GET /api/admin/billing/session-preview?month=YYYY-MM`
+(`jobs/session_preview.go`) computes session totals (expander x resolver) beside the live
+monthly fees per student, tenant-scoped, read-only. F5 rules live here: zero-billable line
+skipped, nothing-to-bill student skipped (no invoice -> no referral credit consumed),
+pricing hole flags the line. Locked by `TestSessionBillingPreview`. The switchover must
+reuse this compute path, not reimplement it.
+
 ## Discount stacking order
 
 Fixed, and the order is load-bearing for the clawback (`cron.go:537-545`):

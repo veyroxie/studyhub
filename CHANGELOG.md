@@ -9,6 +9,12 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- A session-billing dry run for admins: an endpoint computes what each
+  student WOULD be charged under per-session billing for a chosen month
+  (sessions held x hourly rate, holidays unbilled, cancellations still
+  billed) next to today's monthly fee, without creating any invoice.
+  Students with nothing to bill are skipped, and any class the rates
+  cannot price is flagged instead of priced at RM 0.
 - Groundwork for per-session billing (not yet billing anyone): the pricing
   matrix gains an hourly rate per cell (pre-filled from the monthly fees,
   editable), a class can carry its own per-session rate for specials the
