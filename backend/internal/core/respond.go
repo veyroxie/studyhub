@@ -64,6 +64,16 @@ func RespondError(w http.ResponseWriter, msg string, code int) {
 
 func Today() string { return time.Now().Format("2006-01-02") }
 
+// ParseDayName maps a classes.day value ("Monday") to time.Weekday's int
+// (Sunday=0), or -1 when unrecognised.
+func ParseDayName(name string) int {
+	days := map[string]int{"sunday": 0, "monday": 1, "tuesday": 2, "wednesday": 3, "thursday": 4, "friday": 5, "saturday": 6}
+	if d, ok := days[strings.ToLower(strings.TrimSpace(name))]; ok {
+		return d
+	}
+	return -1
+}
+
 // HolidayCovers is THE holiday range predicate (F4) -- every consumer, Go or
 // SQL-adjacent, must use it so billing and display can never disagree.
 // Kept in sync with App.Utils.holidayCovers in frontend/js/utils.js.

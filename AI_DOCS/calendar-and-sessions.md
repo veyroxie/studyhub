@@ -29,6 +29,17 @@ exists so "just this week" stops meaning "every week from now on".
 Session identity is enforced by a partial unique index on `(tenant_id, class_id, date)`
 `WHERE deleted_at IS NULL` (`0040:32-33`). Any new per-session table must key the same way.
 
+**The canonical expander is `store.SessionsInPeriod` (F6, `store/sessions.go`).** It flattens
+one class's weekly recurrence over a window and classifies every occurrence:
+`held | cancelled | holiday | moved_out | moved_in`. It classifies rather than filters (iCal
+needs STATUS:CANCELLED under the same UID), returns TEXT local dates (never `time.Time`),
+and derives the tenant from the class row, not claims (the iCal caller has synthetic
+claims). `ClassSession.Billable()` encodes the money rules: cancelled sessions stay billable
+(credits compensate), holidays do not, and a moved session bills on its ORIGIN date only.
+Any code that expands or counts a class's dated sessions MUST call it -- the iCal feed
+already does; the future billing cron must too. Locked by
+`TestSessionsInPeriod_ClassifiesEveryOccurrence`.
+
 ## Session overrides
 
 Today an override can change **only `teacher_ids`** (plus a free-text note) --
@@ -106,6 +117,12 @@ through the helper. Unit-locked on both sides (`core/respond_test.go`,
 these, never inline the comparison.
 
 ## iCal feed
+
+The feed is a `store.SessionsInPeriod` consumer since F6: per relevant class it expands the
+window and maps `held`/`holiday` to a normal event, `cancelled` to STATUS:CANCELLED,
+`moved_out` to a same-UID event on the new date, and `moved_in` to an event only when the
+origin lies outside the window (an in-window origin already emitted the moved event).
+
 
 Each relevant class is flattened into individual VEVENTs across a **fixed window of 7 days
 back to 42 days forward**, by scanning every calendar day and matching the weekday. There is

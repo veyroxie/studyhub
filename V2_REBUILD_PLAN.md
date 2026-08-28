@@ -573,7 +573,14 @@ rules (skip line / skip student, mirroring today's `fee <= 0` skip at
 `cron.go:487-493`) — and a skipped student must not burn that month's referral
 credit.
 
-**F6 — Expander shape: classify, don't filter. (MED.)**
+**F6 — SHIPPED 2026-08-28 as `store.SessionsInPeriod`.** Classifies
+`held | cancelled | holiday | moved_out | moved_in` (moves were not in the
+original list; the 27/08 reschedule feature added them), returns TEXT local
+dates, derives tenant from the class row, and carries `Billable()` (cancelled
+bills, holiday does not, moves bill on origin). The iCal feed is the first
+consumer; the cron switchover (F5) is the second. Original reasoning:
+
+**F6 (original) — Expander shape: classify, don't filter. (MED.)**
 `SessionsInPeriod(classID, from, to) []time.Time` has three problems:
 
 - The iCal fix (A15) wants to emit `STATUS:CANCELLED` on the *same UID*, not

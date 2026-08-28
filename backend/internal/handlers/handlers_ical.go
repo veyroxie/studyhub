@@ -152,35 +152,47 @@ func HandleParentCalendarFeed(db *store.DB) http.HandlerFunc {
 		start := now.AddDate(0, 0, -7)
 		end := now.AddDate(0, 0, 42)
 
-		// Cancelled sessions must still be emitted, as STATUS:CANCELLED under
-		// the SAME UID — omitting them would leave the stale event in every
-		// calendar that already synced it, which is how parents turned up to
-		// cancelled classes (V2_IDEAS A15).
-		cancelled := cancelledDatesInWindow(db, tenantID, start, end)
-		moves := movedDatesInWindow(db, tenantID, start, end)
-
+		// The canonical expander classifies every occurrence (F6). Cancelled
+		// sessions must still be emitted, as STATUS:CANCELLED under the SAME
+		// UID — omitting them would leave the stale event in every calendar
+		// that already synced it, which is how parents turned up to cancelled
+		// classes (V2_IDEAS A15). Holidays stay display-only here: the class
+		// still runs, so the event renders as normal.
+		fromStr, toStr := start.Format("2006-01-02"), end.Format("2006-01-02")
 		for _, cls := range classes {
 			if !relevantClassIDs[cls.ID] {
 				continue
 			}
-			// Find every date in [start,end] matching cls.Day weekday.
-			weekday := parseDayName(cls.Day)
-			if weekday < 0 {
+			sessions, err := store.SessionsInPeriod(db, cls.ID, fromStr, toStr)
+			if err != nil {
+				core.Logger.Error("ical session expand failed", "err", err, "class_id", cls.ID)
 				continue
 			}
-			for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
-				if int(d.Weekday()) != weekday {
+			for _, sess := range sessions {
+				day, err := time.ParseInLocation("2006-01-02", sess.Date, start.Location())
+				if err != nil {
 					continue
 				}
-				if to, ok := moves[cls.ID+"|"+d.Format("2006-01-02")]; ok {
+				switch sess.Status {
+				case store.SessionMovedOut:
 					// Same UID, new DTSTART: synced calendars relocate the
 					// event instead of keeping a stale copy on the old date.
-					if newDay, err := time.ParseInLocation("2006-01-02", to, d.Location()); err == nil {
-						writeMovedEvent(&b, cls, d, newDay)
-						continue
+					if newDay, err := time.ParseInLocation("2006-01-02", sess.MovedTo, start.Location()); err == nil {
+						writeMovedEvent(&b, cls, day, newDay)
 					}
+				case store.SessionMovedIn:
+					// Origin in-window already emitted via moved_out; only a
+					// move landing here from OUTSIDE the window needs an event.
+					if sess.MovedFrom < fromStr || sess.MovedFrom > toStr {
+						if origDay, err := time.ParseInLocation("2006-01-02", sess.MovedFrom, start.Location()); err == nil {
+							writeMovedEvent(&b, cls, origDay, day)
+						}
+					}
+				case store.SessionCancelled:
+					writeEvent(&b, cls, day, true)
+				default:
+					writeEvent(&b, cls, day, false)
 				}
-				writeEvent(&b, cls, d, cancelled[cls.ID+"|"+d.Format("2006-01-02")])
 			}
 		}
 
@@ -245,51 +257,6 @@ func writeMovedEvent(b *strings.Builder, cls models.Class, origDay, newDay time.
 	b.WriteString("END:VEVENT\r\n")
 }
 
-// movedDatesInWindow returns "classID|from-date" -> to-date for live moves
-// whose ORIGINAL date falls in the feed window.
-func movedDatesInWindow(db *store.DB, tenantID int, start, end time.Time) map[string]string {
-	out := map[string]string{}
-	rows, err := db.Query(
-		`SELECT class_id, from_date, to_date FROM class_session_moves WHERE tenant_id=? AND deleted_at IS NULL AND from_date >= ? AND from_date <= ?`,
-		tenantID, start.Format("2006-01-02"), end.Format("2006-01-02"),
-	)
-	if err != nil {
-		core.Logger.Error("ical session-moves lookup failed", "err", err)
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid, from, to string
-		if rows.Scan(&cid, &from, &to) == nil {
-			out[cid+"|"+from] = to
-		}
-	}
-	return out
-}
-
-// cancelledDatesInWindow returns "classID|YYYY-MM-DD" keys for every
-// cancellation in the feed window. Dates are TEXT compared lexically,
-// matching the schema convention.
-func cancelledDatesInWindow(db *store.DB, tenantID int, start, end time.Time) map[string]bool {
-	out := map[string]bool{}
-	rows, err := db.Query(
-		`SELECT class_id, date FROM cancelled_classes WHERE tenant_id=? AND deleted_at IS NULL AND date >= ? AND date <= ?`,
-		tenantID, start.Format("2006-01-02"), end.Format("2006-01-02"),
-	)
-	if err != nil {
-		core.Logger.Error("ical cancelled-classes lookup failed", "err", err)
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid, date string
-		if rows.Scan(&cid, &date) == nil {
-			out[cid+"|"+date] = true
-		}
-	}
-	return out
-}
-
 func combineDateTime(day time.Time, hm string) (time.Time, bool) {
 	if hm == "" {
 		return time.Time{}, false
@@ -299,26 +266,6 @@ func combineDateTime(day time.Time, hm string) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return time.Date(day.Year(), day.Month(), day.Day(), t.Hour(), t.Minute(), 0, 0, day.Location()), true
-}
-
-func parseDayName(name string) int {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "sunday":
-		return 0
-	case "monday":
-		return 1
-	case "tuesday":
-		return 2
-	case "wednesday":
-		return 3
-	case "thursday":
-		return 4
-	case "friday":
-		return 5
-	case "saturday":
-		return 6
-	}
-	return -1
 }
 
 func icsEscape(s string) string {

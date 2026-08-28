@@ -34,6 +34,9 @@ dated section when you cut a deploy.
   and a one-month deposit priced by class type and level band.
 
 ### Fixed
+- The parent calendar feed now shows a session that was rescheduled into
+  its visible window from further back; previously only moves whose
+  original date fell inside the window appeared.
 - Cancelling the same session twice no longer double-grants make-up
   credits: the duplicate is rejected, and historical duplicate grants are
   cleaned up by migration 0044. A session that was rescheduled cannot
