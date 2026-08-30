@@ -63,6 +63,10 @@ func SessionsInPeriod(db *DB, classID, from, to string) ([]ClassSession, error) 
 		return nil, fmt.Errorf("session expand: bad to %q: %w", to, err)
 	}
 
+	changes, err := classScheduleChanges(db, tenantID, classID)
+	if err != nil {
+		return nil, err
+	}
 	cancelled, err := datedSet(db, `SELECT date FROM cancelled_classes WHERE tenant_id=? AND class_id=? AND deleted_at IS NULL AND date>=? AND date<=?`, tenantID, classID, from, to)
 	if err != nil {
 		return nil, err
@@ -78,10 +82,10 @@ func SessionsInPeriod(db *DB, classID, from, to string) ([]ClassSession, error) 
 
 	var out []ClassSession
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
-		if int(d.Weekday()) != weekday {
+		date := d.Format("2006-01-02")
+		if int(d.Weekday()) != weekdayOn(changes, weekday, date) {
 			continue
 		}
-		date := d.Format("2006-01-02")
 		out = append(out, classifyOccurrence(date, cancelled, movedOut, holidays))
 	}
 	for dst, src := range movedIn {
@@ -113,6 +117,41 @@ func classifyOccurrence(date string, cancelled map[string]bool, movedOut map[str
 		}
 	}
 	return ClassSession{Date: date, Status: SessionHeld}
+}
+
+type scheduleChangeRow struct {
+	weekday   int
+	changedOn string
+}
+
+// classScheduleChanges loads the class's dated schedule changes, oldest
+// first. Each row's weekday applied to dates BEFORE its changedOn (0046).
+func classScheduleChanges(db *DB, tenantID int, classID string) ([]scheduleChangeRow, error) {
+	rows, err := db.Query(`SELECT day, changed_on FROM class_schedule_history WHERE tenant_id=? AND class_id=? ORDER BY changed_on`, tenantID, classID)
+	if err != nil {
+		return nil, fmt.Errorf("session expand: schedule history: %w", err)
+	}
+	defer rows.Close()
+	var out []scheduleChangeRow
+	for rows.Next() {
+		var day, on string
+		if rows.Scan(&day, &on) == nil {
+			out = append(out, scheduleChangeRow{weekday: core.ParseDayName(day), changedOn: on})
+		}
+	}
+	return out, nil
+}
+
+// weekdayOn resolves which weekday the class met on for one date: the oldest
+// change strictly after the date wins, else the current classes row. Mirrors
+// App.Utils.scheduleOn in js/utils.js -- keep the two in sync.
+func weekdayOn(changes []scheduleChangeRow, current int, date string) int {
+	for _, ch := range changes {
+		if date < ch.changedOn {
+			return ch.weekday
+		}
+	}
+	return current
 }
 
 type holidayRange struct{ date, endDate string }

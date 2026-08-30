@@ -31,7 +31,7 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 	tables := []string{
 		"replacement_credits", "audit_logs", "feedback", "attendance",
 		"invoices", "referral_rewards", "email_tokens", "enrollments",
-		"cancelled_classes", "class_session_moves",
+		"cancelled_classes", "class_session_moves", "class_schedule_history",
 		"announcements", "registrations", "students", "families",
 		"classes", "staff", "users",
 	}

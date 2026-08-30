@@ -273,3 +273,40 @@ describe('holidayCovers', () => {
     assert.equal(U().holidayCovers({}, '2026-03-15'), false);
   });
 });
+
+describe('scheduleOn — dated schedule-change resolution (mirrors store/sessions.go weekdayOn)', () => {
+  const cls = { id: 'CLS_1', day: 'Thursday', time: '16:00', endTime: '17:00' };
+  const change = { classId: 'CLS_1', day: 'Friday', time: '15:00', endTime: '16:00', changedOn: '2026-09-01' };
+
+  test('dates before the change keep the old schedule', () => {
+    const got = U.scheduleOn(cls, [change], '2026-08-28');
+    // Field-by-field: the sandbox realm's Object prototype fails deepEqual.
+    assert.equal(got.day, 'Friday');
+    assert.equal(got.time, '15:00');
+    assert.equal(got.endTime, '16:00');
+  });
+
+  test('the effective date itself uses the new schedule', () => {
+    assert.equal(U.scheduleOn(cls, [change], '2026-09-01').day, 'Thursday');
+    assert.equal(U.scheduleOn(cls, [change], '2026-10-15').day, 'Thursday');
+  });
+
+  test('with two changes the oldest one after the date wins', () => {
+    const later = { classId: 'CLS_1', day: 'Thursday', time: '16:00', endTime: '17:00', changedOn: '2026-11-01' };
+    // Order in the array must not matter.
+    assert.equal(U.scheduleOn(cls, [later, change], '2026-08-28').day, 'Friday');
+    assert.equal(U.scheduleOn(cls, [later, change], '2026-09-15').day, 'Thursday');
+  });
+
+  test('changes for another class are ignored', () => {
+    const other = { classId: 'CLS_2', day: 'Monday', time: '10:00', endTime: '11:00', changedOn: '2026-09-01' };
+    assert.equal(U.scheduleOn(cls, [other], '2026-08-28').day, 'Thursday');
+  });
+
+  test('no history falls back to the class row, tolerating null', () => {
+    const got = U.scheduleOn(cls, null, '2026-08-28');
+    assert.equal(got.day, 'Thursday');
+    assert.equal(got.time, '16:00');
+    assert.equal(got.endTime, '17:00');
+  });
+});

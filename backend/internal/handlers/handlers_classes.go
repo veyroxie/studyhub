@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"studyhub/internal/core"
 	"studyhub/internal/models"
@@ -55,6 +56,42 @@ func listClasses(db *store.DB, c *core.Claims) []models.Class {
 		out = append(out, c)
 	}
 	return out
+}
+
+// listScheduleChanges loads every class's dated schedule changes for the
+// snapshot; the calendar and attendance pages resolve past dates through them
+// via App.Utils.scheduleOn. See migration 0046.
+func listScheduleChanges(db *store.DB, c *core.Claims) []models.ScheduleChange {
+	tw, twArgs := store.ScopeTenant(c, "")
+	rows, err := db.Query(`SELECT id,class_id,day,time,end_time,changed_on,created_by,created_on FROM class_schedule_history WHERE 1=1`+tw+` ORDER BY changed_on`, twArgs...)
+	return store.CollectRows(rows, err, "ScheduleChange", func(r *sql.Rows) (models.ScheduleChange, error) {
+		var s models.ScheduleChange
+		err := r.Scan(&s.ID, &s.ClassID, &s.Day, &s.Time, &s.EndTime, &s.ChangedOn, &s.CreatedBy, &s.CreatedOn)
+		return s, err
+	})
+}
+
+// recordScheduleChange snapshots the class's current slot before an
+// effective-dated edit, so dates before ScheduleFrom keep the old schedule.
+// A repeat edit with the same effective date keeps the FIRST snapshot: the
+// intermediate schedule never applied to a real date (migration 0046).
+func recordScheduleChange(db *store.DB, c *core.Claims, id string, cl models.Class) error {
+	tw, twArgs := store.ScopeTenant(c, "")
+	var day, tm, end string
+	if err := db.QueryRow(`SELECT day,time,end_time FROM classes WHERE id=? AND deleted_at IS NULL`+tw, append([]any{id}, twArgs...)...).Scan(&day, &tm, &end); err != nil {
+		return err
+	}
+	if day == cl.Day && tm == cl.Time && end == cl.EndTime {
+		return nil
+	}
+	_, err := db.Exec(`INSERT INTO class_schedule_history(id,tenant_id,class_id,day,time,end_time,changed_on,created_by,created_on)
+		VALUES(?,?,?,?,?,?,?,?,?)
+		ON CONFLICT (tenant_id,class_id,changed_on) DO NOTHING`,
+		core.GenerateID("SCH"), store.TenantID(c), id, day, tm, end, cl.ScheduleFrom, c.Email, core.Today())
+	if err == nil {
+		core.LogAudit(db, store.TenantID(c), c.Email, "class_schedule_changed", "class", id, "was "+day+" "+tm+"-"+end+", new schedule from "+cl.ScheduleFrom)
+	}
+	return err
 }
 
 // listPricingTiers loads the type×level fee matrix for the snapshot, so the
@@ -200,6 +237,22 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 				}
 				if cnt > 0 {
 					core.RespondError(w, "Conflict: "+cl.Classroom+" is already booked at this time", http.StatusConflict)
+					return
+				}
+			}
+
+			if cl.ScheduleFrom != "" {
+				if !isoDate.MatchString(cl.ScheduleFrom) {
+					core.RespondError(w, "scheduleFrom must be YYYY-MM-DD", http.StatusBadRequest)
+					return
+				}
+				if err := recordScheduleChange(db, c, id, cl); err != nil {
+					if errors.Is(err, sql.ErrNoRows) {
+						core.RespondError(w, "class not found", http.StatusNotFound)
+						return
+					}
+					core.Logger.Error("schedule change snapshot failed", "err", err, "class_id", id)
+					core.RespondError(w, "could not record the schedule change", http.StatusInternalServerError)
 					return
 				}
 			}

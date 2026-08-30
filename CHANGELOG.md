@@ -9,6 +9,12 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- A class's timing can change from a chosen date without rewriting the past
+  (migration 0046): the Edit Class dialog gains a "new day/time applies
+  from" field. Weeks before that date keep the old day and time everywhere
+  the schedule shows up (calendar week and month views, attendance day
+  lists, dashboards, iCal dates, and the session-billing counts); leaving
+  the field empty still edits retroactively for correcting mistakes.
 - A session-billing dry run for admins: an endpoint computes what each
   student WOULD be charged under per-session billing for a chosen month
   (sessions held x hourly rate, holidays unbilled, cancellations still

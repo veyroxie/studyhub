@@ -248,6 +248,7 @@ func HandleSnapshot(db *store.DB) http.HandlerFunc {
 		run(func() { snap.PerformanceReviews = listPerformanceReviews(db, c) })
 		run(func() { snap.CancelledClasses = listCancelledClasses(db, c) })
 		run(func() { snap.SessionMoves = listSessionMoves(db, c) })
+		run(func() { snap.ScheduleChanges = listScheduleChanges(db, c) })
 		run(func() { snap.SessionOverrides = listSessionOverrides(db, c) })
 		run(func() { snap.Holidays = listHolidays(db, c) })
 		run(func() { snap.ReplacementCredits = listReplacementCredits(db, c) })

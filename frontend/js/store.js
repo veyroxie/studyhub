@@ -69,6 +69,7 @@
     feedback: [], pricingTiers: [], workshops: [], selfStudySessions: [],
     performanceReviews: [], cancelledClasses: [], messages: [], holidays: [],
     sessionMoves: [],
+    scheduleChanges: [],
     replacementCredits: [],
     families: [],
     feedbackReplies: [],

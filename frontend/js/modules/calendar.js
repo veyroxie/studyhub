@@ -49,9 +49,10 @@
   let _filterSearch  = ''; // text search on class name
 
   function render(container) {
-    const { classes, staff, students, cancelledClasses, holidays } = App.Store.get();
+    const { classes, staff, students, cancelledClasses, holidays, scheduleChanges } = App.Store.get();
     const _cancelledClasses = cancelledClasses || [];
     const _holidays = holidays || [];
+    const _schedChanges = scheduleChanges || [];
     const isAdmin = App.currentRole === 'admin';
     const isClient = App.currentRole === 'client';
     const isTeacher = App.currentRole === 'teacher';
@@ -78,10 +79,14 @@
     const viewClasses = teacherClassIds !== null ? classes.filter(function(c) { return teacherClassIds[c.id]; }) : classes;
 
     const classesByDay = {};
-    DAYS.forEach(function(day) {
+    DAYS.forEach(function(day, di) {
+      // Resolve each class's schedule for the column's DATE, not just its
+      // day name — a dated schedule change means past weeks keep the old slot.
+      var colDate = App.Utils.localDate(weekDates[di]);
+      var timeOn = function(c) { return App.Utils.scheduleOn(c, _schedChanges, colDate).time; };
       classesByDay[day] = classes
         .filter(function(c) {
-          if (c.day !== day) return false;
+          if (App.Utils.scheduleOn(c, _schedChanges, colDate).day !== day) return false;
           if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
           if (isClient && c.enrolled >= c.capacity) return false; // hide full classes from parents
           if (teacherClassIds !== null && !teacherClassIds[c.id]) return false;
@@ -89,7 +94,7 @@
           if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
           return true;
         })
-        .sort(function(a, b) { return a.time.localeCompare(b.time); });
+        .sort(function(a, b) { return timeOn(a).localeCompare(timeOn(b)); });
     });
 
     const totalClasses = viewClasses.length;
@@ -259,18 +264,19 @@
         var dayName  = DAY_NAMES[di];
         var isToday  = d.toDateString() === today.toDateString();
         var inMonth  = d.getMonth() === month;
-        var dayCls   = classes.filter(function(c) {
-          if (c.day !== dayName) return false;
-          if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
-          if (_filterTeacher && !c.teacherIds.includes(_filterTeacher)) return false;
-          if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
-          return true;
-        });
         var cellDateStr = App.Utils.localDate(d);
         // Local YYYY-MM-DD (toISOString shifts a day back in UTC+8); used for the
         // day-schedule modal so its header and cancellation match line up with
         // how the week view stores dates.
         var cellLocalDate = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+        var schedChanges = App.Store.get().scheduleChanges;
+        var dayCls   = classes.filter(function(c) {
+          if (App.Utils.scheduleOn(c, schedChanges, cellLocalDate).day !== dayName) return false;
+          if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
+          if (_filterTeacher && !c.teacherIds.includes(_filterTeacher)) return false;
+          if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
+          return true;
+        });
         var cellMoves = App.Utils.movesForDate(App.Store.get().sessionMoves, cellLocalDate);
         dayCls = dayCls.filter(function(c) { return !cellMoves.movedOut[c.id]; });
         cellMoves.movedIn.forEach(function(m) {
@@ -291,9 +297,10 @@
                 if (monthKids.length > 0) monthChildTags = ' <span style="font-size:0.55rem;font-weight:700;color:#92400e">(' + monthKids.map(function(st){return App.Utils.esc(st.firstName);}).join(', ') + ')</span>';
               }
               var tipNames = enrolled.map(function(st) { return st.firstName + ' ' + (st.lastName || '').charAt(0); }).join(', ');
-              var tipText = c.name + ' · ' + App.Utils.formatTime(c.time)
+              var cellTime = App.Utils.scheduleOn(c, schedChanges, cellLocalDate).time;
+              var tipText = c.name + ' · ' + App.Utils.formatTime(cellTime)
                 + (enrolled.length > 0 ? ' — ' + enrolled.length + ' enrolled: ' + tipNames : ' — no students enrolled');
-              return '<div onclick="App.Calendar._classModal(\'' + c.id + '\')" title="' + App.Utils.esc(tipText) + '" style="font-size:0.65rem;font-weight:600;border-radius:4px;padding:1px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer" class="' + colors.pill + '">' + App.Utils.formatTime(c.time) + ' ' + App.Utils.esc(c.name) + monthChildTags + '</div>';
+              return '<div onclick="App.Calendar._classModal(\'' + c.id + '\')" title="' + App.Utils.esc(tipText) + '" style="font-size:0.65rem;font-weight:600;border-radius:4px;padding:1px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer" class="' + colors.pill + '">' + App.Utils.formatTime(cellTime) + ' ' + App.Utils.esc(c.name) + monthChildTags + '</div>';
             }).join('')
           + (dayCls.length > 3 ? '<div onclick="App.Calendar._dayScheduleModal(\'' + cellLocalDate + '\',\'' + dayCls.map(function(c){return c.id;}).join(',') + '\')" title="View all ' + dayCls.length + ' classes" style="font-size:0.63rem;color:#64748b;font-weight:700;cursor:pointer;margin-top:1px">+' + (dayCls.length - 3) + ' more</div>' : '')
           + '</td>';
@@ -446,7 +453,7 @@
       if (!c) return '';
       // Same-weekday move: the natural card already renders (with its
       // moved-from badge) — a second card here would duplicate it.
-      if (c.day === DAYS[dayIndex]) return '';
+      if (App.Utils.scheduleOn(c, state.scheduleChanges, dateStr).day === DAYS[dayIndex]) return '';
       return _classCard(c, staff, state.cancelledClasses || [], weekDates, dayIndex, students);
     }).join('');
   }
@@ -493,6 +500,10 @@
     const ccRow = (dateStr && cancelledClasses) ? cancelledClasses.find(function(cc) { return cc.classId === c.id && cc.date === dateStr; }) : null;
     const isCancelled = !!ccRow;
 
+    // Times as they were ON this date — a dated schedule change must not
+    // relabel past weeks (App.Utils.scheduleOn, migration 0046).
+    const sched = dateStr ? U.scheduleOn(c, App.Store.get().scheduleChanges, dateStr) : c;
+
     // Session moves for this specific date: away from it, or landing on it.
     var _move = dateStr ? App.Utils.movesForDate(App.Store.get().sessionMoves, dateStr) : { movedOut: {}, movedIn: [] };
     var movedOut = _move.movedOut[c.id];
@@ -515,7 +526,7 @@
       return '<div class="bg-red-50 border-l-4 border-red-300 rounded-lg p-2 opacity-60 relative">'
         + '<div style="position:absolute;top:3px;right:4px;font-size:0.6rem;font-weight:700;color:#ef4444;background:#fee2e2;padding:1px 5px;border-radius:4px">Cancelled</div>'
         + '<div class="font-semibold text-xs text-red-300 leading-tight truncate line-through">' + U.esc(c.name) + '</div>'
-        + '<div class="text-xs text-red-200 mt-0.5">' + U.formatTime(c.time) + ' – ' + U.formatTime(c.endTime) + '</div>'
+        + '<div class="text-xs text-red-200 mt-0.5">' + U.formatTime(sched.time) + ' – ' + U.formatTime(sched.endTime) + '</div>'
         + '<div class="text-xs text-red-200 mt-0.5 truncate">' + U.esc(teachers) + '</div>'
         + childBadges
         + (App.currentRole === 'admin'
@@ -537,7 +548,7 @@
       + adminBtns
       + (movedFrom ? '<div style="font-size:0.58rem;font-weight:700;color:#0369a1;background:#e0f2fe;display:inline-block;padding:1px 5px;border-radius:4px;margin-bottom:2px">Moved from ' + U.formatDate(movedFrom.fromDate) + '</div>' : '')
       + '<div class="font-semibold text-xs ' + colors.text + ' leading-tight truncate">' + U.esc(c.name) + '</div>'
-      + '<div class="text-xs ' + colors.text + ' opacity-70 mt-0.5">' + U.formatTime(c.time) + ' – ' + U.formatTime(c.endTime) + '</div>'
+      + '<div class="text-xs ' + colors.text + ' opacity-70 mt-0.5">' + U.formatTime(sched.time) + ' – ' + U.formatTime(sched.endTime) + '</div>'
       + '<div class="text-xs text-slate-500 mt-0.5 truncate">' + U.esc(teachers) + '</div>'
       + childBadges
       + '<div class="mt-1.5 flex items-center gap-1">'
@@ -1316,6 +1327,8 @@
       + _field('Start Time', '<select name="time" class="form-input" required>' + _timeOptions(c.time || '') + '</select>')
       + _field('End Time', '<select name="endTime" class="form-input" required>' + _timeOptions(c.endTime || '') + '</select>')
       + '</div>'
+      + _field('New day/time applies from (optional)', '<input name="scheduleFrom" type="date" class="form-input">')
+      + '<p style="font-size:0.72rem;color:#94a3b8;margin:-0.35rem 0 0">Pick a date to change the timing from that date onward — earlier weeks keep the old schedule and records. Leave empty to correct a mistake (rewrites past weeks too).</p>'
       + '<div class="grid grid-cols-2 gap-3">'
       + _field('Capacity', '<input name="capacity" type="number" min="1" class="form-input" value="' + c.capacity + '">')
       + _field('Color', '<select name="color" class="form-input">' + colorOpts + '</select>')
@@ -1368,13 +1381,18 @@
         monthlyFeeOverride: parseFloat(fd.get('monthlyFeeOverride')) || 0,
         sessionRate: parseFloat(fd.get('sessionRate')) || 0
       };
-      App.Api.put('/api/classes/' + classId, updated).then(function() {
+      var scheduleFrom = fd.get('scheduleFrom') || '';
+      var payload = Object.assign({ scheduleFrom: scheduleFrom }, updated);
+      App.Api.put('/api/classes/' + classId, payload).then(function() {
         // Re-read classes at write time — the `state` captured at modal open
         // may be stale if a snapshot landed while the modal was open.
         var classes = App.Store.get().classes.map(function(x) { return x.id === classId ? updated : x; });
         App.Store.set({ classes: classes });
         App.Utils.hideModal(true);
-        App.Utils.showToast('Class updated', 'success');
+        App.Utils.showToast(scheduleFrom ? 'Class updated — new schedule from ' + App.Utils.formatDate(scheduleFrom) : 'Class updated', 'success');
+        // A dated change created a history row server-side; pull it so past
+        // weeks resolve through it immediately.
+        if (scheduleFrom) return App.Api.refresh();
         App.Router.refresh();
       });
     });

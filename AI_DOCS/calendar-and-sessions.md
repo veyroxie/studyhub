@@ -20,6 +20,7 @@ Per-date divergence is modelled as **exception rows**, all keyed `(tenant_id, cl
 | `class_session_overrides` | this session differs from the template (migration `0040`) |
 | `class_session_moves` | this session runs on another date (migration `0042`) — soft-deletable so a move can be undone; NO credits (the class still happens); a cancelled session cannot be moved (409); move and undo each auto-announce to the class |
 | `holidays` | this date is a holiday (display + reminder suppression only) |
+| `class_schedule_history` | the class's day/time BEFORE a dated schedule change (migration `0046`) — keyed by `changed_on`, the first date the NEW schedule applies, not by session date |
 
 Migration `0040_class_session_overrides.sql:5-14` states the reasoning: classes "carry a day
 and a time but no date, so editing one to cover 'Ms Tan took Monday for Ms Lee this week'
@@ -39,6 +40,29 @@ claims). `ClassSession.Billable()` encodes the money rules: cancelled sessions s
 Any code that expands or counts a class's dated sessions MUST call it -- the iCal feed
 already does; the future billing cron must too. Locked by
 `TestSessionsInPeriod_ClassifiesEveryOccurrence`.
+
+## Dated schedule changes (migration 0046)
+
+A class edit whose payload carries `scheduleFrom` (YYYY-MM-DD) snapshots the OLD
+day/time/end_time into `class_schedule_history` before updating the row
+(`recordScheduleChange` in `handlers_classes.go`), so "the Friday 3pm class becomes
+Thursday 4pm from September" keeps August intact everywhere. A plain edit (no
+`scheduleFrom`) stays a retroactive correction and writes no history.
+
+Resolution rule, implemented twice and kept in sync: for date `d`, the history row with
+the smallest `changed_on > d` wins, else the current classes row. Go: `weekdayOn`
+(`store/sessions.go`, used per-date by the expander, hence billing and iCal). JS:
+`App.Utils.scheduleOn` (`js/utils.js`), consumed by the calendar week/month views,
+attendance day filters, and the dashboard "today" filters -- every NEW date-anchored
+`c.day === ...` comparison must go through it. The snapshot ships the rows as
+`scheduleChanges`.
+
+Two edits with the same effective date keep the FIRST snapshot (unique index +
+`ON CONFLICT DO NOTHING`): the intermediate schedule never applied to a real date, which
+also makes a mistaken change self-undoing (edit back with the same date). Locked by
+`TestSessionsInPeriod_HonoursScheduleHistory`, `TestClassUpdate_ScheduleFromSnapshotsOldSlot`,
+and the `scheduleOn` cases in `tests/unit/utils.test.mjs`. Known cosmetic gap: iCal writes
+event TIMES from the current class row; only dates honour history.
 
 ## Session overrides
 

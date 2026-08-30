@@ -127,10 +127,11 @@
       // Teacher view
       var classes = state.classes || [];
       var todayDayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+      var todayStr = App.Utils.localDate(new Date());
 
       // Classes happening today
       var myClasses = classes.filter(function(c) {
-        return c.teacherIds && c.teacherIds.indexOf(App.currentTeacher) > -1 && c.day === todayDayName;
+        return c.teacherIds && c.teacherIds.indexOf(App.currentTeacher) > -1 && App.Utils.scheduleOn(c, state.scheduleChanges, todayStr).day === todayDayName;
       });
       if (myClasses.length > 0) {
         notifs.push({

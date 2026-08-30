@@ -306,6 +306,21 @@
       return { movedOut: out, movedIn: incoming };
     },
 
+    // scheduleOn resolves the day/time a class met on one date. History rows
+    // (scheduleChanges, migration 0046) store the schedule that applied
+    // BEFORE their changedOn; the oldest row after the date wins, else the
+    // current class row. Mirrors weekdayOn in store/sessions.go -- keep the
+    // two in sync.
+    scheduleOn(cls, changes, dateStr) {
+      var best = null;
+      (changes || []).forEach(function(ch) {
+        if (ch.classId !== cls.id || dateStr >= ch.changedOn) return;
+        if (!best || ch.changedOn < best.changedOn) best = ch;
+      });
+      return best ? { day: best.day, time: best.time, endTime: best.endTime }
+                  : { day: cls.day, time: cls.time, endTime: cls.endTime };
+    },
+
     // holidayCovers is THE holiday range predicate (F4), mirrored by
     // core.HolidayCovers in Go -- keep the two in sync. Missing or malformed
     // endDate (before date) means single-day. Lexical compares: YYYY-MM-DD.
