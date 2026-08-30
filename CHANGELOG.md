@@ -15,6 +15,9 @@ dated section when you cut a deploy.
   the schedule shows up (calendar week and month views, attendance day
   lists, dashboards, iCal dates, and the session-billing counts); leaving
   the field empty still edits retroactively for correcting mistakes.
+- Staff attendance records can be undone from the Staff tab, matching the
+  Undo already available for students; removing a record also removes its
+  hours from payroll.
 - A session-billing dry run for admins: an endpoint computes what each
   student WOULD be charged under per-session billing for a chosen month
   (sessions held x hourly rate, holidays unbilled, cancellations still

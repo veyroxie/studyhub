@@ -285,6 +285,11 @@
                   + 'color:' + (active ? c.activeText : c.text) + '">'
                   + st + '</button>';
               }).join('')
+            + (rec && App.currentRole === 'admin'
+              ? '<button onclick="App.Attendance._undoStaffAttendance(\'' + rec.id + '\',\'' + s.id + '\')" style="'
+                + 'min-height:48px;padding:0.4rem 0.8rem;background:none;color:#94a3b8;border:1px dashed #e2e8f0;'
+                + 'border-radius:999px;font-size:0.78rem;font-weight:600;cursor:pointer" title="Remove this record as if it was never marked">Undo</button>'
+              : '')
             + '</div>'
             + '</div>';
         }).join('')
@@ -1078,6 +1083,22 @@
     } catch (e) { /* App.Api already toasted */ }
   }
 
+  async function _undoStaffAttendance(recId, staffId) {
+    var st = (App.Store.get().staff || []).find(function(x) { return x.id === staffId; });
+    var name = st ? st.fullName : 'this staff member';
+    var ok = await App.Utils.showConfirm({
+      title: 'Undo attendance?',
+      message: 'Removes the record for ' + name + ' as if it was never marked. Hours from this record leave payroll too.',
+      confirmLabel: 'Undo', danger: true
+    });
+    if (!ok) return;
+    try {
+      await App.Api.del('/api/attendance/' + recId);
+      await App.Api.refresh();
+      App.Utils.showToast('Attendance record removed', 'success');
+    } catch (e) { /* App.Api already toasted */ }
+  }
+
   async function _markAbsentNoCredit(studentId) {
     var lockKey = 'noc|' + studentId + '|' + _attClassId + '|' + _attDate;
     if (_absenceLock[lockKey]) return;
@@ -1268,5 +1289,5 @@
     }
   }
 
-  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit, _markAbsentNoCredit: _markAbsentNoCredit, _undoAttendance: _undoAttendance, _markAllPresent: _markAllPresent, _quickFeedback: _quickFeedback, _savePostAttFeedback: _savePostAttFeedback };
+  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit, _markAbsentNoCredit: _markAbsentNoCredit, _undoAttendance: _undoAttendance, _undoStaffAttendance: _undoStaffAttendance, _markAllPresent: _markAllPresent, _quickFeedback: _quickFeedback, _savePostAttFeedback: _savePostAttFeedback };
 })();
