@@ -16,8 +16,17 @@ dated section when you cut a deploy.
   lists, dashboards, iCal dates, and the session-billing counts); leaving
   the field empty still edits retroactively for correcting mistakes.
 - Staff attendance records can be undone from the Staff tab, matching the
-  Undo already available for students; removing a record also removes its
-  hours from payroll.
+  Undo already available for students. Pending payroll recalculates without
+  the removed hours; already-paid or hand-edited payroll rows are not
+  touched.
+
+### Fixed
+- Staff attendance marked from the admin Staff tab was never saved: the
+  Present/Late/Absent buttons only updated the current browser tab, so the
+  marks vanished on the next reload and never reached payroll or the undo
+  endpoint. They now save to the server like every other attendance flow,
+  with a rollback and an error message if saving fails. (Teacher self
+  check-ins were unaffected.)
 - A session-billing dry run for admins: an endpoint computes what each
   student WOULD be charged under per-session billing for a chosen month
   (sessions held x hourly rate, holidays unbilled, cancellations still

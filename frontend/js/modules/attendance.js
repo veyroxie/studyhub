@@ -705,13 +705,36 @@
     const state = App.Store.get();
     const existingIdx = state.attendance.findIndex(function(a) { return a.personId === staffId && a.personType === 'staff' && a.date === _attDate; });
     const now = App.Utils.nowTime();
+    var prevAtt = state.attendance;
     let newAtt = state.attendance.slice();
+    let rec;
     if (existingIdx > -1) {
-      newAtt[existingIdx] = { ...newAtt[existingIdx], status: status, checkIn: status !== 'Absent' ? (newAtt[existingIdx].checkIn || now) : null };
+      rec = { ...newAtt[existingIdx], status: status, checkIn: status !== 'Absent' ? (newAtt[existingIdx].checkIn || now) : null };
+      newAtt[existingIdx] = rec;
     } else {
-      newAtt.push({ id: App.Utils.generateId('ATT'), personId: staffId, personType: 'staff', date: _attDate, checkIn: status !== 'Absent' ? now : null, checkOut: null, status: status });
+      rec = { id: App.Utils.generateId('ATT'), personId: staffId, personType: 'staff', date: _attDate, checkIn: status !== 'Absent' ? now : null, checkOut: null, status: status };
+      newAtt.push(rec);
     }
     App.Store.set({ attendance: newAtt });
+
+    // Persist — without the POST the mark lives only in this tab: gone on
+    // the next snapshot, never counted in payroll, and Undo 404s.
+    App.Api.post('/api/attendance', {
+      id: rec.id, personId: staffId, personType: 'staff', date: _attDate,
+      // Echo both times: the backend upsert overwrites what is not sent.
+      checkIn: rec.checkIn, checkOut: rec.checkOut || null, status: status
+    }, { silent: true }).then(function(saved) {
+      if (!saved || !saved.id || saved.id === rec.id) return;
+      // The upsert matched a row this tab didn't know (e.g. a teacher
+      // self check-in) — adopt the server id so Undo deletes the real row.
+      const att = App.Store.get().attendance.map(function(a) { return a.id === rec.id ? { ...a, id: saved.id } : a; });
+      App.Store.set({ attendance: att });
+      App.Router.refresh();
+    }).catch(function(err) {
+      App.Store.set({ attendance: prevAtt });
+      App.Utils.showToast('Attendance failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
+      App.Router.refresh();
+    });
 
     // If marked Absent and user is admin, check for classes on this day and offer to cancel
     if (status === 'Absent' && App.currentRole === 'admin') {
@@ -1088,7 +1111,7 @@
     var name = st ? st.fullName : 'this staff member';
     var ok = await App.Utils.showConfirm({
       title: 'Undo attendance?',
-      message: 'Removes the record for ' + name + ' as if it was never marked. Hours from this record leave payroll too.',
+      message: 'Removes the record for ' + name + ' as if it was never marked.',
       confirmLabel: 'Undo', danger: true
     });
     if (!ok) return;

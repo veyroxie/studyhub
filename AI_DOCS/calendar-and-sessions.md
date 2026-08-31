@@ -213,8 +213,15 @@ can corrupt payroll.
 
 The upsert overwrites `check_in` with whatever the client sends, so **every check-out call
 must echo the existing check-in time back** or it is blanked. The frontend does this
-deliberately in three places (`attendance.js:817-819, 453, 935`). A new client that posts only
-`checkOut` erases the check-in.
+deliberately in three places (`attendance.js:817-819, 453, 935`), and `_markStaff` echoes
+both times for the same reason. A new client that posts only `checkOut` erases the check-in.
+
+**Staff-tab marks sync bug -- FIXED 2026-08-31.** `_markStaff` historically wrote only to the
+local store (no POST), so admin-marked staff attendance evaporated on the next snapshot and
+never reached payroll -- and the staff Undo button 404'd against a row the server never had.
+It now POSTs with the local id (the upsert echoes the existing row's id back, which the store
+adopts so Undo targets the real record) and rolls back on failure. Any staff attendance the
+centre entered via that tab before this fix was silently lost.
 
 Marking a student absent with credit is a two-step non-atomic flow: the absence POST must
 succeed before the credit POST is attempted, because a swallowed absence failure previously
