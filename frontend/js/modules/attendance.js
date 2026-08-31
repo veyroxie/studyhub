@@ -741,7 +741,10 @@
       const state2 = App.Store.get();
       const dateDay = new Date(_attDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
       const staffMember = state2.staff.find(function(s) { return s.id === staffId; });
-      const affectedClasses = state2.classes.filter(function(c) { return c.teacherIds.indexOf(staffId) > -1 && App.Utils.scheduleOn(c, state2.scheduleChanges, _attDate).day === dateDay; });
+      // A session moved off this date can't be cancelled here (the backend
+      // rejects cancel-with-live-move), so don't offer it.
+      const mvOut = App.Utils.movesForDate(state2.sessionMoves, _attDate).movedOut;
+      const affectedClasses = state2.classes.filter(function(c) { return c.teacherIds.indexOf(staffId) > -1 && App.Utils.scheduleOn(c, state2.scheduleChanges, _attDate).day === dateDay && !mvOut[c.id]; });
       if (affectedClasses.length > 0) {
         App.Router.refresh();
         _cancelClassModal(staffMember, affectedClasses);

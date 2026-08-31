@@ -21,6 +21,9 @@ dated section when you cut a deploy.
   touched.
 
 ### Fixed
+- Marking a teacher absent no longer offers to cancel a session that was
+  already rescheduled off that day (the cancellation would have been
+  rejected anyway).
 - A dated schedule change earlier than one already recorded is now rejected
   with a clear message instead of silently corrupting the earlier weeks'
   history — apply changes in date order, or undo the later change first.
