@@ -190,4 +190,15 @@ func TestClassUpdate_ScheduleFromSnapshotsOldSlot(t *testing.T) {
 	if code := put("Monday", "09:00", "10:00", "not-a-date"); code != http.StatusBadRequest {
 		t.Fatalf("malformed scheduleFrom should 400, got %d", code)
 	}
+
+	// Out-of-order: a change EARLIER than the recorded 2026-09-01 change must
+	// be rejected — the row already reflects the later edit, so snapshotting
+	// it would backdate the wrong schedule (409, review finding).
+	if code := put("Tuesday", "11:00", "12:00", "2026-08-15"); code != http.StatusConflict {
+		t.Fatalf("out-of-order scheduleFrom should 409, got %d", code)
+	}
+	db.QueryRow(`SELECT COUNT(*) FROM class_schedule_history WHERE class_id=?`, classID).Scan(&count)
+	if count != 1 {
+		t.Fatalf("rejected out-of-order edit must not add history, got %d rows", count)
+	}
 }

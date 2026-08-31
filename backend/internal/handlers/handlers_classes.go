@@ -71,6 +71,11 @@ func listScheduleChanges(db *store.DB, c *core.Claims) []models.ScheduleChange {
 	})
 }
 
+// errScheduleOutOfOrder rejects a dated change EARLIER than one already
+// recorded: the classes row already reflects the later edit, so snapshotting
+// it would backdate the wrong schedule into the earlier timeline.
+var errScheduleOutOfOrder = errors.New("a later schedule change already exists")
+
 // recordScheduleChange snapshots the class's current slot before an
 // effective-dated edit, so dates before ScheduleFrom keep the old schedule.
 // A repeat edit with the same effective date keeps the FIRST snapshot: the
@@ -83,6 +88,12 @@ func recordScheduleChange(db *store.DB, c *core.Claims, id string, cl models.Cla
 	}
 	if day == cl.Day && tm == cl.Time && end == cl.EndTime {
 		return nil
+	}
+	var later int
+	db.QueryRow(`SELECT COUNT(*) FROM class_schedule_history WHERE tenant_id=? AND class_id=? AND changed_on>?`,
+		store.TenantID(c), id, cl.ScheduleFrom).Scan(&later)
+	if later > 0 {
+		return errScheduleOutOfOrder
 	}
 	_, err := db.Exec(`INSERT INTO class_schedule_history(id,tenant_id,class_id,day,time,end_time,changed_on,created_by,created_on)
 		VALUES(?,?,?,?,?,?,?,?,?)
@@ -249,6 +260,10 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 				if err := recordScheduleChange(db, c, id, cl); err != nil {
 					if errors.Is(err, sql.ErrNoRows) {
 						core.RespondError(w, "class not found", http.StatusNotFound)
+						return
+					}
+					if errors.Is(err, errScheduleOutOfOrder) {
+						core.RespondError(w, "This class already has a schedule change after that date — pick a date on or after the latest change, or undo the later change first.", http.StatusConflict)
 						return
 					}
 					core.Logger.Error("schedule change snapshot failed", "err", err, "class_id", id)

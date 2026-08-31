@@ -59,7 +59,10 @@ attendance day filters, and the dashboard "today" filters -- every NEW date-anch
 
 Two edits with the same effective date keep the FIRST snapshot (unique index +
 `ON CONFLICT DO NOTHING`): the intermediate schedule never applied to a real date, which
-also makes a mistaken change self-undoing (edit back with the same date). Locked by
+also makes a mistaken change self-undoing (edit back with the same date). Changes must be
+made in date order: a `scheduleFrom` EARLIER than an already-recorded change is rejected
+with a 409 (`errScheduleOutOfOrder`) -- the row already reflects the later edit, so
+snapshotting it would backdate the wrong schedule into the earlier timeline. Locked by
 `TestSessionsInPeriod_HonoursScheduleHistory`, `TestClassUpdate_ScheduleFromSnapshotsOldSlot`,
 and the `scheduleOn` cases in `tests/unit/utils.test.mjs`. Known cosmetic gap: iCal writes
 event TIMES from the current class row; only dates honour history.

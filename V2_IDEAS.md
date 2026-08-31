@@ -140,6 +140,15 @@ further defects. Highest severity, promoted into scope:
 - NEW-21: all tenants' emails brand as tenant 1; PrimaryColor unescaped.
 - Full list with refs: task output archived; items NEW-8..NEW-30 tracked here
   as the audit's numbered findings.
+- NEW-31 (code-review 31/08, CONFIRMED): F8 session pricing takes class
+  duration from the CURRENT class row, so a dated schedule change (0046) that
+  alters class length would misprice earlier months. Resolve duration through
+  class_schedule_history (e.g. ClassSession carries resolved times) BEFORE the
+  8.7 cron switchover; same fix lets iCal stamp historical times.
+- NEW-32 (code-review 31/08): optimistic attendance writes persist to
+  localStorage before the server acks, so a rolled-back failed save can
+  resurface stale rows on reload. Audit App.Store persistence vs optimistic
+  flows.
 
 Corrections to this file from the second pass: A9's email-queue/reminder claim
 work is DONE (landed in the working tree); A9 now = tenant-lookup logging

@@ -21,6 +21,9 @@ dated section when you cut a deploy.
   touched.
 
 ### Fixed
+- A dated schedule change earlier than one already recorded is now rejected
+  with a clear message instead of silently corrupting the earlier weeks'
+  history — apply changes in date order, or undo the later change first.
 - Staff attendance marked from the admin Staff tab was never saved: the
   Present/Late/Absent buttons only updated the current browser tab, so the
   marks vanished on the next reload and never reached payroll or the undo
