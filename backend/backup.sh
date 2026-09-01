@@ -31,10 +31,11 @@ S3_BUCKET="${S3_BUCKET:-}"
 S3_ACCESS_KEY="${S3_ACCESS_KEY:-}"
 S3_SECRET_KEY="${S3_SECRET_KEY:-}"
 S3_HOST="${S3_HOST:-sgp1.digitaloceanspaces.com}"
-# Bucket addressing style. DigitalOcean Spaces uses virtual-host
-# (bucket.host); Cloudflare R2's S3 API only accepts PATH style
-# (host/bucket), so R2 needs S3_HOST_BUCKET set to "$S3_HOST/%(bucket)s".
-# Getting this wrong fails with a DNS or 403 error, not an obvious message.
+# Bucket addressing style. The default (virtual-host, bucket.host) is what
+# BOTH DigitalOcean Spaces and Cloudflare R2 want with s3cmd -- R2 was
+# verified against it on 2026-09-02. Only override this for a provider that
+# requires path style; getting it wrong surfaces as a 403
+# SignatureDoesNotMatch, which reads like a bad secret key and is not.
 S3_HOST_BUCKET="${S3_HOST_BUCKET:-%(bucket)s.$S3_HOST}"
 
 if [ -n "$S3_BUCKET" ] && [ -n "$S3_ACCESS_KEY" ]; then
