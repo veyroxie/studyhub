@@ -145,6 +145,9 @@ further defects. Highest severity, promoted into scope:
   alters class length would misprice earlier months. Resolve duration through
   class_schedule_history (e.g. ClassSession carries resolved times) BEFORE the
   8.7 cron switchover; same fix lets iCal stamp historical times.
+- NEW-31/32 and the rest of the 01/09 review are planned in depth in
+  `notes/session-model-hardening.md` — read that before starting any of them;
+  it sequences them so each phase makes the next safer.
 - NEW-32 (code-review 31/08): optimistic attendance writes persist to
   localStorage before the server acks, so a rolled-back failed save can
   resurface stale rows on reload. Audit App.Store persistence vs optimistic
