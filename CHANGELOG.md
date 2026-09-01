@@ -21,6 +21,11 @@ dated section when you cut a deploy.
   touched.
 
 ### Fixed
+- The hourly health self-check now warns when backups are local-only.
+  The nightly dump was running and passing its freshness check, but the
+  off-site upload had never been switched on, so every backup sat on the
+  same droplet as the database it protects — the one failure the backup
+  exists to survive.
 - A session cancelled on the date it was rescheduled TO now shows as
   cancelled in the parent calendar feed, instead of still appearing as a
   normal class. What the class is charged does not change.

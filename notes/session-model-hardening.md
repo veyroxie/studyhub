@@ -435,6 +435,25 @@ change surface as "becomes editing a session rate", so that file is slated for
 rework during `pricing_tiers` retirement. Fixing the clobber now is still right —
 it is live and it is money — and the partial-update pattern carries over.
 
+## 6.4 Backups — findings 2026-09-01
+
+Checked on the droplet while answering a question about data safety, not part
+of the review:
+
+- Nightly `backup.sh` cron IS installed and working (dumps present for every
+  recent night, pruning correctly, restores cleanly).
+- **Off-site upload was never enabled.** Every log line ends "S3 not configured
+  — local backup only", so all backups lived on the droplet they protect.
+  `docker-compose.yml` already forwards `S3_BUCKET`/`S3_ACCESS_KEY`/
+  `S3_SECRET_KEY` and `s3cmd` is in the runtime image, so the only missing
+  piece is the values in the droplet's `.env`. **Owner: Ely** (credentials).
+- `backup_verify.sh` cron was never installed — INSTALLED 2026-09-01, and run
+  once manually: the newest dump restores cleanly (51 users, 77 students, 100
+  invoices, 0 orphans).
+- The self-check only tested backup FRESHNESS, which is why nothing alerted.
+  It now also alerts when `S3_BUCKET` is unset in production, so this cannot
+  go quiet again.
+
 ## 6.5 Follow-on feature: the student summary (requested 2026-09-01)
 
 Ely's decision on mixed-duration months settles a wider principle: **the invoice

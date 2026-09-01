@@ -133,6 +133,14 @@ func runHealthSelfCheck(db *store.DB) {
 		alerts = append(alerts, "Database backup looks stale — "+detail+".")
 	}
 
+	// Fresh local backups are NOT a working backup: they sit on the same
+	// droplet as the database, so losing the machine loses both. This went
+	// unnoticed for months because the freshness check above was passing --
+	// the nightly dump ran fine, it just never left the box.
+	if core.AppEnv() == "production" && os.Getenv("S3_BUCKET") == "" && alertOnce("backup_offsite") {
+		alerts = append(alerts, "Backups are LOCAL ONLY — S3_BUCKET is unset, so nothing is copied off this droplet. Losing the droplet loses every backup with it.")
+	}
+
 	var stuck int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM email_queue WHERE status='pending' AND next_attempt_at < NOW() - INTERVAL '2 hours'`).Scan(&stuck); err == nil && stuck > 0 && alertOnce("email_queue") {
 		alerts = append(alerts, fmt.Sprintf("%d email(s) stuck in the send queue for over 2 hours.", stuck))
