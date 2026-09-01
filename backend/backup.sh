@@ -31,13 +31,19 @@ S3_BUCKET="${S3_BUCKET:-}"
 S3_ACCESS_KEY="${S3_ACCESS_KEY:-}"
 S3_SECRET_KEY="${S3_SECRET_KEY:-}"
 S3_HOST="${S3_HOST:-sgp1.digitaloceanspaces.com}"
+# Bucket addressing style. DigitalOcean Spaces uses virtual-host
+# (bucket.host); Cloudflare R2's S3 API only accepts PATH style
+# (host/bucket), so R2 needs S3_HOST_BUCKET set to "$S3_HOST/%(bucket)s".
+# Getting this wrong fails with a DNS or 403 error, not an obvious message.
+S3_HOST_BUCKET="${S3_HOST_BUCKET:-%(bucket)s.$S3_HOST}"
 
 if [ -n "$S3_BUCKET" ] && [ -n "$S3_ACCESS_KEY" ]; then
   s3cmd put "${BACKUP_FILE}.gz" "s3://$S3_BUCKET/backups/" \
     --access_key="$S3_ACCESS_KEY" \
     --secret_key="$S3_SECRET_KEY" \
     --host="$S3_HOST" \
-    --host-bucket="%(bucket)s.$S3_HOST" \
+    --host-bucket="$S3_HOST_BUCKET" \
+    --region="${S3_REGION:-auto}" \
     --no-mime-magic
   echo "[$(date)] Uploaded to s3://$S3_BUCKET/backups/"
 else

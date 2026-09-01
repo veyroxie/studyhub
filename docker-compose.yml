@@ -72,6 +72,9 @@ services:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       S3_HOST: ${S3_HOST:-sgp1.digitaloceanspaces.com}
+      # Cloudflare R2 needs path-style: "${S3_HOST}/%(bucket)s"
+      S3_HOST_BUCKET: ${S3_HOST_BUCKET:-}
+      S3_REGION: ${S3_REGION:-auto}
     depends_on:
       postgres:
         condition: service_healthy
