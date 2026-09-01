@@ -239,6 +239,26 @@ func HandleClasses(db *store.DB) http.HandlerFunc {
 	}
 }
 
+// classByID loads one class so an update can be decoded ON TOP of it.
+// encoding/json leaves fields absent from the body untouched, so prefilling
+// makes a partial PUT keep its stored values instead of zeroing them. That is
+// the whole family of "editing a class quietly cleared X" bugs -- subject was
+// the one that reached production (see calendar.js), and session_rate,
+// level_band and monthly_fee_override had the same exposure.
+func classByID(db *store.DB, c *core.Claims, id string) (models.Class, error) {
+	tw, twArgs := store.ScopeTenant(c, "")
+	var cl models.Class
+	var tids string
+	err := db.QueryRow(`SELECT id,name,teacher_ids,COALESCE(classroom,''),COALESCE(day,''),COALESCE(time,''),COALESCE(end_time,''),capacity,enrolled,COALESCE(color,''),COALESCE(category,''),COALESCE(class_type,'Group'),COALESCE(level_band,''),COALESCE(subject,''),COALESCE(monthly_fee_override,0),COALESCE(session_rate,0)
+		FROM classes WHERE id=? AND deleted_at IS NULL`+tw, append([]any{id}, twArgs...)...).
+		Scan(&cl.ID, &cl.Name, &tids, &cl.Classroom, &cl.Day, &cl.Time, &cl.EndTime, &cl.Capacity, &cl.Enrolled, &cl.Color, &cl.Category, &cl.ClassType, &cl.LevelBand, &cl.Subject, &cl.MonthlyFeeOverride, &cl.SessionRate)
+	if err != nil {
+		return cl, err
+	}
+	cl.TeacherIDs = models.ParseArr(tids)
+	return cl, nil
+}
+
 func HandleClassByID(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := core.ClaimsFrom(r)
@@ -249,7 +269,13 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "admin only", 403)
 				return
 			}
-			var cl models.Class
+			cl, err := classByID(db, c, id)
+			if err != nil {
+				core.RespondError(w, "class not found", http.StatusNotFound)
+				return
+			}
+			// Decoded OVER the stored row: fields the client omits keep their
+			// saved values rather than being zeroed.
 			if err := json.NewDecoder(r.Body).Decode(&cl); err != nil {
 				core.RespondError(w, "bad body", 400)
 				return

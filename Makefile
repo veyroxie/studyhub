@@ -43,7 +43,7 @@ release:  ## fast-forward prod from main and push both (guards: on main, clean t
 	@echo "prod is at $$(git rev-parse --short prod)"
 
 deploy:  ## droplet: pull prod, rebuild the api image, restart, then verify
-	$(SSH) "cd $(REMOTE_DIR) && git pull --ff-only origin prod && docker compose build api && docker compose up -d api"
+	$(SSH) "cd $(REMOTE_DIR) && git pull --ff-only origin prod && VERSION=$$(git rev-parse --short HEAD) docker compose build api && docker compose up -d api"
 	@sleep 5
 	@$(MAKE) --no-print-directory verify
 

@@ -8,9 +8,10 @@ import (
 	"time"
 )
 
-// buildVersion is overridden at link time via -ldflags="-X main.buildVersion=..."
-// during Docker builds. Defaults to "dev" so local builds always work.
-var buildVersion = "dev"
+// The build stamp lives in core.BuildVersion, which is what the Dockerfile's
+// -ldflags actually sets. This package used to declare its own buildVersion
+// that nothing ever wrote, so /api/health reported "dev" on every production
+// build and could not answer "is my fix live?".
 
 // handleHealth returns a JSON status payload usable by uptime monitors and
 // container orchestrators. Probes:
@@ -58,7 +59,7 @@ func HandleHealth(db *store.DB) http.HandlerFunc {
 		core.Respond(w, map[string]any{
 			"ok":         ok,
 			"db":         dbStatus,
-			"version":    buildVersion,
+			"version":    core.BuildVersion,
 			"go_version": runtime.Version(),
 			"env":        core.AppEnv(),
 			"uptime_sec": int(time.Since(core.BootTime).Seconds()),

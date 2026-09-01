@@ -59,6 +59,8 @@ describe the defect, not its status.
 | C3 / `NEW-31` | Phase 3 | `store.SessionRateOn` prices a session at the duration it actually ran; iCal stamps each event with its own date's times. A month whose sessions differ in length is FLAGGED, not blended — `Qty x UnitPrice` cannot express it |
 | 2.3 differ | `36bd2de` | Mutation-checked; run against a production copy before deploying 0047 |
 | C2 | `2967f4b` | Move onto an occupied date rejected with a 409 |
+| E2 | Phase 1.4b | Class PUT decodes OVER the stored row, so omitted fields keep their values |
+| B2/B3 | closed by evidence | Nothing in the codebase creates a superadmin account — the role is only ever checked, never assigned. Confirmed with Ely 2026-09-01 that the centre runs on plain admin accounts, so the tenancy group was theoretical. The B1 fix stands as correctness. |
 
 **B2/B3 reassessed 2026-09-01 (downgraded).** The ~20 `store.TenantID(c)`
 write sites do not share one failure mode. A site whose lookup is scoped with a
@@ -432,6 +434,25 @@ classes onto stored per-session rates. Decide which before writing it.
 change surface as "becomes editing a session rate", so that file is slated for
 rework during `pricing_tiers` retirement. Fixing the clobber now is still right —
 it is live and it is money — and the partial-update pattern carries over.
+
+## 6.5 Follow-on feature: the student summary (requested 2026-09-01)
+
+Ely's decision on mixed-duration months settles a wider principle: **the invoice
+stays simple and predictable, and the detail lives somewhere else.** Billing
+follows the ordinary weekly schedule; replacements, credits and schedule changes
+must not make a parent's bill harder to read.
+
+The place for that detail is a per-student summary, visible to both the centre
+and the parent, showing:
+
+- replacement credits earned and used, with what each came from
+- self-study hours used against the package, and any overflow
+- schedule changes and rescheduled sessions affecting that student
+
+Not a defect, so it is not in the inventory. Sequence it AFTER the cron
+switchover: the same resolved-session data feeds it, and building it first would
+mean building it twice. It also answers the credits questions the centre has
+raised repeatedly (see `studyhub-open-questions-for-nadine`).
 
 ## 7. What is deliberately not here
 

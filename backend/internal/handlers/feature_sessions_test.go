@@ -431,3 +431,42 @@ func TestScheduleBackfill_MatchesLegacyResolver(t *testing.T) {
 	}
 	t.Logf("compared %d class-dates across %d classes", checked, len(classes))
 }
+
+// TestClassUpdate_OmittedFieldsSurvive locks the partial-PUT contract for
+// classes. Omitting subject once "quietly cleared the invoice line name every
+// time a class was edited" (documented at calendar.js); session_rate,
+// level_band and monthly_fee_override had the same exposure.
+func TestClassUpdate_OmittedFieldsSurvive(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+
+	r := chi.NewRouter()
+	r.Post("/api/auth/login", auth.HandleLogin(db))
+	r.Group(func(g chi.Router) {
+		g.Use(auth.JWTMiddleware(db))
+		g.Put("/api/classes/{id}", HandleClassByID(db))
+	})
+	tok := getToken(t, r, "admin@studyhub.com", "admin123")
+
+	classID := core.GenerateID("CLS")
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,capacity,class_type,level_band,subject,session_rate) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		classID, 1, "Rich Class", "Monday", "10:00", "11:00", 6, "Group", "1-3", "Mandarin", 42.5)
+
+	// A minimal edit: only the name. Everything else must survive.
+	if w := authedJSON(t, r, "PUT", "/api/classes/"+classID, tok, map[string]any{
+		"name": "Renamed Class",
+	}); w.Code != http.StatusOK {
+		t.Fatalf("partial class update failed: %d %s", w.Code, w.Body.String())
+	}
+
+	var name, day, subject, band string
+	var rate float64
+	db.QueryRow(`SELECT name, day, COALESCE(subject,''), COALESCE(level_band,''), COALESCE(session_rate,0) FROM classes WHERE id=?`, classID).
+		Scan(&name, &day, &subject, &band, &rate)
+	if name != "Renamed Class" {
+		t.Errorf("the sent field must apply, got name %q", name)
+	}
+	if subject != "Mandarin" || band != "1-3" || rate != 42.5 || day != "Monday" {
+		t.Errorf("omitted fields were clobbered: day=%q subject=%q band=%q rate=%v", day, subject, band, rate)
+	}
+}
