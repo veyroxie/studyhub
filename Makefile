@@ -9,7 +9,7 @@ REMOTE_DIR ?= /root/studyhub
 SSH := ssh -o ConnectTimeout=10 $(DROPLET)
 
 .DEFAULT_GOAL := help
-.PHONY: help check check-full test-up test-dev test-down test-reset release deploy deploy-nobuild verify ship logs psql ssh failed-emails
+.PHONY: help check check-full test-up test-dev test-down test-reset release deploy deploy-nobuild verify ship logs psql ssh failed-emails migration-dryrun
 
 help:  ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  make %-14s %s\n", $$1, $$2}'
@@ -66,6 +66,9 @@ verify:  ## prove the deploy: fresh uptime, migrations applied, prod config, hea
 	  else echo "CHECK NEEDED: ok=$$ok uptime=$$up sec (old container still running?)"; exit 1; fi'
 
 ship: check-full release deploy  ## the whole flow: full checks -> release -> deploy -> verify
+
+migration-dryrun:  ## copy prod into a throwaway DB, migrate it, diff the backfill (read-only on prod)
+	./scripts/migration-dryrun.sh
 
 logs:  ## follow the production api log
 	$(SSH) 'docker logs -f --tail 100 $$(docker ps -qf name=api)'
