@@ -110,3 +110,67 @@ func TestSessionBillingPreview(t *testing.T) {
 		t.Error("skipped student must carry the no-referral-consumed reason")
 	}
 }
+
+// TestSessionPreview_ReportsBilledDates locks that the dry run names the dates
+// behind a charge, not just a count -- what makes a month checkable against the
+// schedule before the switchover, and the data F2 needs frozen onto the invoice
+// line once the cron bills from sessions. The holiday Monday must be absent and
+// the cancelled one present, since a cancellation still bills.
+func TestSessionPreview_ReportsBilledDates(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+
+	month := time.Now().AddDate(0, 2, 0)
+	monthStart := time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, time.Local)
+	var mondays []string
+	for d := monthStart; d.Month() == monthStart.Month(); d = d.AddDate(0, 0, 1) {
+		if d.Weekday() == time.Monday {
+			mondays = append(mondays, d.Format("2006-01-02"))
+		}
+	}
+
+	classID := core.GenerateID("CLS")
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,class_type,level_band) VALUES(?,?,?,?,?,?,?,?)`,
+		classID, 1, "Dates Group 1-3", "Monday", "10:00", "11:00", "Group", "1-3")
+	db.Exec(`INSERT INTO holidays(id,tenant_id,name,date,end_date) VALUES(?,?,?,?,?)`,
+		core.GenerateID("HOL"), 1, "Dates Holiday", mondays[0], "")
+	db.Exec(`INSERT INTO cancelled_classes(id,tenant_id,class_id,date,created_on) VALUES(?,?,?,?,?)`,
+		core.GenerateID("CC"), 1, classID, mondays[1], core.Today())
+
+	stuID := core.GenerateID("STU")
+	db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,contact,level_band,package_amount,enrolled_classes) VALUES(?,?,?,?,?,?,?,?)`,
+		stuID, 1, "Dates", "Student", "dates@example.com", "", 0, `["`+classID+`"]`)
+
+	claims := &core.Claims{TenantID: 1, Role: "admin", Email: "admin@studyhub.com"}
+	var line jobs.PreviewLine
+	for _, ps := range jobs.SessionBillingPreview(db, claims, month).Students {
+		if ps.StudentID == stuID && len(ps.Lines) == 1 {
+			line = ps.Lines[0]
+		}
+	}
+	if line.ClassID != classID {
+		t.Fatal("preview line for the test student not found")
+	}
+	if len(line.BilledDates) != line.Billable {
+		t.Fatalf("%d billable but %d dates listed: %v", line.Billable, len(line.BilledDates), line.BilledDates)
+	}
+	for _, d := range line.BilledDates {
+		if d == mondays[0] {
+			t.Errorf("holiday %s must not be billed", d)
+		}
+	}
+	var sawCancelled bool
+	for _, d := range line.BilledDates {
+		if d == mondays[1] {
+			sawCancelled = true
+		}
+	}
+	if !sawCancelled {
+		t.Errorf("cancelled session %s still bills (credits compensate) and must be listed", mondays[1])
+	}
+	for i := 1; i < len(line.BilledDates); i++ {
+		if line.BilledDates[i-1] >= line.BilledDates[i] {
+			t.Fatalf("dates must be ascending, got %v", line.BilledDates)
+		}
+	}
+}

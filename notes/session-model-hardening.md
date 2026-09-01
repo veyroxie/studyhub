@@ -260,16 +260,26 @@ Verify: a PUT omitting `hourlyRate` leaves the stored rate untouched. Test it.
 
 ### Phase 1.5 — Freeze session dates on the invoice line (J1 / F2)
 
-Before Phase 2, not after. The invoice line item gains the session dates it was
-computed from, so a past month is answerable from the record rather than by
-replaying a schedule that may since have changed. `InvoiceLineItem` already
-carries `Qty` and `UnitPrice` and the PDF already renders them
-(`V2_REBUILD_PLAN.md:436-441`), so this is a descriptor change, not a schema
-redesign.
+**Revised 2026-09-01 after checking the code.** This cannot be done as its own
+step: the live cron bills a flat monthly fee (`cron.go:345`) and produces no
+session-derived line, so today there is nothing to freeze. The freeze belongs
+*inside* the F5 switchover, not before it.
 
-Why first: it is the cheaper of the two history fixes and it holds even if the
-version table is later found to have a backfill error. It also means Phase 2 can
-be shipped without every past invoice depending on it being correct.
+What was independently useful and is DONE: the dry run now reports
+`BilledDates` per line -- the dates that produced the charge, moved sessions
+listed under their origin to match `Billable()`. Two payoffs: the centre's
+comparison gate becomes checkable against the real schedule instead of being a
+bare count, and the generator that F5 will build already has the exact data F2
+wants frozen.
+
+`InvoiceLineItem` needs no schema change when that lands -- it already carries
+`Details []string` alongside `Qty`/`UnitPrice`, and the PDF renders them
+(`V2_REBUILD_PLAN.md:436-441`).
+
+Consequence for the sequence: **Phase 2 is no longer gated on this.** The
+argument for doing J1 first was that it is a safety net holding even if the
+version backfill is wrong. That still holds, but it can only be built with F5,
+so Phase 2 now precedes it.
 
 ### Phase 2 — Schedule versions (migration `0047`)
 

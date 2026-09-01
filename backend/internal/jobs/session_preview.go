@@ -23,19 +23,24 @@ import (
 //     human instead of silently pricing at 0 or dropping the student.
 
 type PreviewLine struct {
-	ClassID    string  `json:"classId"`
-	ClassName  string  `json:"className"`
-	Held       int     `json:"held"`
-	Cancelled  int     `json:"cancelled"`
-	MovedOut   int     `json:"movedOut"`
-	Holiday    int     `json:"holiday"`
-	Billable   int     `json:"billable"`
-	Rate       float64 `json:"rate"`
-	Amount     float64 `json:"amount"`
-	MonthlyFee float64 `json:"monthlyFee"`
-	Skipped    bool    `json:"skipped"`
-	Flagged    bool    `json:"flagged"`
-	Reason     string  `json:"reason,omitempty"`
+	ClassID   string `json:"classId"`
+	ClassName string `json:"className"`
+	Held      int    `json:"held"`
+	Cancelled int    `json:"cancelled"`
+	MovedOut  int    `json:"movedOut"`
+	Holiday   int    `json:"holiday"`
+	Billable  int    `json:"billable"`
+	// BilledDates lists the dates that produced the charge, in order. A moved
+	// session appears under its ORIGIN date, matching Billable(). This is what
+	// makes a month checkable against the schedule, and it is the data F2 needs
+	// frozen onto the invoice line at the cron switchover.
+	BilledDates []string `json:"billedDates,omitempty"`
+	Rate        float64  `json:"rate"`
+	Amount      float64  `json:"amount"`
+	MonthlyFee  float64  `json:"monthlyFee"`
+	Skipped     bool     `json:"skipped"`
+	Flagged     bool     `json:"flagged"`
+	Reason      string   `json:"reason,omitempty"`
 }
 
 type PreviewStudent struct {
@@ -151,6 +156,7 @@ func previewLine(db *store.DB, classID, studentBand string, fees map[string]clas
 		}
 		if sess.Billable() {
 			line.Billable++
+			line.BilledDates = append(line.BilledDates, sess.Date)
 		}
 	}
 	if line.Billable == 0 {
