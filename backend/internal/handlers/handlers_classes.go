@@ -82,15 +82,20 @@ var errScheduleOutOfOrder = errors.New("a later schedule change already exists")
 // intermediate schedule never applied to a real date (migration 0046).
 func recordScheduleChange(db *store.DB, c *core.Claims, id string, cl models.Class) error {
 	tw, twArgs := store.ScopeTenant(c, "")
+	// Tenant comes from the CLASS, not the caller. store.TenantID returns 0 for
+	// a superadmin (cross-tenant), which is right for reads and wrong for
+	// writes: it would stamp tenant_id=0 on the history row, and every reader
+	// scopes by the class's real tenant, so the row would be invisible and the
+	// schedule change would silently fail to preserve the past.
+	var tenantID int
 	var day, tm, end string
-	if err := db.QueryRow(`SELECT day,time,end_time FROM classes WHERE id=? AND deleted_at IS NULL`+tw, append([]any{id}, twArgs...)...).Scan(&day, &tm, &end); err != nil {
+	if err := db.QueryRow(`SELECT tenant_id,day,time,end_time FROM classes WHERE id=? AND deleted_at IS NULL`+tw, append([]any{id}, twArgs...)...).Scan(&tenantID, &day, &tm, &end); err != nil {
 		return err
 	}
 	if day == cl.Day && tm == cl.Time && end == cl.EndTime {
 		return nil
 	}
-	laterArgs := append([]any{id, cl.ScheduleFrom}, twArgs...)
-	later, err := store.CountRow(db, `SELECT COUNT(*) FROM class_schedule_history WHERE class_id=? AND changed_on>?`+tw, laterArgs...)
+	later, err := store.CountRow(db, `SELECT COUNT(*) FROM class_schedule_history WHERE tenant_id=? AND class_id=? AND changed_on>?`, tenantID, id, cl.ScheduleFrom)
 	if err != nil {
 		return err
 	}
@@ -100,9 +105,9 @@ func recordScheduleChange(db *store.DB, c *core.Claims, id string, cl models.Cla
 	_, err = db.Exec(`INSERT INTO class_schedule_history(id,tenant_id,class_id,day,time,end_time,changed_on,created_by,created_on)
 		VALUES(?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (tenant_id,class_id,changed_on) DO NOTHING`,
-		core.GenerateID("SCH"), store.TenantID(c), id, day, tm, end, cl.ScheduleFrom, c.Email, core.Today())
+		core.GenerateID("SCH"), tenantID, id, day, tm, end, cl.ScheduleFrom, c.Email, core.Today())
 	if err == nil {
-		core.LogAudit(db, store.TenantID(c), c.Email, "class_schedule_changed", "class", id, "was "+day+" "+tm+"-"+end+", new schedule from "+cl.ScheduleFrom)
+		core.LogAudit(db, tenantID, c.Email, "class_schedule_changed", "class", id, "was "+day+" "+tm+"-"+end+", new schedule from "+cl.ScheduleFrom)
 	}
 	return err
 }
