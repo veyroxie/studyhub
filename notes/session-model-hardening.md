@@ -442,6 +442,13 @@ of the review:
 
 - Nightly `backup.sh` cron IS installed and working (dumps present for every
   recent night, pruning correctly, restores cleanly).
+- **RESOLVED 2026-09-02:** off-site upload now works to Cloudflare R2 (free
+  tier). Verified end to end with `make backup-verify-remote`: the newest
+  object downloads and restores with data in every core table (77 students,
+  100 invoices, 206 attendance, 42 classes, 51 users). Remaining gap: the
+  hourly self-check alerts when S3 is UNCONFIGURED but not when a configured
+  upload FAILS (expired token, revoked key). Close that by having backup.sh
+  write a success marker and the self-check watch its freshness.
 - **Off-site upload was never enabled.** Every log line ends "S3 not configured
   — local backup only", so all backups lived on the droplet they protect.
   `docker-compose.yml` already forwards `S3_BUCKET`/`S3_ACCESS_KEY`/
