@@ -54,6 +54,18 @@ describe the defect, not its status.
 | E1 | `09759aa` | `pricing_tiers` PUT takes pointer fields. **E2 (the class PUT) is still open** |
 | G1 | `67357ec` | Stale-count assertions fixed via the `countRows` helper. **G2 is still open** — `email_flow_test.go:304,318,529` and `feature_enrollments_test.go:115` still drop `Scan` errors |
 | K2 | `09759aa` | Fixed in the one test that mutates a seeded row. **K1 is still open** — the harness still does not reset seeded tables |
+| B1 | `3eb836a` | Schedule history takes its tenant from the class row. **B2/B3 reassessed, see below** |
+| C1 | `ca0c936` | Cancellation on a move destination now visible; `Billable()` untouched on purpose |
+| C2 | `2967f4b` | Move onto an occupied date rejected with a 409 |
+
+**B2/B3 reassessed 2026-09-01 (downgraded).** The ~20 `store.TenantID(c)`
+write sites do not share one failure mode. A site whose lookup is scoped with a
+literal `tenant_id=?` simply returns 404 for a superadmin — a lockout, and safe.
+Only a site that *reads* with `ScopeTenant` (a no-op for superadmin) and then
+*writes* with `TenantID(c)` orphans a row. `handlers_session_moves.go` is the
+lockout shape, not the corrupting one. So B2 is S3 (a superadmin cannot create
+session moves), and B3 is a convention to apply as those handlers are touched,
+not a 20-site sweep to schedule.
 
 Everything else in this document is open. Nothing here is deployed until a
 `make ship` restarts the API — check `uptime_sec` on `/api/health`.
