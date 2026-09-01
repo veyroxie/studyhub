@@ -45,6 +45,12 @@ in a day. It is not the right long-term shape.
 Severity: **S1** = wrong money or lost data; **S2** = wrong behaviour a user
 will notice; **S3** = latent, edge-case, or hygiene.
 
+Naming: the group codes below (`A1`, `B2`, ...) are local to this document.
+They are **not** the `F1`-`F8` items of `V2_REBUILD_PLAN.md` section 8.7 —
+those are always cited with a file reference, e.g. "F2
+(`V2_REBUILD_PLAN.md:530`)". Group F here happens to contain rows `F1`/`F2`;
+they are unrelated to the plan's F1 (credits-only) and F2 (frozen record).
+
 ### Group A — fail-open guards
 
 | # | Site | Severity | What |
@@ -133,6 +139,30 @@ roughly a dozen places, each with a different rule:
 |---|---|---|
 | I1 | S1 | Tenant isolation rests entirely on reviewer discipline (`CLAUDE.md` invariant; `notes/rls-activation.md`). B1 is a tenancy hole in code written *specifically* to be careful about tenancy. That is the argument for the database enforcing it. |
 
+### Group J — the invoice is not yet a frozen record (F2)
+
+Not a review finding: `V2_REBUILD_PLAN.md:530-537` registered this as **F2,
+HIGH, and it is still open**. Recorded here because it addresses the same root
+cause as Phase 2 and must be sequenced against it.
+
+| # | Severity | What |
+|---|---|---|
+| J1 | S1 | Invoice lines carry `Qty x rate` but not the session **dates** they were computed from. Once the cron bills from the schedule, a later schedule edit makes every past month's count unreproducible — a dispute six weeks on cannot be answered. |
+
+F2's remedy is to freeze the actual session dates onto the line item at issue,
+the same reasoning as B5 freezing lines. **That is a different fix from Phase 2,
+and both are wanted:**
+
+- J1 answers "what did we bill, and for which dates" — the invoice is the record.
+- Phase 2 answers "which day did this class meet in August" — the calendar,
+  attendance and iCal, which no invoice can answer.
+
+Judgement call: **J1 should land before Phase 2.** It is cheaper, and it is a
+safety net that holds even if schedule history is later found to be wrong. Phase
+2 without J1 means the correctness of every past invoice depends on the version
+table being right; J1 without Phase 2 means past invoices stay answerable while
+the calendar is still wrong. J1 is the better first move.
+
 ---
 
 ## 3. Sequence
@@ -190,6 +220,19 @@ live; the class PUT can follow.
 
 Verify: a PUT omitting `hourlyRate` leaves the stored rate untouched. Test it.
 
+### Phase 1.5 — Freeze session dates on the invoice line (J1 / F2)
+
+Before Phase 2, not after. The invoice line item gains the session dates it was
+computed from, so a past month is answerable from the record rather than by
+replaying a schedule that may since have changed. `InvoiceLineItem` already
+carries `Qty` and `UnitPrice` and the PDF already renders them
+(`V2_REBUILD_PLAN.md:436-441`), so this is a descriptor change, not a schema
+redesign.
+
+Why first: it is the cheaper of the two history fixes and it holds even if the
+version table is later found to have a backfill error. It also means Phase 2 can
+be shipped without every past invoice depending on it being correct.
+
 ### Phase 2 — Schedule versions (migration `0047`)
 
 The structural fix. Deletes the guard that A1 and B1 live in, and removes C3's
@@ -232,7 +275,7 @@ Depends on Phase 2's resolver.
 - 3.3 iCal stamps historical times — closes the documented gap in
   `AI_DOCS/calendar-and-sessions.md`
 
-### Phase 4 — Enrolment dates in billing (F1-F2)
+### Phase 4 — Enrolment dates in billing (Group F)
 
 Hard blocker for the 8.7 switchover.
 
@@ -281,7 +324,7 @@ builds. Retire it once Phase 5 removes client-side resolution entirely.
 | # | Question | Recommendation |
 |---|---|---|
 | D1 | Replace `class_schedule_history` outright, or shadow it during transition? | **Replace.** Shadowing doubles the write paths, which is the exact class of problem Phase 5 exists to remove. Safety comes from the 2.3 differ, not from keeping two tables. |
-| D2 | Does a mid-month joiner prorate by session, or pay the full month? | **DECIDED 2026-09-01 (Ely): bill only the sessions inside the student's enrolment window.** A joiner pays from their start date, a leaver up to their end date. A student who was on the schedule but never started owes nothing — with no billable lines the F5 rules already skip the invoice entirely, so this needs no new code beyond Phase 4 reading `enrollments` instead of the JSON. **Not** decided by this: whether an *absence* reduces a bill. It does not — F1 (`V2_REBUILD_PLAN.md:499`) settled that cancellations and absences never reduce an invoice and the replacement credit is the sole compensation. Advance billing on the 1st cannot know attendance anyway. Confirm with Ely if "what they attend" was meant to include absences, because that would reopen F1 and force billing in arrears. |
+| D2 | Does a mid-month joiner prorate by session, or pay the full month? | **DECIDED 2026-09-01 (Ely): bill only the sessions inside the student's enrolment window.** A joiner pays from their start date, a leaver up to their end date. A student who was on the schedule but never started owes nothing — with no billable lines the F5 rules already skip the invoice entirely, so this needs no new code beyond Phase 4 reading `enrollments` instead of the JSON. An *absence* does **not** reduce the bill (confirmed 2026-09-01): the count is of sessions **scheduled** inside the enrolment window, minus holidays, and the replacement credit remains the sole compensation. This is F1 (`V2_REBUILD_PLAN.md:499`) unchanged, and it is what makes advance billing on the 1st possible at all. |
 | D3 | RLS now or after Phase 4? | After. It is a backstop, not a fix, and Phase 1.1 closes the actual hole. |
 | D4 | Superadmin — does anyone operate as one in production? | Answer decides whether Group B is urgent or theoretical. Check before scheduling Phase 1. |
 
@@ -296,7 +339,36 @@ builds. Retire it once Phase 5 removes client-side resolution entirely.
 - One implementation of "which classes run on date D" reachable from the client
 - `0046`, `0047` and this document agree with `AI_DOCS/calendar-and-sessions.md`
 
-## 6. What is deliberately not here
+## 6. Alignment with `V2_REBUILD_PLAN.md`
+
+Checked 2026-09-01. Most of this plan is not new work — it is the unfinished
+half of things 8.7 already registered.
+
+| This plan | v2 plan | Status |
+|---|---|---|
+| Phase 4 (enrolment dates in billing) | Risk 3 (`:470-473`) and B6 stage 2 (`:624-632`) | Same item. The plan calls the join table "a prerequisite, not an optional cleanup". Stage 1 shipped; readers still on the JSON. |
+| Group C3 / `NEW-31` (duration-blind pricing) | F8 original reasoning (`:663-669`) | **Predicted.** F8 chose per-session storage precisely so that "editing a class's times silently changes its price" could not happen. See the tension below. |
+| Groups C1-C2 (expander classification) | F6 (`:585-590`), shipped | Extension of a shipped item. |
+| Phase 5 (server-owned occurrences) | "one function, three callers" (`:456-459`) | Same principle, extended to the client. |
+| Phase 6 (RLS) | `notes/rls-activation.md` | Pre-existing. |
+| Group J | F2 (`:530-537`), **still open** | Now sequenced as Phase 1.5. |
+| Groups A, B, E, G, H | absent | Genuinely new; found by the 01/09 review. |
+
+**Tension to resolve before Phase 3.** F8's original reasoning rejected
+rate-per-hour x duration exactly because deriving duration from `time`/`end_time`
+lets a schedule edit rewrite a past price. As built, migration `0045` shipped
+**both** an hourly matrix (`pricing_tiers.hourly_rate`) and a per-session
+override (`classes.session_rate`), so any class priced off the matrix still
+derives duration and still has the bug F8 wrote itself to avoid. Phase 3 either
+resolves duration through schedule history (Phase 2's resolver) or moves those
+classes onto stored per-session rates. Decide which before writing it.
+
+**Overlap to expect.** `handlers_pricing.go:37` (Group E1) is listed in F7's
+change surface as "becomes editing a session rate", so that file is slated for
+rework during `pricing_tiers` retirement. Fixing the clobber now is still right —
+it is live and it is money — and the partial-update pattern carries over.
+
+## 7. What is deliberately not here
 
 - Materialising a sessions table. The exception-row model
   (`AI_DOCS/calendar-and-sessions.md`) is coherent and works; replacing it is a
