@@ -50,13 +50,19 @@ func TestSessionsInPeriod_ClassifiesEveryOccurrence(t *testing.T) {
 		t.Fatalf("expand: %v", err)
 	}
 
+	// Every entry carries the schedule in force on its date (0047); this class
+	// never changed schedule, so all of them are the class row's 10:00-11:00.
+	at := func(s store.ClassSession) store.ClassSession {
+		s.Time, s.EndTime = "10:00", "11:00"
+		return s
+	}
 	want := []store.ClassSession{
-		{Date: day(0), Status: store.SessionHeld},
-		{Date: day(2), Status: store.SessionMovedIn, MovedFrom: day(-7)},
-		{Date: day(7), Status: store.SessionCancelled},
-		{Date: day(14), Status: store.SessionHoliday},
-		{Date: day(21), Status: store.SessionMovedOut, MovedTo: day(23)},
-		{Date: day(23), Status: store.SessionMovedIn, MovedFrom: day(21)},
+		at(store.ClassSession{Date: day(0), Status: store.SessionHeld}),
+		at(store.ClassSession{Date: day(2), Status: store.SessionMovedIn, MovedFrom: day(-7)}),
+		at(store.ClassSession{Date: day(7), Status: store.SessionCancelled}),
+		at(store.ClassSession{Date: day(14), Status: store.SessionHoliday}),
+		at(store.ClassSession{Date: day(21), Status: store.SessionMovedOut, MovedTo: day(23)}),
+		at(store.ClassSession{Date: day(23), Status: store.SessionMovedIn, MovedFrom: day(21)}),
 	}
 	if len(sessions) != len(want) {
 		t.Fatalf("want %d entries, got %d: %+v", len(want), len(sessions), sessions)
@@ -103,9 +109,11 @@ func TestSessionsInPeriod_HonoursScheduleHistory(t *testing.T) {
 	classID := core.GenerateID("CLS")
 	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time) VALUES(?,?,?,?,?,?)`,
 		classID, 1, "Changed Class", "Thursday", "16:00", "17:00")
-	// The class met on Fridays at 15:00 until day(14); Thursdays after.
-	db.Exec(`INSERT INTO class_schedule_history(id,tenant_id,class_id,day,time,end_time,changed_on) VALUES(?,?,?,?,?,?,?)`,
-		core.GenerateID("SCH"), 1, classID, "Friday", "15:00", "16:00", day(14))
+	// Fridays at 15:00 from the epoch; Thursdays at 16:00 from day(14).
+	db.Exec(`INSERT INTO class_schedule_versions(id,tenant_id,class_id,effective_from,day,time,end_time) VALUES(?,?,?,?,?,?,?)`,
+		core.GenerateID("SV"), 1, classID, "0001-01-01", "Friday", "15:00", "16:00")
+	db.Exec(`INSERT INTO class_schedule_versions(id,tenant_id,class_id,effective_from,day,time,end_time) VALUES(?,?,?,?,?,?,?)`,
+		core.GenerateID("SV"), 1, classID, day(14), "Thursday", "16:00", "17:00")
 
 	sessions, err := store.SessionsInPeriod(db, classID, from, to)
 	if err != nil {
@@ -122,13 +130,20 @@ func TestSessionsInPeriod_HonoursScheduleHistory(t *testing.T) {
 			t.Errorf("session %d: want held on %s, got %s on %s", i, want[i], sess.Status, sess.Date)
 		}
 	}
+	// Times resolve per date too -- what duration-aware pricing needs.
+	if sessions[0].Time != "15:00" || sessions[0].EndTime != "16:00" {
+		t.Errorf("early session should carry the old times, got %s-%s", sessions[0].Time, sessions[0].EndTime)
+	}
+	if sessions[3].Time != "16:00" || sessions[3].EndTime != "17:00" {
+		t.Errorf("late session should carry the new times, got %s-%s", sessions[3].Time, sessions[3].EndTime)
+	}
 }
 
-// TestClassUpdate_ScheduleFromSnapshotsOldSlot locks the write side of 0046:
-// a PUT carrying scheduleFrom stores the PREVIOUS day/time in
-// class_schedule_history, a repeat edit with the same effective date keeps
-// the first snapshot, and a plain PUT (typo fix) writes no history at all.
-func TestClassUpdate_ScheduleFromSnapshotsOldSlot(t *testing.T) {
+// TestClassUpdate_ScheduleFromWritesVersion locks the 0047 write path: a PUT
+// carrying scheduleFrom records a version stating the NEW slot from that date,
+// an out-of-order (earlier) change is now ordinary rather than a 409, and an
+// undated edit rewrites the newest version in place as a correction.
+func TestClassUpdate_ScheduleFromWritesVersion(t *testing.T) {
 	_, db, cleanup := setupFeatureTestApp(t)
 	defer cleanup()
 
@@ -143,62 +158,52 @@ func TestClassUpdate_ScheduleFromSnapshotsOldSlot(t *testing.T) {
 	classID := core.GenerateID("CLS")
 	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,capacity) VALUES(?,?,?,?,?,?,?)`,
 		classID, 1, "Friday Class", "Friday", "15:00", "16:00", 6)
+	db.Exec(`INSERT INTO class_schedule_versions(id,tenant_id,class_id,effective_from,day,time,end_time) VALUES(?,?,?,?,?,?,?)`,
+		core.GenerateID("SV"), 1, classID, "0001-01-01", "Friday", "15:00", "16:00")
 
 	put := func(day, timeStr, endTime, scheduleFrom string) int {
-		w := authedJSON(t, r, "PUT", "/api/classes/"+classID, tok, map[string]any{
+		return authedJSON(t, r, "PUT", "/api/classes/"+classID, tok, map[string]any{
 			"name": "Friday Class", "teacherIds": []string{}, "day": day,
 			"time": timeStr, "endTime": endTime, "capacity": 6,
 			"scheduleFrom": scheduleFrom,
-		})
-		return w.Code
+		}).Code
+	}
+	dayOn := func(date string) string {
+		var d string
+		db.QueryRow(`SELECT day FROM class_schedule_versions WHERE class_id=? AND effective_from<=? ORDER BY effective_from DESC LIMIT 1`, classID, date).Scan(&d)
+		return d
 	}
 
 	if code := put("Thursday", "16:00", "17:00", "2026-09-01"); code != http.StatusOK {
 		t.Fatalf("dated update failed: %d", code)
 	}
-	var day, tm, changedOn string
-	db.QueryRow(`SELECT day,time,changed_on FROM class_schedule_history WHERE class_id=?`, classID).Scan(&day, &tm, &changedOn)
-	if day != "Friday" || tm != "15:00" || changedOn != "2026-09-01" {
-		t.Fatalf("history should hold the OLD slot: got %s %s from %s", day, tm, changedOn)
+	if got := dayOn("2026-08-15"); got != "Friday" {
+		t.Errorf("August must still resolve to Friday, got %s", got)
 	}
-	db.QueryRow(`SELECT day FROM classes WHERE id=?`, classID).Scan(&day)
-	if day != "Thursday" {
-		t.Fatalf("class row should hold the new slot, got %s", day)
+	if got := dayOn("2026-09-15"); got != "Thursday" {
+		t.Errorf("September must resolve to Thursday, got %s", got)
 	}
 
-	// Re-editing with the same effective date keeps the original snapshot —
-	// the intermediate Thursday schedule never applied to a real date.
-	if code := put("Wednesday", "10:00", "11:00", "2026-09-01"); code != http.StatusOK {
-		t.Fatalf("second dated update failed: %d", code)
+	// Out-of-order: effective BEFORE the existing change. Under 0046 this was a
+	// 409 advising an undo that did not exist; now it simply fills its own span.
+	if code := put("Tuesday", "11:00", "12:00", "2026-08-01"); code != http.StatusOK {
+		t.Fatalf("out-of-order update should be ordinary now, got %d", code)
 	}
-	count := countRows(t, db, `SELECT COUNT(*) FROM class_schedule_history WHERE class_id=?`, classID)
-	if err := db.QueryRow(`SELECT day FROM class_schedule_history WHERE class_id=?`, classID).Scan(&day); err != nil {
-		t.Fatalf("read history day: %v", err)
+	if got := dayOn("2026-08-15"); got != "Tuesday" {
+		t.Errorf("mid-August must resolve to the out-of-order version, got %s", got)
 	}
-	if count != 1 || day != "Friday" {
-		t.Fatalf("same-date re-edit must keep the first snapshot: count=%d day=%s", count, day)
+	if got := dayOn("2026-09-15"); got != "Thursday" {
+		t.Errorf("the later version must still govern September, got %s", got)
 	}
-
-	// A plain edit is a retroactive correction: no history row.
-	if code := put("Monday", "09:00", "10:00", ""); code != http.StatusOK {
-		t.Fatalf("plain update failed: %d", code)
-	}
-	if count = countRows(t, db, `SELECT COUNT(*) FROM class_schedule_history WHERE class_id=?`, classID); count != 1 {
-		t.Fatalf("plain edit must not add history, got %d rows", count)
+	// The class row mirrors the LATEST version, not the last edit submitted.
+	var rowDay string
+	db.QueryRow(`SELECT day FROM classes WHERE id=?`, classID).Scan(&rowDay)
+	if rowDay != "Thursday" {
+		t.Errorf("class row must mirror the newest version (Thursday), got %s", rowDay)
 	}
 
 	if code := put("Monday", "09:00", "10:00", "not-a-date"); code != http.StatusBadRequest {
 		t.Fatalf("malformed scheduleFrom should 400, got %d", code)
-	}
-
-	// Out-of-order: a change EARLIER than the recorded 2026-09-01 change must
-	// be rejected — the row already reflects the later edit, so snapshotting
-	// it would backdate the wrong schedule (409, review finding).
-	if code := put("Tuesday", "11:00", "12:00", "2026-08-15"); code != http.StatusConflict {
-		t.Fatalf("out-of-order scheduleFrom should 409, got %d", code)
-	}
-	if count = countRows(t, db, `SELECT COUNT(*) FROM class_schedule_history WHERE class_id=?`, classID); count != 1 {
-		t.Fatalf("rejected out-of-order edit must not add history, got %d rows", count)
 	}
 }
 

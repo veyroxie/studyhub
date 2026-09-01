@@ -31,6 +31,11 @@ type ClassSession struct {
 	// It is display-only: billing rides on the origin's moved_out, so this
 	// never changes Billable().
 	Cancelled bool
+	// Time and EndTime are the schedule AS IT WAS on Date (0047), not the
+	// class row's current times. Duration-aware pricing and historical iCal
+	// stamps both depend on this.
+	Time    string
+	EndTime string
 }
 
 // Billable reports whether this entry counts toward a month's session total.
@@ -50,12 +55,11 @@ func (s ClassSession) Billable() bool {
 // authenticates with a synthetic claim set.
 func SessionsInPeriod(db *DB, classID, from, to string) ([]ClassSession, error) {
 	var tenantID int
-	var dayName string
-	if err := db.QueryRow(`SELECT tenant_id, COALESCE(day,'') FROM classes WHERE id=? AND deleted_at IS NULL`, classID).Scan(&tenantID, &dayName); err != nil {
+	var dayName, startTime, endTime string
+	if err := db.QueryRow(`SELECT tenant_id, COALESCE(day,''), COALESCE(time,''), COALESCE(end_time,'') FROM classes WHERE id=? AND deleted_at IS NULL`, classID).Scan(&tenantID, &dayName, &startTime, &endTime); err != nil {
 		return nil, fmt.Errorf("session expand: class %s: %w", classID, err)
 	}
-	weekday := core.ParseDayName(dayName)
-	if weekday < 0 {
+	if core.ParseDayName(dayName) < 0 {
 		return nil, fmt.Errorf("session expand: class %s has no weekday (day=%q)", classID, dayName)
 	}
 	start, err := time.ParseInLocation("2006-01-02", from, time.Local)
@@ -67,10 +71,11 @@ func SessionsInPeriod(db *DB, classID, from, to string) ([]ClassSession, error) 
 		return nil, fmt.Errorf("session expand: bad to %q: %w", to, err)
 	}
 
-	changes, err := classScheduleChanges(db, tenantID, classID)
+	versions, err := ClassScheduleVersions(db, tenantID, classID)
 	if err != nil {
 		return nil, err
 	}
+	current := ScheduleVersion{Day: dayName, Time: startTime, EndTime: endTime}
 	cancelled, err := datedSet(db, `SELECT date FROM cancelled_classes WHERE tenant_id=? AND class_id=? AND deleted_at IS NULL AND date>=? AND date<=?`, tenantID, classID, from, to)
 	if err != nil {
 		return nil, err
@@ -87,10 +92,13 @@ func SessionsInPeriod(db *DB, classID, from, to string) ([]ClassSession, error) 
 	var out []ClassSession
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 		date := d.Format("2006-01-02")
-		if int(d.Weekday()) != weekdayOn(changes, weekday, date) {
+		sched := ScheduleOn(versions, current, date)
+		if int(d.Weekday()) != core.ParseDayName(sched.Day) {
 			continue
 		}
-		out = append(out, classifyOccurrence(date, cancelled, movedOut, holidays))
+		sess := classifyOccurrence(date, cancelled, movedOut, holidays)
+		sess.Time, sess.EndTime = sched.Time, sched.EndTime
+		out = append(out, sess)
 	}
 	// A cancellation landing on a DESTINATION date used to be invisible: the
 	// natural-date loop never visits a cross-weekday destination, so renderers
@@ -99,7 +107,9 @@ func SessionsInPeriod(db *DB, classID, from, to string) ([]ClassSession, error) 
 	// moved_out, and promoting this to SessionCancelled (which bills) would
 	// charge the same session twice.
 	for dst, src := range movedIn {
-		out = append(out, ClassSession{Date: dst, Status: SessionMovedIn, MovedFrom: src, Cancelled: cancelled[dst]})
+		// Times resolve at the DESTINATION: that is the date the session runs.
+		sched := ScheduleOn(versions, current, dst)
+		out = append(out, ClassSession{Date: dst, Status: SessionMovedIn, MovedFrom: src, Cancelled: cancelled[dst], Time: sched.Time, EndTime: sched.EndTime})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Date != out[j].Date {
@@ -132,39 +142,52 @@ func classifyOccurrence(date string, cancelled map[string]bool, movedOut map[str
 	return ClassSession{Date: date, Status: SessionHeld}
 }
 
-type scheduleChangeRow struct {
-	weekday   int
-	changedOn string
+// ScheduleVersion is one class schedule and the date it took effect (0047).
+type ScheduleVersion struct {
+	EffectiveFrom string
+	Day           string
+	Time          string
+	EndTime       string
 }
 
-// classScheduleChanges loads the class's dated schedule changes, oldest
-// first. Each row's weekday applied to dates BEFORE its changedOn (0046).
-func classScheduleChanges(db *DB, tenantID int, classID string) ([]scheduleChangeRow, error) {
-	rows, err := db.Query(`SELECT day, changed_on FROM class_schedule_history WHERE tenant_id=? AND class_id=? ORDER BY changed_on`, tenantID, classID)
+// ClassScheduleVersions loads a class's schedule versions, oldest first.
+// Exported because the frontend endpoint and the differ both need them.
+func ClassScheduleVersions(db *DB, tenantID int, classID string) ([]ScheduleVersion, error) {
+	rows, err := db.Query(`SELECT effective_from, day, time, end_time FROM class_schedule_versions WHERE tenant_id=? AND class_id=? ORDER BY effective_from`, tenantID, classID)
 	if err != nil {
-		return nil, fmt.Errorf("session expand: schedule history: %w", err)
+		return nil, fmt.Errorf("session expand: schedule versions: %w", err)
 	}
 	defer rows.Close()
-	var out []scheduleChangeRow
+	var out []ScheduleVersion
 	for rows.Next() {
-		var day, on string
-		if rows.Scan(&day, &on) == nil {
-			out = append(out, scheduleChangeRow{weekday: core.ParseDayName(day), changedOn: on})
+		var v ScheduleVersion
+		if rows.Scan(&v.EffectiveFrom, &v.Day, &v.Time, &v.EndTime) == nil {
+			out = append(out, v)
 		}
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
-// weekdayOn resolves which weekday the class met on for one date: the oldest
-// change strictly after the date wins, else the current classes row. Mirrors
-// App.Utils.scheduleOn in js/utils.js -- keep the two in sync.
-func weekdayOn(changes []scheduleChangeRow, current int, date string) int {
-	for _, ch := range changes {
-		if date < ch.changedOn {
-			return ch.weekday
+// ScheduleOn resolves the schedule in force on one date: the version with the
+// greatest effective_from <= date. Falls back to `fallback` when a class has no
+// versions at all, which only happens for a class created before 0047 has run.
+// Mirrors App.Utils.scheduleOn in js/utils.js -- keep the two in sync.
+func ScheduleOn(versions []ScheduleVersion, fallback ScheduleVersion, date string) ScheduleVersion {
+	out := fallback
+	found := false
+	for _, v := range versions {
+		if v.EffectiveFrom <= date {
+			out, found = v, true
+			continue
 		}
+		break // ordered by effective_from, so nothing later can apply
 	}
-	return current
+	if !found && len(versions) > 0 {
+		// Every version starts after this date: the class did not exist yet in
+		// its current form, so the oldest known schedule is the best answer.
+		return versions[0]
+	}
+	return out
 }
 
 type holidayRange struct{ date, endDate string }

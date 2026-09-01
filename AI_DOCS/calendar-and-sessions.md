@@ -55,31 +55,41 @@ Any code that expands or counts a class's dated sessions MUST call it -- the iCa
 already does; the future billing cron must too. Locked by
 `TestSessionsInPeriod_ClassifiesEveryOccurrence`.
 
-## Dated schedule changes (migration 0046)
+## Dated schedule changes (migrations 0046 -> 0047)
 
-A class edit whose payload carries `scheduleFrom` (YYYY-MM-DD) snapshots the OLD
-day/time/end_time into `class_schedule_history` before updating the row
-(`recordScheduleChange` in `handlers_classes.go`), so "the Friday 3pm class becomes
-Thursday 4pm from September" keeps August intact everywhere. A plain edit (no
-`scheduleFrom`) stays a retroactive correction and writes no history.
+A class edit whose payload carries `scheduleFrom` (YYYY-MM-DD) records a
+**version**: a row in `class_schedule_versions` stating the slot that applies
+FROM that date. Resolution for date `d` is "the version with the greatest
+`effective_from <= d`". A plain edit (no `scheduleFrom`) is a retroactive
+correction and rewrites the newest version in place.
 
-Resolution rule, implemented twice and kept in sync: for date `d`, the history row with
-the smallest `changed_on > d` wins, else the current classes row. Go: `weekdayOn`
-(`store/sessions.go`, used per-date by the expander, hence billing and iCal). JS:
-`App.Utils.scheduleOn` (`js/utils.js`), consumed by the calendar week/month views,
-attendance day filters, and the dashboard "today" filters -- every NEW date-anchored
-`c.day === ...` comparison must go through it. The snapshot ships the rows as
-`scheduleChanges`.
+Implemented twice and kept in sync: `store.ScheduleOn` (`store/sessions.go`,
+used per-date by the expander, hence billing and iCal) and
+`App.Utils.scheduleOn` (`js/utils.js`), consumed by the calendar, attendance
+and dashboard. The snapshot ships the rows as `scheduleVersions`. Every new
+date-anchored `c.day === ...` comparison must go through one of them.
 
-Two edits with the same effective date keep the FIRST snapshot (unique index +
-`ON CONFLICT DO NOTHING`): the intermediate schedule never applied to a real date, which
-also makes a mistaken change self-undoing (edit back with the same date). Changes must be
-made in date order: a `scheduleFrom` EARLIER than an already-recorded change is rejected
-with a 409 (`errScheduleOutOfOrder`) -- the row already reflects the later edit, so
-snapshotting it would backdate the wrong schedule into the earlier timeline. Locked by
-`TestSessionsInPeriod_HonoursScheduleHistory`, `TestClassUpdate_ScheduleFromSnapshotsOldSlot`,
-and the `scheduleOn` cases in `tests/unit/utils.test.mjs`. Known cosmetic gap: iCal writes
-event TIMES from the current class row; only dates honour history.
+**INVARIANT: the version with the greatest `effective_from` mirrors the
+`classes` row.** The class row stays the source of truth for "now" so the dozen
+readers of `classes.day` keep working; the versions table answers "what was it
+on date `d`". This is why an OUT-OF-ORDER edit writes the newest version's
+values back to the class row rather than the submitted ones -- adding a change
+effective in August while a September change exists must not drag the row
+backwards. Locked by `TestClassUpdate_ScheduleFromWritesVersion`.
+
+`ClassSession` carries `Time`/`EndTime` resolved for its own date, which is
+what duration-aware pricing (`NEW-31`) and historical iCal stamps need.
+
+### Why 0047 replaced 0046
+
+`class_schedule_history` stored the slot that applied BEFORE a date, so a row
+was only interpretable against the current class row. That produced four
+defects in one guard: an earlier-dated insert was undefined (hence the guard),
+the guard's 409 advised an undo that did not exist anywhere, a self-undone row
+was indistinguishable from a live one and blocked earlier edits forever, and
+the check-then-insert had no transaction. Under versions, out-of-order inserts
+are ordinary, so the guard, its error and its 409 are gone. 0046's table is
+left in place unused and dropped by a later migration.
 
 ## Session overrides
 

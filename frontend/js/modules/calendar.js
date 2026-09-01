@@ -49,10 +49,10 @@
   let _filterSearch  = ''; // text search on class name
 
   function render(container) {
-    const { classes, staff, students, cancelledClasses, holidays, scheduleChanges } = App.Store.get();
+    const { classes, staff, students, cancelledClasses, holidays, scheduleVersions } = App.Store.get();
     const _cancelledClasses = cancelledClasses || [];
     const _holidays = holidays || [];
-    const _schedChanges = scheduleChanges || [];
+    const _schedVersions = scheduleVersions || [];
     const isAdmin = App.currentRole === 'admin';
     const isClient = App.currentRole === 'client';
     const isTeacher = App.currentRole === 'teacher';
@@ -83,10 +83,10 @@
       // Resolve each class's schedule for the column's DATE, not just its
       // day name — a dated schedule change means past weeks keep the old slot.
       var colDate = App.Utils.localDate(weekDates[di]);
-      var timeOn = function(c) { return App.Utils.scheduleOn(c, _schedChanges, colDate).time; };
+      var timeOn = function(c) { return App.Utils.scheduleOn(c, _schedVersions, colDate).time; };
       classesByDay[day] = classes
         .filter(function(c) {
-          if (App.Utils.scheduleOn(c, _schedChanges, colDate).day !== day) return false;
+          if (App.Utils.scheduleOn(c, _schedVersions, colDate).day !== day) return false;
           if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
           if (isClient && c.enrolled >= c.capacity) return false; // hide full classes from parents
           if (teacherClassIds !== null && !teacherClassIds[c.id]) return false;
@@ -269,9 +269,9 @@
         // day-schedule modal so its header and cancellation match line up with
         // how the week view stores dates.
         var cellLocalDate = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-        var schedChanges = App.Store.get().scheduleChanges;
+        var schedVersions = App.Store.get().scheduleVersions;
         var dayCls   = classes.filter(function(c) {
-          if (App.Utils.scheduleOn(c, schedChanges, cellLocalDate).day !== dayName) return false;
+          if (App.Utils.scheduleOn(c, schedVersions, cellLocalDate).day !== dayName) return false;
           if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
           if (_filterTeacher && !c.teacherIds.includes(_filterTeacher)) return false;
           if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
@@ -297,7 +297,7 @@
                 if (monthKids.length > 0) monthChildTags = ' <span style="font-size:0.55rem;font-weight:700;color:#92400e">(' + monthKids.map(function(st){return App.Utils.esc(st.firstName);}).join(', ') + ')</span>';
               }
               var tipNames = enrolled.map(function(st) { return st.firstName + ' ' + (st.lastName || '').charAt(0); }).join(', ');
-              var cellTime = App.Utils.scheduleOn(c, schedChanges, cellLocalDate).time;
+              var cellTime = App.Utils.scheduleOn(c, schedVersions, cellLocalDate).time;
               var tipText = c.name + ' · ' + App.Utils.formatTime(cellTime)
                 + (enrolled.length > 0 ? ' — ' + enrolled.length + ' enrolled: ' + tipNames : ' — no students enrolled');
               return '<div onclick="App.Calendar._classModal(\'' + c.id + '\')" title="' + App.Utils.esc(tipText) + '" style="font-size:0.65rem;font-weight:600;border-radius:4px;padding:1px 5px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer" class="' + colors.pill + '">' + App.Utils.formatTime(cellTime) + ' ' + App.Utils.esc(c.name) + monthChildTags + '</div>';
@@ -453,7 +453,7 @@
       if (!c) return '';
       // Same-weekday move: the natural card already renders (with its
       // moved-from badge) — a second card here would duplicate it.
-      if (App.Utils.scheduleOn(c, state.scheduleChanges, dateStr).day === DAYS[dayIndex]) return '';
+      if (App.Utils.scheduleOn(c, state.scheduleVersions, dateStr).day === DAYS[dayIndex]) return '';
       return _classCard(c, staff, state.cancelledClasses || [], weekDates, dayIndex, students);
     }).join('');
   }
@@ -502,7 +502,7 @@
 
     // Times as they were ON this date — a dated schedule change must not
     // relabel past weeks (App.Utils.scheduleOn, migration 0046).
-    const sched = dateStr ? U.scheduleOn(c, App.Store.get().scheduleChanges, dateStr) : c;
+    const sched = dateStr ? U.scheduleOn(c, App.Store.get().scheduleVersions, dateStr) : c;
 
     // Session moves for this specific date: away from it, or landing on it.
     var _move = dateStr ? App.Utils.movesForDate(App.Store.get().sessionMoves, dateStr) : { movedOut: {}, movedIn: [] };

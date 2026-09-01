@@ -274,36 +274,45 @@ describe('holidayCovers', () => {
   });
 });
 
-describe('scheduleOn — dated schedule-change resolution (mirrors store/sessions.go weekdayOn)', () => {
+describe('scheduleOn — version resolution (mirrors store.ScheduleOn in Go)', () => {
   const cls = { id: 'CLS_1', day: 'Thursday', time: '16:00', endTime: '17:00' };
-  const change = { classId: 'CLS_1', day: 'Friday', time: '15:00', endTime: '16:00', changedOn: '2026-09-01' };
+  // A version states the schedule that applies FROM effectiveFrom.
+  const early = { classId: 'CLS_1', day: 'Friday', time: '15:00', endTime: '16:00', effectiveFrom: '0001-01-01' };
+  const sept = { classId: 'CLS_1', day: 'Thursday', time: '16:00', endTime: '17:00', effectiveFrom: '2026-09-01' };
 
-  test('dates before the change keep the old schedule', () => {
-    const got = U.scheduleOn(cls, [change], '2026-08-28');
-    // Field-by-field: the sandbox realm's Object prototype fails deepEqual.
+  test('a date before the change resolves to the earlier version', () => {
+    const got = U.scheduleOn(cls, [early, sept], '2026-08-28');
     assert.equal(got.day, 'Friday');
     assert.equal(got.time, '15:00');
     assert.equal(got.endTime, '16:00');
   });
 
-  test('the effective date itself uses the new schedule', () => {
-    assert.equal(U.scheduleOn(cls, [change], '2026-09-01').day, 'Thursday');
-    assert.equal(U.scheduleOn(cls, [change], '2026-10-15').day, 'Thursday');
+  test('the effective date itself uses the new version', () => {
+    assert.equal(U.scheduleOn(cls, [early, sept], '2026-09-01').day, 'Thursday');
+    assert.equal(U.scheduleOn(cls, [early, sept], '2026-10-15').day, 'Thursday');
   });
 
-  test('with two changes the oldest one after the date wins', () => {
-    const later = { classId: 'CLS_1', day: 'Thursday', time: '16:00', endTime: '17:00', changedOn: '2026-11-01' };
-    // Order in the array must not matter.
-    assert.equal(U.scheduleOn(cls, [later, change], '2026-08-28').day, 'Friday');
-    assert.equal(U.scheduleOn(cls, [later, change], '2026-09-15').day, 'Thursday');
+  test('the greatest effectiveFrom at or before the date wins, regardless of array order', () => {
+    const nov = { classId: 'CLS_1', day: 'Monday', time: '09:00', endTime: '10:00', effectiveFrom: '2026-11-01' };
+    assert.equal(U.scheduleOn(cls, [nov, sept, early], '2026-09-15').day, 'Thursday');
+    assert.equal(U.scheduleOn(cls, [nov, sept, early], '2026-11-02').day, 'Monday');
+    assert.equal(U.scheduleOn(cls, [nov, sept, early], '2026-08-01').day, 'Friday');
   });
 
-  test('changes for another class are ignored', () => {
-    const other = { classId: 'CLS_2', day: 'Monday', time: '10:00', endTime: '11:00', changedOn: '2026-09-01' };
+  test('an out-of-order insert just fills its own span', () => {
+    // Added after nov, but effective earlier — no guard, no rejection.
+    const nov = { classId: 'CLS_1', day: 'Monday', time: '09:00', endTime: '10:00', effectiveFrom: '2026-11-01' };
+    const oct = { classId: 'CLS_1', day: 'Tuesday', time: '11:00', endTime: '12:00', effectiveFrom: '2026-10-01' };
+    assert.equal(U.scheduleOn(cls, [nov, oct, early], '2026-10-10').day, 'Tuesday');
+    assert.equal(U.scheduleOn(cls, [nov, oct, early], '2026-11-10').day, 'Monday');
+  });
+
+  test('versions for another class are ignored', () => {
+    const other = { classId: 'CLS_2', day: 'Monday', time: '10:00', endTime: '11:00', effectiveFrom: '0001-01-01' };
     assert.equal(U.scheduleOn(cls, [other], '2026-08-28').day, 'Thursday');
   });
 
-  test('no history falls back to the class row, tolerating null', () => {
+  test('no versions falls back to the class row, tolerating null', () => {
     const got = U.scheduleOn(cls, null, '2026-08-28');
     assert.equal(got.day, 'Thursday');
     assert.equal(got.time, '16:00');

@@ -452,18 +452,18 @@ type SessionMove struct {
 	CreatedOn string `json:"createdOn"`
 }
 
-// ScheduleChange is one dated change of a class's weekly slot. The row holds
-// the schedule that applied BEFORE changedOn; on and after changedOn the next
-// change (or the classes row itself) applies. See migration 0046.
-type ScheduleChange struct {
-	ID        string `json:"id"`
-	ClassID   string `json:"classId"`
-	Day       string `json:"day"`
-	Time      string `json:"time"`
-	EndTime   string `json:"endTime"`
-	ChangedOn string `json:"changedOn"`
-	CreatedBy string `json:"createdBy"`
-	CreatedOn string `json:"createdOn"`
+// ScheduleVersion is one class schedule and the date it took effect. The row
+// states the slot that applies FROM effectiveFrom until the next version.
+// Resolution: greatest effectiveFrom <= the date. See migration 0047.
+type ScheduleVersion struct {
+	ID            string `json:"id"`
+	ClassID       string `json:"classId"`
+	Day           string `json:"day"`
+	Time          string `json:"time"`
+	EndTime       string `json:"endTime"`
+	EffectiveFrom string `json:"effectiveFrom"`
+	CreatedBy     string `json:"createdBy"`
+	CreatedOn     string `json:"createdOn"`
 }
 
 type Holiday struct {
@@ -533,7 +533,7 @@ type Snapshot struct {
 	PerformanceReviews []PerformanceReview `json:"performanceReviews"`
 	CancelledClasses   []CancelledClass    `json:"cancelledClasses"`
 	SessionMoves       []SessionMove       `json:"sessionMoves"`
-	ScheduleChanges    []ScheduleChange    `json:"scheduleChanges"`
+	ScheduleVersions   []ScheduleVersion   `json:"scheduleVersions"`
 	SessionOverrides   []SessionOverride   `json:"sessionOverrides"`
 	Holidays           []Holiday           `json:"holidays"`
 	ReplacementCredits []ReplacementCredit `json:"replacementCredits"`

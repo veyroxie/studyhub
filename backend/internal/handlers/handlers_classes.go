@@ -58,57 +58,83 @@ func listClasses(db *store.DB, c *core.Claims) []models.Class {
 	return out
 }
 
-// listScheduleChanges loads every class's dated schedule changes for the
-// snapshot; the calendar and attendance pages resolve past dates through them
-// via App.Utils.scheduleOn. See migration 0046.
-func listScheduleChanges(db *store.DB, c *core.Claims) []models.ScheduleChange {
+// listScheduleVersions loads every class's schedule versions for the snapshot;
+// the calendar, attendance and dashboard resolve a date through them via
+// App.Utils.scheduleOn. See migration 0047.
+func listScheduleVersions(db *store.DB, c *core.Claims) []models.ScheduleVersion {
 	tw, twArgs := store.ScopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,class_id,day,time,end_time,changed_on,created_by,created_on FROM class_schedule_history WHERE 1=1`+tw+` ORDER BY changed_on`, twArgs...)
-	return store.CollectRows(rows, err, "ScheduleChange", func(r *sql.Rows) (models.ScheduleChange, error) {
-		var s models.ScheduleChange
-		err := r.Scan(&s.ID, &s.ClassID, &s.Day, &s.Time, &s.EndTime, &s.ChangedOn, &s.CreatedBy, &s.CreatedOn)
+	rows, err := db.Query(`SELECT id,class_id,day,time,end_time,effective_from,created_by,created_on FROM class_schedule_versions WHERE 1=1`+tw+` ORDER BY class_id, effective_from`, twArgs...)
+	return store.CollectRows(rows, err, "ScheduleVersion", func(r *sql.Rows) (models.ScheduleVersion, error) {
+		var s models.ScheduleVersion
+		err := r.Scan(&s.ID, &s.ClassID, &s.Day, &s.Time, &s.EndTime, &s.EffectiveFrom, &s.CreatedBy, &s.CreatedOn)
 		return s, err
 	})
 }
 
-// errScheduleOutOfOrder rejects a dated change EARLIER than one already
-// recorded: the classes row already reflects the later edit, so snapshotting
-// it would backdate the wrong schedule into the earlier timeline.
-var errScheduleOutOfOrder = errors.New("a later schedule change already exists")
-
-// recordScheduleChange snapshots the class's current slot before an
-// effective-dated edit, so dates before ScheduleFrom keep the old schedule.
-// A repeat edit with the same effective date keeps the FIRST snapshot: the
-// intermediate schedule never applied to a real date (migration 0046).
-func recordScheduleChange(db *store.DB, c *core.Claims, id string, cl models.Class) error {
+// recordScheduleChange records an effective-dated schedule edit as a VERSION:
+// a row stating the slot that applies FROM cl.ScheduleFrom (migration 0047).
+// Out-of-order edits are ordinary here -- resolution picks the greatest
+// effective_from <= a date, so inserting an earlier one just fills an earlier
+// span. That is why 0046's guard, and the 409 whose advice named an undo that
+// did not exist, are gone.
+//
+// Tenant comes from the CLASS, not the caller: store.TenantID returns 0 for a
+// superadmin, which is right for reads and wrong for writes.
+func recordScheduleChange(db *store.DB, c *core.Claims, id string, cl models.Class) (store.ScheduleVersion, error) {
 	tw, twArgs := store.ScopeTenant(c, "")
-	// Tenant comes from the CLASS, not the caller. store.TenantID returns 0 for
-	// a superadmin (cross-tenant), which is right for reads and wrong for
-	// writes: it would stamp tenant_id=0 on the history row, and every reader
-	// scopes by the class's real tenant, so the row would be invisible and the
-	// schedule change would silently fail to preserve the past.
 	var tenantID int
 	var day, tm, end string
 	if err := db.QueryRow(`SELECT tenant_id,day,time,end_time FROM classes WHERE id=? AND deleted_at IS NULL`+tw, append([]any{id}, twArgs...)...).Scan(&tenantID, &day, &tm, &end); err != nil {
-		return err
+		return store.ScheduleVersion{}, err
 	}
 	if day == cl.Day && tm == cl.Time && end == cl.EndTime {
-		return nil
+		return store.ScheduleVersion{Day: day, Time: tm, EndTime: end}, nil
 	}
-	later, err := store.CountRow(db, `SELECT COUNT(*) FROM class_schedule_history WHERE tenant_id=? AND class_id=? AND changed_on>?`, tenantID, id, cl.ScheduleFrom)
+	// Same effective date twice: the later edit wins outright. The intermediate
+	// schedule never applied to a real date, so there is nothing to preserve --
+	// and re-editing back to the original values genuinely undoes the change.
+	_, err := db.Exec(`INSERT INTO class_schedule_versions(id,tenant_id,class_id,effective_from,day,time,end_time,created_by,created_on)
+		VALUES(?,?,?,?,?,?,?,?,?)
+		ON CONFLICT (tenant_id,class_id,effective_from)
+		DO UPDATE SET day=EXCLUDED.day, time=EXCLUDED.time, end_time=EXCLUDED.end_time, created_by=EXCLUDED.created_by, created_on=EXCLUDED.created_on`,
+		core.GenerateID("SV"), tenantID, id, cl.ScheduleFrom, cl.Day, cl.Time, cl.EndTime, c.Email, core.Today())
 	if err != nil {
+		return store.ScheduleVersion{}, err
+	}
+	core.LogAudit(db, tenantID, c.Email, "class_schedule_changed", "class", id, "was "+day+" "+tm+"-"+end+", now "+cl.Day+" "+cl.Time+"-"+cl.EndTime+" from "+cl.ScheduleFrom)
+	return newestScheduleVersion(db, tenantID, id)
+}
+
+// newestScheduleVersion returns the class's latest declared schedule. The
+// classes row mirrors it (the 0047 invariant), which matters for an
+// OUT-OF-ORDER edit: adding a change effective before an existing one must not
+// drag the class row backwards, because a later version still governs.
+func newestScheduleVersion(db *store.DB, tenantID int, classID string) (store.ScheduleVersion, error) {
+	var v store.ScheduleVersion
+	err := db.QueryRow(`SELECT effective_from,day,time,end_time FROM class_schedule_versions WHERE tenant_id=? AND class_id=? ORDER BY effective_from DESC LIMIT 1`,
+		tenantID, classID).Scan(&v.EffectiveFrom, &v.Day, &v.Time, &v.EndTime)
+	return v, err
+}
+
+// syncCurrentScheduleVersion keeps the 0047 invariant: the version with the
+// greatest effective_from mirrors the classes row. A plain (undated) edit is a
+// retroactive correction, so it rewrites that newest version in place rather
+// than opening a new span.
+func syncCurrentScheduleVersion(db *store.DB, tenantID int, cl models.Class) error {
+	var effectiveFrom string
+	err := db.QueryRow(`SELECT effective_from FROM class_schedule_versions WHERE tenant_id=? AND class_id=? ORDER BY effective_from DESC LIMIT 1`, tenantID, cl.ID).Scan(&effectiveFrom)
+	if errors.Is(err, sql.ErrNoRows) {
+		// A class created before 0047 ran, or created since: seed its first
+		// version at the sentinel epoch so every class has one.
+		effectiveFrom = "0001-01-01"
+	} else if err != nil {
 		return err
 	}
-	if later > 0 {
-		return errScheduleOutOfOrder
-	}
-	_, err = db.Exec(`INSERT INTO class_schedule_history(id,tenant_id,class_id,day,time,end_time,changed_on,created_by,created_on)
+	_, err = db.Exec(`INSERT INTO class_schedule_versions(id,tenant_id,class_id,effective_from,day,time,end_time,created_by,created_on)
 		VALUES(?,?,?,?,?,?,?,?,?)
-		ON CONFLICT (tenant_id,class_id,changed_on) DO NOTHING`,
-		core.GenerateID("SCH"), tenantID, id, day, tm, end, cl.ScheduleFrom, c.Email, core.Today())
-	if err == nil {
-		core.LogAudit(db, tenantID, c.Email, "class_schedule_changed", "class", id, "was "+day+" "+tm+"-"+end+", new schedule from "+cl.ScheduleFrom)
-	}
+		ON CONFLICT (tenant_id,class_id,effective_from)
+		DO UPDATE SET day=EXCLUDED.day, time=EXCLUDED.time, end_time=EXCLUDED.end_time`,
+		core.GenerateID("SV"), tenantID, cl.ID, effectiveFrom, cl.Day, cl.Time, cl.EndTime, "sync", core.Today())
 	return err
 }
 
@@ -202,6 +228,11 @@ func HandleClasses(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "could not create class", 500)
 				return
 			}
+			// Every class needs a version from the epoch, or a date before its
+			// first schedule change would have nothing to resolve to (0047).
+			if err := syncCurrentScheduleVersion(db, tid, c); err != nil {
+				core.Logger.Error("seeding schedule version failed", "err", err, "class_id", c.ID)
+			}
 			core.LogAudit(db, store.TenantID(cl), cl.Email, "class_created", "class", c.ID, c.Name)
 			core.Respond(w, c)
 		}
@@ -264,19 +295,21 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 					core.RespondError(w, "scheduleFrom must be YYYY-MM-DD", http.StatusBadRequest)
 					return
 				}
-				if err := recordScheduleChange(db, c, id, cl); err != nil {
+				newest, err := recordScheduleChange(db, c, id, cl)
+				if err != nil {
 					if errors.Is(err, sql.ErrNoRows) {
 						core.RespondError(w, "class not found", http.StatusNotFound)
 						return
 					}
-					if errors.Is(err, errScheduleOutOfOrder) {
-						core.RespondError(w, "This class already has a schedule change after that date — pick a date on or after the latest change, or undo the later change first.", http.StatusConflict)
-						return
-					}
-					core.Logger.Error("schedule change snapshot failed", "err", err, "class_id", id)
+					core.Logger.Error("schedule version write failed", "err", err, "class_id", id)
 					core.RespondError(w, "could not record the schedule change", http.StatusInternalServerError)
 					return
 				}
+				// The classes row mirrors the LATEST declared schedule. For an
+				// out-of-order edit the newest version is not the one just
+				// written, so writing the submitted values would drag the row
+				// backwards while a later version still governs.
+				cl.Day, cl.Time, cl.EndTime = newest.Day, newest.Time, newest.EndTime
 			}
 
 			// NOTE: `enrolled` is deliberately NOT updated here. It is a derived
@@ -293,6 +326,14 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 			if n, _ := res.RowsAffected(); n == 0 {
 				core.RespondError(w, "class not found", 404)
 				return
+			}
+			// An undated edit is a retroactive correction, so it rewrites the
+			// newest version rather than opening a span. A dated edit already
+			// wrote its own version above; this keeps the invariant either way.
+			var rowTenant int
+			db.QueryRow(`SELECT tenant_id FROM classes WHERE id=?`, id).Scan(&rowTenant)
+			if err := syncCurrentScheduleVersion(db, rowTenant, cl); err != nil {
+				core.Logger.Error("syncing schedule version failed", "err", err, "class_id", id)
 			}
 			if c != nil {
 				core.LogAudit(db, store.TenantID(c), c.Email, "class_updated", "class", id, cl.Name)

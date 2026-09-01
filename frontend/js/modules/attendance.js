@@ -242,9 +242,9 @@
     const { staff, classes, attendance } = App.Store.get();
     const dayOfWeek = new Date(_attDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
     // Staff with at least one class on this day
-    const schedChanges = App.Store.get().scheduleChanges;
+    const schedVersions = App.Store.get().scheduleVersions;
     const staffWithClass = staff.filter(function(s) {
-      return classes.some(function(c) { return c.teacherIds.indexOf(s.id) > -1 && App.Utils.scheduleOn(c, schedChanges, _attDate).day === dayOfWeek; });
+      return classes.some(function(c) { return c.teacherIds.indexOf(s.id) > -1 && App.Utils.scheduleOn(c, schedVersions, _attDate).day === dayOfWeek; });
     });
     const displayStaff = _showAllStaff ? staff : (staffWithClass.length > 0 ? staffWithClass : staff);
     const hiddenCount = staff.length - staffWithClass.length;
@@ -303,7 +303,7 @@
     // A session moved away from today doesn't take attendance today; one
     // moved TO today does, even though the weekday doesn't match.
     const _mv = App.Utils.movesForDate(App.Store.get().sessionMoves, _attDate);
-    const scheduledClasses = classes.filter(function(c) { return App.Utils.scheduleOn(c, App.Store.get().scheduleChanges, _attDate).day === dayOfWeek && !_mv.movedOut[c.id]; });
+    const scheduledClasses = classes.filter(function(c) { return App.Utils.scheduleOn(c, App.Store.get().scheduleVersions, _attDate).day === dayOfWeek && !_mv.movedOut[c.id]; });
     _mv.movedIn.forEach(function(m) {
       var mc = classes.find(function(c) { return c.id === m.classId; });
       if (mc && scheduledClasses.indexOf(mc) === -1) scheduledClasses.push(mc);
@@ -690,9 +690,9 @@
     _attDate = date;
     // Auto-select first class scheduled on the new day
     if (!_showAllClasses) {
-      const { classes, scheduleChanges } = App.Store.get();
+      const { classes, scheduleVersions } = App.Store.get();
       const dayOfWeek = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
-      const first = classes.find(function(c) { return App.Utils.scheduleOn(c, scheduleChanges, date).day === dayOfWeek; });
+      const first = classes.find(function(c) { return App.Utils.scheduleOn(c, scheduleVersions, date).day === dayOfWeek; });
       if (first) _attClassId = first.id;
     }
     App.Router.refresh();
@@ -744,7 +744,7 @@
       // A session moved off this date can't be cancelled here (the backend
       // rejects cancel-with-live-move), so don't offer it.
       const mvOut = App.Utils.movesForDate(state2.sessionMoves, _attDate).movedOut;
-      const affectedClasses = state2.classes.filter(function(c) { return c.teacherIds.indexOf(staffId) > -1 && App.Utils.scheduleOn(c, state2.scheduleChanges, _attDate).day === dateDay && !mvOut[c.id]; });
+      const affectedClasses = state2.classes.filter(function(c) { return c.teacherIds.indexOf(staffId) > -1 && App.Utils.scheduleOn(c, state2.scheduleVersions, _attDate).day === dateDay && !mvOut[c.id]; });
       if (affectedClasses.length > 0) {
         App.Router.refresh();
         _cancelClassModal(staffMember, affectedClasses);

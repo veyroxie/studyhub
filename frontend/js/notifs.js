@@ -131,7 +131,7 @@
 
       // Classes happening today
       var myClasses = classes.filter(function(c) {
-        return c.teacherIds && c.teacherIds.indexOf(App.currentTeacher) > -1 && App.Utils.scheduleOn(c, state.scheduleChanges, todayStr).day === todayDayName;
+        return c.teacherIds && c.teacherIds.indexOf(App.currentTeacher) > -1 && App.Utils.scheduleOn(c, state.scheduleVersions, todayStr).day === todayDayName;
       });
       if (myClasses.length > 0) {
         notifs.push({

@@ -30,9 +30,10 @@ dated section when you cut a deploy.
 - Marking a teacher absent no longer offers to cancel a session that was
   already rescheduled off that day (the cancellation would have been
   rejected anyway).
-- A dated schedule change earlier than one already recorded is now rejected
-  with a clear message instead of silently corrupting the earlier weeks'
-  history — apply changes in date order, or undo the later change first.
+- Schedule changes can be entered in any order. Setting a change for
+  August after already setting one for September now works and leaves
+  September alone; it was previously refused with a message telling you to
+  undo the later change, which nothing in the app could actually do.
 - Staff attendance marked from the admin Staff tab was never saved: the
   Present/Late/Absent buttons only updated the current browser tab, so the
   marks vanished on the next reload and never reached payroll or the undo
