@@ -281,7 +281,7 @@ builds. Retire it once Phase 5 removes client-side resolution entirely.
 | # | Question | Recommendation |
 |---|---|---|
 | D1 | Replace `class_schedule_history` outright, or shadow it during transition? | **Replace.** Shadowing doubles the write paths, which is the exact class of problem Phase 5 exists to remove. Safety comes from the 2.3 differ, not from keeping two tables. |
-| D2 | Does a mid-month joiner prorate by session, or pay the full month? | Ask Nadine. Her 31/08 message raises exactly this. Per-session billing implies prorating, but that is her commercial call, not ours. |
+| D2 | Does a mid-month joiner prorate by session, or pay the full month? | **DECIDED 2026-09-01 (Ely): bill only the sessions inside the student's enrolment window.** A joiner pays from their start date, a leaver up to their end date. A student who was on the schedule but never started owes nothing — with no billable lines the F5 rules already skip the invoice entirely, so this needs no new code beyond Phase 4 reading `enrollments` instead of the JSON. **Not** decided by this: whether an *absence* reduces a bill. It does not — F1 (`V2_REBUILD_PLAN.md:499`) settled that cancellations and absences never reduce an invoice and the replacement credit is the sole compensation. Advance billing on the 1st cannot know attendance anyway. Confirm with Ely if "what they attend" was meant to include absences, because that would reopen F1 and force billing in arrears. |
 | D3 | RLS now or after Phase 4? | After. It is a backstop, not a fix, and Phase 1.1 closes the actual hole. |
 | D4 | Superadmin — does anyone operate as one in production? | Answer decides whether Group B is urgent or theoretical. Check before scheduling Phase 1. |
 
