@@ -141,6 +141,14 @@ opt-in.
 
 ## WebSockets
 
+**Was broken in production from the June restructure until 2026-09-01
+(`89249be`).** Every upgrade failed: `core.statusRecorder` (metrics middleware)
+embedded the `http.ResponseWriter` interface to capture status codes, which
+strips the optional interfaces, so the handler's `w.(http.Hijacker)` assertion
+failed. Everything below describes code that was correct throughout and simply
+never ran. Guarded now by `TestMiddlewareKeepsWriterHijackable`, which checks
+every core middleware, not just that one.
+
 Connections are authenticated **before** the upgrade, parsing the JWT from the `sh_token`
 cookie or a Bearer header with an HMAC-method check (`ws.go:125-145`). The route does its own
 parse and bypasses the REST middleware chain -- revocation checks that middleware performs are

@@ -454,6 +454,28 @@ of the review:
   It now also alerts when `S3_BUCKET` is unset in production, so this cannot
   go quiet again.
 
+## 6.45 Two outages nothing in the codebase could have found
+
+Both surfaced on 2026-09-01 by looking at the RUNNING system, not by reading
+code. Recording them because the lesson generalises: every audit to date --
+including the multi-agent review that produced this document -- read source and
+reasoned about it, and neither of these is visible that way.
+
+- **WebSockets dead since June** (`89249be`). Every upgrade failed with
+  "response does not implement http.Hijacker" because `statusRecorder` wrapped
+  the writer and hid the interface. `AI_DOCS/jobs-and-outbound.md` describes
+  the WebSocket auth, per-parent event scoping and write deadlines correctly --
+  documentation of a feature that had not run in production for months.
+  `V2_IDEAS.md` C2 asks for *better auth* on the upgrade, taking for granted
+  that upgrades happen. Found in the production log, not in a file.
+- **Backups never left the droplet** (`b8392b5`). Script correct, cron
+  installed, freshness self-check passing, dumps restore cleanly -- and every
+  run logged "S3 not configured". Found by reading the log.
+
+Practical consequence for this plan: after each phase deploys, look at what
+production is DOING (logs, `/api/health`, a real page) rather than only at
+whether the tests pass. Green tests said nothing about either of these.
+
 ## 6.5 Follow-on feature: the student summary (requested 2026-09-01)
 
 Ely's decision on mixed-duration months settles a wider principle: **the invoice
