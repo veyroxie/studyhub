@@ -16,6 +16,15 @@ import (
 // No silent zeros (v2 constraint 4): any hole — no band anywhere, no matrix
 // row, a zero rate, missing times — is an error, never RM 0.
 func SessionRateFor(db *DB, classID, studentBand string) (float64, error) {
+	return SessionRateOn(db, classID, studentBand, "", "")
+}
+
+// SessionRateOn prices one session using the times it ACTUALLY ran at, which
+// for a past date is not necessarily the class row's current times (0047).
+// Pass "" for both to use the class row -- the "price it as it stands now"
+// case. Without this a schedule change that alters a class's LENGTH silently
+// reprices every earlier month (NEW-31).
+func SessionRateOn(db *DB, classID, studentBand, atStartHM, atEndHM string) (float64, error) {
 	var tenantID int
 	var classType, classBand, startHM, endHM string
 	var override float64
@@ -27,7 +36,11 @@ func SessionRateFor(db *DB, classID, studentBand string) (float64, error) {
 		return 0, fmt.Errorf("session rate: class %s: %w", classID, err)
 	}
 	if override > 0 {
+		// A per-session override is a flat price, so duration does not enter.
 		return override, nil
+	}
+	if atStartHM != "" && atEndHM != "" {
+		startHM, endHM = atStartHM, atEndHM
 	}
 	band := studentBand
 	if band == "" {

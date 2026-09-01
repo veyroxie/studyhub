@@ -56,6 +56,8 @@ describe the defect, not its status.
 | K2 | `09759aa` | Fixed in the one test that mutates a seeded row. **K1 is still open** — the harness still does not reset seeded tables |
 | B1 | `3eb836a` | Schedule history takes its tenant from the class row. **B2/B3 reassessed, see below** |
 | C1 | `ca0c936` | Cancellation on a move destination now visible; `Billable()` untouched on purpose |
+| C3 / `NEW-31` | Phase 3 | `store.SessionRateOn` prices a session at the duration it actually ran; iCal stamps each event with its own date's times. A month whose sessions differ in length is FLAGGED, not blended — `Qty x UnitPrice` cannot express it |
+| 2.3 differ | `36bd2de` | Mutation-checked; run against a production copy before deploying 0047 |
 | C2 | `2967f4b` | Move onto an occupied date rejected with a 409 |
 
 **B2/B3 reassessed 2026-09-01 (downgraded).** The ~20 `store.TenantID(c)`
@@ -329,7 +331,7 @@ the error message from `90a79b6` honest — or rather, makes it unnecessary.
 
 Migration `0046` has shipped: never edit it. `0047` only.
 
-### Phase 3 — Duration-aware pricing and historical iCal times
+### Phase 3 — Duration-aware pricing and historical iCal times — DONE 2026-09-01
 
 Depends on Phase 2's resolver.
 

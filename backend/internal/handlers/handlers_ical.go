@@ -178,20 +178,20 @@ func HandleParentCalendarFeed(db *store.DB) http.HandlerFunc {
 					// Same UID, new DTSTART: synced calendars relocate the
 					// event instead of keeping a stale copy on the old date.
 					if newDay, err := time.ParseInLocation("2006-01-02", sess.MovedTo, start.Location()); err == nil {
-						writeMovedEvent(&b, cls, day, newDay, sess.Cancelled)
+						writeMovedEvent(&b, cls, day, newDay, sess.Cancelled, sess.Time, sess.EndTime)
 					}
 				case store.SessionMovedIn:
 					// Origin in-window already emitted via moved_out; only a
 					// move landing here from OUTSIDE the window needs an event.
 					if sess.MovedFrom < fromStr || sess.MovedFrom > toStr {
 						if origDay, err := time.ParseInLocation("2006-01-02", sess.MovedFrom, start.Location()); err == nil {
-							writeMovedEvent(&b, cls, origDay, day, sess.Cancelled)
+							writeMovedEvent(&b, cls, origDay, day, sess.Cancelled, sess.Time, sess.EndTime)
 						}
 					}
 				case store.SessionCancelled:
-					writeEvent(&b, cls, day, true)
+					writeEvent(&b, cls, day, true, sess.Time, sess.EndTime)
 				default:
-					writeEvent(&b, cls, day, false)
+					writeEvent(&b, cls, day, false, sess.Time, sess.EndTime)
 				}
 			}
 		}
@@ -201,15 +201,22 @@ func HandleParentCalendarFeed(db *store.DB) http.HandlerFunc {
 	}
 }
 
-func writeEvent(b *strings.Builder, cls models.Class, day time.Time, isCancelled bool) {
+func writeEvent(b *strings.Builder, cls models.Class, day time.Time, isCancelled bool, atStart, atEnd string) {
+	// Times as the class ran ON this date (0047), falling back to the class
+	// row. A past event must keep its original slot: re-stamping it with a
+	// newer time silently rewrites what parents already have in their
+	// calendars.
+	if atStart == "" || atEnd == "" {
+		atStart, atEnd = cls.Time, cls.EndTime
+	}
 	// Parse HH:MM start / end into the day's local time. iCal floats local
 	// when there's no TZID — many parents are in MY, the X-WR-TIMEZONE
 	// hint above gets calendars to interpret naive times as Asia/KL.
-	startT, ok := combineDateTime(day, cls.Time)
+	startT, ok := combineDateTime(day, atStart)
 	if !ok {
 		return
 	}
-	endT, ok := combineDateTime(day, cls.EndTime)
+	endT, ok := combineDateTime(day, atEnd)
 	if !ok {
 		endT = startT.Add(1 * time.Hour)
 	}
@@ -235,12 +242,15 @@ func writeEvent(b *strings.Builder, cls models.Class, day time.Time, isCancelled
 
 // writeMovedEvent emits a rescheduled occurrence under its ORIGINAL date's
 // UID, with start/end on the new date, so calendar clients move the event.
-func writeMovedEvent(b *strings.Builder, cls models.Class, origDay, newDay time.Time, cancelled bool) {
-	startT, ok := combineDateTime(newDay, cls.Time)
+func writeMovedEvent(b *strings.Builder, cls models.Class, origDay, newDay time.Time, cancelled bool, atStart, atEnd string) {
+	if atStart == "" || atEnd == "" {
+		atStart, atEnd = cls.Time, cls.EndTime
+	}
+	startT, ok := combineDateTime(newDay, atStart)
 	if !ok {
 		return
 	}
-	endT, ok := combineDateTime(newDay, cls.EndTime)
+	endT, ok := combineDateTime(newDay, atEnd)
 	if !ok {
 		endT = startT.Add(1 * time.Hour)
 	}

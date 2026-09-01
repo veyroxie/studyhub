@@ -143,6 +143,7 @@ func previewLine(db *store.DB, classID, studentBand string, fees map[string]clas
 		line.Flagged, line.Reason = true, err.Error()
 		return line
 	}
+	var billable []store.ClassSession
 	for _, sess := range sessions {
 		switch sess.Status {
 		case store.SessionHeld:
@@ -157,19 +158,34 @@ func previewLine(db *store.DB, classID, studentBand string, fees map[string]clas
 		if sess.Billable() {
 			line.Billable++
 			line.BilledDates = append(line.BilledDates, sess.Date)
+			billable = append(billable, sess)
 		}
 	}
 	if line.Billable == 0 {
 		line.Skipped, line.Reason = true, "no billable sessions"
 		return line
 	}
-	rate, err := store.SessionRateFor(db, classID, studentBand)
-	if err != nil {
-		line.Flagged, line.Reason = true, err.Error()
-		return line
+	// Priced per session at the duration that session actually ran, not at the
+	// class row's current times: a schedule change that alters class LENGTH
+	// must not reprice earlier months (NEW-31).
+	total := 0.0
+	for i, sess := range billable {
+		rate, err := store.SessionRateOn(db, classID, studentBand, sess.Time, sess.EndTime)
+		if err != nil {
+			line.Flagged, line.Reason = true, err.Error()
+			return line
+		}
+		if i == 0 {
+			line.Rate = rate
+		} else if rate != line.Rate {
+			// Qty x UnitPrice cannot express a month whose sessions differ in
+			// length. Flag for a human rather than invent a blended rate.
+			line.Flagged = true
+			line.Reason = "sessions this month have different durations, so they price differently — check before billing"
+		}
+		total += rate
 	}
-	line.Rate = rate
-	line.Amount = round2(rate * float64(line.Billable))
+	line.Amount = round2(total)
 	return line
 }
 
