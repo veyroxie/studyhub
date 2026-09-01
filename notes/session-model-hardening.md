@@ -58,7 +58,7 @@ they are unrelated to the plan's F1 (credits-only) and F2 (frozen record).
 | A1 | `handlers_classes.go:93` | S3 | `Scan` error discarded; on a DB error `later` stays 0 and the out-of-order guard passes silently |
 | A2 | `handlers_cancelled.go:63` | S2 | Same shape: cancel-with-live-move guard passes on error |
 | A3 | `handlers_session_moves.go:73` | S2 | Same shape: move-on-cancelled-session guard passes on error |
-| A4 | `handlers_referrals.go:102` | S1 | Same shape on a **paid-invoice count** that gates a referral reward |
+| A4 | `handlers_referrals.go:102` | S3 | Same shape on the paid-invoice recount. **Corrected 2026-09-01 from S1:** the count does not gate the reward — `status='earned'` is set unconditionally and the count is written via `GREATEST(paid_invoice_count, ?)`, so a dropped error just fails to advance it. Wrong, not dangerous. |
 
 Same failure mode as the RM 0 pricing incident (2026-07-31): a failed query
 returns an empty answer indistinguishable from a valid one.
@@ -170,7 +170,7 @@ the calendar is still wrong. J1 is the better first move.
 Ordered so each phase makes the next safer, and so nothing depends on a
 decision that has not been made yet.
 
-### Phase 0 — Make the bad shapes unwriteable (no behaviour change)
+### Phase 0 — Make the bad shapes unwriteable (no behaviour change) — DONE 2026-09-01
 
 Small, additive, reversible. Do these first: they are the primitives the rest
 of the work will use.
@@ -213,7 +213,7 @@ Validation, not support. `attendance` is keyed `(person, date, class)`, so two
 sessions of one class on one date is unrepresentable downstream. Reject with a
 409 naming the clash.
 
-**1.4 Partial-update PUT for pricing (E1-E2)**
+**1.4 Partial-update PUT for pricing (E1-E2) — DONE 2026-09-01 for `pricing_tiers`; the class PUT (E2) still open**
 Pointer fields plus a SET clause built only from present keys. Removes the
 family, not the instance. Start with `pricing_tiers` because it is money and
 live; the class PUT can follow.

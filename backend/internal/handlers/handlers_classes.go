@@ -89,13 +89,15 @@ func recordScheduleChange(db *store.DB, c *core.Claims, id string, cl models.Cla
 	if day == cl.Day && tm == cl.Time && end == cl.EndTime {
 		return nil
 	}
-	var later int
-	db.QueryRow(`SELECT COUNT(*) FROM class_schedule_history WHERE tenant_id=? AND class_id=? AND changed_on>?`,
-		store.TenantID(c), id, cl.ScheduleFrom).Scan(&later)
+	laterArgs := append([]any{id, cl.ScheduleFrom}, twArgs...)
+	later, err := store.CountRow(db, `SELECT COUNT(*) FROM class_schedule_history WHERE class_id=? AND changed_on>?`+tw, laterArgs...)
+	if err != nil {
+		return err
+	}
 	if later > 0 {
 		return errScheduleOutOfOrder
 	}
-	_, err := db.Exec(`INSERT INTO class_schedule_history(id,tenant_id,class_id,day,time,end_time,changed_on,created_by,created_on)
+	_, err = db.Exec(`INSERT INTO class_schedule_history(id,tenant_id,class_id,day,time,end_time,changed_on,created_by,created_on)
 		VALUES(?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (tenant_id,class_id,changed_on) DO NOTHING`,
 		core.GenerateID("SCH"), store.TenantID(c), id, day, tm, end, cl.ScheduleFrom, c.Email, core.Today())

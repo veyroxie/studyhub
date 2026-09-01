@@ -97,9 +97,13 @@ func HandleReferralEarn(db *store.DB) http.HandlerFunc {
 		// Recount paid Monthly invoices server-side as a sanity check. If the
 		// frontend tracks more (because invoices are localStorage-only) we accept
 		// the call regardless — the admin UI is the gate.
-		var paidCount int
 		countArgs := append([]any{studentID}, twArgs...)
-		db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE student_id=? AND type='Monthly' AND status='Paid' AND deleted_at IS NULL`+tw, countArgs...).Scan(&paidCount)
+		paidCount, err := store.CountRow(db, `SELECT COUNT(*) FROM invoices WHERE student_id=? AND type='Monthly' AND status='Paid' AND deleted_at IS NULL`+tw, countArgs...)
+		if err != nil {
+			core.Logger.Error("paid-invoice recount failed", "err", err, "student_id", studentID)
+			core.RespondError(w, "server error", http.StatusInternalServerError)
+			return
+		}
 
 		updArgs := append([]any{paidCount, core.Today(), id}, twArgs...)
 		if _, err := db.Exec(`UPDATE referral_rewards SET status='earned', credits_remaining=3, paid_invoice_count=GREATEST(paid_invoice_count, ?), milestone_met_on=? WHERE id=?`+tw, updArgs...); err != nil {

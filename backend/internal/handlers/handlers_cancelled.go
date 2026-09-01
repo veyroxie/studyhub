@@ -59,8 +59,12 @@ func HandleCreateCancelledClass(db *store.DB) http.HandlerFunc {
 			cc.CancelledBy = c.Email
 		}
 		tid := store.TenantID(c)
-		var moved int
-		db.QueryRow(`SELECT COUNT(*) FROM class_session_moves WHERE tenant_id=? AND class_id=? AND from_date=? AND deleted_at IS NULL`, tid, cc.ClassID, cc.Date).Scan(&moved)
+		moved, err := store.CountRow(db, `SELECT COUNT(*) FROM class_session_moves WHERE tenant_id=? AND class_id=? AND from_date=? AND deleted_at IS NULL`, tid, cc.ClassID, cc.Date)
+		if err != nil {
+			core.Logger.Error("move check failed", "err", err, "class_id", cc.ClassID)
+			core.RespondError(w, "server error", http.StatusInternalServerError)
+			return
+		}
 		if moved > 0 {
 			core.RespondError(w, "session was rescheduled to another date — undo the move first", http.StatusConflict)
 			return

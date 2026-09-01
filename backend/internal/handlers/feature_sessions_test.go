@@ -171,9 +171,10 @@ func TestClassUpdate_ScheduleFromSnapshotsOldSlot(t *testing.T) {
 	if code := put("Wednesday", "10:00", "11:00", "2026-09-01"); code != http.StatusOK {
 		t.Fatalf("second dated update failed: %d", code)
 	}
-	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM class_schedule_history WHERE class_id=?`, classID).Scan(&count)
-	db.QueryRow(`SELECT day FROM class_schedule_history WHERE class_id=?`, classID).Scan(&day)
+	count := countRows(t, db, `SELECT COUNT(*) FROM class_schedule_history WHERE class_id=?`, classID)
+	if err := db.QueryRow(`SELECT day FROM class_schedule_history WHERE class_id=?`, classID).Scan(&day); err != nil {
+		t.Fatalf("read history day: %v", err)
+	}
 	if count != 1 || day != "Friday" {
 		t.Fatalf("same-date re-edit must keep the first snapshot: count=%d day=%s", count, day)
 	}
@@ -182,8 +183,7 @@ func TestClassUpdate_ScheduleFromSnapshotsOldSlot(t *testing.T) {
 	if code := put("Monday", "09:00", "10:00", ""); code != http.StatusOK {
 		t.Fatalf("plain update failed: %d", code)
 	}
-	db.QueryRow(`SELECT COUNT(*) FROM class_schedule_history WHERE class_id=?`, classID).Scan(&count)
-	if count != 1 {
+	if count = countRows(t, db, `SELECT COUNT(*) FROM class_schedule_history WHERE class_id=?`, classID); count != 1 {
 		t.Fatalf("plain edit must not add history, got %d rows", count)
 	}
 
@@ -197,8 +197,7 @@ func TestClassUpdate_ScheduleFromSnapshotsOldSlot(t *testing.T) {
 	if code := put("Tuesday", "11:00", "12:00", "2026-08-15"); code != http.StatusConflict {
 		t.Fatalf("out-of-order scheduleFrom should 409, got %d", code)
 	}
-	db.QueryRow(`SELECT COUNT(*) FROM class_schedule_history WHERE class_id=?`, classID).Scan(&count)
-	if count != 1 {
+	if count = countRows(t, db, `SELECT COUNT(*) FROM class_schedule_history WHERE class_id=?`, classID); count != 1 {
 		t.Fatalf("rejected out-of-order edit must not add history, got %d rows", count)
 	}
 }

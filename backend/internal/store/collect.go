@@ -2,9 +2,24 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 
 	"studyhub/internal/core"
 )
+
+// CountRow runs a COUNT query and returns the count with its error. It exists
+// because the bare form -- db.QueryRow(...).Scan(&n) with the error dropped --
+// leaves n at 0 on failure, which reads as "nothing found" and silently opens
+// whatever guard the count protects. Four guards were written that way. Here
+// the count cannot be obtained without the error, so the safe form is also the
+// shortest one.
+func CountRow(db *DB, query string, args ...any) (int, error) {
+	var n int
+	if err := db.QueryRow(query, args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count: %w", err)
+	}
+	return n, nil
+}
 
 // CollectRows drains a list query into a slice, replacing the query-check /
 // defer-Close / scan-loop block that was hand-copied at ~26 call sites.

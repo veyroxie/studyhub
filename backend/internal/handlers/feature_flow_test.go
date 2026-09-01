@@ -82,6 +82,19 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 	return r, db, func() { db.Close() }
 }
 
+// countRows runs a COUNT and fails the test if the query or scan errors.
+// The bare form leaves the destination at its PREVIOUS value on failure, so a
+// reused counter silently asserts against stale data -- an assertion that
+// cannot fail correctly. Mirrors store.CountRow on the production side.
+func countRows(t *testing.T, db *store.DB, query string, args ...any) int {
+	t.Helper()
+	n, err := store.CountRow(db, query, args...)
+	if err != nil {
+		t.Fatalf("count query failed: %v", err)
+	}
+	return n
+}
+
 // authedJSON makes an authenticated JSON request and returns the recorder.
 // `tok` is the JWT obtained from getToken().
 func authedJSON(t *testing.T, r *chi.Mux, method, path, tok string, body any) *httptest.ResponseRecorder {

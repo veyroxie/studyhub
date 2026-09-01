@@ -69,8 +69,12 @@ func HandleCreateSessionMove(db *store.DB) http.HandlerFunc {
 		}
 		// A cancelled session has already told parents "no class, credit
 		// added" — silently turning that into a move would contradict it.
-		var cancelled int
-		db.QueryRow(`SELECT COUNT(*) FROM cancelled_classes WHERE tenant_id=? AND class_id=? AND date=? AND deleted_at IS NULL`, tid, m.ClassID, m.FromDate).Scan(&cancelled)
+		cancelled, err := store.CountRow(db, `SELECT COUNT(*) FROM cancelled_classes WHERE tenant_id=? AND class_id=? AND date=? AND deleted_at IS NULL`, tid, m.ClassID, m.FromDate)
+		if err != nil {
+			core.Logger.Error("cancellation check failed", "err", err, "class_id", m.ClassID)
+			core.RespondError(w, "server error", http.StatusInternalServerError)
+			return
+		}
 		if cancelled > 0 {
 			core.RespondError(w, "this session is cancelled; a cancelled session cannot be rescheduled", http.StatusConflict)
 			return
@@ -83,7 +87,7 @@ func HandleCreateSessionMove(db *store.DB) http.HandlerFunc {
 			m.MovedBy = c.Email
 		}
 		// Upsert: re-moving the same session replaces the previous target.
-		_, err := db.Exec(`INSERT INTO class_session_moves(id,tenant_id,class_id,from_date,to_date,reason,moved_by,created_on)
+		_, err = db.Exec(`INSERT INTO class_session_moves(id,tenant_id,class_id,from_date,to_date,reason,moved_by,created_on)
 			VALUES(?,?,?,?,?,?,?,?)
 			ON CONFLICT (tenant_id,class_id,from_date) WHERE deleted_at IS NULL
 			DO UPDATE SET to_date=EXCLUDED.to_date, reason=EXCLUDED.reason, moved_by=EXCLUDED.moved_by, created_on=EXCLUDED.created_on`,
