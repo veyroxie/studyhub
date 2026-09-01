@@ -1,7 +1,9 @@
 package core
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -96,6 +98,20 @@ func MetricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// statusRecorder wraps the ResponseWriter to capture the status code.
+//
+// Embedding the http.ResponseWriter INTERFACE satisfies ResponseWriter but not
+// the optional interfaces a handler may assert for: the wrapper type has no
+// Hijack method, so `w.(http.Hijacker)` fails even though the writer
+// underneath supports it. That silently broke every WebSocket upgrade in
+// production ("response does not implement http.Hijacker") — live updates and
+// parent check-in notifications were dead, and nothing failed loudly because
+// the upgrade error is just a 500 on /ws.
+//
+// Hijack and Flush are declared explicitly because callers assert for them
+// directly (gorilla/websocket does). Unwrap covers everything else: it lets
+// http.ResponseController reach the underlying writer for any optional
+// behaviour added later, so a future streaming API needs no change here.
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -105,6 +121,23 @@ func (r *statusRecorder) WriteHeader(s int) {
 	r.status = s
 	r.ResponseWriter.WriteHeader(s)
 }
+
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("metrics: underlying writer %T is not an http.Hijacker", r.ResponseWriter)
+	}
+	return hj.Hijack()
+}
+
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap is what http.ResponseController uses to find the real writer.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // routeTemplate returns chi's route pattern when available (e.g.
 // "/api/students/{id}"), falling back to the raw URL path. This keeps

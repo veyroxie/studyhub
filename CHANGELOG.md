@@ -21,6 +21,11 @@ dated section when you cut a deploy.
   touched.
 
 ### Fixed
+- Live updates work again. Every WebSocket connection had been failing in
+  production, so open pages never refreshed on their own — a screen left
+  open showed stale data until it was manually reloaded, and parents got
+  no live check-in notifications. Caused by the metrics middleware hiding
+  a capability the connection needs.
 - The hourly health self-check now warns when backups are local-only.
   The nightly dump was running and passing its freshness check, but the
   off-site upload had never been switched on, so every backup sat on the
