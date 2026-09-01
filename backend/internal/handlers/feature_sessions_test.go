@@ -201,3 +201,110 @@ func TestClassUpdate_ScheduleFromSnapshotsOldSlot(t *testing.T) {
 		t.Fatalf("rejected out-of-order edit must not add history, got %d rows", count)
 	}
 }
+
+// TestSessionsInPeriod_CancelledDestinationIsVisible locks the fix for a
+// cancellation landing on a MOVE DESTINATION. The natural-date loop never
+// visits a cross-weekday destination, so the cancellation used to be invisible
+// and renderers drew a session the centre had called off. Billing must not
+// change: the charge sits on the origin's moved_out, and promoting the
+// destination to SessionCancelled (which bills) would charge it twice.
+func TestSessionsInPeriod_CancelledDestinationIsVisible(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	db.Exec(`DELETE FROM holidays`)
+
+	monday := time.Now()
+	for monday.Weekday() != time.Monday {
+		monday = monday.AddDate(0, 0, 1)
+	}
+	day := func(o int) string { return monday.AddDate(0, 0, o).Format("2006-01-02") }
+
+	classID := core.GenerateID("CLS")
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time) VALUES(?,?,?,?,?,?)`,
+		classID, 1, "Dest Cancel Class", "Monday", "10:00", "11:00")
+	// Monday day(0) moves to Wednesday day(2) -- not a natural occurrence.
+	db.Exec(`INSERT INTO class_session_moves(id,tenant_id,class_id,from_date,to_date,created_on) VALUES(?,?,?,?,?,?)`,
+		core.GenerateID("MOV"), 1, classID, day(0), day(2), core.Today())
+	db.Exec(`INSERT INTO cancelled_classes(id,tenant_id,class_id,date,created_on) VALUES(?,?,?,?,?)`,
+		core.GenerateID("CC"), 1, classID, day(2), core.Today())
+
+	sessions, err := store.SessionsInPeriod(db, classID, day(0), day(6))
+	if err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+	var sawOut, sawIn bool
+	billable := 0
+	for _, s := range sessions {
+		if s.Billable() {
+			billable++
+		}
+		switch s.Status {
+		case store.SessionMovedOut:
+			sawOut = true
+			if !s.Cancelled {
+				t.Error("moved_out must carry the destination's cancellation for renderers")
+			}
+		case store.SessionMovedIn:
+			sawIn = true
+			if !s.Cancelled {
+				t.Error("moved_in on a cancelled destination must be marked cancelled")
+			}
+		}
+	}
+	if !sawOut || !sawIn {
+		t.Fatalf("expected both ends of the move, got %+v", sessions)
+	}
+	// Exactly one charge: the origin. A cancelled session still bills (credits
+	// compensate) but it must not bill once per end of the move.
+	if billable != 1 {
+		t.Errorf("want 1 billable session across the move, got %d: %+v", billable, sessions)
+	}
+}
+
+// TestSessionMove_RejectsOccupiedDestination locks the C2 fix: attendance is
+// keyed (person, date, class), so two sessions of one class on one date cannot
+// be recorded. Moving onto a date the class already meets must 409.
+func TestSessionMove_RejectsOccupiedDestination(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+
+	r := chi.NewRouter()
+	r.Post("/api/auth/login", auth.HandleLogin(db))
+	r.Group(func(g chi.Router) {
+		g.Use(auth.JWTMiddleware(db))
+		g.Post("/api/session-moves", HandleCreateSessionMove(db))
+	})
+	tok := getToken(t, r, "admin@studyhub.com", "admin123")
+
+	monday := time.Now()
+	for monday.Weekday() != time.Monday {
+		monday = monday.AddDate(0, 0, 1)
+	}
+	day := func(o int) string { return monday.AddDate(0, 0, o).Format("2006-01-02") }
+
+	classID := core.GenerateID("CLS")
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time) VALUES(?,?,?,?,?,?)`,
+		classID, 1, "Clash Class", "Monday", "10:00", "11:00")
+
+	// Monday to the FOLLOWING Monday: the class already meets there.
+	w := authedJSON(t, r, "POST", "/api/session-moves", tok, map[string]any{
+		"classId": classID, "fromDate": day(0), "toDate": day(7),
+	})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("same-weekday move should 409, got %d %s", w.Code, w.Body.String())
+	}
+
+	// A free date is still accepted.
+	if w := authedJSON(t, r, "POST", "/api/session-moves", tok, map[string]any{
+		"classId": classID, "fromDate": day(0), "toDate": day(2),
+	}); w.Code != http.StatusCreated {
+		t.Fatalf("free destination should be accepted, got %d %s", w.Code, w.Body.String())
+	}
+
+	// Re-targeting the SAME move must not clash with itself.
+	if w := authedJSON(t, r, "POST", "/api/session-moves", tok, map[string]any{
+		"classId": classID, "fromDate": day(0), "toDate": day(3),
+	}); w.Code != http.StatusCreated {
+		t.Fatalf("re-targeting the same move should succeed, got %d %s", w.Code, w.Body.String())
+	}
+}

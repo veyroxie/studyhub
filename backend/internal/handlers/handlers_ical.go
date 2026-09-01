@@ -178,14 +178,14 @@ func HandleParentCalendarFeed(db *store.DB) http.HandlerFunc {
 					// Same UID, new DTSTART: synced calendars relocate the
 					// event instead of keeping a stale copy on the old date.
 					if newDay, err := time.ParseInLocation("2006-01-02", sess.MovedTo, start.Location()); err == nil {
-						writeMovedEvent(&b, cls, day, newDay)
+						writeMovedEvent(&b, cls, day, newDay, sess.Cancelled)
 					}
 				case store.SessionMovedIn:
 					// Origin in-window already emitted via moved_out; only a
 					// move landing here from OUTSIDE the window needs an event.
 					if sess.MovedFrom < fromStr || sess.MovedFrom > toStr {
 						if origDay, err := time.ParseInLocation("2006-01-02", sess.MovedFrom, start.Location()); err == nil {
-							writeMovedEvent(&b, cls, origDay, day)
+							writeMovedEvent(&b, cls, origDay, day, sess.Cancelled)
 						}
 					}
 				case store.SessionCancelled:
@@ -235,7 +235,7 @@ func writeEvent(b *strings.Builder, cls models.Class, day time.Time, isCancelled
 
 // writeMovedEvent emits a rescheduled occurrence under its ORIGINAL date's
 // UID, with start/end on the new date, so calendar clients move the event.
-func writeMovedEvent(b *strings.Builder, cls models.Class, origDay, newDay time.Time) {
+func writeMovedEvent(b *strings.Builder, cls models.Class, origDay, newDay time.Time, cancelled bool) {
 	startT, ok := combineDateTime(newDay, cls.Time)
 	if !ok {
 		return
@@ -250,7 +250,14 @@ func writeMovedEvent(b *strings.Builder, cls models.Class, origDay, newDay time.
 	b.WriteString("DTSTAMP:" + time.Now().UTC().Format("20060102T150405Z") + "\r\n")
 	b.WriteString("DTSTART:" + startT.Format("20060102T150405") + "\r\n")
 	b.WriteString("DTEND:" + endT.Format("20060102T150405") + "\r\n")
-	b.WriteString("SUMMARY:" + icsEscape(cls.Name+" (moved from "+origDay.Format("2 Jan")+")") + "\r\n")
+	summary := cls.Name + " (moved from " + origDay.Format("2 Jan") + ")"
+	if cancelled {
+		// Same UID as the move, so a synced calendar strikes the event through
+		// in place rather than leaving a session the centre has cancelled.
+		summary = "Cancelled: " + summary
+		b.WriteString("STATUS:CANCELLED\r\n")
+	}
+	b.WriteString("SUMMARY:" + icsEscape(summary) + "\r\n")
 	if cls.Classroom != "" {
 		b.WriteString("LOCATION:" + icsEscape(cls.Classroom) + "\r\n")
 	}

@@ -27,6 +27,10 @@ type ClassSession struct {
 	Status    string
 	MovedTo   string
 	MovedFrom string
+	// Cancelled marks a moved_in entry whose DESTINATION date was cancelled.
+	// It is display-only: billing rides on the origin's moved_out, so this
+	// never changes Billable().
+	Cancelled bool
 }
 
 // Billable reports whether this entry counts toward a month's session total.
@@ -88,8 +92,14 @@ func SessionsInPeriod(db *DB, classID, from, to string) ([]ClassSession, error) 
 		}
 		out = append(out, classifyOccurrence(date, cancelled, movedOut, holidays))
 	}
+	// A cancellation landing on a DESTINATION date used to be invisible: the
+	// natural-date loop never visits a cross-weekday destination, so renderers
+	// showed a session the centre had cancelled. Status stays moved_in and
+	// Billable() is deliberately untouched -- the charge sits on the origin's
+	// moved_out, and promoting this to SessionCancelled (which bills) would
+	// charge the same session twice.
 	for dst, src := range movedIn {
-		out = append(out, ClassSession{Date: dst, Status: SessionMovedIn, MovedFrom: src})
+		out = append(out, ClassSession{Date: dst, Status: SessionMovedIn, MovedFrom: src, Cancelled: cancelled[dst]})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Date != out[j].Date {
@@ -106,7 +116,10 @@ func SessionsInPeriod(db *DB, classID, from, to string) ([]ClassSession, error) 
 // on a holiday granted credits, and holiday status would silently unbill it.
 func classifyOccurrence(date string, cancelled map[string]bool, movedOut map[string]string, holidays []holidayRange) ClassSession {
 	if to, ok := movedOut[date]; ok {
-		return ClassSession{Date: date, Status: SessionMovedOut, MovedTo: to}
+		// Cancelled tracks the DESTINATION here: the session as relocated is
+		// what a renderer draws, and an in-window move is emitted from this
+		// entry (the matching moved_in is skipped as a duplicate).
+		return ClassSession{Date: date, Status: SessionMovedOut, MovedTo: to, Cancelled: cancelled[to]}
 	}
 	if cancelled[date] {
 		return ClassSession{Date: date, Status: SessionCancelled}

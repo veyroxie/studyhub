@@ -21,6 +21,12 @@ dated section when you cut a deploy.
   touched.
 
 ### Fixed
+- A session cancelled on the date it was rescheduled TO now shows as
+  cancelled in the parent calendar feed, instead of still appearing as a
+  normal class. What the class is charged does not change.
+- A session can no longer be rescheduled onto a date the class already
+  runs, which produced two classes on one day that attendance could not
+  record separately. The move is refused with a message naming the clash.
 - Marking a teacher absent no longer offers to cancel a session that was
   already rescheduled off that day (the cancellation would have been
   rejected anyway).

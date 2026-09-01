@@ -30,6 +30,20 @@ exists so "just this week" stops meaning "every week from now on".
 Session identity is enforced by a partial unique index on `(tenant_id, class_id, date)`
 `WHERE deleted_at IS NULL` (`0040:32-33`). Any new per-session table must key the same way.
 
+**Move destinations are checked before a move is accepted (2026-09-01).**
+`destinationOccupied` rejects a move onto a date the class already meets with a
+409 -- `attendance` is keyed `(person, date, class)`, so two sessions of one
+class on one date cannot be recorded, and the calendar draws a single card. The
+common case this blocks is moving a session to the SAME weekday next week.
+
+**A cancellation on a move DESTINATION is display-only (2026-09-01).**
+`ClassSession.Cancelled` marks it on both ends of the move (`moved_out` carries
+its destination's state, since an in-window move renders from that entry).
+`Billable()` deliberately ignores the flag: the charge sits on the origin's
+`moved_out`, and promoting the destination to `cancelled` -- which bills --
+would charge the same session twice. Locked by
+`TestSessionsInPeriod_CancelledDestinationIsVisible`.
+
 **The canonical expander is `store.SessionsInPeriod` (F6, `store/sessions.go`).** It flattens
 one class's weekly recurrence over a window and classifies every occurrence:
 `held | cancelled | holiday | moved_out | moved_in`. It classifies rather than filters (iCal
