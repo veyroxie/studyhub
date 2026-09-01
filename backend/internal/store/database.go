@@ -512,7 +512,10 @@ func migrateStudentsToFamilies(db *sql.DB) {
 	}
 	log.Printf("Migrating %d students into families...", count)
 
-	rows, err := db.Query(`SELECT DISTINCT contact, parent_name, phone FROM students WHERE contact != '' AND deleted_at IS NULL ORDER BY contact`)
+	// COALESCE: parent_name and phone are nullable, and a NULL failed the scan
+	// below — which skipped that family silently, so a student with no phone
+	// was never migrated.
+	rows, err := db.Query(`SELECT DISTINCT contact, COALESCE(parent_name,''), COALESCE(phone,'') FROM students WHERE contact != '' AND deleted_at IS NULL ORDER BY contact`)
 	if err != nil {
 		return
 	}

@@ -21,7 +21,10 @@ import (
 //
 // For request-scoped logging that includes the request_id automatically,
 // use logFromCtx(ctx) inside handlers.
-var Logger *slog.Logger
+// Logger is never nil: InitDB and the boot-time migrations log before main()
+// reaches InitLogger in some entry points (tests, tools), and a nil Logger
+// turns a logged error into a panic. InitLogger replaces this default.
+var Logger = slog.Default()
 
 // initLogger configures the global Logger based on the current environment.
 // Called from main() right after godotenv.Load.
