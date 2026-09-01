@@ -79,6 +79,20 @@ func HandleCreateSessionMove(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "this session is cancelled; a cancelled session cannot be rescheduled", http.StatusConflict)
 			return
 		}
+		// Two sessions of one class on one date are unrepresentable downstream:
+		// attendance is keyed (person, date, class) so only one can be recorded,
+		// and the calendar draws a single card. Reject the move rather than
+		// create a state the rest of the app cannot hold.
+		clash, err := destinationOccupied(db, m.ClassID, m.FromDate, m.ToDate)
+		if err != nil {
+			core.Logger.Error("destination check failed", "err", err, "class_id", m.ClassID)
+			core.RespondError(w, "server error", http.StatusInternalServerError)
+			return
+		}
+		if clash {
+			core.RespondError(w, "the class already runs on "+m.ToDate+"; pick a date it does not already meet", http.StatusConflict)
+			return
+		}
 		if m.ID == "" {
 			m.ID = core.GenerateID("MOV")
 		}
@@ -139,6 +153,27 @@ func HandleDeleteSessionMove(db *store.DB) http.HandlerFunc {
 		core.LogAudit(db, tid, actor, "session_move_undone", "session_move", id, "class="+classID)
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// destinationOccupied reports whether the class already has a session on
+// toDate -- either a natural occurrence that has not itself been moved away,
+// or another move already landing there. Uses the canonical expander so the
+// answer honours dated schedule changes rather than re-deriving the weekday.
+func destinationOccupied(db *store.DB, classID, fromDate, toDate string) (bool, error) {
+	sessions, err := store.SessionsInPeriod(db, classID, toDate, toDate)
+	if err != nil {
+		return false, err
+	}
+	for _, s := range sessions {
+		// The move being replaced by this upsert does not count against itself.
+		if s.Status == store.SessionMovedIn && s.MovedFrom == fromDate {
+			continue
+		}
+		if s.Status == store.SessionHeld || s.Status == store.SessionCancelled || s.Status == store.SessionMovedIn {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func buildMoveMessage(className, from, to, reason string) string {
