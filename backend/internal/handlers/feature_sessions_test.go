@@ -313,3 +313,121 @@ func TestSessionMove_RejectsOccupiedDestination(t *testing.T) {
 		t.Fatalf("re-targeting the same move should succeed, got %d %s", w.Code, w.Body.String())
 	}
 }
+
+// TestScheduleBackfill_MatchesLegacyResolver is the 0047 cutover check. It
+// reimplements 0046's rule (the OLDEST history row dated after d wins, else the
+// class row) and asserts the migrated versions table answers identically for
+// every class across a wide window.
+//
+// Against the seeded test DB there is no history, so it only proves the
+// no-history path. Its real use is against a restored copy of production:
+//
+//	TEST_DATABASE_URL=postgres://...prod_copy... go test ./internal/handlers/ \
+//	  -run TestScheduleBackfill_MatchesLegacyResolver -count=1
+//
+// Run it BEFORE deploying 0047. A divergence names the class and the date.
+func TestScheduleBackfill_MatchesLegacyResolver(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+
+	type legacyRow struct{ day, tm, end, changedOn string }
+
+	// Seed a class with real 0046 history and run 0047's backfill verbatim, so
+	// CI exercises the LAG path and not just the no-history case. Against a
+	// production copy the real rows dominate and this one is noise.
+	seeded := core.GenerateID("CLS")
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time) VALUES(?,?,?,?,?,?)`,
+		seeded, 1, "Backfill Probe", "Monday", "09:00", "10:00")
+	for _, h := range []struct{ day, tm, end, on string }{
+		{"Friday", "15:00", "16:00", "2026-03-01"},
+		{"Tuesday", "11:00", "12:00", "2026-06-01"},
+		{"Wednesday", "14:00", "15:00", "2026-09-01"},
+	} {
+		db.Exec(`INSERT INTO class_schedule_history(id,tenant_id,class_id,day,time,end_time,changed_on) VALUES(?,?,?,?,?,?,?)`,
+			core.GenerateID("SCH"), 1, seeded, h.day, h.tm, h.end, h.on)
+	}
+	// Same statements as migration 0047, restricted to the probe class.
+	if _, err := db.Exec(`INSERT INTO class_schedule_versions (id, tenant_id, class_id, effective_from, day, time, end_time, created_by, created_on)
+		SELECT 'SV_' || h.id, h.tenant_id, h.class_id,
+		       COALESCE(LAG(h.changed_on) OVER (PARTITION BY h.tenant_id, h.class_id ORDER BY h.changed_on), '0001-01-01'),
+		       h.day, h.time, h.end_time, 'backfill-0047', '2026-09-01'
+		FROM class_schedule_history h WHERE h.class_id=?
+		ON CONFLICT (tenant_id, class_id, effective_from) DO NOTHING`, seeded); err != nil {
+		t.Fatalf("probe backfill part 1: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO class_schedule_versions (id, tenant_id, class_id, effective_from, day, time, end_time, created_by, created_on)
+		SELECT 'SVC_' || c.id, c.tenant_id, c.id,
+		       COALESCE((SELECT MAX(h.changed_on) FROM class_schedule_history h
+		                 WHERE h.class_id = c.id AND h.tenant_id = c.tenant_id), '0001-01-01'),
+		       COALESCE(c.day,''), COALESCE(c.time,''), COALESCE(c.end_time,''), 'backfill-0047', '2026-09-01'
+		FROM classes c WHERE c.id=? AND c.deleted_at IS NULL
+		ON CONFLICT (tenant_id, class_id, effective_from) DO NOTHING`, seeded); err != nil {
+		t.Fatalf("probe backfill part 2: %v", err)
+	}
+
+	rows, err := db.Query(`SELECT id, tenant_id, COALESCE(day,''), COALESCE(time,''), COALESCE(end_time,'') FROM classes WHERE deleted_at IS NULL`)
+	if err != nil {
+		t.Fatalf("list classes: %v", err)
+	}
+	type classRow struct {
+		id           string
+		tenantID     int
+		day, tm, end string
+	}
+	var classes []classRow
+	for rows.Next() {
+		var c classRow
+		if rows.Scan(&c.id, &c.tenantID, &c.day, &c.tm, &c.end) == nil {
+			classes = append(classes, c)
+		}
+	}
+	rows.Close()
+
+	checked := 0
+	for _, c := range classes {
+		hrows, err := db.Query(`SELECT COALESCE(day,''), COALESCE(time,''), COALESCE(end_time,''), changed_on FROM class_schedule_history WHERE tenant_id=? AND class_id=? ORDER BY changed_on`, c.tenantID, c.id)
+		if err != nil {
+			t.Fatalf("history for %s: %v", c.id, err)
+		}
+		var legacy []legacyRow
+		for hrows.Next() {
+			var l legacyRow
+			if hrows.Scan(&l.day, &l.tm, &l.end, &l.changedOn) == nil {
+				legacy = append(legacy, l)
+			}
+		}
+		hrows.Close()
+
+		versions, err := store.ClassScheduleVersions(db, c.tenantID, c.id)
+		if err != nil {
+			t.Fatalf("versions for %s: %v", c.id, err)
+		}
+		current := store.ScheduleVersion{Day: c.day, Time: c.tm, EndTime: c.end}
+
+		// Two years back to one year forward, weekly: dense enough to land in
+		// every span without walking ~1000 dates per class.
+		start := time.Now().AddDate(-2, 0, 0)
+		for d := start; d.Before(time.Now().AddDate(1, 0, 0)); d = d.AddDate(0, 0, 7) {
+			date := d.Format("2006-01-02")
+
+			// 0046's rule, restated.
+			want := current
+			for _, l := range legacy {
+				if date < l.changedOn {
+					want = store.ScheduleVersion{Day: l.day, Time: l.tm, EndTime: l.end}
+					break
+				}
+			}
+			got := store.ScheduleOn(versions, current, date)
+			if got.Day != want.Day || got.Time != want.Time || got.EndTime != want.EndTime {
+				t.Errorf("class %s on %s: legacy said %s %s-%s, versions say %s %s-%s",
+					c.id, date, want.Day, want.Time, want.EndTime, got.Day, got.Time, got.EndTime)
+			}
+			checked++
+		}
+	}
+	if checked < 100 {
+		t.Fatalf("differ compared only %d class-dates — it is not actually exercising the data", checked)
+	}
+	t.Logf("compared %d class-dates across %d classes", checked, len(classes))
+}

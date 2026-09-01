@@ -297,7 +297,22 @@ Mechanical and verifiable. For snapshot rows `D1 < D2 < ... < Dn`,
 `snapshot(Di)` is the slot in force over `[D(i-1), Di)`, and the current
 `classes` row is the slot from `Dn` onward.
 
-**2.3 Dry-run differ before cutover**
+**2.3 Dry-run differ before cutover — BUILT 2026-09-01**
+`TestScheduleBackfill_MatchesLegacyResolver` reimplements 0046's rule and
+asserts the migrated versions answer identically for every class, weekly across
+two years back to one year forward. Point it at a restored production copy
+before deploying 0047:
+
+    TEST_DATABASE_URL=postgres://...prod_copy... go test ./internal/handlers/ \
+      -run TestScheduleBackfill_MatchesLegacyResolver -count=1
+
+A divergence names the class and the date. Mutation-checked: replacing the
+backfill's `LAG` with the row's own `changed_on` produces 79 reported
+divergences, so the test genuinely fails on a wrong backfill rather than
+passing vacuously. It also seeds its own three-change class, so CI exercises
+the `LAG` path and not just the no-history case.
+
+**2.3 (original) Dry-run differ before cutover**
 A command that, for every existing class and every date in a wide window,
 compares the old resolver's answer to the new one and reports any divergence.
 Non-negotiable: this rewrites the timeline that attendance and invoices are
