@@ -45,6 +45,19 @@ in a day. It is not the right long-term shape.
 Severity: **S1** = wrong money or lost data; **S2** = wrong behaviour a user
 will notice; **S3** = latent, edge-case, or hygiene.
 
+**Closed so far (2026-09-01).** Keep this list current; the group tables below
+describe the defect, not its status.
+
+| Item | Commit | Note |
+|---|---|---|
+| A1-A4 | `67357ec` | All four guards on `store.CountRow`; they now 500 instead of passing silently |
+| E1 | `09759aa` | `pricing_tiers` PUT takes pointer fields. **E2 (the class PUT) is still open** |
+| G1 | `67357ec` | Stale-count assertions fixed via the `countRows` helper. **G2 is still open** — `email_flow_test.go:304,318,529` and `feature_enrollments_test.go:115` still drop `Scan` errors |
+| K2 | `09759aa` | Fixed in the one test that mutates a seeded row. **K1 is still open** — the harness still does not reset seeded tables |
+
+Everything else in this document is open. Nothing here is deployed until a
+`make ship` restarts the API — check `uptime_sec` on `/api/health`.
+
 Naming: the group codes below (`A1`, `B2`, ...) are local to this document.
 They are **not** the `F1`-`F8` items of `V2_REBUILD_PLAN.md` section 8.7 —
 those are always cited with a file reference, e.g. "F2
