@@ -120,6 +120,19 @@ roughly a dozen places, each with a different rule:
 | F1 | `jobs/session_preview.go:74` | S1 | Reads `s.enrolled_classes` (the JSON column), **not** the `enrollments` table migration `0043` created for exactly this. Mid-month joiners are billed a full month; mid-month leavers are billed as if still enrolled. |
 | F2 | — | S1 | Hard blocker for the 8.7 cron switchover. Also the direct answer to Nadine's 31/08 question about students starting halfway through the month. |
 
+### Group K — shared seeded state in tests
+
+Found 2026-09-01 while fixing E1.
+
+| # | Severity | What |
+|---|---|---|
+| K1 | S2 | `setupFeatureTestApp` resets fifteen tables but **not** the seeded reference data (`pricing_tiers`, `holidays`, `products`). A test that edits a seeded row corrupts every later test in the package, and because the test database is a long-lived container, it stays corrupted across runs — a failure that looks exactly like a flake. |
+| K2 | S3 | `t.Cleanup` is the wrong tool for restoring shared rows here: cleanup callbacks run **after** the test's deferred calls, and the harness's `defer cleanup()` closes the DB. A restore registered with `t.Cleanup` runs against a closed connection. Use `defer` registered after the harness's, and check the error. |
+
+Fix direction: either add the seeded tables to the reset list and re-seed, or
+have the suite refuse to run against a database it did not create. Until then,
+any test mutating seeded data must restore it via `defer` with a checked error.
+
 ### Group G — tests
 
 | # | Site | Severity | What |
