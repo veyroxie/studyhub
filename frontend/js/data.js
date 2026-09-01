@@ -1,146 +1,37 @@
 window.App = window.App || {};
 
+// App.DATA declares the SHAPE of the client-side store. It must stay empty.
+//
+// This file used to hold a "demo" dataset. It was not demo data: all twelve
+// students were real children, with real names and real dates of birth, and
+// eight of them had since had their names erased from the database while their
+// details remained here. This file is served without authentication at
+// /js/data.js, so anyone could download it.
+//
+// It reached users because App.Store fell back to this dataset whenever the
+// browser's cached copy was missing — which happens on every session expiry,
+// since a 401 deliberately clears local storage. Staff saw records for
+// children who are not enrolled and invoices that do not exist, which reads
+// exactly like catastrophic data loss.
+//
+// Nothing may be added here. Real data belongs in the database and reaches the
+// browser only through an authenticated snapshot. Invented data is no better:
+// the failure was showing ANY fabricated record to someone who believed it.
+// Locked by frontend/tests/unit/data-shape.test.mjs.
 App.DATA = {
-  students: [
-    { id:'STU001', firstName:'Eita', lastName:'Sawauchi', dob:'2013-10-20', gender:'Male', parentName:'Sawauchi Family', contact:'sawauchiifamily@example.com', phone:'60110000027', branch:'The Study Hub', status:'Active', registeredOn:'2025-09-15', enrolledClasses:['c3'], siblings:['STU002'], notes:'' },
-    { id:'STU002', firstName:'Kaho', lastName:'Sawauchi', dob:'2015-07-20', gender:'Female', parentName:'Sawauchi Family', contact:'sawauchiifamily@example.com', phone:'60110000027', branch:'The Study Hub', status:'Active', registeredOn:'2025-09-15', enrolledClasses:['c3'], siblings:['STU001'], notes:'' },
-    { id:'STU003', firstName:'Minjae', lastName:'Kim', dob:'2016-03-08', gender:'Male', parentName:'Kim Duri', contact:'duri0628@example.com', phone:'60110000031', branch:'The Study Hub', status:'Active', registeredOn:'2025-10-08', enrolledClasses:['c5'], siblings:[], notes:'' },
-    { id:'STU004', firstName:'Stephanie', lastName:'Jin', dob:'2016-11-11', gender:'Female', parentName:'In Young Gu', contact:'inyoung.gu@example.com', phone:'60110000038', branch:'The Study Hub', status:'Active', registeredOn:'2025-10-20', enrolledClasses:['c3','c5'], siblings:[], notes:'' },
-    { id:'STU005', firstName:'Janice', lastName:'Lee', dob:'2012-12-06', gender:'Female', parentName:'Lee Family', contact:'8666745@example.com', phone:'60110000029', branch:'The Study Hub', status:'Active', registeredOn:'2025-11-05', enrolledClasses:['c4'], siblings:[], notes:'' },
-    { id:'STU006', firstName:'Ryan', lastName:'Tan', dob:'2017-04-15', gender:'Male', parentName:'Tan Wei Ming', contact:'tanweiming@example.com', phone:'60123456789', branch:'The Study Hub', status:'Active', registeredOn:'2025-11-18', enrolledClasses:['c1'], siblings:[], notes:'' },
-    { id:'STU007', firstName:'Sofia', lastName:'Martinez', dob:'2014-08-22', gender:'Female', parentName:'Maria Martinez', contact:'maria.martinez@example.com', phone:'60110000037', branch:'The Study Hub', status:'Active', registeredOn:'2025-12-01', enrolledClasses:['c5'], siblings:[], notes:'' },
-    { id:'STU008', firstName:'Alex', lastName:'Chong', dob:'2013-02-14', gender:'Male', parentName:'Chong Family', contact:'chongfamily@example.com', phone:'60111234567', branch:'The Study Hub', status:'Active', registeredOn:'2025-12-15', enrolledClasses:['c6'], siblings:[], notes:'' },
-    { id:'STU009', firstName:'Mei Lin', lastName:'Wong', dob:'2017-09-30', gender:'Female', parentName:'Wong Kai', contact:'wongkai88@example.com', phone:'60110000040', branch:'The Study Hub', status:'Active', registeredOn:'2026-01-10', enrolledClasses:['c1'], siblings:[], notes:'' },
-    { id:'STU010', firstName:'James', lastName:'Park', dob:'2013-06-18', gender:'Male', parentName:'Park Ji Ho', contact:'jihopark@korea.com', phone:'60110000028', branch:'The Study Hub', status:'Active', registeredOn:'2026-01-22', enrolledClasses:['c4'], siblings:[], notes:'' },
-    { id:'STU011', firstName:'Hannah', lastName:'Lim', dob:'2015-03-25', gender:'Female', parentName:'Lim Siew', contact:'limsiew@example.com', phone:'60110000026', branch:'The Study Hub', status:'New', registeredOn:'2026-02-05', enrolledClasses:['c3'], siblings:[], notes:'' },
-    { id:'STU012', firstName:'Tom', lastName:'Chen', dob:'2012-11-08', gender:'Male', parentName:'Chen Wei', contact:'chenwei99@example.com', phone:'60110000002', branch:'The Study Hub', status:'New', registeredOn:'2026-02-20', enrolledClasses:['c6'], siblings:[], notes:'' }
-  ],
-  classes: [
-    { id:'c1', name:'Level 1 & 2',      teacherIds:['s1'],     classroom:'Classroom 2', day:'Saturday', time:'09:30', endTime:'10:30', capacity:6, enrolled:2, color:'green',  category:'Academic'     },
-    { id:'c2', name:'English',           teacherIds:['s3'],     classroom:'Classroom 2', day:'Monday',   time:'15:00', endTime:'16:00', capacity:6, enrolled:3, color:'blue',   category:'Academic'     },
-    { id:'c3', name:'Level 3 & 4',       teacherIds:['s3','s1'],classroom:'Classroom 2', day:'Monday',   time:'16:00', endTime:'17:00', capacity:6, enrolled:4, color:'teal',   category:'Academic'     },
-    { id:'c4', name:'TSH Members',       teacherIds:['s3'],     classroom:'Classroom 1', day:'Tuesday',  time:'15:00', endTime:'16:00', capacity:6, enrolled:6, color:'orange', category:'Non-academic' },
-    { id:'c5', name:'Level 3 & 4',       teacherIds:['s2'],     classroom:'Classroom 2', day:'Tuesday',  time:'15:30', endTime:'16:30', capacity:6, enrolled:3, color:'teal',   category:'Academic'     },
-    { id:'c6', name:'Level 5 & 6',       teacherIds:['s1'],     classroom:'Classroom 1', day:'Wednesday',time:'16:00', endTime:'17:00', capacity:6, enrolled:2, color:'purple', category:'Academic'     },
-    { id:'c7', name:'Math Special',      teacherIds:['s2'],     classroom:'Classroom 2', day:'Thursday', time:'16:00', endTime:'17:00', capacity:4, enrolled:2, color:'blue',   category:'Academic'     },
-    { id:'c8', name:'Writing Workshop',  teacherIds:['s3'],     classroom:'Classroom 1', day:'Friday',   time:'15:00', endTime:'16:30', capacity:8, enrolled:5, color:'green',  category:'Workshop'     }
-  ],
-  staff: [
-    { id:'s1', name:'Chiying', fullName:'Teacher Chiying', role:'Teacher', email:'chiying@studyhub.com', phone:'60110000014', salary:3500, joinDate:'2024-01-15', status:'Active' },
-    { id:'s2', name:'Nadine', fullName:'Teacher Nadine', role:'Teacher', email:'nadine@studyhub.com', phone:'60110000015', salary:3200, joinDate:'2024-03-01', status:'Active' },
-    { id:'s3', name:'Rose', fullName:'Teacher Rose', role:'Senior Teacher', email:'rose@studyhub.com', phone:'60110000016', salary:3800, joinDate:'2023-08-01', status:'Active' },
-    { id:'s4', name:'Yuki', fullName:'Admin Yuki', role:'Admin', email:'yuki@studyhub.com', phone:'60110000017', salary:2800, joinDate:'2024-06-01', status:'Active' }
-  ],
-  invoices: [
-    { id:'INV001', studentId:'STU001', description:'Oct 2025 Tuition', type:'Monthly', amount:150, dueDate:'2025-10-31', status:'Paid', createdOn:'2025-10-01', paidOn:'2025-10-15' },
-    { id:'INV002', studentId:'STU001', description:'Nov 2025 Tuition', type:'Monthly', amount:150, dueDate:'2025-11-30', status:'Paid', createdOn:'2025-11-01', paidOn:'2025-11-10' },
-    { id:'INV003', studentId:'STU001', description:'Dec 2025 Tuition', type:'Monthly', amount:150, dueDate:'2025-12-31', status:'Paid', createdOn:'2025-12-01', paidOn:'2025-12-08' },
-    { id:'INV004', studentId:'STU001', description:'Jan 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-01-31', status:'Paid', createdOn:'2026-01-01', paidOn:'2026-01-20' },
-    { id:'INV005', studentId:'STU001', description:'Feb 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-02-28', status:'Paid', createdOn:'2026-02-01', paidOn:'2026-02-12' },
-    { id:'INV006', studentId:'STU001', description:'Mar 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null },
-    { id:'INV007', studentId:'STU002', description:'Oct 2025 Tuition', type:'Monthly', amount:150, dueDate:'2025-10-31', status:'Paid', createdOn:'2025-10-01', paidOn:'2025-10-15' },
-    { id:'INV008', studentId:'STU002', description:'Nov 2025 Tuition', type:'Monthly', amount:150, dueDate:'2025-11-30', status:'Paid', createdOn:'2025-11-01', paidOn:'2025-11-14' },
-    { id:'INV009', studentId:'STU002', description:'Dec 2025 Tuition', type:'Monthly', amount:150, dueDate:'2025-12-31', status:'Paid', createdOn:'2025-12-01', paidOn:'2025-12-20' },
-    { id:'INV010', studentId:'STU002', description:'Jan 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-01-31', status:'Paid', createdOn:'2026-01-01', paidOn:'2026-01-18' },
-    { id:'INV011', studentId:'STU002', description:'Feb 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-02-28', status:'Paid', createdOn:'2026-02-01', paidOn:'2026-02-10' },
-    { id:'INV012', studentId:'STU002', description:'Mar 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null },
-    { id:'INV013', studentId:'STU003', description:'Nov 2025 Tuition', type:'Monthly', amount:150, dueDate:'2025-11-30', status:'Paid', createdOn:'2025-11-01', paidOn:'2025-11-22' },
-    { id:'INV014', studentId:'STU003', description:'Dec 2025 Tuition', type:'Monthly', amount:150, dueDate:'2025-12-31', status:'Paid', createdOn:'2025-12-01', paidOn:'2025-12-15' },
-    { id:'INV015', studentId:'STU003', description:'Jan 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-01-31', status:'Paid', createdOn:'2026-01-01', paidOn:'2026-01-25' },
-    { id:'INV016', studentId:'STU003', description:'Feb 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-02-28', status:'Overdue', createdOn:'2026-02-01', paidOn:null },
-    { id:'INV017', studentId:'STU003', description:'Mar 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null },
-    { id:'INV018', studentId:'STU004', description:'Nov 2025 Tuition', type:'Monthly', amount:200, dueDate:'2025-11-30', status:'Paid', createdOn:'2025-11-01', paidOn:'2025-11-18' },
-    { id:'INV019', studentId:'STU004', description:'Dec 2025 Tuition', type:'Monthly', amount:200, dueDate:'2025-12-31', status:'Paid', createdOn:'2025-12-01', paidOn:'2025-12-22' },
-    { id:'INV020', studentId:'STU004', description:'Jan 2026 Tuition', type:'Monthly', amount:200, dueDate:'2026-01-31', status:'Paid', createdOn:'2026-01-01', paidOn:'2026-01-30' },
-    { id:'INV021', studentId:'STU004', description:'Feb 2026 Tuition', type:'Monthly', amount:200, dueDate:'2026-02-28', status:'Paid', createdOn:'2026-02-01', paidOn:'2026-02-25' },
-    { id:'INV022', studentId:'STU004', description:'Mar 2026 Tuition', type:'Monthly', amount:200, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null },
-    { id:'INV023', studentId:'STU005', description:'Dec 2025 Tuition', type:'Monthly', amount:180, dueDate:'2025-12-31', status:'Paid', createdOn:'2025-12-01', paidOn:'2025-12-10' },
-    { id:'INV024', studentId:'STU005', description:'Jan 2026 Tuition', type:'Monthly', amount:180, dueDate:'2026-01-31', status:'Paid', createdOn:'2026-01-01', paidOn:'2026-01-12' },
-    { id:'INV025', studentId:'STU005', description:'Feb 2026 Tuition', type:'Monthly', amount:180, dueDate:'2026-02-28', status:'Paid', createdOn:'2026-02-01', paidOn:'2026-02-14' },
-    { id:'INV026', studentId:'STU005', description:'Mar 2026 Tuition', type:'Monthly', amount:180, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null },
-    { id:'INV027', studentId:'STU006', description:'Registration Fee', type:'Adhoc', amount:100, dueDate:'2025-12-01', status:'Paid', createdOn:'2025-11-18', paidOn:'2025-11-20' },
-    { id:'INV028', studentId:'STU006', description:'Dec 2025 Tuition', type:'Monthly', amount:150, dueDate:'2025-12-31', status:'Paid', createdOn:'2025-12-01', paidOn:'2025-12-18' },
-    { id:'INV029', studentId:'STU006', description:'Jan 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-01-31', status:'Paid', createdOn:'2026-01-01', paidOn:'2026-01-22' },
-    { id:'INV030', studentId:'STU006', description:'Feb 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-02-28', status:'Overdue', createdOn:'2026-02-01', paidOn:null },
-    { id:'INV031', studentId:'STU007', description:'Jan 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-01-31', status:'Paid', createdOn:'2026-01-01', paidOn:'2026-01-15' },
-    { id:'INV032', studentId:'STU007', description:'Feb 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-02-28', status:'Paid', createdOn:'2026-02-01', paidOn:'2026-02-20' },
-    { id:'INV033', studentId:'STU007', description:'Mar 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null },
-    { id:'INV034', studentId:'STU008', description:'Jan 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-01-31', status:'Paid', createdOn:'2026-01-01', paidOn:'2026-01-28' },
-    { id:'INV035', studentId:'STU008', description:'Feb 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-02-28', status:'Paid', createdOn:'2026-02-01', paidOn:'2026-02-22' },
-    { id:'INV036', studentId:'STU008', description:'Mar 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null },
-    { id:'INV037', studentId:'STU009', description:'Feb 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-02-28', status:'Paid', createdOn:'2026-02-01', paidOn:'2026-02-18' },
-    { id:'INV038', studentId:'STU009', description:'Mar 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null },
-    { id:'INV039', studentId:'STU010', description:'Feb 2026 Tuition', type:'Monthly', amount:180, dueDate:'2026-02-28', status:'Paid', createdOn:'2026-02-01', paidOn:'2026-02-28' },
-    { id:'INV040', studentId:'STU010', description:'Mar 2026 Tuition', type:'Monthly', amount:180, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null },
-    { id:'INV041', studentId:'STU011', description:'Registration Fee', type:'Adhoc', amount:100, dueDate:'2026-02-10', status:'Paid', createdOn:'2026-02-05', paidOn:'2026-02-06' },
-    { id:'INV042', studentId:'STU011', description:'Mar 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null },
-    { id:'INV043', studentId:'STU012', description:'Registration Fee', type:'Adhoc', amount:100, dueDate:'2026-02-25', status:'Unpaid', createdOn:'2026-02-20', paidOn:null },
-    { id:'INV044', studentId:'STU012', description:'Mar 2026 Tuition', type:'Monthly', amount:150, dueDate:'2026-03-31', status:'Unpaid', createdOn:'2026-03-01', paidOn:null }
-  ],
-  announcements: [
-    { id:'ANN001', title:'March Holiday Schedule', message:'Classes will be suspended from March 15–17 for public holidays. All missed classes will be rescheduled. Please contact us to book make-up sessions.', audience:'All Parents', type:'Notice', status:'published', createdOn:'2026-03-05', createdBy:'Admin Yuki' },
-    { id:'ANN002', title:'March Fee Payment Reminder', message:'Monthly tuition for March 2026 is now due. Please ensure payment is made by March 31. Late payments will incur a RM20 admin fee. Bank transfer: Maybank 1234-5678-9012 (The Study Hub).', audience:'All Parents', type:'Reminder', status:'published', createdOn:'2026-03-01', createdBy:'Admin Yuki' },
-    { id:'ANN003', title:'New Saturday Math Enrichment Program', message:'We are excited to announce a new Saturday Math Enrichment class starting April 5! Limited spots — only 6 seats available. Please contact admin to register your child. RM180/month.', audience:'All Parents', type:'Notice', status:'published', createdOn:'2026-02-20', createdBy:'Admin Yuki' },
-    { id:'ANN004', title:'Attendance Policy Update — Action Required', message:'Starting March 2026, parents must notify us at least 2 hours before class if their child cannot attend. This helps us manage class capacity. Please save our WhatsApp: 60110000013.', audience:'All Parents', type:'Urgent', status:'published', createdOn:'2026-02-15', createdBy:'Admin Yuki' },
-    { id:'ANN005', title:'Chinese New Year Holiday Break', message:'The Study Hub will be closed from January 28 to February 2 for Chinese New Year celebrations. We wish all families a happy and prosperous Year of the Snake!', audience:'All Parents', type:'Notice', status:'published', createdOn:'2026-01-20', createdBy:'Admin Yuki' },
-    { id:'ANN006', title:'New Level 3 Enrichment Class', message:'Proposal for a new Level 3 enrichment slot on Thursdays at 4pm. We have 4 students on the waitlist. Requesting management approval to proceed.', audience:'All Parents', type:'Notice', status:'pending_approval', createdOn:'2026-03-07', createdBy:'Teacher Rose' }
-  ],
-  attendance: [
-    { id:'ATT001', personId:'s1', personType:'staff', date:'2026-03-02', checkIn:'08:55', checkOut:'17:05', status:'Present' },
-    { id:'ATT002', personId:'s2', personType:'staff', date:'2026-03-02', checkIn:'09:10', checkOut:'17:00', status:'Late' },
-    { id:'ATT003', personId:'s3', personType:'staff', date:'2026-03-02', checkIn:'08:45', checkOut:'17:15', status:'Present' },
-    { id:'ATT004', personId:'s4', personType:'staff', date:'2026-03-02', checkIn:'09:00', checkOut:'18:00', status:'Present' },
-    { id:'ATT005', personId:'s1', personType:'staff', date:'2026-03-03', checkIn:'09:00', checkOut:'17:00', status:'Present' },
-    { id:'ATT006', personId:'s2', personType:'staff', date:'2026-03-03', checkIn:'09:00', checkOut:'17:00', status:'Present' },
-    { id:'ATT007', personId:'s3', personType:'staff', date:'2026-03-03', checkIn:'08:50', checkOut:'17:10', status:'Present' },
-    { id:'ATT008', personId:'s4', personType:'staff', date:'2026-03-03', checkIn:'08:55', checkOut:'17:05', status:'Present' },
-    { id:'ATT009', personId:'s1', personType:'staff', date:'2026-03-04', checkIn:null, checkOut:null, status:'Absent' },
-    { id:'ATT010', personId:'s2', personType:'staff', date:'2026-03-04', checkIn:'09:00', checkOut:'17:00', status:'Present' },
-    { id:'ATT011', personId:'s3', personType:'staff', date:'2026-03-04', checkIn:'09:05', checkOut:'17:00', status:'Present' },
-    { id:'ATT012', personId:'s4', personType:'staff', date:'2026-03-04', checkIn:'09:00', checkOut:'17:00', status:'Present' },
-    { id:'ATT013', personId:'STU001', personType:'student', date:'2026-03-02', classId:'c3', checkIn:'15:55', checkOut:'17:05', status:'Present' },
-    { id:'ATT014', personId:'STU002', personType:'student', date:'2026-03-02', classId:'c3', checkIn:'16:05', checkOut:'17:00', status:'Late' },
-    { id:'ATT015', personId:'STU004', personType:'student', date:'2026-03-02', classId:'c3', checkIn:'15:58', checkOut:'17:02', status:'Present' },
-    { id:'ATT016', personId:'STU011', personType:'student', date:'2026-03-02', classId:'c3', checkIn:null, checkOut:null, status:'Absent' },
-    { id:'ATT017', personId:'STU005', personType:'student', date:'2026-03-03', classId:'c4', checkIn:'14:55', checkOut:'16:05', status:'Present' },
-    { id:'ATT018', personId:'STU010', personType:'student', date:'2026-03-03', classId:'c4', checkIn:'15:00', checkOut:'16:00', status:'Present' },
-    { id:'ATT019', personId:'STU001', personType:'student', date:'2026-02-23', classId:'c3', checkIn:'16:00', checkOut:'17:00', status:'Present' },
-    { id:'ATT020', personId:'STU002', personType:'student', date:'2026-02-23', classId:'c3', checkIn:'16:00', checkOut:'17:00', status:'Present' },
-    { id:'ATT021', personId:'STU003', personType:'student', date:'2026-02-25', classId:'c5', checkIn:'15:30', checkOut:'16:30', status:'Present' },
-    { id:'ATT022', personId:'STU004', personType:'student', date:'2026-02-23', classId:'c3', checkIn:null, checkOut:null, status:'Absent' },
-    { id:'ATT023', personId:'STU001', personType:'student', date:'2026-02-16', classId:'c3', checkIn:'16:00', checkOut:'17:00', status:'Present' },
-    { id:'ATT024', personId:'STU002', personType:'student', date:'2026-02-16', classId:'c3', checkIn:'16:10', checkOut:'17:00', status:'Late' }
-  ],
-  payroll: [
-    { id:'PAY001', staffId:'s1', month:'2026-01', baseSalary:3500, bonus:0, deductions:0, total:3500, status:'Paid', paidOn:'2026-01-31' },
-    { id:'PAY002', staffId:'s2', month:'2026-01', baseSalary:3200, bonus:0, deductions:0, total:3200, status:'Paid', paidOn:'2026-01-31' },
-    { id:'PAY003', staffId:'s3', month:'2026-01', baseSalary:3800, bonus:500, deductions:0, total:4300, status:'Paid', paidOn:'2026-01-31' },
-    { id:'PAY004', staffId:'s4', month:'2026-01', baseSalary:2800, bonus:0, deductions:0, total:2800, status:'Paid', paidOn:'2026-01-31' },
-    { id:'PAY005', staffId:'s1', month:'2026-02', baseSalary:3500, bonus:0, deductions:0, total:3500, status:'Paid', paidOn:'2026-02-28' },
-    { id:'PAY006', staffId:'s2', month:'2026-02', baseSalary:3200, bonus:0, deductions:0, total:3200, status:'Paid', paidOn:'2026-02-28' },
-    { id:'PAY007', staffId:'s3', month:'2026-02', baseSalary:3800, bonus:300, deductions:0, total:4100, status:'Paid', paidOn:'2026-02-28' },
-    { id:'PAY008', staffId:'s4', month:'2026-02', baseSalary:2800, bonus:0, deductions:0, total:2800, status:'Paid', paidOn:'2026-02-28' },
-    { id:'PAY009', staffId:'s1', month:'2026-03', baseSalary:3500, bonus:0, deductions:0, total:3500, status:'Pending', paidOn:null },
-    { id:'PAY010', staffId:'s2', month:'2026-03', baseSalary:3200, bonus:0, deductions:0, total:3200, status:'Pending', paidOn:null },
-    { id:'PAY011', staffId:'s3', month:'2026-03', baseSalary:3800, bonus:0, deductions:0, total:3800, status:'Pending', paidOn:null },
-    { id:'PAY012', staffId:'s4', month:'2026-03', baseSalary:2800, bonus:0, deductions:0, total:2800, status:'Pending', paidOn:null }
-  ],
+  students: [],
+  classes: [],
+  staff: [],
+  invoices: [],
+  announcements: [],
+  attendance: [],
+  payroll: [],
   messages: [],
   cancelledClasses: [],
   holidays: [],
-  feedback: [
-    { id:'FB001', classId:'c3', date:'2026-03-10', teacherId:'s3', topic:'Particle は vs が', mood:'Great', notes:'Students showed strong understanding of topic particles. Good class engagement overall.', studentNotes:[{studentId:'STU001',note:'Eita answered confidently — great progress.'},{studentId:'STU004',note:'Stephanie needs more practice with が usage.'}] },
-    { id:'FB002', classId:'c1', date:'2026-03-08', teacherId:'s1', topic:'Hiragana Row 3 (さしすせそ)', mood:'Good', notes:'Covered sa-row hiragana. Most students keeping up well.', studentNotes:[{studentId:'STU006',note:'Ryan writes neatly, good retention.'},{studentId:'STU009',note:'Mei Lin a bit distracted today, gentle reminder helped.'}] },
-    { id:'FB003', classId:'c5', date:'2026-03-11', teacherId:'s2', topic:'Te-form verbs review', mood:'Good', notes:'Revised te-form conjugation. Class was attentive but some struggled with irregular verbs.', studentNotes:[{studentId:'STU003',note:'Minjae did well on regular verbs, needs help with irregulars.'},{studentId:'STU007',note:'Sofia very strong — helped classmates.'}] },
-    { id:'FB004', classId:'c6', date:'2026-03-12', teacherId:'s1', topic:'Kanji compound words', mood:'Needs Work', notes:'Difficult session — compound kanji readings are challenging. Will revisit next week with more practice sheets.', studentNotes:[{studentId:'STU008',note:'Alex got frustrated, encouraged him to keep trying.'},{studentId:'STU012',note:'Tom absent today.'}] },
-    { id:'FB005', classId:'c4', date:'2026-03-11', teacherId:'s3', topic:'Cultural games day', mood:'Great', notes:'Fun session with Japanese card games (karuta). Students loved it, great energy.', studentNotes:[] }
-  ],
+  feedback: [],
   pricingTiers: [],
-  workshops: [
-    { id:'ws1', name:'Hiragana & Katakana Bootcamp', description:'Intensive one-day workshop to master both Japanese syllabaries.', date:'2026-03-22', time:'09:00', endTime:'13:00', classroom:'Classroom 1', capacity:12, enrolled:8, fee:80, teacherIds:['s1'], status:'upcoming' },
-    { id:'ws2', name:'JLPT N5 Mock Exam',             description:'Full mock examination under timed conditions with review session.', date:'2026-04-05', time:'10:00', endTime:'14:00', classroom:'Classroom 2', capacity:15, enrolled:5, fee:50, teacherIds:['s3'], status:'upcoming'  },
-    { id:'ws3', name:'Kanji Writing Workshop',         description:'Hands-on practice of the first 80 kanji with brush-pen exercises.',  date:'2026-02-08', time:'14:00', endTime:'16:00', classroom:'Classroom 1', capacity:10, enrolled:10, fee:60, teacherIds:['s2'], status:'completed' }
-  ],
+  workshops: [],
   performanceReviews: [],
   selfStudySessions: []
 };

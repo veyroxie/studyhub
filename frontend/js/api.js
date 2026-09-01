@@ -264,7 +264,7 @@
     _handle401() {
       this._user = null;
       this._clearLocalData();
-      App.Login.show('Session expired. Please log in again.');
+      App.Login.show('Your session timed out — please sign in again. Nothing has been lost; your data is safe on the server.');
     },
 
     // WebSocket for real-time attendance notifications

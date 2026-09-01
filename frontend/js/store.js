@@ -1,8 +1,8 @@
 (function() {
   window.App = window.App || {};
   // Bump this suffix to force every browser to discard its cached state on
-  // next visit — the old key becomes orphaned and the loader falls back to
-  // App.DATA defaults, so every device effectively starts fresh.
+  // next visit — the old key becomes orphaned and the loader starts from an
+  // EMPTY state, which the snapshot then fills.
   const KEY = 'studyhub_v2';
   // One-shot cleanup so the old key doesn't sit in localStorage forever.
   try { localStorage.removeItem('studyhub_v1'); } catch (e) {}
@@ -78,6 +78,27 @@
     pendingUsers: []
   };
 
+  // emptyState mirrors App.DATA's shape with nothing in it. Arrays become
+  // empty arrays, everything else is preserved as-is (settings-shaped keys).
+  function emptyState() {
+    const out = {};
+    for (const k in App.DATA) {
+      out[k] = Array.isArray(App.DATA[k]) ? [] : deepClone(App.DATA[k]);
+    }
+    for (const k in ARRAY_DEFAULTS) {
+      if (!Array.isArray(out[k])) out[k] = [];
+    }
+    return out;
+  }
+
+  // loadState NEVER falls back to App.DATA. That fallback showed the demo
+  // dataset — fictional students, 2025 invoices — to a real logged-in user
+  // whenever localStorage was cleared, evicted, or unparseable. It reads
+  // exactly like catastrophic data loss ("my students are gone, deleted
+  // invoices are back") and is worse than blank, because an admin could act
+  // on records that do not exist. Empty is honest: the snapshot fills it in
+  // a moment later, and a failed snapshot shows an empty screen rather than
+  // a convincing wrong one.
   function loadState() {
     try {
       const saved = localStorage.getItem(KEY);
@@ -89,8 +110,10 @@
         }
         return parsed;
       }
-    } catch(e) {}
-    return deepClone(App.DATA);
+    } catch(e) {
+      try { localStorage.removeItem(KEY); } catch(e2) {}
+    }
+    return emptyState();
   }
 
   let _state = loadState();
@@ -108,9 +131,11 @@
       _listeners.push(fn);
       return () => { const i = _listeners.indexOf(fn); if (i > -1) _listeners.splice(i, 1); };
     },
+    // reset clears the cached copy. It empties rather than re-seeding demo
+    // records, for the same reason loadState does — see the note there.
     reset() {
       localStorage.removeItem(KEY);
-      _state = deepClone(App.DATA);
+      _state = emptyState();
       _listeners.forEach(fn => fn(_state));
     },
     exportJSON() {

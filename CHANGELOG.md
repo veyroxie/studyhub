@@ -20,6 +20,14 @@ dated section when you cut a deploy.
   the removed hours; already-paid or hand-edited payroll rows are not
   touched.
 
+### Changed
+- The payment receipt is now optional for bank transfer and e-wallet
+  payments; the reference number is still required. Parents often do not
+  send a receipt, and blocking on it meant real transfers were being
+  recorded as cash just to close the invoice — losing the receipt and the
+  true payment method at once. A parent submission without a receipt still
+  goes to Pending Verification for an admin to confirm against the bank.
+
 ### Fixed
 - Live updates work again. Every WebSocket connection had been failing in
   production, so open pages never refreshed on their own — a screen left

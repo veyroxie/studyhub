@@ -764,7 +764,7 @@
         if (idle >= IDLE_LIMIT) {
           _stopIdleWatch();
           App.Api.logout().then(function() {
-            App.Login.show('Session expired due to inactivity.');
+            App.Login.show('Signed out after a period of inactivity — please sign in again. Nothing has been lost; your data is safe on the server.');
           });
         }
       }, CHECK_INTERVAL);

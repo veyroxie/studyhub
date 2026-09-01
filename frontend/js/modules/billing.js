@@ -573,7 +573,7 @@
       + '<div id="admin-proof-upload-area" style="display:none">'
       +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.4rem">Reference number <span style="color:#dc2626">*required</span></p>'
       +   '<input type="text" id="admin-payment-ref" placeholder="e.g. bank slip / QR txn ID" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;margin-bottom:1rem">'
-      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#dc2626">*required</span></p>'
+      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#64748b;font-weight:500">(optional)</span></p>'
       +   '<div style="border:2px dashed #e2e8f0;border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'admin-proof-file\').click()">'
       +     '<input type="file" id="admin-proof-file" accept="image/*,.pdf" style="display:none" onchange="App.Billing._previewAdminProof(this)">'
       +     '<div id="admin-proof-preview" style="margin-bottom:0.5rem"></div>'
@@ -652,13 +652,14 @@
       return;
     }
 
+    // The receipt is optional: many parents never send one, and blocking on it
+    // pushed real transfers to be logged as cash just to close the invoice —
+    // losing both the receipt AND the true payment method. The reference number
+    // stays required and is the durable evidence, since it is traceable in the
+    // centre's own bank statement without the parent doing anything.
     var fileInput = document.getElementById('admin-proof-file');
     var hasFile = fileInput && fileInput.files && fileInput.files[0];
-    if (!hasFile) {
-      App.Utils.showToast('Receipt upload is required for ' + method, 'error');
-      return;
-    }
-    if (fileInput.files[0].size > MAX_PROOF_BYTES) {
+    if (hasFile && fileInput.files[0].size > MAX_PROOF_BYTES) {
       App.Utils.showToast('Receipt must be under ' + (MAX_PROOF_BYTES / 1024 / 1024) + 'MB — try a photo, not a scan', 'error');
       return;
     }
@@ -689,8 +690,9 @@
         _confirmPaid(invId, method, refNo);
       })
       .catch(function() {
-        // Receipt is mandatory — do NOT record payment if the upload fails.
-        // Keep the modal open and let the admin retry.
+        // A receipt is optional, but a receipt the admin CHOSE to attach and
+        // that failed to upload must not be silently dropped — recording the
+        // payment now would lose the evidence they meant to keep. Retry.
         if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Confirm Payment'; }
         App.Utils.showToast('Receipt upload failed — payment not recorded, please retry', 'error');
       });
@@ -832,7 +834,7 @@
       + '<div id="proof-upload-area" style="display:none">'
       +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.4rem">Reference number <span style="color:#dc2626">*required</span></p>'
       +   '<input type="text" id="parent-payment-ref" placeholder="bank slip or transaction ID" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;margin-bottom:1rem">'
-      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#dc2626">*required</span></p>'
+      +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#64748b;font-weight:500">(optional)</span></p>'
       +   '<div id="proof-drop-zone" style="border:2px dashed #e2e8f0;border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'proof-file\').click()">'
       +     '<input type="file" id="proof-file" accept="image/*,.pdf" style="display:none" onchange="App.Billing._previewProof(this)">'
       +     '<div id="proof-preview" style="margin-bottom:0.5rem"></div>'
@@ -914,13 +916,12 @@
       return;
     }
 
+    // Optional here too — a submission without a receipt still lands in
+    // Pending Verification, so an admin confirms it against the bank before
+    // anything is marked paid.
     var fileInput = document.getElementById('proof-file');
     var hasFile = fileInput && fileInput.files && fileInput.files[0];
-    if (!hasFile) {
-      App.Utils.showToast('Receipt upload is required for ' + method, 'error');
-      return;
-    }
-    if (fileInput.files[0].size > MAX_PROOF_BYTES) {
+    if (hasFile && fileInput.files[0].size > MAX_PROOF_BYTES) {
       App.Utils.showToast('Receipt must be under ' + (MAX_PROOF_BYTES / 1024 / 1024) + 'MB — try a photo, not a scan', 'error');
       return;
     }
