@@ -112,7 +112,7 @@ func TestEnrollments_DualWriteLifecycle(t *testing.T) {
 		t.Fatalf("after delete: expected no live enrollments, got %v", live)
 	}
 	var total int
-	db.QueryRow(`SELECT COUNT(*) FROM enrollments WHERE student_id=?`, created.ID).Scan(&total)
+	total = countRows(t, db, `SELECT COUNT(*) FROM enrollments WHERE student_id=?`, created.ID)
 	if total != 3 {
 		t.Fatalf("history must survive the delete: expected 3 rows (A, B, C), got %d", total)
 	}

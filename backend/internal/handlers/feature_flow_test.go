@@ -34,6 +34,7 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 		"cancelled_classes", "class_session_moves", "class_schedule_history", "class_schedule_versions",
 		"announcements", "registrations", "students", "families",
 		"classes", "staff", "users",
+		"holidays", "job_heartbeats",
 	}
 	for _, tbl := range tables {
 		db.Exec("DELETE FROM " + tbl)
@@ -41,6 +42,29 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 	// Demo data is opt-in (SEED_DEMO); the tests want it.
 	t.Setenv("SEED_DEMO_DATA", "1")
 	jobs.SeedIfEmpty(db)
+
+	// Restore the pricing matrix to migration 0016's values (plus 0045's hourly
+	// backfill). These rows come from a MIGRATION, not the seed, so deleting
+	// them would lose them for good — they must be reset in place instead.
+	//
+	// Without this they are shared mutable state: one test editing a tier
+	// corrupted every later test, and because the test database is a
+	// long-lived container it stayed corrupted across runs, presenting as an
+	// unreproducible flake. Cost an hour to diagnose on 2026-09-01.
+	// Upsert, not update: a test database that has already lost these rows
+	// (or a fresh one) heals itself rather than failing every rate assertion
+	// with "no pricing tier".
+	for _, tier := range [][]any{
+		{"PT_group_1_3", "Group", "1-3", 240.0, 60.0},
+		{"PT_group_4_6", "Group", "4-6", 260.0, 65.0},
+		{"PT_private_1_3", "Private", "1-3", 480.0, 120.0},
+		{"PT_private_4_6", "Private", "4-6", 520.0, 130.0},
+	} {
+		db.Exec(`INSERT INTO pricing_tiers (id,tenant_id,class_type,level_band,monthly_fee,hourly_rate) VALUES(?,1,?,?,?,?)
+			ON CONFLICT (tenant_id,class_type,level_band)
+			DO UPDATE SET monthly_fee=EXCLUDED.monthly_fee, hourly_rate=EXCLUDED.hourly_rate, deleted_at=NULL`,
+			tier[0], tier[1], tier[2], tier[3], tier[4])
+	}
 
 	t.Setenv("RESEND_API_KEY", "")
 	core.InitLogger()

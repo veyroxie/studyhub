@@ -303,7 +303,7 @@ func TestRegisterTeacher_CreatesPendingRegistration(t *testing.T) {
 
 	// No user row should exist yet
 	var count int
-	db.QueryRow(`SELECT COUNT(*) FROM users WHERE email=?`, "teacher@example.com").Scan(&count)
+	count = countRows(t, db, `SELECT COUNT(*) FROM users WHERE email=?`, "teacher@example.com")
 	if count != 0 {
 		t.Fatalf("expected no user row for unverified teacher, got %d", count)
 	}
@@ -317,7 +317,7 @@ func TestRegisterTeacher_CreatesPendingRegistration(t *testing.T) {
 
 	// Verify token should exist
 	var tokenCount int
-	db.QueryRow(`SELECT COUNT(*) FROM email_tokens WHERE email=? AND purpose=?`, "teacher@example.com", store.TokenPurposeVerifyTeacher).Scan(&tokenCount)
+	tokenCount = countRows(t, db, `SELECT COUNT(*) FROM email_tokens WHERE email=? AND purpose=?`, "teacher@example.com", store.TokenPurposeVerifyTeacher)
 	if tokenCount == 0 {
 		t.Fatal("expected verify_teacher token to be created")
 	}
@@ -528,7 +528,7 @@ func TestResendVerification_PendingParent_RotatesToken(t *testing.T) {
 	}
 
 	var newCount int
-	db.QueryRow(`SELECT COUNT(*) FROM email_tokens WHERE email=? AND used_at IS NULL`, "resend@example.com").Scan(&newCount)
+	newCount = countRows(t, db, `SELECT COUNT(*) FROM email_tokens WHERE email=? AND used_at IS NULL`, "resend@example.com")
 	if newCount != 1 {
 		t.Fatalf("expected exactly 1 active token after resend, got %d", newCount)
 	}
