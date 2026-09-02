@@ -785,24 +785,46 @@
     // creates the class-scoped parent announcement and the replacement
     // credits itself. Posting an announcement here too sent parents two
     // notices for one cancellation.
-    var apiCalls = [];
-    classIds.forEach(function(classId) {
+    var nameOf = function(id) {
+      var c = (state.classes || []).find(function(x) { return x.id === id; });
+      return c ? c.name : id;
+    };
+    // Each call resolves to null on success or the class id on failure, so a
+    // single failure cannot reject the batch. Promise.allSettled would express
+    // this directly but is ES2020, and the build targets es2019 (runtime
+    // methods are not transpiled, so it would depend on the parent's browser).
+    var apiCalls = classIds.map(function(classId) {
       var cancellation = { id: App.Utils.generateId('cancel'), classId: classId, date: _attDate, reason: 'Teacher absent' };
-      apiCalls.push(App.Api.post('/api/cancelled-classes', cancellation));
+      return App.Api.post('/api/cancelled-classes', cancellation, { silent: true })
+        .then(function() { return null; })
+        .catch(function() { return classId; });
     });
 
     App.Utils.hideModal(true);
 
-    // No per-call .catch: a failure rejects Promise.all and hits the outer
-    // catch, so we never falsely claim parents were notified.
-    Promise.all(apiCalls).then(function() {
-      return App.Api.loadSnapshot();
-    }).then(function() {
+    // Cancelling three classes and having one fail used to report "could not
+    // cancel — please retry" for the whole batch, even though the other two HAD
+    // been cancelled and their parents already notified. The admin could not
+    // tell which. Retrying is safe (the create is idempotent, 409 with no
+    // re-grant), but the message has to be true.
+    Promise.all(apiCalls).then(function(results) {
+      var failed = results.filter(Boolean).map(nameOf);
+      return App.Api.loadSnapshot().then(function() { return failed; });
+    }).then(function(failed) {
       if (App.Notifs && App.Notifs.refresh) App.Notifs.refresh();
       App.Router.refresh();
-      App.Utils.showToast('Class cancelled. Parents have been notified.', 'success');
-    }).catch(function() {
-      App.Utils.showToast('Could not cancel class \u2014 please retry', 'error');
+      var done = classIds.length - failed.length;
+      if (failed.length === 0) {
+        App.Utils.showToast(done === 1 ? 'Class cancelled. Parents have been notified.'
+          : done + ' classes cancelled. Parents have been notified.', 'success');
+        return;
+      }
+      if (done === 0) {
+        App.Utils.showToast('Could not cancel \u2014 please retry', 'error');
+        return;
+      }
+      App.Utils.showToast(done + ' cancelled and those parents notified. Failed: '
+        + failed.join(', ') + ' \u2014 retry just those.', 'warning', 8000);
     });
   }
 

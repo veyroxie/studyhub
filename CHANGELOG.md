@@ -36,6 +36,10 @@ dated section when you cut a deploy.
   without anyone noticing.
 
 ### Fixed
+- Cancelling several classes at once now says exactly which ones worked.
+  Previously if one failed, the message read as though none had been
+  cancelled, even though the others were done and those parents had
+  already been notified.
 - A rescheduled class now shows on its new date everywhere. The dashboard,
   the "next class" panel and teacher notifications were still listing it on
   the original day and never on the day it moved to.
