@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -52,10 +53,19 @@ func TestSessionBillingPreview(t *testing.T) {
 			core.GenerateID("HOL"), 1, "Tue Holiday "+d, d, "")
 	}
 
+	// Enrolment rows as well as the JSON: the app dual-writes both, and billing
+	// reads the dated table. A fixture with only the JSON now (correctly) flags
+	// as drift rather than billing silently.
 	mkStudent := func(name, band string, pkg float64, classes string) string {
 		id := core.GenerateID("STU")
 		db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,contact,level_band,package_amount,enrolled_classes) VALUES(?,?,?,?,?,?,?,?)`,
 			id, 1, name, "Preview", name+"@example.com", band, pkg, classes)
+		for _, cid := range strings.Split(strings.Trim(classes, `[]"`), `","`) {
+			if cid != "" {
+				db.Exec(`INSERT INTO enrollments(id,tenant_id,student_id,class_id,started_on,created_on) VALUES(?,?,?,?,?,?)`,
+					core.GenerateID("ENR"), 1, id, cid, "2020-01-01", core.Today())
+			}
+		}
 		return id
 	}
 	stuA := mkStudent("Alpha", "", 0, `["`+classA+`"]`)
@@ -140,6 +150,8 @@ func TestSessionPreview_ReportsBilledDates(t *testing.T) {
 	stuID := core.GenerateID("STU")
 	db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,contact,level_band,package_amount,enrolled_classes) VALUES(?,?,?,?,?,?,?,?)`,
 		stuID, 1, "Dates", "Student", "dates@example.com", "", 0, `["`+classID+`"]`)
+	db.Exec(`INSERT INTO enrollments(id,tenant_id,student_id,class_id,started_on,created_on) VALUES(?,?,?,?,?,?)`,
+		core.GenerateID("ENR"), 1, stuID, classID, "2020-01-01", core.Today())
 
 	claims := &core.Claims{TenantID: 1, Role: "admin", Email: "admin@studyhub.com"}
 	var line jobs.PreviewLine
@@ -172,5 +184,125 @@ func TestSessionPreview_ReportsBilledDates(t *testing.T) {
 		if line.BilledDates[i-1] >= line.BilledDates[i] {
 			t.Fatalf("dates must be ascending, got %v", line.BilledDates)
 		}
+	}
+}
+
+// TestSessionPreview_ProratesByEnrolmentWindow locks the decision of
+// 2026-09-01: bill only the sessions inside a student's enrolment window. A
+// mid-month joiner pays for fewer sessions; a leaver stops at their last day;
+// a student who never started gets no invoice at all.
+//
+// This is what students.enrolled_classes could not express — it is a bare id
+// list with no dates, so every student looked enrolled for the whole month.
+func TestSessionPreview_ProratesByEnrolmentWindow(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	db.Exec(`DELETE FROM holidays`)
+
+	month := time.Now().AddDate(0, 2, 0)
+	monthStart := time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, time.Local)
+	var mondays []string
+	for d := monthStart; d.Month() == monthStart.Month(); d = d.AddDate(0, 0, 1) {
+		if d.Weekday() == time.Monday {
+			mondays = append(mondays, d.Format("2006-01-02"))
+		}
+	}
+	if len(mondays) < 4 {
+		t.Skip("need a month with 4+ Mondays")
+	}
+
+	classID := core.GenerateID("CLS")
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,class_type,level_band) VALUES(?,?,?,?,?,?,?,?)`,
+		classID, 1, "Window Class", "Monday", "10:00", "11:00", "Group", "1-3")
+
+	mk := func(name, startedOn, endedOn string) string {
+		id := core.GenerateID("STU")
+		db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,contact,level_band,package_amount,enrolled_classes) VALUES(?,?,?,?,?,?,?,?)`,
+			id, 1, name, "Window", name+"@example.com", "", 0, `["`+classID+`"]`)
+		var ended any
+		if endedOn != "" {
+			ended = endedOn
+		}
+		db.Exec(`INSERT INTO enrollments(id,tenant_id,student_id,class_id,started_on,ended_on,created_on) VALUES(?,?,?,?,?,?,?)`,
+			core.GenerateID("ENR"), 1, id, classID, startedOn, ended, core.Today())
+		return id
+	}
+
+	full := mk("Full", "2020-01-01", "")                                       // enrolled throughout
+	joiner := mk("Joiner", mondays[2], "")                                     // joins before the 3rd Monday
+	leaver := mk("Leaver", "2020-01-01", mondays[1])                           // ended_on is exclusive
+	never := mk("Never", monthStart.AddDate(0, 2, 0).Format("2006-01-02"), "") // starts long after
+
+	claims := &core.Claims{TenantID: 1, Role: "admin", Email: "admin@studyhub.com"}
+	byID := map[string]jobs.PreviewStudent{}
+	for _, ps := range jobs.SessionBillingPreview(db, claims, month).Students {
+		byID[ps.StudentID] = ps
+	}
+
+	billableOf := func(id string) int {
+		ps, ok := byID[id]
+		if !ok || len(ps.Lines) == 0 {
+			return 0
+		}
+		return ps.Lines[0].Billable
+	}
+
+	if got, want := billableOf(full), len(mondays); got != want {
+		t.Errorf("student enrolled all month: want %d sessions, got %d", want, got)
+	}
+	// Joins on the 3rd Monday: that one and every later one.
+	if got, want := billableOf(joiner), len(mondays)-2; got != want {
+		t.Errorf("mid-month joiner: want %d sessions, got %d", want, got)
+	}
+	// ended_on is the 2nd Monday and is EXCLUSIVE, so only the 1st is billed.
+	if got, want := billableOf(leaver), 1; got != want {
+		t.Errorf("mid-month leaver: want %d sessions, got %d", want, got)
+	}
+	// Never enrolled during the month — no invoice at all, no referral credit.
+	if ps := byID[never]; !ps.Skipped || ps.SessionTotal != 0 {
+		t.Errorf("student who never started must be skipped entirely, got skipped=%v total=%v", ps.Skipped, ps.SessionTotal)
+	}
+	// A partial line says so, so a smaller bill is explainable.
+	if ps := byID[joiner]; len(ps.Lines) > 0 && !ps.Lines[0].PartialMonth {
+		t.Error("a part-month line should be marked PartialMonth with its dates")
+	}
+}
+
+// TestSessionPreview_FlagsEnrolmentDrift locks the safety net on the B6 read
+// switch. Billing now reads the enrollments table; a student still carrying
+// classes in the legacy JSON with NO enrolment rows would otherwise be billed
+// nothing at all — silently, and for someone who is actually attending.
+func TestSessionPreview_FlagsEnrolmentDrift(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	db.Exec(`DELETE FROM holidays`)
+
+	month := time.Now().AddDate(0, 2, 0)
+	classID := core.GenerateID("CLS")
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,class_type,level_band) VALUES(?,?,?,?,?,?,?,?)`,
+		classID, 1, "Drift Class", "Monday", "10:00", "11:00", "Group", "1-3")
+
+	// Legacy JSON only — no enrollments row, as if a write path skipped the
+	// dual write.
+	stuID := core.GenerateID("STU")
+	db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,contact,level_band,package_amount,enrolled_classes) VALUES(?,?,?,?,?,?,?,?)`,
+		stuID, 1, "Drift", "Student", "drift@example.com", "", 0, `["`+classID+`"]`)
+
+	claims := &core.Claims{TenantID: 1, Role: "admin", Email: "admin@studyhub.com"}
+	var found bool
+	for _, ps := range jobs.SessionBillingPreview(db, claims, month).Students {
+		if ps.StudentID != stuID {
+			continue
+		}
+		found = true
+		if !ps.Flagged {
+			t.Error("a student with classes but no enrolment records must be FLAGGED, not billed nothing in silence")
+		}
+		if ps.Skipped {
+			t.Error("drift must not read as a legitimate skip — those look identical on the report and are not")
+		}
+	}
+	if !found {
+		t.Fatal("the drifted student vanished from the preview entirely")
 	}
 }

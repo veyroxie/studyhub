@@ -342,7 +342,28 @@ Depends on Phase 2's resolver.
 - 3.3 iCal stamps historical times — closes the documented gap in
   `AI_DOCS/calendar-and-sessions.md`
 
-### Phase 4 — Enrolment dates in billing (Group F)
+### Phase 4 — Enrolment dates in billing (Group F) — BILLING HALF DONE 2026-09-02
+
+Done: the dry run reads `store.EnrollmentWindowsIn` instead of
+`students.enrolled_classes`, so a joiner is billed from their start date, a
+leaver to their last day, and someone who never started gets no invoice.
+Enrolment is HALF-OPEN — `ended_on` is not billed — so removing a student on
+the 15th bills through the 14th rather than charging for a day they had left.
+
+**Drift guard, found by the tests rather than designed in.** Switching the read
+path created a new way to bill someone nothing in silence: a student still
+carrying classes in the legacy JSON with NO enrolment rows produces no lines
+and quietly drops off the invoice run. That is the RM 0 pricing incident's
+shape. Such a student is now FLAGGED. The distinction that matters and that the
+first version got wrong: no windows *this month* is a legitimate skip (joined
+later, left earlier); no enrolment records *at all* is drift. They look
+identical on a report and mean opposite things.
+
+Still open: rosters. `attendance.js` and the other readers still use the JSON
+list, so unenrolling a student with real history hides their past attendance
+from the class roster. Needs enrolment windows in the snapshot.
+
+### Phase 4 (original) — Enrolment dates in billing (Group F)
 
 Hard blocker for the 8.7 switchover.
 

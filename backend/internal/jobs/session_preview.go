@@ -30,6 +30,12 @@ type PreviewLine struct {
 	MovedOut  int    `json:"movedOut"`
 	Holiday   int    `json:"holiday"`
 	Billable  int    `json:"billable"`
+	// PartialMonth marks a line whose student was not enrolled for the whole
+	// period, with the days they were. Makes a smaller-than-usual bill
+	// explainable to a parent without replaying the enrolment history.
+	PartialMonth bool   `json:"partialMonth,omitempty"`
+	EnrolledFrom string `json:"enrolledFrom,omitempty"`
+	EnrolledTo   string `json:"enrolledTo,omitempty"`
 	// BilledDates lists the dates that produced the charge, in order. A moved
 	// session appears under its ORIGIN date, matching Billable(). This is what
 	// makes a month checkable against the schedule, and it is the data F2 needs
@@ -90,11 +96,11 @@ func SessionBillingPreview(db *store.DB, c *core.Claims, month time.Time) Sessio
 
 	for rows.Next() {
 		var ps PreviewStudent
-		var enrolled string
-		if rows.Scan(&ps.StudentID, &ps.Name, &ps.LevelBand, &ps.PackageAmount, &enrolled) != nil {
+		var enrolledJSON string
+		if rows.Scan(&ps.StudentID, &ps.Name, &ps.LevelBand, &ps.PackageAmount, &enrolledJSON) != nil {
 			continue
 		}
-		previewStudent(db, &ps, models.ParseArr(enrolled), monthlyFees, from, to)
+		previewStudent(db, &ps, store.TenantID(c), monthlyFees, from, to, models.ParseArr(enrolledJSON))
 		out.SessionTotal += ps.SessionTotal
 		out.MonthlyTotal += ps.MonthlyTotal
 		if ps.Skipped {
@@ -108,7 +114,7 @@ func SessionBillingPreview(db *store.DB, c *core.Claims, month time.Time) Sessio
 	return out
 }
 
-func previewStudent(db *store.DB, ps *PreviewStudent, enrolled []string, fees map[string]classMeta, from, to string) {
+func previewStudent(db *store.DB, ps *PreviewStudent, tenantID int, fees map[string]classMeta, from, to string, legacyClasses []string) {
 	// package_amount stays a whole-student override under session billing —
 	// the confirmed decision, so both columns show the same number.
 	if ps.PackageAmount > 0 {
@@ -117,8 +123,42 @@ func previewStudent(db *store.DB, ps *PreviewStudent, enrolled []string, fees ma
 		return
 	}
 	ps.Lines = []PreviewLine{}
-	for _, cid := range enrolled {
-		line := previewLine(db, cid, ps.LevelBand, fees, from, to)
+	// Windows, not a bare class list: a student who joined or left mid-month is
+	// billed for the sessions inside their enrolment only. students.
+	// enrolled_classes has no dates and cannot express this (B6 / Risk 3).
+	windows, err := store.EnrollmentWindowsIn(db, tenantID, ps.StudentID, from, to)
+	if err != nil {
+		ps.Flagged, ps.Reason = true, err.Error()
+		return
+	}
+	// Drift guard for the B6 read switch. The enrollments table is the source
+	// of truth now, but if a student still carries classes in the legacy JSON
+	// and has NO enrolment rows at all, that is a dual-write gap — and billing
+	// them nothing is the silent, expensive failure. Flag for a human instead.
+	if len(windows) == 0 && len(legacyClasses) > 0 {
+		// Distinguish two very different cases that both produce no windows:
+		// a student whose enrolment simply does not cover this month (normal —
+		// they joined later or left earlier, and skipping is correct), versus a
+		// student with NO enrolment records at all while still carrying classes
+		// in the legacy JSON. Only the second is dual-write drift, and only it
+		// would silently bill nothing for someone who is actually attending.
+		any, err := store.CountRow(db, `SELECT COUNT(*) FROM enrollments WHERE tenant_id=? AND student_id=?`, tenantID, ps.StudentID)
+		if err != nil {
+			ps.Flagged, ps.Reason = true, err.Error()
+			return
+		}
+		if any == 0 {
+			ps.Flagged = true
+			ps.Reason = "enrolled in the old class list but has no enrolment records — cannot tell which dates to bill; re-save the student to repair"
+			return
+		}
+	}
+	for _, w := range windows {
+		line := previewLine(db, w.ClassID, ps.LevelBand, fees, w.From, w.To)
+		if w.From != from || w.To != to {
+			line.PartialMonth = true
+			line.EnrolledFrom, line.EnrolledTo = w.From, w.To
+		}
 		ps.SessionTotal += line.Amount
 		if !line.Skipped && !line.Flagged {
 			ps.MonthlyTotal += line.MonthlyFee
