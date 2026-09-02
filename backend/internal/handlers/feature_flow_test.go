@@ -689,3 +689,59 @@ func TestCancellation_IdempotentAndUndoable(t *testing.T) {
 		t.Fatalf("cancelling a moved session should be 409, got %d %s", w.Code, w.Body.String())
 	}
 }
+
+// TestJobHeartbeats_CatchAJobThatWentQuiet locks the 0048 mechanism that
+// replaces per-symptom monitoring.
+//
+// Two 2026-09-01 outages were invisible for months: the nightly backup ran
+// while its upload did nothing, and WebSocket upgrades failed continuously.
+// Neither had a check, because checks were written per known symptom. A
+// heartbeat inverts that — a job that stops reporting is caught whether or not
+// anyone predicted that particular failure.
+func TestJobHeartbeats_CatchAJobThatWentQuiet(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	db.Exec(`DELETE FROM job_heartbeats`)
+
+	limits := map[string]time.Duration{
+		"fresh-job":  time.Hour,
+		"quiet-job":  time.Hour,
+		"absent-job": time.Hour,
+	}
+
+	store.RecordJobSuccess(db, "fresh-job", "just ran")
+	store.RecordJobSuccess(db, "quiet-job", "ran, then stopped")
+	// Backdate the quiet one past its limit.
+	if _, err := db.Exec(`UPDATE job_heartbeats SET last_success_at = NOW() - INTERVAL '5 hours' WHERE name='quiet-job'`); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+
+	stale := map[string]store.StaleJob{}
+	for _, sj := range store.StaleJobs(db, limits) {
+		stale[sj.Name] = sj
+	}
+
+	if _, ok := stale["fresh-job"]; ok {
+		t.Error("a job that reported within its limit must not alert")
+	}
+	if sj, ok := stale["quiet-job"]; !ok {
+		t.Error("a job that stopped reporting must alert")
+	} else if sj.Never {
+		t.Error("quiet-job did report once; it should read as stale, not never-run")
+	}
+	// A job that never ran at all is the case a freshness check misses
+	// entirely — there is no old record to look stale.
+	if sj, ok := stale["absent-job"]; !ok {
+		t.Error("a job that has NEVER reported must alert, not be silently absent")
+	} else if !sj.Never {
+		t.Error("absent-job should be reported as never-run")
+	}
+
+	// Recording again clears it, so a recovered job stops alerting.
+	store.RecordJobSuccess(db, "quiet-job", "recovered")
+	for _, sj := range store.StaleJobs(db, limits) {
+		if sj.Name == "quiet-job" {
+			t.Error("a job that resumed must stop alerting")
+		}
+	}
+}

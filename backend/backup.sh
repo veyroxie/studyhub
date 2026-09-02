@@ -47,6 +47,11 @@ if [ -n "$S3_BUCKET" ] && [ -n "$S3_ACCESS_KEY" ]; then
     --region="${S3_REGION:-auto}" \
     --no-mime-magic
   echo "[$(date)] Uploaded to s3://$S3_BUCKET/backups/"
+  # Heartbeat AFTER the upload, never before: a local dump that never left the
+  # droplet is the failure this is here to catch (0048).
+  psql "$DATABASE_URL" -q -c \
+    "INSERT INTO job_heartbeats(name,last_success_at,detail) VALUES('backup-upload',NOW(),'$(basename "${BACKUP_FILE}.gz")')
+     ON CONFLICT (name) DO UPDATE SET last_success_at=NOW(), detail=EXCLUDED.detail" 2>/dev/null || true
 else
   echo "[$(date)] S3 not configured — local backup only"
 fi

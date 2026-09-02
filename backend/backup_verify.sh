@@ -57,3 +57,9 @@ ORPHAN=$(psql "$RESTORE_URL" -At -c "SELECT COUNT(*) FROM invoices i LEFT JOIN s
 echo "[$(date)] orphan invoices (post-restore): $ORPHAN"
 
 echo "[$(date)] OK: backup $LATEST restores cleanly"
+
+# Heartbeat only on a clean verify: the point is proving a dump RESTORES, so a
+# run that failed must leave the previous timestamp untouched (0048).
+psql "$DATABASE_URL" -q -c \
+  "INSERT INTO job_heartbeats(name,last_success_at,detail) VALUES('backup-verify',NOW(),'ok')
+   ON CONFLICT (name) DO UPDATE SET last_success_at=NOW(), detail=EXCLUDED.detail" 2>/dev/null || true

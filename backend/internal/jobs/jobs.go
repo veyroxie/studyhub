@@ -61,10 +61,38 @@ func StartJobs(ctx context.Context, wg *sync.WaitGroup, db *store.DB) {
 		// Daily: prune long-since-sent/failed email rows.
 		{24 * time.Hour, "email-queue-prune", func() { store.PurgeOldEmailQueueRows(db) }},
 	}
+	// Expectations derive from each job's own interval, so nothing needs
+	// declaring twice. 3x the interval tolerates one missed tick and a slow
+	// run before it complains.
+	jobLimits = map[string]time.Duration{}
+	for _, j := range jobs {
+		jobLimits[j.name] = 3 * j.every
+	}
+	for k, v := range externalJobLimits {
+		jobLimits[k] = v
+	}
 	for _, j := range jobs {
 		wg.Add(1)
-		go runEvery(ctx, wg, j.every, j.name, j.fn)
+		go runEvery(ctx, wg, j.every, j.name, j.fn, db)
 	}
+}
+
+// jobLimits maps a job name to how long it may go without reporting success.
+// Populated from each job's own interval at startup; see StartBackgroundJobs.
+var jobLimits = map[string]time.Duration{}
+
+// externalJobLimits covers work scheduled OUTSIDE this process — the host
+// crontab — which cannot register itself. These two write their heartbeat with
+// psql, and only on genuine success: for the backup that means the off-site
+// upload completed, not merely that a local dump was written. The distinction
+// is the outage of 2026-09-01, where the dump always worked and the upload
+// silently did nothing for months.
+//
+// A job here that stops being scheduled at all still alerts, because a missing
+// heartbeat is treated the same as a stale one.
+var externalJobLimits = map[string]time.Duration{
+	"backup-upload": 36 * time.Hour,     // nightly at 02:00
+	"backup-verify": 9 * 24 * time.Hour, // weekly on Sunday
 }
 
 // alertOnce throttles a given alert category to at most once per 24h so the
@@ -131,6 +159,15 @@ func runHealthSelfCheck(db *store.DB) {
 
 	if stale, detail := backupIsStale("/app/backups", 36*time.Hour); stale && alertOnce("backup") {
 		alerts = append(alerts, "Database backup looks stale — "+detail+".")
+	}
+
+	// Any scheduled job that has gone quiet — including the two run from the
+	// host crontab. This replaces per-symptom checks with one that covers
+	// every job, so the next one added is watched without being thought about.
+	for _, sj := range store.StaleJobs(db, jobLimits) {
+		if alertOnce("job:" + sj.Name) {
+			alerts = append(alerts, sj.String()+".")
+		}
 	}
 
 	// Fresh local backups are NOT a working backup: they sit on the same
@@ -278,11 +315,21 @@ func purgeExpiredEmailTokens(db *store.DB) {
 // The goroutine never exits — it's expected to live for the lifetime of
 // the server. Graceful shutdown is handled at the HTTP layer; in-flight
 // jobs are allowed to finish naturally.
-func runEvery(ctx context.Context, wg *sync.WaitGroup, d time.Duration, name string, fn func()) {
+func runEvery(ctx context.Context, wg *sync.WaitGroup, d time.Duration, name string, fn func(), db *store.DB) {
 	defer wg.Done()
+	// Heartbeat after every run, here rather than inside each job, so a job
+	// added later is monitored without anyone remembering to wire it up. Note
+	// what this proves: the job RAN to completion without panicking. It cannot
+	// know whether the work was meaningful -- backup.sh records its own
+	// heartbeat only after the upload actually succeeds, which is the stronger
+	// claim and the one that was missing.
+	beat := func() {
+		safeRun(name, fn)
+		store.RecordJobSuccess(db, name, "")
+	}
 	// Run once on startup so freshly-deployed servers don't wait for the
 	// first tick before doing useful work.
-	safeRun(name, fn)
+	beat()
 	t := time.NewTicker(d)
 	defer t.Stop()
 	for {
@@ -291,7 +338,7 @@ func runEvery(ctx context.Context, wg *sync.WaitGroup, d time.Duration, name str
 			core.Logger.Info("background job stopped", "job", name)
 			return
 		case <-t.C:
-			safeRun(name, fn)
+			beat()
 		}
 	}
 }
