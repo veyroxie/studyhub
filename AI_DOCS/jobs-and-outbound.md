@@ -169,6 +169,25 @@ because gorilla panics on concurrent writes to one connection (`ws.go:52`), and 
 Origins are allowlisted; plain `http://studyhub.fit` is intentionally omitted because
 production is HTTPS-only (`ws.go:21-27`). `ALLOWED_ORIGIN` is appended at upgrade time.
 
+## Job heartbeats (migration 0048)
+
+Every job started by `runEvery` records a heartbeat on completion, and
+`runHealthSelfCheck` alerts on any job whose last success is older than 3x its
+own interval. Recording lives in the RUNNER, not in each job, so a job added
+later is monitored without wiring anything up, and its tolerance derives from
+the interval it already declares.
+
+`externalJobLimits` (`jobs.go`) covers the two host-crontab jobs, which record
+their own heartbeat with psql: `backup-upload` (36h) and `backup-verify` (9d).
+Both write **only on genuine success** -- `backup.sh` after the upload
+completes, not after the dump is written. That distinction is the outage this
+exists for: the local dump always worked while the off-site upload silently did
+nothing for months.
+
+A job that has NEVER reported is treated the same as a stale one, which a
+freshness check cannot do (there is no old record to look old). Locked by
+`TestJobHeartbeats_CatchAJobThatWentQuiet`.
+
 ## Fire-and-forget work
 
 Use `goSafe(task, fn)`, never a bare `go`. chi's `Recoverer` only wraps the request goroutine,

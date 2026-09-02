@@ -28,6 +28,13 @@ dated section when you cut a deploy.
   true payment method at once. A parent submission without a receipt still
   goes to Pending Verification for an admin to confirm against the bank.
 
+### Added
+- Every scheduled job now reports that it ran, and the hourly health check
+  alerts on any that goes quiet — including the nightly backup, which
+  reports only after the off-site upload actually succeeds. Previously only
+  two specific symptoms were watched, so the other nine jobs could stop
+  without anyone noticing.
+
 ### Fixed
 - Live updates work again. Every WebSocket connection had been failing in
   production, so open pages never refreshed on their own — a screen left
