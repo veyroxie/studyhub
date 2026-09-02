@@ -59,6 +59,12 @@ describe the defect, not its status.
 | C3 / `NEW-31` | Phase 3 | `store.SessionRateOn` prices a session at the duration it actually ran; iCal stamps each event with its own date's times. A month whose sessions differ in length is FLAGGED, not blended — `Qty x UnitPrice` cannot express it |
 | 2.3 differ | `36bd2de` | Mutation-checked; run against a production copy before deploying 0047 |
 | C2 | `2967f4b` | Move onto an occupied date rejected with a 409 |
+| D1/D2 | `97e8b1d` | `App.Utils.runsOnDate` is now the one client-side predicate; six divergent day checks removed |
+| G2 | `2f78e9d` | Remaining dropped `Scan` errors fixed in the email and enrolment tests |
+| K1 | `2f78e9d` | Harness resets seeded tables and UPSERTS the pricing matrix (migration data cannot be reset by deletion — deleting it broke every rate test) |
+| H1 | `a5b0f87` | Batch cancellation reports per-class outcomes instead of implying nothing happened |
+| Phase 4 rosters | `745d16f` | `App.Utils.enrolledOn`; unenrolling no longer hides past attendance |
+| Seed safety | `745d16f` | Demo data now needs `SEED_DEMO_DATA=1` everywhere — the old guard was fail-open because `APP_ENV` defaults to development |
 | E2 | Phase 1.4b | Class PUT decodes OVER the stored row, so omitted fields keep their values |
 | B2/B3 | closed by evidence | Nothing in the codebase creates a superadmin account — the role is only ever checked, never assigned. Confirmed with Ely 2026-09-01 that the centre runs on plain admin accounts, so the tenancy group was theoretical. The B1 fix stands as correctness. |
 
