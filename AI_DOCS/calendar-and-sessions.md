@@ -232,6 +232,15 @@ revocation" are about **auth JWT sessions**, not class sessions (`0032:3-8`). Gr
 
 ## Attendance
 
+**Rosters are date-scoped (B6 stage 2, 2026-09-03).** `App.Utils.enrolledOn`
+answers "was this student in this class on THIS date" from the `enrollments`
+stints shipped in the snapshot, replacing `students.enrolledClasses.indexOf`.
+Unenrolling used to erase a student from every PAST roster too -- their
+attendance rows survived but nothing rendered them. Half-open
+`[startedOn, endedOn)`, matching `store.EnrollmentWindowsIn` on the billing
+side. Falls back to the current class list only for data predating the
+enrolments table.
+
 Rows upsert on `(person_id, date, class_id)` within tenant, serialized by
 `pg_advisory_xact_lock` on that composite -- explicitly because duplicate rows double-count
 part-time payroll hours (`handlers_attendance.go:205-237`). **There is no DB unique constraint

@@ -466,6 +466,18 @@ type ScheduleVersion struct {
 	CreatedOn     string `json:"createdOn"`
 }
 
+// Enrollment is one stint of a student in a class. EndedOn empty means still
+// enrolled. Shipped in the snapshot so the frontend can answer "was this
+// student in this class on THIS date" -- unenrolling someone previously hid
+// their past attendance from the class roster, because the roster read the
+// current class list and nothing else.
+type Enrollment struct {
+	StudentID string `json:"studentId"`
+	ClassID   string `json:"classId"`
+	StartedOn string `json:"startedOn"`
+	EndedOn   string `json:"endedOn,omitempty"`
+}
+
 type Holiday struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -534,6 +546,7 @@ type Snapshot struct {
 	CancelledClasses   []CancelledClass    `json:"cancelledClasses"`
 	SessionMoves       []SessionMove       `json:"sessionMoves"`
 	ScheduleVersions   []ScheduleVersion   `json:"scheduleVersions"`
+	Enrollments        []Enrollment        `json:"enrollments"`
 	SessionOverrides   []SessionOverride   `json:"sessionOverrides"`
 	Holidays           []Holiday           `json:"holidays"`
 	ReplacementCredits []ReplacementCredit `json:"replacementCredits"`

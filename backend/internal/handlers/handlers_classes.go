@@ -71,6 +71,18 @@ func listScheduleVersions(db *store.DB, c *core.Claims) []models.ScheduleVersion
 	})
 }
 
+// listEnrollments ships enrolment stints to the frontend so a roster can be
+// rendered for a DATE rather than for "right now" (B6 stage 2).
+func listEnrollments(db *store.DB, c *core.Claims) []models.Enrollment {
+	tw, twArgs := store.ScopeTenant(c, "")
+	rows, err := db.Query(`SELECT student_id, class_id, started_on, COALESCE(ended_on,'') FROM enrollments WHERE 1=1`+tw+` ORDER BY student_id, class_id, started_on`, twArgs...)
+	return store.CollectRows(rows, err, "Enrollment", func(r *sql.Rows) (models.Enrollment, error) {
+		var e models.Enrollment
+		err := r.Scan(&e.StudentID, &e.ClassID, &e.StartedOn, &e.EndedOn)
+		return e, err
+	})
+}
+
 // recordScheduleChange records an effective-dated schedule edit as a VERSION:
 // a row stating the slot that applies FROM cl.ScheduleFrom (migration 0047).
 // Out-of-order edits are ordinary here -- resolution picks the greatest

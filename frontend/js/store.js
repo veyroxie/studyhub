@@ -70,6 +70,7 @@
     performanceReviews: [], cancelledClasses: [], messages: [], holidays: [],
     sessionMoves: [],
     scheduleVersions: [],
+    enrollments: [],
     replacementCredits: [],
     families: [],
     feedbackReplies: [],

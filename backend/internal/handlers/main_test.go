@@ -44,6 +44,8 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		db.Exec("DELETE FROM " + tbl)
 	}
 
+	// Demo data is opt-in (SEED_DEMO); the tests want it.
+	t.Setenv("SEED_DEMO_DATA", "1")
 	jobs.SeedIfEmpty(db)
 
 	core.InitLogger()

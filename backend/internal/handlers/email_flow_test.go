@@ -34,6 +34,8 @@ func setupEmailTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 	for _, tbl := range tables {
 		db.Exec("DELETE FROM " + tbl)
 	}
+	// Demo data is opt-in (SEED_DEMO); the tests want it.
+	t.Setenv("SEED_DEMO_DATA", "1")
 	jobs.SeedIfEmpty(db)
 
 	// Force dev-mode mailer so tests don't try to hit Resend.

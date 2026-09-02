@@ -58,6 +58,8 @@ services:
       # stuck email queue). Empty disables alerting.
       ALERT_EMAIL: ${ALERT_EMAIL:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      # Demo data is opt-in EVERYWHERE now (was: anywhere but production, which
+      # was fail-open since APP_ENV defaults to development). Leave unset.
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-}
       # Outbound kill-switch + job/guard overrides — a variable that isn't
       # forwarded here never reaches the container, however it's set in .env.

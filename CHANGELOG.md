@@ -36,6 +36,9 @@ dated section when you cut a deploy.
   without anyone noticing.
 
 ### Fixed
+- Removing a student from a class no longer hides their past attendance.
+  The class register now shows who was enrolled on the date being viewed,
+  so history stays visible after someone leaves.
 - Live updates work again. Every WebSocket connection had been failing in
   production, so open pages never refreshed on their own — a screen left
   open showed stale data until it was manually reloaded, and parents got

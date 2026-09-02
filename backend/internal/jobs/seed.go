@@ -54,8 +54,14 @@ func SeedIfEmpty(db *store.DB) {
 	db.Exec(`INSERT INTO users(email,password_hash,role,name,status) VALUES(?,?,?,?,?) ON CONFLICT(email) DO NOTHING`,
 		"admin@studyhub.com", adminHash, "admin", "Admin", "active")
 
-	seedDemoData := core.AppEnv() != "production" || os.Getenv("SEED_DEMO_DATA") == "1"
-	if !seedDemoData {
+	// Demo data requires an explicit opt-in EVERYWHERE, rather than "anywhere
+	// that is not production". The old form was fail-open: APP_ENV defaults to
+	// development (a deliberate invariant), so a missing or misspelt APP_ENV
+	// meant a fresh database silently seeded the demo set. That set is not
+	// neutral — its twelve students carry names and dates of birth belonging to
+	// real pupils, eight of whom have since had their names erased from the
+	// database. Recreating them would undo those erasures.
+	if os.Getenv("SEED_DEMO_DATA") != "1" {
 		log.Println("Seed complete (admin only — set SEED_DEMO_DATA=1 to include sample data).")
 		return
 	}

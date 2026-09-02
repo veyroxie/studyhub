@@ -321,6 +321,25 @@
                   : { day: cls.day, time: cls.time, endTime: cls.endTime };
     },
 
+    // enrolledOn answers "was this student in this class on this date", using
+    // the dated enrolment stints rather than the current class list. The
+    // roster used the current list, so unenrolling a student erased them from
+    // every past date too -- their attendance rows still existed but nobody
+    // could see them. Half-open [startedOn, endedOn), matching how billing
+    // treats the same window, so the day someone leaves is not counted.
+    //
+    // Falls back to the current list when a student has no stints at all,
+    // which only happens for data predating the enrolments table.
+    enrolledOn(student, classId, dateStr, enrollments) {
+      var stints = (enrollments || []).filter(function(e) {
+        return e.studentId === student.id && e.classId === classId;
+      });
+      if (stints.length === 0) return (student.enrolledClasses || []).indexOf(classId) > -1;
+      return stints.some(function(e) {
+        return e.startedOn <= dateStr && (!e.endedOn || e.endedOn > dateStr);
+      });
+    },
+
     // holidayCovers is THE holiday range predicate (F4), mirrored by
     // core.HolidayCovers in Go -- keep the two in sync. Missing or malformed
     // endDate (before date) means single-day. Lexical compares: YYYY-MM-DD.

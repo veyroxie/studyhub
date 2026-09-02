@@ -319,3 +319,42 @@ describe('scheduleOn — version resolution (mirrors store.ScheduleOn in Go)', (
     assert.equal(got.endTime, '17:00');
   });
 });
+
+describe('enrolledOn — roster membership for a DATE, not for "now"', () => {
+  const stu = { id: 'STU_1', enrolledClasses: [] };
+  const stints = [
+    { studentId: 'STU_1', classId: 'CLS_A', startedOn: '2026-03-01', endedOn: '2026-06-01' },
+    { studentId: 'STU_1', classId: 'CLS_A', startedOn: '2026-09-01', endedOn: '' },
+    { studentId: 'STU_2', classId: 'CLS_A', startedOn: '2020-01-01', endedOn: '' },
+  ];
+
+  test('a past date still shows a student who has since left', () => {
+    // The bug this fixes: unenrolling erased them from every past roster, so
+    // their attendance rows existed but nobody could see them.
+    assert.equal(U.enrolledOn(stu, 'CLS_A', '2026-04-15', stints), true);
+  });
+
+  test('the gap between stints excludes them', () => {
+    assert.equal(U.enrolledOn(stu, 'CLS_A', '2026-07-15', stints), false);
+  });
+
+  test('a later stint re-includes them', () => {
+    assert.equal(U.enrolledOn(stu, 'CLS_A', '2026-09-15', stints), true);
+  });
+
+  test('endedOn is exclusive, matching how billing treats the same window', () => {
+    assert.equal(U.enrolledOn(stu, 'CLS_A', '2026-05-31', stints), true);
+    assert.equal(U.enrolledOn(stu, 'CLS_A', '2026-06-01', stints), false);
+  });
+
+  test('another student\'s stints are not borrowed', () => {
+    assert.equal(U.enrolledOn({ id: 'STU_3', enrolledClasses: [] }, 'CLS_A', '2026-04-15', stints), false);
+  });
+
+  test('with no stints at all it falls back to the current class list', () => {
+    // Only reachable for data predating the enrolments table.
+    const legacy = { id: 'STU_9', enrolledClasses: ['CLS_A'] };
+    assert.equal(U.enrolledOn(legacy, 'CLS_A', '2026-04-15', stints), true);
+    assert.equal(U.enrolledOn(legacy, 'CLS_B', '2026-04-15', stints), false);
+  });
+});
