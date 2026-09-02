@@ -739,12 +739,10 @@
     // If marked Absent and user is admin, check for classes on this day and offer to cancel
     if (status === 'Absent' && App.currentRole === 'admin') {
       const state2 = App.Store.get();
-      const dateDay = new Date(_attDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
       const staffMember = state2.staff.find(function(s) { return s.id === staffId; });
-      // A session moved off this date can't be cancelled here (the backend
-      // rejects cancel-with-live-move), so don't offer it.
-      const mvOut = App.Utils.movesForDate(state2.sessionMoves, _attDate).movedOut;
-      const affectedClasses = state2.classes.filter(function(c) { return c.teacherIds.indexOf(staffId) > -1 && App.Utils.scheduleOn(c, state2.scheduleVersions, _attDate).day === dateDay && !mvOut[c.id]; });
+      // runsOnDate excludes a session moved off this date — the backend rejects
+      // cancelling one with a live move, so offering it would only 409.
+      const affectedClasses = state2.classes.filter(function(c) { return c.teacherIds.indexOf(staffId) > -1 && App.Utils.runsOnDate(c, _attDate, state2); });
       if (affectedClasses.length > 0) {
         App.Router.refresh();
         _cancelClassModal(staffMember, affectedClasses);

@@ -321,6 +321,25 @@
                   : { day: cls.day, time: cls.time, endTime: cls.endTime };
     },
 
+    // runsOnDate is THE client-side answer to "does this class run on this
+    // date". It combines the two things every caller needs and most forgot:
+    // the schedule in force on that date (0047) AND session moves (0042).
+    //
+    // Before this, that question was answered independently in about a dozen
+    // places and only four honoured moves — so a rescheduled class still
+    // appeared on its old day in the dashboard and never on its new one. The
+    // server's equivalent is store.SessionsInPeriod; keep the two in step.
+    runsOnDate(cls, dateStr, state) {
+      state = state || (window.App && App.Store ? App.Store.get() : {});
+      var mv = App.Utils.movesForDate(state.sessionMoves, dateStr);
+      if (mv.movedOut[cls.id]) return false;
+      for (var i = 0; i < mv.movedIn.length; i++) {
+        if (mv.movedIn[i].classId === cls.id) return true;
+      }
+      var dayName = new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+      return App.Utils.scheduleOn(cls, state.scheduleVersions, dateStr).day === dayName;
+    },
+
     // enrolledOn answers "was this student in this class on this date", using
     // the dated enrolment stints rather than the current class list. The
     // roster used the current list, so unenrolling a student erased them from

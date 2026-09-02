@@ -228,3 +228,16 @@ esbuild's CSS parser rejects some of the `@keyframes` patterns (`Dockerfile:44-4
 
 Serving `frontend/` outside Docker uses the committed `tailwind.css`, which may be stale, so a
 new utility class can look broken locally while being correct in production.
+
+## One answer to "does this class run on this date"
+
+`App.Utils.runsOnDate(cls, dateStr, state)` is the canonical client-side
+predicate. It combines the schedule in force on that date (`scheduleVersions`,
+0047) with session moves (`sessionMoves`, 0042) -- the two things every caller
+needs and most used to forget.
+
+That question was previously answered independently in about a dozen places and
+only four honoured moves, so a rescheduled class still showed on its old day in
+the dashboard and never appeared on its new one. New code MUST call this rather
+than comparing `c.day` to a weekday name. The server's equivalent is
+`store.SessionsInPeriod`; keep the two in step.

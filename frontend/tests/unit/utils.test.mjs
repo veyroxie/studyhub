@@ -358,3 +358,36 @@ describe('enrolledOn — roster membership for a DATE, not for "now"', () => {
     assert.equal(U.enrolledOn(legacy, 'CLS_B', '2026-04-15', stints), false);
   });
 });
+
+describe('runsOnDate — the one client-side answer to "is this class on today"', () => {
+  const cls = { id: 'CLS_A', day: 'Monday', time: '10:00', endTime: '11:00' };
+  const versions = [{ classId: 'CLS_A', day: 'Monday', time: '10:00', endTime: '11:00', effectiveFrom: '0001-01-01' }];
+
+  test('a normal week matches on the weekday', () => {
+    // 2026-09-07 is a Monday.
+    assert.equal(U.runsOnDate(cls, '2026-09-07', { scheduleVersions: versions, sessionMoves: [] }), true);
+    assert.equal(U.runsOnDate(cls, '2026-09-08', { scheduleVersions: versions, sessionMoves: [] }), false);
+  });
+
+  test('a session moved AWAY no longer runs on its original date', () => {
+    // The bug: the dashboard kept showing a rescheduled class on the old day.
+    const moves = [{ classId: 'CLS_A', fromDate: '2026-09-07', toDate: '2026-09-09' }];
+    assert.equal(U.runsOnDate(cls, '2026-09-07', { scheduleVersions: versions, sessionMoves: moves }), false);
+  });
+
+  test('and DOES run on the date it moved to, even on the wrong weekday', () => {
+    const moves = [{ classId: 'CLS_A', fromDate: '2026-09-07', toDate: '2026-09-09' }];
+    assert.equal(U.runsOnDate(cls, '2026-09-09', { scheduleVersions: versions, sessionMoves: moves }), true);
+  });
+
+  test('a dated schedule change still applies', () => {
+    const changed = versions.concat([{ classId: 'CLS_A', day: 'Thursday', time: '16:00', endTime: '17:00', effectiveFrom: '2026-09-01' }]);
+    assert.equal(U.runsOnDate(cls, '2026-09-07', { scheduleVersions: changed, sessionMoves: [] }), false);
+    assert.equal(U.runsOnDate(cls, '2026-09-10', { scheduleVersions: changed, sessionMoves: [] }), true);
+  });
+
+  test('another class\'s move is not applied to this one', () => {
+    const moves = [{ classId: 'CLS_B', fromDate: '2026-09-07', toDate: '2026-09-09' }];
+    assert.equal(U.runsOnDate(cls, '2026-09-07', { scheduleVersions: versions, sessionMoves: moves }), true);
+  });
+});

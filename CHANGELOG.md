@@ -36,6 +36,9 @@ dated section when you cut a deploy.
   without anyone noticing.
 
 ### Fixed
+- A rescheduled class now shows on its new date everywhere. The dashboard,
+  the "next class" panel and teacher notifications were still listing it on
+  the original day and never on the day it moved to.
 - Removing a student from a class no longer hides their past attendance.
   The class register now shows who was enrolled on the date being viewed,
   so history stays visible after someone leaves.

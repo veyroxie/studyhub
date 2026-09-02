@@ -69,7 +69,7 @@
     var activeStudents = students.filter(function(s) { return s.status === 'Active'; }).length;
     var newStudents    = students.filter(function(s) { return s.status === 'New'; }).length;
     var schedVersions   = s.scheduleVersions || [];
-    var todayClasses   = classes.filter(function(c) { return App.Utils.scheduleOn(c, schedVersions, today).day === todayDay; });
+    var todayClasses   = classes.filter(function(c) { return App.Utils.runsOnDate(c, today, s); });
     var overdueInvs    = invoices.filter(function(i) { return i.status === 'Overdue'; });
     var dueSoonInvs    = invoices.filter(function(i) {
       if (i.status !== 'Unpaid') return false;
@@ -482,7 +482,7 @@
         var checkIdx = (todayIdx + d) % 7;
         var checkDay = dayOrder[checkIdx];
         var checkDate = App.Utils.localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + d));
-        var candidates = stuClasses.filter(function(c) { return App.Utils.scheduleOn(c, schedVersions, checkDate).day === checkDay; })
+        var candidates = stuClasses.filter(function(c) { return App.Utils.runsOnDate(c, checkDate, s); })
           .sort(function(a, b) { return a.time.localeCompare(b.time); });
         if (d === 0) {
           // Today: only classes that haven't ended yet
@@ -560,7 +560,7 @@
                 var todayAtt = attendance.find(function(a) {
                   return a.personId === stu.id && a.date === today && a.personType === 'student';
                 });
-                var hasClassToday = stuClasses.some(function(c) { return App.Utils.scheduleOn(c, schedVersions, today).day === todayDay; });
+                var hasClassToday = stuClasses.some(function(c) { return App.Utils.runsOnDate(c, today, s); });
                 if (!hasClassToday) return '';
                 var todayStatus = todayAtt
                   ? (todayAtt.status === 'Absent' ? 'absent' : todayAtt.checkIn ? 'present' : 'pending')
@@ -873,7 +873,7 @@
       var in30Str = in30.getHours().toString().padStart(2,'0') + ':' + in30.getMinutes().toString().padStart(2,'0');
       var alertTeacherIds = [];
       // Include classes that have already started (time <= nowTimeStr) or start within 30 min (time <= in30Str)
-      classes.filter(function(c) { return App.Utils.scheduleOn(c, App.Store.get().scheduleVersions, today).day === todayDay && c.time <= in30Str; })
+      classes.filter(function(c) { return App.Utils.runsOnDate(c, today) && c.time <= in30Str; })
         .forEach(function(c) { c.teacherIds.forEach(function(tid) { if (alertTeacherIds.indexOf(tid) === -1) alertTeacherIds.push(tid); }); });
       var notCheckedIn = alertTeacherIds.filter(function(tid) {
         return !attendance.find(function(a) { return a.personId === tid && a.personType === 'staff' && a.date === today && a.checkIn; });
@@ -948,7 +948,7 @@
       var catRevenue  = invoices.filter(function(i) {
         return i.status === 'Paid' && catStudents.some(function(stu) { return stu.id === i.studentId; });
       }).reduce(function(acc, i) { return acc + i.amount; }, 0);
-      var todayCount  = catClasses.filter(function(c) { return App.Utils.scheduleOn(c, s.scheduleVersions, today).day === todayDay; }).length;
+      var todayCount  = catClasses.filter(function(c) { return App.Utils.runsOnDate(c, today, s); }).length;
       return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);padding:1.1rem 1.2rem;border-top:3px solid ' + catColors[cat] + '">'
         + '<div style="font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:' + catColors[cat] + ';margin-bottom:0.7rem">' + cat + '</div>'
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
@@ -974,7 +974,7 @@
     ].filter(Boolean);
 
     // Today's classes
-    var todayClasses  = classes.filter(function(c) { return App.Utils.scheduleOn(c, s.scheduleVersions, today).day === todayDay; }).sort(function(a,b){ return a.time.localeCompare(b.time); });
+    var todayClasses  = classes.filter(function(c) { return App.Utils.runsOnDate(c, today, s); }).sort(function(a,b){ return a.time.localeCompare(b.time); });
 
     // Financial this month
     var thisMonth = today.slice(0,7);
@@ -1081,7 +1081,7 @@
 
     var today    = App.Utils.today();
     var todayDay = new Date(today + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
-    var todayClasses = myClasses.filter(function(c) { return App.Utils.scheduleOn(c, App.Store.get().scheduleVersions, today).day === todayDay; }).sort(function(a,b){ return a.time.localeCompare(b.time); });
+    var todayClasses = myClasses.filter(function(c) { return App.Utils.runsOnDate(c, today); }).sort(function(a,b){ return a.time.localeCompare(b.time); });
     var myRec    = attendance.find(function(a) { return a.personId === tid && a.personType === 'staff' && a.date === today; });
 
     var _tod = _timeOfDay();
