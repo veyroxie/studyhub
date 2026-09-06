@@ -1107,3 +1107,75 @@ func TestPricingCatalog_SeededAndCannotHoldAZero(t *testing.T) {
 		t.Errorf("%d Self-Study classes still spelled inconsistently", n)
 	}
 }
+
+// TestEnrollmentTier_BackfilledFromNameNotGuessed locks migration 0053.
+//
+// The audit found the level recorded in the class NAME while level_band sat
+// empty on 36 of 37 classes. So the backfill reads the name — but only where
+// the name says it outright. The failure this guards against is the tempting
+// one: a LIKE pattern that eventually matches "Level 3 & 4 (trial)" and prices
+// it without anyone deciding to. Inventing a tier means inventing a bill.
+func TestEnrollmentTier_BackfilledFromNameNotGuessed(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+
+	// Every class must land in a category; an uncategorised class is one the
+	// pricing path cannot see at all.
+	if n := countRows(t, db, `SELECT COUNT(*) FROM classes WHERE deleted_at IS NULL AND pricing_category_id IS NULL`); n != 0 {
+		t.Errorf("%d classes have no pricing category", n)
+	}
+
+	// Self-Study goes to the credit-covered category, never to Group.
+	var selfStudyCat string
+	db.QueryRow(`SELECT COALESCE(pricing_category_id,'') FROM classes WHERE name='Self-Study' AND deleted_at IS NULL LIMIT 1`).Scan(&selfStudyCat)
+	if selfStudyCat != "" && selfStudyCat != "PC_selfstudy" {
+		t.Errorf("Self-Study landed in %q — it would bill as ordinary tuition", selfStudyCat)
+	}
+
+	// A name that states the level is derived; a name that does not is left
+	// blank rather than guessed.
+	cases := []struct{ name, want string }{
+		{"Level 1 & 2", "Level 1-2"},
+		{"Level 3 & 4", "Level 3-4"},
+	}
+	for _, c := range cases {
+		var got string
+		err := db.QueryRow(`SELECT COALESCE(default_tier_name,'') FROM classes WHERE name=? AND deleted_at IS NULL LIMIT 1`, c.name).Scan(&got)
+		if err != nil {
+			continue // that class does not exist in this fixture
+		}
+		if got != c.want {
+			t.Errorf("class %q: tier %q, want %q", c.name, got, c.want)
+		}
+	}
+
+	// A class created through normal insertion gets NO tier. Deriving one from
+	// the name is a ONE-TIME repair in 0053, not a runtime rule -- this fails
+	// the day someone adds name-matching to the write path, where "Level 3 & 4
+	// (trial)" would start pricing itself.
+	//
+	// The migration's own backfill cannot be verified here: migrations run
+	// before any fixture exists, so nothing this test inserts was present when
+	// they ran. It is verified against real data with `make migration-dryrun`,
+	// which copies production into a throwaway database and diffs the result.
+	if _, err := db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,capacity,enrolled,class_type)
+		VALUES('c_tiertest',1,'Level 3 & 4 (trial)','Monday','16:00','17:00',6,0,'Group')`); err != nil {
+		t.Fatalf("seed near-miss class: %v", err)
+	}
+	var nearMiss string
+	if err := db.QueryRow(`SELECT COALESCE(default_tier_name,'') FROM classes WHERE id='c_tiertest'`).Scan(&nearMiss); err != nil {
+		t.Fatalf("read near-miss class: %v", err)
+	}
+	if nearMiss != "" {
+		t.Errorf("a class named %q was given tier %q on insert — tiers must be chosen, not pattern-matched from a name",
+			"Level 3 & 4 (trial)", nearMiss)
+	}
+
+	// A live enrolment inherits its class's tier; an ENDED one does not,
+	// because its months are already invoiced.
+	var ended int
+	db.QueryRow(`SELECT COUNT(*) FROM enrollments WHERE ended_on IS NOT NULL AND tier_name <> ''`).Scan(&ended)
+	if ended != 0 {
+		t.Errorf("%d ended enrolments were given a tier — that changes what a past invoice recomputes to", ended)
+	}
+}
