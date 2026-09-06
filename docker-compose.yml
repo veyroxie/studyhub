@@ -48,6 +48,10 @@ services:
       # booting as production and draining the real email queue.
       APP_ENV: ${APP_ENV:-development}
       ANALYTICS_SERVICE_URL: http://analytics:8001
+      # Testing safety valve: when set, ONLY these addresses receive mail and
+      # everything else is dropped (not redirected — one parent's invoice must
+      # never land in another's inbox). Leave empty for normal operation.
+      OUTBOUND_ALLOWLIST: ${OUTBOUND_ALLOWLIST:-}
       # Email (Resend) — leave blank to run in dev mode (emails logged to stdout)
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       # Dev-safe defaults: production values (live sender, real domain) are set

@@ -970,3 +970,30 @@ func TestJobHeartbeats_QuietOnColdStart(t *testing.T) {
 		t.Errorf("a job that has had its full interval and never reported must alert, got %+v", stale)
 	}
 }
+
+// TestOutboundAllowlist locks the safety valve for working against live data.
+//
+// This system's address book is 24 real families. A test that reaches them is
+// not recoverable, so when OUTBOUND_ALLOWLIST is set everything outside it is
+// DROPPED — never redirected, because rewriting the recipient would deliver
+// one parent's invoice to another person.
+func TestOutboundAllowlist(t *testing.T) {
+	cases := []struct {
+		list, to string
+		want     bool
+		why      string
+	}{
+		{"", "parent@example.com", true, "empty list means normal operation"},
+		{"etee3001@gmail.com", "etee3001@gmail.com", true, "the allowed address goes through"},
+		{"etee3001@gmail.com", "parent@example.com", false, "a real parent must be dropped while testing"},
+		{"etee3001@gmail.com", "ETEE3001@GMAIL.COM", true, "addresses are case-insensitive"},
+		{"a@x.com, etee3001@gmail.com", "etee3001@gmail.com", true, "spaces around commas are tolerated"},
+		{"  ", "parent@example.com", true, "whitespace-only list is not a list"},
+	}
+	for _, c := range cases {
+		t.Setenv("OUTBOUND_ALLOWLIST", c.list)
+		if got := mailer.AllowedRecipient(c.to); got != c.want {
+			t.Errorf("list=%q to=%q: got %v want %v — %s", c.list, c.to, got, c.want, c.why)
+		}
+	}
+}

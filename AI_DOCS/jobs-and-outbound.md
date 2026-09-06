@@ -169,6 +169,20 @@ because gorilla panics on concurrent writes to one connection (`ws.go:52`), and 
 Origins are allowlisted; plain `http://studyhub.fit` is intentionally omitted because
 production is HTTPS-only (`ws.go:21-27`). `ALLOWED_ORIGIN` is appended at upgrade time.
 
+## OUTBOUND_ALLOWLIST — working safely against live data
+
+`mailer.AllowedRecipient` drops any message whose recipient is not in
+`OUTBOUND_ALLOWLIST` (comma-separated) when that variable is set. The address
+book here is two dozen real families, so a stray test send is not recoverable.
+
+It DROPS rather than redirects, deliberately: rewriting the recipient would
+deliver one parent's invoice to another person, which is worse than sending
+nothing. Every suppression is logged with the intended recipient, so you can
+see what would have gone out. Empty (the default) means normal operation.
+
+Distinct from `OUTBOUND_ENABLED=0`, which stops everything; this lets a
+developer keep receiving mail while parents receive none.
+
 ## Outbound mail: watch DELIVERY, not the queue
 
 Two checks, deliberately different. The pending check (`jobs.go`) catches a

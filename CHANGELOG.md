@@ -35,6 +35,11 @@ dated section when you cut a deploy.
   two specific symptoms were watched, so the other nine jobs could stop
   without anyone noticing.
 
+### Added
+- A testing safety valve for email: set OUTBOUND_ALLOWLIST to one or more
+  addresses and everything else is dropped, so work against live data
+  cannot reach real families.
+
 ### Fixed
 - The hourly health check no longer emails a list of healthy jobs after
   every deploy. A job that had not yet reported was treated as broken
