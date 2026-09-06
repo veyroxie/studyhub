@@ -36,6 +36,13 @@ dated section when you cut a deploy.
   without anyone noticing.
 
 ### Fixed
+- Announcements written for "All Parents" now actually reach parents. They
+  never had: the compose form saved a different value from the one the
+  parent view looked for, so every hand-written announcement was stored and
+  shown to nobody, while appearing normal on the admin side.
+- The system now notices when email stops being delivered. Previously the
+  health check only looked for mail queued and waiting, so a mail server
+  rejecting everything looked like an empty, healthy queue.
 - Cancelling several classes at once now says exactly which ones worked.
   Previously if one failed, the message read as though none had been
   cancelled, even though the others were done and those parents had

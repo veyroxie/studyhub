@@ -208,8 +208,11 @@
       + '<div class="grid grid-cols-2 gap-4">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Audience</label>'
       + '<select name="audience" class="form-input" id="ann-audience-sel"' + (isTeacher ? ' onchange="App.Communication._onAudienceChange(this.value)"' : '') + '>'
-      + '<option>All Parents</option><option>All Staff</option>'
-      + (isTeacher ? '<option>My Class Parents</option>' : '')
+      // VALUES are canonical ('parents'/'staff'), labels are for humans. The
+      // old form submitted the label, which the parent visibility rule never
+      // matched — so nothing posted here reached a parent (fixed in 0049).
+      + '<option value="parents">All Parents</option><option value="staff">All Staff</option>'
+      + (isTeacher ? '<option value="parents:mine">My Class Parents</option>' : '')
       + '</select></div>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label>'
       + '<select name="type" class="form-input">'
@@ -231,7 +234,8 @@
       const state = App.Store.get();
       var audience = fd.get('audience');
       var targetClassIds = null;
-      if (audience === 'My Class Parents' && App.currentTeacher) {
+      if (audience === 'parents:mine' && App.currentTeacher) {
+        audience = 'parents'; // restriction is carried by targetClassIds
         var { classes } = App.Store.get();
         targetClassIds = classes
           .filter(function(c) { return c.teacherIds && c.teacherIds.indexOf(App.currentTeacher) > -1; })
@@ -247,7 +251,11 @@
         archiveOn: fd.get('archiveOn') || '',
         // Persisted server-side (0031); without it "My Class Parents" silently
         // reached every parent in the tenant.
-        targetClassIds: targetClassIds || []
+        targetClassIds: targetClassIds || [],
+        category: fd.get('category') || 'notice',
+        // The server ignores this from a teacher and records a pin REQUEST
+        // instead, so this cannot be used to skip approval.
+        pinned: !!fd.get('pinned')
       };
       App.Api.post('/api/announcements', newAnn).then(function() {
         return App.Api.loadSnapshot();

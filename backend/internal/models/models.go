@@ -278,13 +278,59 @@ type Announcement struct {
 	Message  string `json:"message"`
 	Audience string `json:"audience"`
 	// TargetClassIDs limits visibility to parents of these classes; empty
-	// means the audience string alone decides (e.g. "All Parents").
+	// means the audience string alone decides. Canonical audience values are
+	// 'parents' | 'staff' | 'all' | 'class:<id>' (0049) -- the display labels
+	// live in the UI, never in the data.
 	TargetClassIDs []string `json:"targetClassIds,omitempty"`
 	Type           string   `json:"type"`
 	Status         string   `json:"status,omitempty"`
 	ArchiveOn      string   `json:"archiveOn,omitempty"`
 	CreatedOn      string   `json:"createdOn"`
 	CreatedBy      string   `json:"createdBy"`
+
+	// Category separates a standing policy from a dated notice. They have
+	// opposite lifecycles: a notice matters for a week, a policy stays true
+	// for a year and gets amended. See migration 0049.
+	Category string `json:"category"`
+	// Pinned is admin-only. PinRequested is what a teacher sets when
+	// submitting, for the admin to act on at approval.
+	Pinned       bool `json:"pinned"`
+	PinRequested bool `json:"pinRequested,omitempty"`
+	// UpdatedOn is when the text last changed, which for a policy is the date
+	// that matters -- CreatedOn would tell a parent when it was first written,
+	// not whether they have read the current version.
+	UpdatedOn string `json:"updatedOn,omitempty"`
+}
+
+// Announcement categories. A policy is pinnable and standing; a notice is
+// dated and scrolls away.
+const (
+	AnnouncementCategoryPolicy = "policy"
+	AnnouncementCategoryNotice = "notice"
+	AnnouncementCategoryEvent  = "event"
+)
+
+// Canonical audience values. The compose UI wrote display strings ("All
+// Parents") that the parent visibility rule never matched, so no manually
+// written announcement reached a parent until 0049.
+const (
+	AudienceAll     = "all"
+	AudienceParents = "parents"
+	AudienceStaff   = "staff"
+	AudienceClass   = "class:" // prefix
+)
+
+// ValidAudience reports whether an audience value is one the visibility rules
+// understand. Anything else is stored-but-unreachable, which is how every
+// manually written announcement was invisible to parents until 0049/0050.
+// Mirrored by the CHECK constraint in 0050 — the constraint is the guarantee,
+// this is the readable error.
+func ValidAudience(a string) bool {
+	switch a {
+	case AudienceAll, AudienceParents, AudienceStaff:
+		return true
+	}
+	return strings.HasPrefix(a, AudienceClass) && len(a) > len(AudienceClass)
 }
 
 type Attendance struct {

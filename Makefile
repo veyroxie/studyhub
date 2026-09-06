@@ -83,7 +83,7 @@ psql:  ## psql shell on the PRODUCTION database (read with care)
 	$(SSH) -t 'docker exec -it $$(docker ps -qf name=postgres) psql -U studyhub studyhub'
 
 failed-emails:  ## list permanently failed queue rows (nothing retries these)
-	$(SSH) 'docker exec $$(docker ps -qf name=postgres) psql -U studyhub studyhub -c "SELECT id, to_addr, subject, last_error, created_at FROM email_queue WHERE status='"'"'failed'"'"' ORDER BY created_at DESC LIMIT 20"'
+	$(SSH) 'docker exec $$(docker ps -qf name=postgres) psql -U studyhub studyhub -c "SELECT id, to_email, subject, last_error, created_at FROM email_queue WHERE status='"'"'failed'"'"' ORDER BY created_at DESC LIMIT 20"'
 
 ssh:  ## shell on the droplet
 	$(SSH)

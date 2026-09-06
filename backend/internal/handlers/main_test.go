@@ -506,7 +506,7 @@ func TestAnnouncements_Create_And_Delete(t *testing.T) {
 	r, cleanup := setupTestApp(t)
 	defer cleanup()
 	token := getAdminToken(t, r)
-	ann := models.Announcement{Title: "Test Notice", Message: "This is a test.", Audience: "All Parents", Type: "Notice"}
+	ann := models.Announcement{Title: "Test Notice", Message: "This is a test.", Audience: models.AudienceParents, Type: "Notice"}
 	w := doRequest(r, "POST", "/api/announcements", token, ann)
 	if w.Code != http.StatusOK {
 		t.Fatalf("create: expected 200 got %d: %s", w.Code, w.Body.String())

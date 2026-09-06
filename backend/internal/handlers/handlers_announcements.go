@@ -17,7 +17,7 @@ func listAnnouncements(db *store.DB, c *core.Claims) []models.Announcement {
 	tw, twArgs := store.ScopeTenant(c, "")
 	vw, vwArgs := store.AnnounceVisibilityClause(c)
 	args := append(append([]any{}, twArgs...), vwArgs...)
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on,COALESCE(target_class_ids,'') FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT 5000`, args...)
+	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on,COALESCE(target_class_ids,''),COALESCE(category,'notice'),COALESCE(pinned,FALSE),COALESCE(pin_requested,FALSE),COALESCE(updated_on,'') FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT 5000`, args...)
 	if err != nil {
 		core.Logger.Error("list query failed", "err", err, "type", "Announcement")
 		return []models.Announcement{}
@@ -28,7 +28,7 @@ func listAnnouncements(db *store.DB, c *core.Claims) []models.Announcement {
 		var a models.Announcement
 		var status, archiveOn sql.NullString
 		var targets string
-		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn, &targets); err != nil {
+		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn, &targets, &a.Category, &a.Pinned, &a.PinRequested, &a.UpdatedOn); err != nil {
 			continue
 		}
 		a.TargetClassIDs = models.ParseArr(targets)
@@ -52,7 +52,7 @@ func listAnnouncementsPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]
 	var total int
 	db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE 1=1`+tw+vw, baseArgs...).Scan(&total)
 	pageArgs := append(append([]any{}, baseArgs...), p.Limit, p.Offset)
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on,COALESCE(target_class_ids,'') FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
+	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on,COALESCE(target_class_ids,''),COALESCE(category,'notice'),COALESCE(pinned,FALSE),COALESCE(pin_requested,FALSE),COALESCE(updated_on,'') FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
 	if err != nil {
 		core.Logger.Error("list query failed", "err", err, "type", "Announcement")
 		return []models.Announcement{}, total
@@ -63,7 +63,7 @@ func listAnnouncementsPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]
 		var a models.Announcement
 		var status, archiveOn sql.NullString
 		var targets string
-		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn, &targets); err != nil {
+		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn, &targets, &a.Category, &a.Pinned, &a.PinRequested, &a.UpdatedOn); err != nil {
 			continue
 		}
 		a.TargetClassIDs = models.ParseArr(targets)
@@ -129,9 +129,26 @@ func HandleAnnouncements(db *store.DB) http.HandlerFunc {
 				// from the queue entirely, which is worse than publishing it.
 				a.Status = "pending_approval"
 			}
+			// Reject an audience the visibility rules cannot serve, rather than
+			// storing a row that reaches nobody and looks fine in the admin list.
+			if !models.ValidAudience(a.Audience) {
+				core.RespondError(w, "unknown audience "+a.Audience+" — expected all, parents, staff or class:<id>", http.StatusBadRequest)
+				return
+			}
+
+			// Only an admin may pin. A teacher's request is recorded instead,
+			// for the admin to act on when approving — otherwise "request to
+			// pin" would be a way around the approval step.
+			if !core.IsAdminRole(c) {
+				a.PinRequested, a.Pinned = a.Pinned || a.PinRequested, false
+			}
+			if a.Category == "" {
+				a.Category = models.AnnouncementCategoryNotice
+			}
+			a.UpdatedOn = a.CreatedOn
 			tid := store.TenantID(c)
-			if _, err := db.Exec(`INSERT INTO announcements(id,tenant_id,title,message,audience,type,created_on,created_by,status,archive_on,target_class_ids) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-				a.ID, tid, a.Title, a.Message, a.Audience, a.Type, a.CreatedOn, a.CreatedBy, a.Status, a.ArchiveOn, models.JSONArr(a.TargetClassIDs)); err != nil {
+			if _, err := db.Exec(`INSERT INTO announcements(id,tenant_id,title,message,audience,type,created_on,created_by,status,archive_on,target_class_ids,category,pinned,pin_requested,updated_on) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				a.ID, tid, a.Title, a.Message, a.Audience, a.Type, a.CreatedOn, a.CreatedBy, a.Status, a.ArchiveOn, models.JSONArr(a.TargetClassIDs), a.Category, a.Pinned, a.PinRequested, a.UpdatedOn); err != nil {
 				core.RespondError(w, "could not create announcement", 500)
 				return
 			}
@@ -173,9 +190,12 @@ func HandleAnnouncementUpdate(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "bad body", 400)
 			return
 		}
+		// updated_on moves, created_on does not: for a policy the amendment
+		// date is what tells a parent whether they have read the current text.
+		// Pinning is admin-only, and this handler is already admin-gated.
 		tw, twArgs := store.ScopeTenant(c, "")
-		args := append([]any{a.Title, a.Message, a.Type, a.ArchiveOn, id}, twArgs...)
-		if _, err := db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=? WHERE id=?`+tw, args...); err != nil {
+		args := append([]any{a.Title, a.Message, a.Type, a.ArchiveOn, a.Category, a.Pinned, core.Today(), id}, twArgs...)
+		if _, err := db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=?,category=?,pinned=?,pin_requested=FALSE,updated_on=? WHERE id=?`+tw, args...); err != nil {
 			core.RespondError(w, "could not update announcement", 500)
 			return
 		}

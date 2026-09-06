@@ -177,9 +177,9 @@ func SeedIfEmpty(db *store.DB) {
 
 	// ── Announcements ──────────────────────────────────────────────────────────
 	anns := [][]any{
-		{"ANN001", "March Holiday Schedule", "Classes will be suspended from March 15–17 for public holidays.", "All Parents", "Notice", "2026-03-05", "Admin Yuki"},
-		{"ANN002", "March Fee Payment Reminder", "Monthly tuition for March 2026 is now due. Please pay by March 31.", "All Parents", "Reminder", "2026-03-01", "Admin Yuki"},
-		{"ANN004", "Attendance Policy Update", "Parents must notify us at least 2 hours before class if child cannot attend.", "All Parents", "Urgent", "2026-02-15", "Admin Yuki"},
+		{"ANN001", "March Holiday Schedule", "Classes will be suspended from March 15–17 for public holidays.", "parents", "Notice", "2026-03-05", "Admin Yuki"},
+		{"ANN002", "March Fee Payment Reminder", "Monthly tuition for March 2026 is now due. Please pay by March 31.", "parents", "Reminder", "2026-03-01", "Admin Yuki"},
+		{"ANN004", "Attendance Policy Update", "Parents must notify us at least 2 hours before class if child cannot attend.", "parents", "Urgent", "2026-02-15", "Admin Yuki"},
 	}
 	for _, a := range anns {
 		db.Exec(`INSERT INTO announcements(id,title,message,audience,type,created_on,created_by) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, a...)

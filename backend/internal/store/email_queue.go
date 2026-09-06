@@ -99,6 +99,13 @@ func ProcessEmailQueue(db *DB) int {
 		count++
 		if err == nil {
 			db.Exec(`UPDATE email_queue SET status='sent', sent_at=NOW(), last_error=NULL WHERE id=?`, j.id)
+			// Heartbeat on DELIVERY, not on the worker running. The worker ran
+			// faithfully for five weeks while every send failed on an
+			// unverified sending domain, and the health check saw nothing —
+			// it watched for mail STUCK PENDING, and a queue that fails
+			// everything has nothing pending. Same mistake as watching backup
+			// freshness while the upload never happened (0048).
+			RecordJobSuccess(db, "email-delivery", j.to)
 			continue
 		}
 		nextAttempts := j.attempts + 1

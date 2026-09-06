@@ -10,6 +10,7 @@ import (
 	"studyhub/internal/core"
 	"studyhub/internal/jobs"
 	"studyhub/internal/mailer"
+	"studyhub/internal/models"
 	"studyhub/internal/store"
 	"testing"
 	"time"
@@ -768,6 +769,151 @@ func TestJobHeartbeats_CatchAJobThatWentQuiet(t *testing.T) {
 	for _, sj := range store.StaleJobs(db, limits) {
 		if sj.Name == "quiet-job" {
 			t.Error("a job that resumed must stop alerting")
+		}
+	}
+}
+
+// TestAnnouncement_ReachesParents locks the 0049 audience fix.
+//
+// The compose UI wrote display strings ('All Parents', 'All Staff', 'My Class
+// Parents') while the parent visibility rule matched ('all','parents'). None
+// of them matched, so every manually written announcement was invisible to
+// parents from the day the feature shipped. Only auto-generated 'class:<id>'
+// notices ever arrived, which is why it appeared to work.
+func TestAnnouncement_ReachesParents(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	db.Exec(`DELETE FROM announcements`)
+
+	parent := &core.Claims{TenantID: 1, Role: "parent", Email: "seeduser27@example.com"}
+	admin := &core.Claims{TenantID: 1, Role: "admin", Email: "admin@studyhub.com"}
+
+	mk := func(id, title, audience string, pinned bool) {
+		db.Exec(`INSERT INTO announcements(id,tenant_id,title,message,audience,type,created_on,created_by,status,category,pinned) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+			id, 1, title, "body", audience, "Notice", core.Today(), "admin", "published", "policy", pinned)
+	}
+	mk("ANN_P", "For parents", models.AudienceParents, true)
+	mk("ANN_S", "For staff", models.AudienceStaff, false)
+
+	seen := map[string]bool{}
+	for _, a := range listAnnouncements(db, parent) {
+		seen[a.ID] = true
+	}
+	if !seen["ANN_P"] {
+		t.Error("a parent-audience announcement must reach parents — this is the bug 0049 fixes")
+	}
+	if seen["ANN_S"] {
+		t.Error("a staff announcement must NOT reach parents")
+	}
+
+	// The admin sees everything, and the board fields survive the round trip.
+	var pinnedSeen bool
+	for _, a := range listAnnouncements(db, admin) {
+		if a.ID == "ANN_P" {
+			pinnedSeen = a.Pinned
+			if a.Category != models.AnnouncementCategoryPolicy {
+				t.Errorf("category lost in round trip: %q", a.Category)
+			}
+		}
+	}
+	if !pinnedSeen {
+		t.Error("pinned flag lost in round trip")
+	}
+}
+
+// TestAnnouncement_RejectsUnreachableAudience locks the 0050 backstop.
+//
+// Patching writers fixes the ones you find. This asserts the system refuses to
+// STORE an announcement nobody could read — the failure that hid every
+// manually written announcement from parents, and that looked fine in the
+// admin list the whole time.
+func TestAnnouncement_RejectsUnreachableAudience(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+
+	// The validator agrees with the visibility rule in parent_scope.go.
+	for _, ok := range []string{"all", "parents", "staff", "class:CLS_1"} {
+		if !models.ValidAudience(ok) {
+			t.Errorf("%q must be accepted — the visibility rule serves it", ok)
+		}
+	}
+	// The display strings the UI used to submit are exactly what broke it.
+	for _, bad := range []string{"All Parents", "My Class Parents", "All Staff", "", "class:", "everyone"} {
+		if models.ValidAudience(bad) {
+			t.Errorf("%q must be rejected — no visibility rule matches it, so it would reach nobody", bad)
+		}
+	}
+
+	// And the database refuses it regardless of which code path inserts it,
+	// which is the part that survives a future writer nobody remembers to fix.
+	_, err := db.Exec(`INSERT INTO announcements(id,tenant_id,title,message,audience,type,created_on,created_by,status) VALUES(?,?,?,?,?,?,?,?,?)`,
+		"ANN_BAD", 1, "Unreachable", "body", "All Parents", "Notice", core.Today(), "test", "published")
+	if err == nil {
+		t.Error("the CHECK constraint must reject an unreachable audience — a code-only fix would leave hand-written SQL and future writers free to reintroduce it")
+	}
+}
+
+// TestHealthCheck_CatchesMailThatNeverArrives locks the gap that hid five
+// weeks of total email failure.
+//
+// The existing check counts mail STUCK PENDING. A transport that rejects
+// everything leaves nothing pending — rows go straight to 'failed' — so the
+// queue looked idle and healthy while no email had ever been delivered:
+// invoice reminders, password resets, and ten accounts waiting on a
+// verification email that could not arrive.
+func TestHealthCheck_CatchesMailThatNeverArrives(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	db.Exec(`DELETE FROM email_queue`)
+	db.Exec(`DELETE FROM job_heartbeats`)
+
+	stuckPending := func() int {
+		return countRows(t, db, `SELECT COUNT(*) FROM email_queue WHERE status='pending' AND next_attempt_at < NOW() - INTERVAL '2 hours'`)
+	}
+	deadTransport := func() (int, int) {
+		var failed, sent int
+		db.QueryRow(`SELECT COUNT(*) FILTER (WHERE status='failed'),
+		                    COUNT(*) FILTER (WHERE status='sent' AND sent_at > NOW() - INTERVAL '24 hours')
+		             FROM email_queue`).Scan(&failed, &sent)
+		return failed, sent
+	}
+
+	// Production's exact shape: everything failed, nothing pending.
+	for i := 0; i < 3; i++ {
+		// Errors checked: an insert that silently does nothing would leave the
+		// assertions below passing against an empty table.
+		if _, err := db.Exec(`INSERT INTO email_queue(to_email,subject,body_html,status,last_error,next_attempt_at,created_at)
+			VALUES(?,?,?,'failed','resend 403: domain is not verified',NOW(),NOW())`,
+			"parent@example.com", "Invoice", "body"); err != nil {
+			t.Fatalf("seed failed email: %v", err)
+		}
+	}
+
+	if stuckPending() != 0 {
+		t.Fatal("fixture wrong: these should be failed, not pending")
+	}
+	// The old check sees a healthy queue. That is the bug.
+	failed, sent := deadTransport()
+	if failed == 0 || sent != 0 {
+		t.Fatalf("fixture wrong: want failures and no deliveries, got failed=%d sent=%d", failed, sent)
+	}
+
+	// A delivery clears it, so a working transport does not keep alerting.
+	if _, err := db.Exec(`INSERT INTO email_queue(to_email,subject,body_html,status,sent_at,next_attempt_at,created_at)
+		VALUES(?,?,?,'sent',NOW(),NOW(),NOW())`, "parent@example.com", "Receipt", "body"); err != nil {
+		t.Fatalf("seed sent email: %v", err)
+	}
+	if _, sentNow := deadTransport(); sentNow == 0 {
+		t.Error("a successful delivery must clear the alert condition")
+	}
+
+	// And delivery heartbeats, so a transport that goes quiet is caught even
+	// with no failed rows to count.
+	store.RecordJobSuccess(db, "email-delivery", "parent@example.com")
+	stale := store.StaleJobs(db, map[string]time.Duration{"email-delivery": 7 * 24 * time.Hour})
+	for _, sj := range stale {
+		if sj.Name == "email-delivery" {
+			t.Error("a just-delivered email must not read as a stale transport")
 		}
 	}
 }

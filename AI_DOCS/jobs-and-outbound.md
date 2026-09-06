@@ -169,6 +169,20 @@ because gorilla panics on concurrent writes to one connection (`ws.go:52`), and 
 Origins are allowlisted; plain `http://studyhub.fit` is intentionally omitted because
 production is HTTPS-only (`ws.go:21-27`). `ALLOWED_ORIGIN` is appended at upgrade time.
 
+## Outbound mail: watch DELIVERY, not the queue
+
+Two checks, deliberately different. The pending check (`jobs.go`) catches a
+SLOW queue. `email-delivery` -- a heartbeat recorded in
+`store.ProcessEmailQueue` on an actual successful send -- plus the
+"failures with zero deliveries in 24h" alert catch a DEAD one.
+
+Both exist because a transport that rejects everything leaves nothing pending:
+rows go straight to `failed`, so the queue reads as idle and healthy. That is
+how five weeks of total email failure went unnoticed -- 2,354 logged
+rejections on an unverified sending domain, every outbound message lost, and
+ten accounts stranded on a verification email that could not arrive. Locked by
+`TestHealthCheck_CatchesMailThatNeverArrives`.
+
 ## Job heartbeats (migration 0048)
 
 Every job started by `runEvery` records a heartbeat on completion, and

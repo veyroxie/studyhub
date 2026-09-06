@@ -91,8 +91,13 @@ var jobLimits = map[string]time.Duration{}
 // A job here that stops being scheduled at all still alerts, because a missing
 // heartbeat is treated the same as a stale one.
 var externalJobLimits = map[string]time.Duration{
-	"backup-upload": 36 * time.Hour,     // nightly at 02:00
-	"backup-verify": 9 * 24 * time.Hour, // weekly on Sunday
+	// Recorded on actual DELIVERY (store.ProcessEmailQueue), not on the worker
+	// running. A week with no successful send is a broken transport, not a
+	// quiet week — password resets and verifications alone make that
+	// implausible.
+	"email-delivery": 7 * 24 * time.Hour,
+	"backup-upload":  36 * time.Hour,     // nightly at 02:00
+	"backup-verify":  9 * 24 * time.Hour, // weekly on Sunday
 }
 
 // alertOnce throttles a given alert category to at most once per 24h so the
@@ -181,6 +186,21 @@ func runHealthSelfCheck(db *store.DB) {
 	var stuck int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM email_queue WHERE status='pending' AND next_attempt_at < NOW() - INTERVAL '2 hours'`).Scan(&stuck); err == nil && stuck > 0 && alertOnce("email_queue") {
 		alerts = append(alerts, fmt.Sprintf("%d email(s) stuck in the send queue for over 2 hours.", stuck))
+	}
+
+	// Nothing getting THROUGH. The check above watches mail stuck pending, so a
+	// queue that fails everything looks idle and healthy — which is exactly what
+	// happened: five weeks of every send failing on an unverified sending
+	// domain, 2,354 logged failures, no alert, and ten accounts left waiting on
+	// a verification email that could never arrive.
+	var failedMail, sent24h int
+	if err := db.QueryRow(`SELECT COUNT(*) FILTER (WHERE status='failed'),
+	                              COUNT(*) FILTER (WHERE status='sent' AND sent_at > NOW() - INTERVAL '24 hours')
+	                       FROM email_queue`).Scan(&failedMail, &sent24h); err == nil {
+		if failedMail > 0 && sent24h == 0 && alertOnce("email_delivery") {
+			alerts = append(alerts, fmt.Sprintf(
+				"%d email(s) permanently failed and NONE delivered in 24h — outbound mail is down, not slow. Check the sending domain is verified.", failedMail))
+		}
 	}
 
 	if len(alerts) == 0 {

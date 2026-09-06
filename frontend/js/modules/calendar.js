@@ -833,7 +833,7 @@
         id: App.Utils.generateId('ann'),
         title: 'New Class Added: ' + newClass.name,
         message: 'A new ' + newClass.classType.toLowerCase() + ' class "' + newClass.name + '" has been scheduled on ' + newClass.day + 's from ' + App.Utils.formatTime(newClass.time) + ' to ' + App.Utils.formatTime(newClass.endTime) + ' in ' + newClass.classroom + '. Enrolment is now open.',
-        audience: 'All Parents',
+        audience: 'parents', // canonical (0049/0050); 'All Parents' reached nobody
         type: 'Notice',
         createdOn: App.Utils.today(),
         createdBy: 'Admin'

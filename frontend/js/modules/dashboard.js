@@ -711,8 +711,32 @@
     html += '<button onclick="App.Router.navigate(\'progress\')" class="dash-link" style="display:block;margin-top:0.5rem">View progress reports →</button>'
       + '</div>';
 
+    // ── Bulletin board ──────────────────────────────────────────────────────
+    // Pinned items (policies) stay at the top in their own colour so they do
+    // not scroll away under dated notices — the whole point of the board, since
+    // the answer to a parent complaint is usually "it is in the policy".
+    var published = (announcements || []).filter(function(a) { return a.status === 'published' || !a.status; });
+    var pinnedAnns = published.filter(function(a) { return a.pinned; })
+      .slice().sort(function(a, b) { return (b.updatedOn || b.createdOn).localeCompare(a.updatedOn || a.createdOn); });
+
+    if (pinnedAnns.length > 0) {
+      html += '<div style="background:#fffbeb;border-radius:14px;border:1px solid #fde68a;padding:1.25rem 1.5rem;margin-top:1rem">'
+        + '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Please read</div>';
+      pinnedAnns.forEach(function(a) {
+        // Show when the text last CHANGED, not when it was first written — a
+        // parent needs to know whether they have read the current version.
+        var shown = a.updatedOn || a.createdOn;
+        html += '<div style="padding:0.6rem 0;border-bottom:1px solid #fef3c7">'
+          + '<div style="font-size:0.85rem;font-weight:700;color:#78350f">' + App.Utils.esc(a.title) + '</div>'
+          + '<div style="font-size:0.8rem;color:#92400e;line-height:1.5;margin-top:0.2rem">' + App.Utils.esc(a.message) + '</div>'
+          + '<div style="font-size:0.68rem;color:#b45309;margin-top:0.3rem">Updated ' + App.Utils.formatDate(shown) + '</div>'
+          + '</div>';
+      });
+      html += '</div>';
+    }
+
     // ── Announcements (compact, last 3) ─────────────────────────────────────
-    var latestAnnounce = (announcements || []).filter(function(a) { return a.status === 'published' || !a.status; })
+    var latestAnnounce = published.filter(function(a) { return !a.pinned; })
       .slice().sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); }).slice(0, 3);
 
     html += '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
