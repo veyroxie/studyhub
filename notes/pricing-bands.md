@@ -262,11 +262,36 @@ This is the better model, and materially cheaper to build:
 - **It composes with per-enrolment levels.** Level 1 Mandarin and Level 2 Math
   stay independent, because frequency is not attached to the class.
 
-BLOCKED on one operational fact (see the open question at the end): a student
-attending twice a week is either enrolled in two different slots, or in one
-class that meets twice. The answer decides whether frequency belongs on the
-enrolment or on the student's subscription, and it cannot be guessed from the
-schema.
+RESOLVED by query, 09-06: it is two slots. Lucy Lee and Jiho Choi each hold two
+live enrolments in two different classes both named "Level 3 & 4". Four other
+students hold two Self-Study slots.
+
+**So frequency needs no column. It is the COUNT of live enrolments in a
+(category, tier) group**, and `idx_enrollments_live` — one live enrolment per
+student per class (`0044`) — already guarantees two rows mean two genuinely
+different slots rather than a duplicate.
+
+The price stays explicit. A group of 2 prices at the stored "Level 3-4, 2x
+weekly" tier, NOT at twice the 1x price. That is what makes "almost double"
+expressible, and it is why frequency is a price dimension while remaining a
+derived quantity:
+
+```
+  Lucy Lee
+    Level 3 & 4  Tue  \__ group of 2  ->  tier (Group, Level 3-4, 2x weekly)
+    Level 3 & 4  Thu  /                   ONE price, set by Nadine
+    Self-Study   x2       -> credit-covered, count irrelevant to price
+```
+
+**Self-Study double-slots are not a frequency signal.** Four of the six rows
+returned are Self-Study, which is credit-covered at 0. Counting them as a 2x
+tier would invent a charge. The count only prices within categories that have
+frequency tiers.
+
+**The guard falls out for free.** A group whose size matches no frequency tier
+— three slots with only 1x and 2x defined — is unpriceable and surfaced, not
+silently billed at the wrong tier. That is the same "never a silent 0" rule
+applied to a new dimension.
 
 ### 3b. `0052_three_bands.sql`
 
@@ -375,25 +400,11 @@ relocation with it, and vice versa.
   "teachers aren't supposed to have different pricing", so they are a question
   for Nadine rather than something to encode.
 
-## 8. Open question (blocks 3a-ter)
+## 8. Answered — 09-06
 
-When a student attends twice a week, which is happening?
-
-**(a) Two slots.** They are enrolled in two different class rows — say
-"Level 3 & 4" on Tuesday and again on Thursday. Two enrolments already express
-this today, and the only new thing needed is a price for the second slot that
-is less than the first ("almost double").
-
-**(b) One class, two meetings.** A single class row that meets twice weekly.
-This needs a second day/time on the class, which the schema has no room for
-(`classes` holds one `day` and one `time`), and would be the larger change.
-
-The audit shows 8 separate "Level 3 & 4" Group classes, which points strongly
-at (a) — but "several slots exist" is not proof that a twice-weekly student
-occupies two of them. Settle it with:
+The twice-a-week question resolved to (a) two slots. Query and result:
 
 ```sql
--- Do any students hold two live enrolments in same-named classes?
 SELECT s.first_name || ' ' || s.last_name AS student, c.name, COUNT(*) AS slots
   FROM enrollments e
   JOIN students s ON s.id = e.student_id
@@ -403,6 +414,14 @@ SELECT s.first_name || ' ' || s.last_name AS student, c.name, COUNT(*) AS slots
  ORDER BY 3 DESC;
 ```
 
-Rows returned means (a) and the model is nearly free. No rows means either (b),
-or that nobody attends twice weekly yet and this is being built ahead of demand
-— worth knowing which before building it.
+```
+ Lucy Lee              | Self-Study  | 2
+ Zayden (Jun Hui) Ooi  | Self-Study  | 2
+ Lucy Lee              | Level 3 & 4 | 2
+ Chase James Gan       | Self-Study  | 2
+ Luther James Gan      | Self-Study  | 2
+ Jiho Choi             | Level 3 & 4 | 2
+```
+
+Two students on twice-weekly tuition out of 66. Small by usage, so it earns a
+price dimension and a guard -- not its own subsystem.
