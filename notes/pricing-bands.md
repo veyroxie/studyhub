@@ -63,10 +63,14 @@ Five findings that change the plan:
    should never price off a level matrix; it is what the subscription's
    self-study credits cover. It needs its own category, not a band.
 
-3. **Private is 1-to-1, named `Teacher X (Student)`, individually
-   negotiated.** Two carry a `session_rate` (80 and 30), the rest carry
-   nothing. A level matrix is the wrong instrument for these — they need a
-   per-class rate that is REQUIRED rather than optional.
+3. **Private is 1-to-1, named `Teacher X (Student)`.** The naming is a
+   scheduling convenience, NOT a pricing dimension: Ely 09-06, "teachers
+   aren't supposed to have different pricing". So Private prices off the same
+   tier matrix as Group, at Private rates (480 / 520 today) — it is a
+   category, not a set of individual deals.
+
+   Two classes carry a `session_rate` (80 and 30) that contradicts this.
+   Those are exceptions to review with Nadine, not the model to build around.
 
 4. **`students.level_band` is empty for all 66 students.** Removing the
    student-band fallback from `rates.go:45-48` is therefore a genuine no-op
@@ -89,7 +93,8 @@ subscription model) have something correct to price against.
 
 ### Data hygiene found on the way
 
-- `Self-Study` (8) and `Self-study` (2) differ only in case.
+- `Self-Study` (8) and `Self-study` (2) differ only in case. Normalised to
+  `Self-Study` by the migration (Ely 09-06).
 - `Teacher Chiying (Aria)` has `session_rate` 80; `Teacher Chiying Aria)` —
   missing the opening bracket — has 0. Almost certainly a mistyped duplicate
   of the same class. Needs a human decision, not a migration.
@@ -156,17 +161,34 @@ Nadine adds a category, names its tiers, sets their prices, with no migration
 and no developer.
 
 ```
-  CATEGORY          TIERS (named, ordered, priced)
-  ---------------   ---------------------------------------------
-  Group             Level 1-2 (240)  Level 3-4 (260)  Level 5-6 (260)
-  Private           per class, rate REQUIRED at save time
-  Self-Study        covered by subscription credits (0, deliberately)
-  Music, ...        whatever she creates next
+  CATEGORY        TIER          FREQUENCY   PRICE
+  -------------   -----------   ---------   -----
+  Group           Level 1-2     weekly      240
+  Group           Level 1-2     biweekly    (Nadine sets)
+  Group           Level 3-4     weekly      260
+  Group           Level 3-4     biweekly    (Nadine sets)
+  Group           Level 5-6     weekly      260
+  Group           Level 5-6     biweekly    (Nadine sets)
+  Private         Level 1-2     weekly      480
+  Private         Level 1-2     biweekly    (Nadine sets)
+  Private         (3-4, 5-6 the same shape, 520 weekly)
+  Self-Study      covered by subscription credits (0, deliberately)
+  Music, ...      whatever she creates next
 ```
 
-A class picks a category. An enrolment picks a tier within that category —
-which is what makes "Level 1 Mandarin and Level 2 Math for one student"
-expressible, and is the whole reason level cannot live on the student.
+Private is a CATEGORY priced by tier, not a pile of individual deals. Its
+classes are named `Teacher X (Student)` for scheduling, but the teacher is not
+a pricing dimension — confirmed by Ely 09-06.
+
+A class picks a category and a frequency. An enrolment picks a tier within that
+category — which is what makes "Level 1 Mandarin and Level 2 Math for one
+student" expressible, and is the whole reason level cannot live on the student.
+
+**Frequency is a third dimension of the price key, not a discount.** Ely
+09-06: bi-weekly bands take the same shape as weekly, on their own prices.
+Modelling it as a multiplier off the weekly rate would be wrong — it would
+stop Nadine from setting a bi-weekly price that is not exactly half, which is
+the normal commercial case.
 
 Resolution order, one definition, used by both billing paths:
 
@@ -196,6 +218,26 @@ ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS level_band TEXT NOT NULL DEFAUL
 Backfill from the best available source, in order: the student's band where
 set, else the class's. Records what we believe today without inventing
 anything; `''` stays `''` and surfaces in step 3d rather than guessing.
+
+### 3a-bis. Class frequency — bigger than a price column
+
+**Nothing in the codebase knows what bi-weekly is.** `SessionsInPeriod`
+(`sessions.go:50`) expands every class as a weekly recurrence, full stop. So
+this needs three things, not one:
+
+1. **A frequency on the schedule VERSION, not the class row.** Migration
+   `0047` established that a schedule change applies from a date forward and
+   does not rewrite history. Frequency is part of a schedule, so a class that
+   moves to fortnightly in October must leave September's weekly sessions
+   intact. Putting it on the class row would silently repeat the exact bug
+   0047 was written to fix.
+2. **An anchor date.** "Every other Thursday" is meaningless without knowing
+   which Thursday. The schedule version's own effective-from date is the
+   natural anchor: parity is counted in whole weeks from it, so the answer is
+   stable and needs no extra column.
+3. **Session expansion honouring it**, which is where attendance, the
+   calendar, invoices, and the iCal feed all read from. One change, wide
+   blast radius — this is the part to build carefully and test hardest.
 
 ### 3b. `0052_three_bands.sql`
 
@@ -227,10 +269,13 @@ No hand-mapping needed, and no question for Nadine. Confirmed by Ely 09-06:
 The 11 classes named "Level 1 & 2" and "Level 3 & 4" map straight onto the new
 tier names, so the migration derives them from the class name.
 
-The remaining 23 do NOT get a guess: Self-Study moves to its own category,
-Private to a required per-class rate, and Mandarin has no level recorded
-anywhere and is surfaced for a human. Deriving a band for those would be
-inventing a price.
+The remaining 23 do NOT get a guess. Self-Study moves to its own category and
+its name is normalised to `Self-Study` in the same migration (Ely 09-06) —
+safe because it is a display name and nothing keys on it. Private classes get
+the Private category but still need a tier per enrolment, since the class name
+records the teacher rather than the child's level. Mandarin has no level
+recorded anywhere. Both are surfaced for Nadine; deriving a band for them
+would be inventing a price.
 
 ### 3d. No class may exist without a price (confirmed 09-06)
 
@@ -286,13 +331,17 @@ relocation with it, and vice versa.
 | The two billing paths drift apart again | One resolution chain, one place, used by both. |
 | A user-defined tier is created with no price, recreating the hole | A tier with no price cannot be saved, and a class cannot reference a tier that has none. |
 | Self-Study priced as tuition, double-charging on top of the subscription | Its own category at 0 by design, with a comment saying why 0 is correct here and nowhere else. |
+| A bi-weekly class bills as if it ran weekly, doubling the invoice | Frequency lives on the schedule version and drives session expansion, so the invoice counts sessions that actually ran rather than assuming four. |
+| Changing a class to bi-weekly rewrites past months | Frequency is versioned per `0047`, so a change applies forward only. |
+| Per-teacher rates creep back in | The two stray `session_rate` values are resolved with Nadine before the switchover, not carried forward as precedent. |
 
 ## 7. Not in this change
 
 - **Duplicate class.** `Teacher Chiying Aria)` looks like a mistyped copy of
   `Teacher Chiying (Aria)`. A human decides whether to delete it; a migration
   must not.
-- **`Self-Study` vs `Self-study`.** Case-inconsistent names. Harmless while
-  nothing keys on the name; worth tidying when someone is in there.
 - **Mandarin's level.** Two classes with no level recorded anywhere. Surfaced
   in the "needs a price" list for Nadine to set.
+- **The two stray Private `session_rate` values** (80 and 30). They contradict
+  "teachers aren't supposed to have different pricing", so they are a question
+  for Nadine rather than something to encode.
