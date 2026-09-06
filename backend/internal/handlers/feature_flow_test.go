@@ -1091,10 +1091,25 @@ func TestPricingCatalog_SeededAndCannotHoldAZero(t *testing.T) {
 		}
 	}
 
-	// Self-Study carries no plan: it bills nothing WHILE credits remain, which
-	// is a different statement from "costs 0" and must not be stored as one.
-	if n := countRows(t, db, `SELECT COUNT(*) FROM pricing_plans WHERE category_id='PC_selfstudy'`); n != 0 {
-		t.Errorf("Self-Study has %d priced plans; it is credit-covered and must have none", n)
+	// Self-Study is credit-covered AND priced. Those are not in tension:
+	// credit_covered says credits are consumed first, the plan says what an
+	// hour costs once they run out. 0051 assumed the first meant free, which
+	// left RM10/hr living as a Go constant nobody could edit (cron.go:38).
+	var selfStudyRate float64
+	if err := db.QueryRow(`SELECT hourly_rate FROM pricing_plans
+		WHERE category_id='PC_selfstudy' AND deleted_at IS NULL`).Scan(&selfStudyRate); err != nil {
+		t.Fatalf("Self-Study has no priced plan: %v — credits run out, and what happens then has a price", err)
+	}
+	if selfStudyRate != jobs.SelfStudyOverflowRatePerHour {
+		t.Errorf("Self-Study hourly rate is %.2f but the cron bills %.2f — the switchover would move every overflow invoice",
+			selfStudyRate, jobs.SelfStudyOverflowRatePerHour)
+	}
+
+	// A plan with NO price at all is still refused. That is 0051's real
+	// guarantee, and 0054 must not have loosened it into nothing.
+	if _, err := db.Exec(`INSERT INTO pricing_plans(id,tenant_id,category_id,tier_name,sessions_per_week,monthly_fee,hourly_rate)
+		VALUES('PP_unpriced',1,'PC_group','Level 1-2',4,0,0)`); err == nil {
+		t.Error("a plan with neither a monthly fee nor an hourly rate was accepted")
 	}
 	var creditCovered bool
 	db.QueryRow(`SELECT credit_covered FROM pricing_categories WHERE id='PC_selfstudy'`).Scan(&creditCovered)
