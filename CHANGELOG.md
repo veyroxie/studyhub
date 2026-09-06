@@ -36,6 +36,11 @@ dated section when you cut a deploy.
   without anyone noticing.
 
 ### Fixed
+- The hourly health check no longer emails a list of healthy jobs after
+  every deploy. A job that had not yet reported was treated as broken
+  immediately, so a restart — when nothing has run yet — alerted on
+  everything at once.
+- Emails now carry the centre logo and sign off properly.
 - Announcements written for "All Parents" now actually reach parents. They
   never had: the compose form saved a different value from the one the
   parent view looked for, so every hand-written announcement was stored and

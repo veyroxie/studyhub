@@ -45,7 +45,13 @@ func RecordJobSuccess(db *DB, name, detail string) {
 // StaleJobs returns every job in `limits` whose last success is older than its
 // limit, plus any that has never reported one. A job absent from `limits` is
 // not checked -- the caller owns the expectations.
-func StaleJobs(db *DB, limits map[string]time.Duration) []StaleJob {
+//
+// `since` is when this process started. A job that has NEVER reported is only
+// stale once it has had a full interval to run: on a cold start nothing has
+// reported yet, and a nightly backup legitimately has no heartbeat for hours
+// after a deploy. Without this the first health check after every deploy
+// alerts on every job at once -- which it did, in production, immediately.
+func StaleJobs(db *DB, limits map[string]time.Duration, since time.Time) []StaleJob {
 	seen := map[string]time.Time{}
 	rows, err := db.Query(`SELECT name, last_success_at FROM job_heartbeats`)
 	if err != nil {
@@ -65,6 +71,10 @@ func StaleJobs(db *DB, limits map[string]time.Duration) []StaleJob {
 	for name, limit := range limits {
 		at, ok := seen[name]
 		if !ok {
+			// Not yet had a chance to run since this process started.
+			if time.Since(since) < limit {
+				continue
+			}
 			out = append(out, StaleJob{Name: name, Limit: limit, Never: true})
 			continue
 		}

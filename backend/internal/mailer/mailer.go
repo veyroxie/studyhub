@@ -174,14 +174,45 @@ func emailLayoutOpen() string {
 <tr><td align="center">
 <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 2px 8px rgba(0,0,0,0.04);overflow:hidden">
 <tr><td style="padding:32px 40px 0">
-  <div style="font-family:Georgia,'Times New Roman',serif;font-size:1.75rem;font-weight:700;color:#0a0a0a;letter-spacing:-0.02em">` + SafeName(Brand().BrandName) + `</div>
+  ` + emailHeaderMark() + `
   <div style="height:2px;width:48px;background:` + Brand().PrimaryColor + `;margin:12px 0 24px"></div>
 </td></tr>
 <tr><td style="padding:0 40px 32px;font-size:15px;line-height:1.6;color:#374151">`
 }
 
-func emailLayoutClose() string {
+// emailHeaderMark renders the logo when one is set, falling back to the brand
+// name in type. Two things matter for email specifically:
+//
+//   - the src MUST be absolute. brandLogoURL returns a site-relative path
+//     ("/api/uploads/x.png") which resolves fine in a browser and to nothing
+//     at all in a mail client.
+//   - most clients block images by default, so the alt text carries the brand
+//     name and the wordmark stays the fallback. An email whose entire header
+//     is a blocked image reads as blank.
+func emailHeaderMark() string {
+	name := SafeName(Brand().BrandName)
+	wordmark := `<div style="font-family:Georgia,'Times New Roman',serif;font-size:1.75rem;font-weight:700;color:#0a0a0a;letter-spacing:-0.02em">` + name + `</div>`
+	logo := Brand().LogoPath
+	if logo == "" {
+		return wordmark
+	}
+	if !strings.HasPrefix(logo, "http://") && !strings.HasPrefix(logo, "https://") {
+		logo = AppURL() + "/api/" + strings.TrimPrefix(logo, "/")
+	}
+	return `<img src="` + logo + `" alt="` + name + `" height="40" style="height:40px;max-width:220px;display:block;border:0">`
+}
+
+// emailSignOff closes the message body proper, above the small print. Kept in
+// the shared layout so every template signs off the same way rather than each
+// inventing its own — and so changing it is one edit, not ten.
+func emailSignOff() string {
 	return `
+<p style="margin:28px 0 0;font-size:15px;color:#374151">Warm regards,<br>
+<span style="font-weight:700;color:#0a0a0a">The ` + SafeName(Brand().BrandName) + ` Team</span></p>`
+}
+
+func emailLayoutClose() string {
+	return emailSignOff() + `
 </td></tr>
 <tr><td style="padding:24px 40px;background:#fafaf8;border-top:1px solid #f0eee8;font-size:12px;color:#94a3b8;line-height:1.5">
   This email was sent by ` + SafeName(Brand().BrandName) + `. If you weren't expecting it, you can safely ignore it.

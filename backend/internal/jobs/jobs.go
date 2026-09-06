@@ -169,7 +169,7 @@ func runHealthSelfCheck(db *store.DB) {
 	// Any scheduled job that has gone quiet — including the two run from the
 	// host crontab. This replaces per-symptom checks with one that covers
 	// every job, so the next one added is watched without being thought about.
-	for _, sj := range store.StaleJobs(db, jobLimits) {
+	for _, sj := range store.StaleJobs(db, jobLimits, core.BootTime) {
 		if alertOnce("job:" + sj.Name) {
 			alerts = append(alerts, sj.String()+".")
 		}

@@ -744,7 +744,7 @@ func TestJobHeartbeats_CatchAJobThatWentQuiet(t *testing.T) {
 	}
 
 	stale := map[string]store.StaleJob{}
-	for _, sj := range store.StaleJobs(db, limits) {
+	for _, sj := range store.StaleJobs(db, limits, time.Now().Add(-30*24*time.Hour)) {
 		stale[sj.Name] = sj
 	}
 
@@ -766,7 +766,7 @@ func TestJobHeartbeats_CatchAJobThatWentQuiet(t *testing.T) {
 
 	// Recording again clears it, so a recovered job stops alerting.
 	store.RecordJobSuccess(db, "quiet-job", "recovered")
-	for _, sj := range store.StaleJobs(db, limits) {
+	for _, sj := range store.StaleJobs(db, limits, time.Now().Add(-30*24*time.Hour)) {
 		if sj.Name == "quiet-job" {
 			t.Error("a job that resumed must stop alerting")
 		}
@@ -910,10 +910,63 @@ func TestHealthCheck_CatchesMailThatNeverArrives(t *testing.T) {
 	// And delivery heartbeats, so a transport that goes quiet is caught even
 	// with no failed rows to count.
 	store.RecordJobSuccess(db, "email-delivery", "parent@example.com")
-	stale := store.StaleJobs(db, map[string]time.Duration{"email-delivery": 7 * 24 * time.Hour})
+	stale := store.StaleJobs(db, map[string]time.Duration{"email-delivery": 7 * 24 * time.Hour}, time.Now().Add(-30*24*time.Hour))
 	for _, sj := range stale {
 		if sj.Name == "email-delivery" {
 			t.Error("a just-delivered email must not read as a stale transport")
 		}
+	}
+}
+
+// TestEmailLayout_LogoAndSignOff locks two things every template inherits.
+//
+// The logo src must be ABSOLUTE: brandLogoURL returns a site-relative path
+// that resolves in a browser and to nothing in a mail client. And the brand
+// name must survive as alt text, because most clients block images by default
+// and a header that is only a blocked image reads as blank.
+func TestEmailLayout_LogoAndSignOff(t *testing.T) {
+	body := mailer.RenderResetPasswordEmail("Ada", "https://studyhub.fit/reset?t=x")
+
+	if !strings.Contains(body, "Warm regards") {
+		t.Error("every email should sign off — it is in the shared layout so all ten templates inherit it")
+	}
+	if !strings.Contains(body, "Team") {
+		t.Error("the sign-off should name the centre")
+	}
+	// With no logo configured (production today), the wordmark carries the brand.
+	if !strings.Contains(body, "The Study Hub") {
+		t.Error("brand name must appear whether or not a logo is set")
+	}
+	if strings.Contains(body, `src="/api/`) {
+		t.Error("a site-relative logo src cannot load in a mail client — it must be absolute")
+	}
+}
+
+// TestJobHeartbeats_QuietOnColdStart locks the fix for a false-alarm storm.
+//
+// The first health check after every deploy alerted on EVERY job at once —
+// "has never reported a successful run" — because a job with no heartbeat was
+// treated as stale immediately. On a cold start none has reported yet, and the
+// nightly backup legitimately has no heartbeat for hours after a restart. It
+// emailed the operator a list of ten healthy jobs.
+func TestJobHeartbeats_QuietOnColdStart(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	db.Exec(`DELETE FROM job_heartbeats`)
+
+	limits := map[string]time.Duration{"nightly-thing": 36 * time.Hour}
+
+	// Just booted: nothing has run, and that is not news.
+	if n := len(store.StaleJobs(db, limits, time.Now())); n != 0 {
+		t.Errorf("a freshly started process must not alert on jobs that have not run yet, got %d alerts", n)
+	}
+	// Still within the interval — a nightly job at lunchtime is fine.
+	if n := len(store.StaleJobs(db, limits, time.Now().Add(-10*time.Hour))); n != 0 {
+		t.Errorf("within the interval must stay quiet, got %d alerts", n)
+	}
+	// Past the interval with still no heartbeat: now it is genuinely wrong.
+	stale := store.StaleJobs(db, limits, time.Now().Add(-48*time.Hour))
+	if len(stale) != 1 || !stale[0].Never {
+		t.Errorf("a job that has had its full interval and never reported must alert, got %+v", stale)
 	}
 }
