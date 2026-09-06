@@ -219,7 +219,13 @@ Backfill from the best available source, in order: the student's band where
 set, else the class's. Records what we believe today without inventing
 anything; `''` stays `''` and surfaces in step 3d rather than guessing.
 
-### 3a-bis. Class frequency — bigger than a price column
+### 3a-bis. Class frequency — SUPERSEDED, see 3a-ter
+
+Written when bi-weekly was read as fortnightly (a class running every other
+week). Ely 09-06 clarified it is the opposite: twice a week, sold as a
+subscription tier — double the credits for almost double the price. Kept for
+the record because the versioning argument below still applies IF frequency
+ever lands on a class.
 
 **Nothing in the codebase knows what bi-weekly is.** `SessionsInPeriod`
 (`sessions.go:50`) expands every class as a weekly recurrence, full stop. So
@@ -238,6 +244,29 @@ this needs three things, not one:
 3. **Session expansion honouring it**, which is where attendance, the
    calendar, invoices, and the iCal feed all read from. One change, wide
    blast radius — this is the part to build carefully and test hardest.
+
+### 3a-ter. Frequency as a subscription tier (Ely 09-06)
+
+Bi-weekly means TWICE A WEEK, sold as a subscription tier: double the credits
+for almost double the price. Not a class attribute.
+
+This is the better model, and materially cheaper to build:
+
+- **No change to `SessionsInPeriod`.** Classes stay weekly. The whole
+  fortnightly-anchor problem, and the blast radius across attendance, the
+  calendar, invoices and iCal, disappears.
+- **It matches the confirmed subscription model** — credits included, add-ons
+  prorated (Ah Ying, 09-06). "Almost double, not exactly double" is a price on
+  a tier, which is what a tier is for. As a multiplier it would be a fudge
+  factor nobody could explain to a parent.
+- **It composes with per-enrolment levels.** Level 1 Mandarin and Level 2 Math
+  stay independent, because frequency is not attached to the class.
+
+BLOCKED on one operational fact (see the open question at the end): a student
+attending twice a week is either enrolled in two different slots, or in one
+class that meets twice. The answer decides whether frequency belongs on the
+enrolment or on the student's subscription, and it cannot be guessed from the
+schema.
 
 ### 3b. `0052_three_bands.sql`
 
@@ -345,3 +374,35 @@ relocation with it, and vice versa.
 - **The two stray Private `session_rate` values** (80 and 30). They contradict
   "teachers aren't supposed to have different pricing", so they are a question
   for Nadine rather than something to encode.
+
+## 8. Open question (blocks 3a-ter)
+
+When a student attends twice a week, which is happening?
+
+**(a) Two slots.** They are enrolled in two different class rows — say
+"Level 3 & 4" on Tuesday and again on Thursday. Two enrolments already express
+this today, and the only new thing needed is a price for the second slot that
+is less than the first ("almost double").
+
+**(b) One class, two meetings.** A single class row that meets twice weekly.
+This needs a second day/time on the class, which the schema has no room for
+(`classes` holds one `day` and one `time`), and would be the larger change.
+
+The audit shows 8 separate "Level 3 & 4" Group classes, which points strongly
+at (a) — but "several slots exist" is not proof that a twice-weekly student
+occupies two of them. Settle it with:
+
+```sql
+-- Do any students hold two live enrolments in same-named classes?
+SELECT s.first_name || ' ' || s.last_name AS student, c.name, COUNT(*) AS slots
+  FROM enrollments e
+  JOIN students s ON s.id = e.student_id
+  JOIN classes  c ON c.id = e.class_id
+ WHERE e.ended_on IS NULL AND s.deleted_at IS NULL AND c.deleted_at IS NULL
+ GROUP BY 1,2 HAVING COUNT(*) > 1
+ ORDER BY 3 DESC;
+```
+
+Rows returned means (a) and the model is nearly free. No rows means either (b),
+or that nobody attends twice weekly yet and this is being built ahead of demand
+— worth knowing which before building it.
