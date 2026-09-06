@@ -508,3 +508,33 @@ needs a tier like any other.
   been asked which is intended, and Ying Quah says it seldom happens. Deferred
   rather than guessed.
 
+## 11. Deferred: mixed-level students (ask Nadine before the switchover)
+
+A student taking Level 2 for one subject and Level 4 for another has no price.
+The catalogue stores one price per (category, tier, sessions/week), so two
+enrolments in the SAME tier resolve to the 2x plan and two in DIFFERENT tiers
+resolve to nothing. Adding every combination is not a model, it is a
+combinatorial table nobody maintains.
+
+Nadine's own numbers point at the answer. All four twice-weekly prices are
+exactly (2 x weekly - 30):
+
+    450 vs 480    490 vs 520    930 vs 960    1010 vs 1040
+
+and Ying Quah confirmed the RM30 explicitly on 02/09. So her price list is
+already "sum the classes, discount each extra one" rather than four bundled
+prices -- and that rule prices a mixed-level student for free: 240 + 260 - 30.
+
+That reverses the reasoning in 0051, which stored six prices on the grounds
+that the RM30 was a fact rather than a policy. The fact stands; what changed is
+that bundled prices cannot express a student who exists.
+
+NOT URGENT, and not to be guessed. No student is mixed-level today -- no name
+appears in both the Level 1&2 and Level 3&4 rosters. The first will appear when
+Mandarin gets a tier other than 1-2, since Chase, Zayden and Luther are all
+Level 1&2.
+
+Ely's call (09-07): FLAG students whose live enrolments span more than one
+tier, the same way unpriced classes are flagged, and let Nadine decide per
+student. Ask her whether she wants the sum-minus-30 rule applied automatically
+or prefers to set those prices herself.
