@@ -1,0 +1,32 @@
+-- 0052_fix_class_names.sql
+--
+-- One typo, and a note about why the surrounding mess is being LEFT ALONE.
+--
+-- THE TYPO. `Teacher Chiying Aria)` is missing its opening bracket. It is not
+-- a duplicate of `Teacher Chiying (Aria)`: they run Tuesday 15:30 and Saturday
+-- 09:00, so Aria is a twice-weekly Private student and both slots are real.
+-- Two classes ending up with the same name is correct and expected -- eight
+-- classes are already called "Level 3 & 4" and are distinguished by their day.
+--
+-- THE MESS, DELIBERATELY UNTOUCHED. Six classes in production carry seeded
+-- demo ids (c1, c3, c4, c5, c7, c8) rather than the generated
+-- `c_<millis>_<rand>` form. They are renamed demo rows that have been in real
+-- use for months; five of them have live students on them right now.
+--
+-- Renumbering them was considered and rejected. A class id is referenced by
+-- eleven tables, and three of those hold it INSIDE a larger string:
+-- `students.enrolled_classes` (a JSON array), `announcements.target_class_ids`,
+-- and `announcements.audience` (as `class:<id>`). A rename that misses one of
+-- those orphans the row silently -- no foreign key fires, no query errors, the
+-- data just stops matching. That is a real risk taken on for a cosmetic gain,
+-- since nothing in the code reads meaning from the id format.
+--
+-- The re-seed hazard that would have justified it does not exist:
+-- `SeedIfEmpty` returns early unless the `users` table is empty
+-- (`seed.go:44`), so the demo rows cannot be re-inserted over live classes.
+--
+-- What makes these classes "proper" is not their id. It is that they get a
+-- category, a tier and a price in this rework, exactly like every other class.
+
+UPDATE classes SET name = 'Teacher Chiying (Aria)'
+ WHERE deleted_at IS NULL AND name = 'Teacher Chiying Aria)';
