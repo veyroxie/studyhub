@@ -204,13 +204,24 @@ func emailHeaderMark() string {
 	return `<img src="` + logo + `" alt="` + name + `" height="40" style="height:40px;max-width:220px;display:block;border:0">`
 }
 
+// teamName signs off without doubling the article. The brand here is "The
+// Study Hub", and prepending another "The" put "The The Study Hub Team" at the
+// foot of every email sent — including the notice that went to 23 families.
+func teamName() string {
+	name := SafeName(Brand().BrandName)
+	if strings.HasPrefix(strings.ToLower(name), "the ") {
+		return name + " Team"
+	}
+	return "The " + name + " Team"
+}
+
 // emailSignOff closes the message body proper, above the small print. Kept in
 // the shared layout so every template signs off the same way rather than each
 // inventing its own — and so changing it is one edit, not ten.
 func emailSignOff() string {
 	return `
 <p style="margin:28px 0 0;font-size:15px;color:#374151">Warm regards,<br>
-<span style="font-weight:700;color:#0a0a0a">The ` + SafeName(Brand().BrandName) + ` Team</span></p>`
+<span style="font-weight:700;color:#0a0a0a">` + teamName() + `</span></p>`
 }
 
 func emailLayoutClose() string {

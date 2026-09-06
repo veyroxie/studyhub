@@ -933,6 +933,12 @@ func TestEmailLayout_LogoAndSignOff(t *testing.T) {
 	if !strings.Contains(body, "Team") {
 		t.Error("the sign-off should name the centre")
 	}
+	// The brand already carries its article. Prepending another produced
+	// "The The Study Hub Team" at the foot of every email, including the
+	// notice sent to 23 families. Contains("Team") happily passed that.
+	if strings.Contains(body, "The The") {
+		t.Error("sign-off doubles the article — the brand name already begins with \"The\"")
+	}
 	// With no logo configured (production today), the wordmark carries the brand.
 	if !strings.Contains(body, "The Study Hub") {
 		t.Error("brand name must appear whether or not a logo is set")
