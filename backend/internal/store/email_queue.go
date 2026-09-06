@@ -95,6 +95,18 @@ func ProcessEmailQueue(db *DB) int {
 
 	count := 0
 	for _, j := range jobs {
+		// Asked before sending, not after: core.SendEmail reports success for a
+		// suppressed message (see its comment), so a queue that only looked at
+		// the error would stamp status='sent' and tick the delivery heartbeat
+		// while nothing left the building — the precise failure shape 0048
+		// exists to catch.
+		if !core.AllowedRecipient(j.to) {
+			db.Exec(`UPDATE email_queue SET status='suppressed', last_error=? WHERE id=?`,
+				"not in OUTBOUND_ALLOWLIST", j.id)
+			core.Logger.Warn("email_queue: suppressed", "id", j.id, "to", j.to, "subject", j.subject)
+			count++
+			continue
+		}
 		err := core.SendEmail(j.to, j.subject, j.body)
 		count++
 		if err == nil {
@@ -125,7 +137,7 @@ func ProcessEmailQueue(db *DB) int {
 // purgeOldEmailQueueRows drops sent/failed rows older than 90 days. Keeps
 // the table from growing unbounded over years of operation.
 func PurgeOldEmailQueueRows(db *DB) {
-	res, err := db.Exec(`DELETE FROM email_queue WHERE status IN ('sent','failed') AND created_at < NOW() - INTERVAL '90 days'`)
+	res, err := db.Exec(`DELETE FROM email_queue WHERE status IN ('sent','failed','suppressed') AND created_at < NOW() - INTERVAL '90 days'`)
 	if err != nil {
 		core.Logger.Error("email_queue: purge failed", "err", err)
 		return

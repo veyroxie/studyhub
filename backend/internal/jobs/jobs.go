@@ -71,6 +71,14 @@ func StartJobs(ctx context.Context, wg *sync.WaitGroup, db *store.DB) {
 	for k, v := range externalJobLimits {
 		jobLimits[k] = v
 	}
+	// An allowlist mutes nearly every send by design, so "no delivery in a
+	// week" stops being evidence of a broken transport and becomes the
+	// expected state. Watching it anyway would train the operator to ignore
+	// the alert that matters — so the check states plainly that it is off.
+	if os.Getenv("OUTBOUND_ALLOWLIST") != "" {
+		delete(jobLimits, "email-delivery")
+		core.Logger.Warn("OUTBOUND_ALLOWLIST is set — mail to anyone else is dropped, and the email-delivery health check is disabled")
+	}
 	for _, j := range jobs {
 		wg.Add(1)
 		go runEvery(ctx, wg, j.every, j.name, j.fn, db)

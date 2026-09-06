@@ -82,33 +82,9 @@ type resendRequest struct {
 	HTML    string   `json:"html"`
 }
 
-// AllowedRecipient gates every outbound message against OUTBOUND_ALLOWLIST, a
-// comma-separated list of addresses. When set, mail to anyone else is dropped
-// rather than sent — the safety valve for working on a live system whose
-// address book is 24 real families.
-//
-// Deliberately a DROP, not a redirect: rewriting the recipient would put one
-// parent's invoice in another person's inbox, which is worse than sending
-// nothing. Empty list means normal operation.
-func AllowedRecipient(to string) bool {
-	list := strings.TrimSpace(os.Getenv("OUTBOUND_ALLOWLIST"))
-	if list == "" {
-		return true
-	}
-	for _, allowed := range strings.Split(list, ",") {
-		if strings.EqualFold(strings.TrimSpace(allowed), strings.TrimSpace(to)) {
-			return true
-		}
-	}
-	return false
-}
-
+// The OUTBOUND_ALLOWLIST gate lives in core.SendEmail, the single choke point
+// every send already passes through — including the dev stdout mailer.
 func (m *resendMailer) Send(to, subject, htmlBody string) error {
-	if !AllowedRecipient(to) {
-		core.Logger.Warn("outbound suppressed — recipient not in OUTBOUND_ALLOWLIST",
-			"to", to, "subject", subject)
-		return nil
-	}
 	body, err := json.Marshal(resendRequest{
 		From:    m.from,
 		To:      []string{to},

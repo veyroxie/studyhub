@@ -38,7 +38,9 @@ dated section when you cut a deploy.
 ### Added
 - A testing safety valve for email: set OUTBOUND_ALLOWLIST to one or more
   addresses and everything else is dropped, so work against live data
-  cannot reach real families.
+  cannot reach real families. Dropped messages are recorded as "suppressed"
+  with the reason, so the send log still shows what would have gone out
+  rather than claiming it was delivered.
 
 ### Fixed
 - The hourly health check no longer emails a list of healthy jobs after

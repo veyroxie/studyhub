@@ -992,8 +992,56 @@ func TestOutboundAllowlist(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Setenv("OUTBOUND_ALLOWLIST", c.list)
-		if got := mailer.AllowedRecipient(c.to); got != c.want {
+		if got := core.AllowedRecipient(c.to); got != c.want {
 			t.Errorf("list=%q to=%q: got %v want %v — %s", c.list, c.to, got, c.want, c.why)
 		}
+	}
+}
+
+// TestOutboundAllowlist_SuppressedIsNotSent locks the distinction the first
+// version of the allowlist lost.
+//
+// Suppression returns nil so that no handler mistakes a deliberate mute for a
+// failure. The queue therefore saw success, stamped status='sent', and ticked
+// the email-delivery heartbeat — reporting a healthy transport while nothing
+// left the building. That is the exact shape of the outage the heartbeat was
+// built to catch, reintroduced by the safety valve meant to prevent damage.
+func TestOutboundAllowlist_SuppressedIsNotSent(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	db.Exec(`DELETE FROM email_queue`)
+	db.Exec(`DELETE FROM job_heartbeats`)
+	t.Setenv("OUTBOUND_ALLOWLIST", "etee3001@gmail.com")
+
+	blocked, err := store.QueueEmail(db, 1, "parent@example.com", "Invoice", "body")
+	if err != nil {
+		t.Fatalf("queue blocked email: %v", err)
+	}
+	allowed, err := store.QueueEmail(db, 1, "etee3001@gmail.com", "Invoice", "body")
+	if err != nil {
+		t.Fatalf("queue allowed email: %v", err)
+	}
+	store.ProcessEmailQueue(db)
+
+	status := func(id int64) string {
+		var s string
+		if err := db.QueryRow(`SELECT status FROM email_queue WHERE id=?`, id).Scan(&s); err != nil {
+			t.Fatalf("read status of %d: %v", id, err)
+		}
+		return s
+	}
+	if got := status(blocked); got != "suppressed" {
+		t.Errorf("a dropped message must be visibly suppressed, got %q — an admin reading the log would believe this parent was emailed", got)
+	}
+	if got := status(allowed); got != "sent" {
+		t.Errorf("the allowed address must still send, got %q", got)
+	}
+
+	// A suppressed message is not evidence the transport works.
+	var heartbeats int
+	db.QueryRow(`SELECT COUNT(*) FROM job_heartbeats WHERE name='email-delivery' AND detail=?`,
+		"parent@example.com").Scan(&heartbeats)
+	if heartbeats != 0 {
+		t.Error("a suppressed message must not record a delivery heartbeat")
 	}
 }

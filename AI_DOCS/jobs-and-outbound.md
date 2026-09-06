@@ -171,7 +171,7 @@ production is HTTPS-only (`ws.go:21-27`). `ALLOWED_ORIGIN` is appended at upgrad
 
 ## OUTBOUND_ALLOWLIST — working safely against live data
 
-`mailer.AllowedRecipient` drops any message whose recipient is not in
+`core.SendEmail` drops any message whose recipient is not in
 `OUTBOUND_ALLOWLIST` (comma-separated) when that variable is set. The address
 book here is two dozen real families, so a stray test send is not recoverable.
 
@@ -182,6 +182,24 @@ see what would have gone out. Empty (the default) means normal operation.
 
 Distinct from `OUTBOUND_ENABLED=0`, which stops everything; this lets a
 developer keep receiving mail while parents receive none.
+
+The gate sits in `core.SendEmail` rather than in the mailer because that is the
+single choke point every send already passes through (~15 handlers, the queue,
+the cron alerts, and the dev stdout mailer). It returns nil, not an error: a
+dozen callers treat a send failure as a reason to log loudly or unwind, and a
+deliberate mute is neither.
+
+That nil is why `store.ProcessEmailQueue` asks `core.AllowedRecipient` BEFORE
+sending and writes `status='suppressed'` with the reason in `last_error`. The
+first version of this feature did not, so a dropped message was stamped `sent`
+and ticked the `email-delivery` heartbeat -- a healthy-looking transport with
+nothing leaving the building, which is the exact outage 0048 was built to
+catch. `TestOutboundAllowlist_SuppressedIsNotSent` locks it.
+
+`StartBackgroundJobs` drops `email-delivery` from the watched limits entirely
+while the allowlist is set, and says so in the log: with near-total suppression
+by design, "no delivery in a week" is the expected state, and an alert that
+always fires is one the operator learns to ignore.
 
 ## Outbound mail: watch DELIVERY, not the queue
 
