@@ -54,5 +54,31 @@ TEST_DATABASE_URL="$DSN" go test ./internal/handlers/ \
   grep -E 'compared|PASS|FAIL|legacy said' || true
 
 echo
+echo "==> Pricing coverage after migration (0051-0053, real data) ..."
+# What the schedule differ cannot tell us: how much of the tier backfill
+# actually landed. A migration that applies without error can still leave most
+# of the estate unpriceable, which is the state this rework exists to end.
+docker exec "$CONTAINER" psql -U stratum -d studyhub_dryrun -q -c "
+SELECT COALESCE(pc.name, '(no category)') AS category,
+       CASE WHEN COALESCE(c.default_tier_name,'') = '' THEN '(needs a tier)'
+            ELSE c.default_tier_name END AS tier,
+       COUNT(*) AS classes
+  FROM classes c
+  LEFT JOIN pricing_categories pc ON pc.id = c.pricing_category_id
+ WHERE c.deleted_at IS NULL
+ GROUP BY 1,2 ORDER BY 1,3 DESC;"
+
+echo "    Live enrolments still needing a tier (Nadine's to-do list):"
+docker exec "$CONTAINER" psql -U stratum -d studyhub_dryrun -q -c "
+SELECT c.name AS class, COUNT(*) AS students
+  FROM enrollments e
+  JOIN classes c ON c.id = e.class_id
+  LEFT JOIN pricing_categories pc ON pc.id = c.pricing_category_id
+ WHERE e.ended_on IS NULL AND c.deleted_at IS NULL
+   AND COALESCE(e.tier_name,'') = ''
+   AND COALESCE(pc.credit_covered, FALSE) = FALSE
+ GROUP BY 1 ORDER BY 2 DESC, 1;"
+
+echo
 echo "PASS above means the migrated data answers identically to the old rule."
 echo "Any 'legacy said' line names a class and date that diverged — do not deploy."
