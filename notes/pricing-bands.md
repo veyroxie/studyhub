@@ -425,3 +425,86 @@ SELECT s.first_name || ' ' || s.last_name AS student, c.name, COUNT(*) AS slots
 
 Two students on twice-weekly tuition out of 66. Small by usage, so it earns a
 price dimension and a guard -- not its own subsystem.
+
+## 9. Confirmed prices and rules (Nadine and Ying Quah, 02/09; Ely 09-06)
+
+### Twice-a-week prices
+
+Given on the OLD bands, mapped onto the new ones by the rule already agreed
+(new `1-2` takes the old `1-3` price; `3-4` and `5-6` both take the old `4-6`):
+
+| Category | Tier | 1x weekly | 2x weekly |
+| --- | --- | --- | --- |
+| Group | Level 1-2 | 240 | 450 |
+| Group | Level 3-4 | 260 | 490 |
+| Group | Level 5-6 | 260 | 490 |
+| Private | Level 1-2 | 480 | 930 |
+| Private | Level 3-4 | 520 | 1010 |
+| Private | Level 5-6 | 520 | 1010 |
+
+Every 2x price is exactly `2 x weekly - 30`. Ying Quah confirmed the RM30
+figure explicitly ("like rm30 discount compared to once a week?" -> "yes").
+
+**Stored as prices, not as a rule.** The RM30 is a fact about today's numbers,
+not a policy: encoding it as `2x - 30` would silently move every twice-weekly
+price the next time a weekly rate changes. Six stored numbers, six things
+Nadine can edit.
+
+### Invoice presentation (Ying Quah, 02/09)
+
+ONE line, with the frequency in the name:
+
+```
+  Group Class Level 4 (Twice a week)          RM 490.00
+```
+
+NOT two lines of 260 with a -30 discount beneath. Same total, and she chose
+the first. This is a rendering rule for the invoice line, not a pricing rule.
+
+### A month is a month, not four weeks
+
+The monthly price is FLAT whether the month has four teaching weeks or five.
+A fifth lesson is not a bigger subscription -- it is an ADD-ON, charged
+prorated, on its own invoice line. Ying Quah: "if they come for 5 lessons,
+we'll consider that as add on lesson, which will charge with the prorated
+price. But this seldom happened."
+
+Load-bearing: it rules out counting sessions to derive the base fee. The
+subscription is a fixed monthly amount; only extras are counted.
+
+### Self-Study: free while credits last, flagged when they run out
+
+Ely 09-06: "self study charges nothing if student has self study credits. add
+a check per student whether has credits, so when scheduling self study will
+flag any students with no more credits."
+
+So Self-Study is not unconditionally zero -- it is zero WHILE the student has
+credits. The check belongs at SCHEDULING time, not at invoice time: a parent
+finding out at month end that a session was chargeable is the failure this
+prevents.
+
+The ledger already supports it. `replacement_credits` holds minutes with
+`earned`/`used` rows and a `category` separating class from self-study
+(`handlers_replacement.go:156`), so the balance is a query, not a new table.
+
+### Two Private classes keep their own price, for now
+
+`Teacher Chiying (Aria)` (80) and `Teacher Nadine (Aleena)` (30) stay as they
+are pending Nadine. The resolution order therefore keeps a per-class rate
+winning over the tier price -- which the code must support anyway for genuine
+one-offs.
+
+### The mistyped class is renamed, not deleted
+
+`Teacher Chiying Aria)` gets its missing bracket. PENDING one fact: if the two
+Chiying/Aria classes run on different days, this is not a duplicate at all --
+it is a twice-weekly Private student whose second slot was typed wrong, and it
+needs a tier like any other.
+
+## 10. Open, not blocking
+
+- **Add-on pricing for a 2x student.** A fifth lesson for a 1x student prorates
+  cleanly (240/4). For a 2x student, 450/8 = 56.25 rather than 60. Nobody has
+  been asked which is intended, and Ying Quah says it seldom happens. Deferred
+  rather than guessed.
+

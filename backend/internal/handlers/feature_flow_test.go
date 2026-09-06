@@ -1045,3 +1045,65 @@ func TestOutboundAllowlist_SuppressedIsNotSent(t *testing.T) {
 		t.Error("a suppressed message must not record a delivery heartbeat")
 	}
 }
+
+// TestPricingCatalog_SeededAndCannotHoldAZero locks migration 0051.
+//
+// Two separate claims. First, the prices Nadine gave on 02/09 are the prices
+// in the table — a seed nobody checks is a seed that drifts, and these are
+// what parents are charged. Second, a plan priced at 0 is REFUSED, because a
+// zero that looks like a price is the exact bug this whole change exists to
+// close: 34 classes resolving to 0 and being skipped in silence.
+func TestPricingCatalog_SeededAndCannotHoldAZero(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+
+	// Confirmed by Nadine 02/09; twice-weekly is 2x weekly minus RM30, which
+	// Ying Quah confirmed. Stored as prices, so the test asserts prices.
+	want := []struct {
+		category, tier string
+		perWeek        int
+		fee            float64
+	}{
+		{"PC_group", "Level 1-2", 1, 240}, {"PC_group", "Level 1-2", 2, 450},
+		{"PC_group", "Level 3-4", 1, 260}, {"PC_group", "Level 3-4", 2, 490},
+		{"PC_group", "Level 5-6", 1, 260}, {"PC_group", "Level 5-6", 2, 490},
+		{"PC_private", "Level 1-2", 1, 480}, {"PC_private", "Level 1-2", 2, 930},
+		{"PC_private", "Level 3-4", 1, 520}, {"PC_private", "Level 3-4", 2, 1010},
+		{"PC_private", "Level 5-6", 1, 520}, {"PC_private", "Level 5-6", 2, 1010},
+	}
+	for _, w := range want {
+		var got float64
+		err := db.QueryRow(`SELECT monthly_fee FROM pricing_plans
+			WHERE category_id=? AND tier_name=? AND sessions_per_week=? AND deleted_at IS NULL`,
+			w.category, w.tier, w.perWeek).Scan(&got)
+		if err != nil {
+			t.Errorf("%s %s %dx/week: not seeded: %v", w.category, w.tier, w.perWeek, err)
+			continue
+		}
+		if got != w.fee {
+			t.Errorf("%s %s %dx/week: fee is %.2f, Nadine quoted %.2f", w.category, w.tier, w.perWeek, got, w.fee)
+		}
+	}
+
+	// Self-Study carries no plan: it bills nothing WHILE credits remain, which
+	// is a different statement from "costs 0" and must not be stored as one.
+	if n := countRows(t, db, `SELECT COUNT(*) FROM pricing_plans WHERE category_id='PC_selfstudy'`); n != 0 {
+		t.Errorf("Self-Study has %d priced plans; it is credit-covered and must have none", n)
+	}
+	var creditCovered bool
+	db.QueryRow(`SELECT credit_covered FROM pricing_categories WHERE id='PC_selfstudy'`).Scan(&creditCovered)
+	if !creditCovered {
+		t.Error("Self-Study must be credit_covered, or it will bill as ordinary tuition")
+	}
+
+	// The constraint, not the convention: a zero price cannot be stored at all.
+	if _, err := db.Exec(`INSERT INTO pricing_plans(id,tenant_id,category_id,tier_name,sessions_per_week,monthly_fee)
+		VALUES('PP_zero',1,'PC_group','Level 1-2',3,0)`); err == nil {
+		t.Error("a plan priced at 0 was accepted — the silent-zero hole is still open")
+	}
+
+	// Capitalisation was standardised, so a name-keyed grouping cannot split.
+	if n := countRows(t, db, `SELECT COUNT(*) FROM classes WHERE deleted_at IS NULL AND lower(name)='self-study' AND name<>'Self-Study'`); n != 0 {
+		t.Errorf("%d Self-Study classes still spelled inconsistently", n)
+	}
+}
