@@ -37,7 +37,18 @@ docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 docker run --rm -d --name "$CONTAINER" \
   -e POSTGRES_USER=stratum -e POSTGRES_PASSWORD=stratum_dev -e POSTGRES_DB=studyhub_dryrun \
   -p "${PORT}:5432" postgres:16-alpine >/dev/null
-until docker exec "$CONTAINER" pg_isready -U stratum >/dev/null 2>&1; do sleep 1; done
+# Wait for the DATABASE, not for the server. pg_isready answers yes during
+# Postgres's init phase -- it starts a temporary server to run the init
+# scripts, and studyhub_dryrun does not exist yet. That race made the restore
+# fail intermittently with "database does not exist".
+for _ in $(seq 1 60); do
+  docker exec "$CONTAINER" psql -U stratum -d studyhub_dryrun -c 'SELECT 1' >/dev/null 2>&1 && break
+  sleep 1
+done
+if ! docker exec "$CONTAINER" psql -U stratum -d studyhub_dryrun -c 'SELECT 1' >/dev/null 2>&1; then
+  echo "throwaway Postgres never became ready" >&2
+  exit 1
+fi
 
 echo "==> Restoring the copy ..."
 # The dump names the production role; map it onto the local one.
