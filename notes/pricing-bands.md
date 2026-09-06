@@ -1,6 +1,6 @@
 # Pricing rework: level moves onto the enrolment, two bands become three
 
-Status: PLAN. No code written. Blocked on the two discovery queries in step 0.
+Status: PLAN. No code written. Audit complete; ready to implement.
 
 Agreed with Ely 2026-09-06, from Nadine's requirements:
 
@@ -33,10 +33,70 @@ left with no priced lines and no package amount is skipped entirely
 Same failure shape as the announcements audience and the backup upload: a value
 that matches nothing, answered with silence, healthy-looking from outside.
 
-## 0. Prerequisites — run these BEFORE writing any migration
+## 0. Audit — production, 2026-09-06
 
-The backfill differs completely depending on the answers, so these are
-prerequisites, not curiosities. Read-only; `make psql`.
+Answered. The queries that produced this are kept at the end of this section
+so any claim below can be re-verified rather than trusted.
+
+**37 classes. 34 of them cannot be priced.** Only three can: one Private class
+with a band, and two Group classes carrying a `monthly_fee_override`.
+
+```
+  Group    26 ---- "Level 3 & 4"      8   band derivable FROM THE NAME
+                   "Self-Study"      10   not tuition -- own category
+                   "Level 1 & 2"      3   band derivable FROM THE NAME
+                   "Mandarin"         2   subject, no level anywhere
+                   Teacher Nadine     1   1-to-1, session_rate 30
+                   (2 more)           2   priced by monthly_fee_override
+  Private  11 ---- "Teacher X (Name)"10   1-to-1, negotiated; 1 has a rate
+                   (1 more)           1   the only banded class in the system
+```
+
+Five findings that change the plan:
+
+1. **The level is in the class NAME, not the band column.** "Level 1 & 2" and
+   "Level 3 & 4" — 11 classes — can be banded automatically by the migration.
+   No hand-mapping, and no question for Nadine: the names already match the
+   new band vocabulary exactly.
+
+2. **Self-Study is 10 of the 34 and is not tuition.** It has no level and
+   should never price off a level matrix; it is what the subscription's
+   self-study credits cover. It needs its own category, not a band.
+
+3. **Private is 1-to-1, named `Teacher X (Student)`, individually
+   negotiated.** Two carry a `session_rate` (80 and 30), the rest carry
+   nothing. A level matrix is the wrong instrument for these — they need a
+   per-class rate that is REQUIRED rather than optional.
+
+4. **`students.level_band` is empty for all 66 students.** Removing the
+   student-band fallback from `rates.go:45-48` is therefore a genuine no-op
+   today, not a behaviour change. This de-risks the largest part of the work.
+
+5. **No September invoice exists for `STU_20260419163110116`.** Retroactive
+   billing is a clean insert. No void-and-reissue, no amended invoice for a
+   parent to be confused by.
+
+### What is actually billing today
+
+The matrix prices almost nothing, yet only one student was skipped. So the
+money is coming from `students.package_amount` — the flat subscription — and
+the class matrix is close to vestigial. The one skipped student is the one who
+has neither a package nor a priceable class.
+
+That matters for scope: this rework is not repairing the main billing path. It
+is making per-class pricing work so that add-ons and prorating (the confirmed
+subscription model) have something correct to price against.
+
+### Data hygiene found on the way
+
+- `Self-Study` (8) and `Self-study` (2) differ only in case.
+- `Teacher Chiying (Aria)` has `session_rate` 80; `Teacher Chiying Aria)` —
+  missing the opening bracket — has 0. Almost certainly a mistyped duplicate
+  of the same class. Needs a human decision, not a migration.
+
+### The queries
+
+Read-only; `make psql`.
 
 ```sql
 -- Q1. Are the unpriceable classes missing a band, or carrying one the tier
@@ -86,22 +146,44 @@ exactly what this rework resolves — one band source for both.
 
 ## 2. Target shape
 
-Resolution order, single definition, used by both paths:
+The audit rules out a fixed grid. Three of the four class families do not fit
+one: Self-Study has no level, Private is negotiated per student, and Mandarin
+is a subject with no level recorded anywhere. A wider grid would leave the same
+holes in different places.
+
+So the matrix becomes user-defined, which is also what Ely asked for on 09-06 —
+Nadine adds a category, names its tiers, sets their prices, with no migration
+and no developer.
 
 ```
-  enrollment.level_band          <- the answer, per student per class
-    -> class.level_band          <- fallback while enrolments are unbanded
-      -> UNPRICEABLE (error)     <- never 0, never silently skipped
+  CATEGORY          TIERS (named, ordered, priced)
+  ---------------   ---------------------------------------------
+  Group             Level 1-2 (240)  Level 3-4 (260)  Level 5-6 (260)
+  Private           per class, rate REQUIRED at save time
+  Self-Study        covered by subscription credits (0, deliberately)
+  Music, ...        whatever she creates next
 ```
 
-`students.level_band` leaves the chain. It cannot express "Level 1 Mandarin,
-Level 2 Math", so keeping it as a fallback would keep producing a confidently
-wrong answer for exactly the case Nadine described.
+A class picks a category. An enrolment picks a tier within that category —
+which is what makes "Level 1 Mandarin and Level 2 Math for one student"
+expressible, and is the whole reason level cannot live on the student.
+
+Resolution order, one definition, used by both billing paths:
+
+```
+  enrollment.tier          <- the answer, per student per class
+    -> class default tier  <- for a category whose tier does not vary
+      -> class rate        <- Private: negotiated, required, no tier
+        -> UNPRICEABLE     <- an error at SAVE time, never a 0 at bill time
+```
+
+`students.level_band` leaves the chain. It cannot express two subjects at two
+levels, so keeping it as a fallback would keep producing a confidently wrong
+answer for exactly the case Nadine described. All 66 rows are empty, so
+removing it changes no one's bill today.
 
 **It is not dropped in this change.** Stop writing it, stop reading it, leave
-the column and its data in place. A dropped column cannot be rolled back, and
-the values in it are the only record of what someone believed a student's level
-was — useful as the source for the enrolment backfill.
+the column and its data. A dropped column cannot be rolled back.
 
 ## 3. Migration path
 
@@ -134,16 +216,35 @@ correct for something that changes what people are charged.
 
 ### 3c. Band mapping for the existing classes
 
-Driven by Q1. `1-3` maps to... `1-2` or `3-4`? It straddles the new boundary,
-so **this is Nadine's call per class, not a rule I can write.** The migration
-maps what is unambiguous and leaves the rest empty for step 3d.
+No hand-mapping needed, and no question for Nadine. Confirmed by Ely 09-06:
 
-### 3d. Make unpriceable loud
+| New tier | Price | From |
+| --- | --- | --- |
+| Level 1-2 | 240 / 480 | today's `1-3` |
+| Level 3-4 | 260 / 520 | today's `4-6`; Level 3 discounted by hand |
+| Level 5-6 | 260 / 520 | today's `4-6` |
 
-`cron.go:491` and `:506` currently `Warn` and continue. Warning into a log
-nobody reads is how a student went a month without an invoice. These become a
-visible admin surface: a "classes needing a price" list, shown where Nadine
-will see it. No new alert email — she is not the on-call for this.
+The 11 classes named "Level 1 & 2" and "Level 3 & 4" map straight onto the new
+tier names, so the migration derives them from the class name.
+
+The remaining 23 do NOT get a guess: Self-Study moves to its own category,
+Private to a required per-class rate, and Mandarin has no level recorded
+anywhere and is surfaced for a human. Deriving a band for those would be
+inventing a price.
+
+### 3d. No class may exist without a price (confirmed 09-06)
+
+`cron.go:491` and `:506` currently `Warn` and carry on. Warning into a log
+nobody reads is how a student went a full month uninvoiced.
+
+The rule moves EARLIER, to where the class is saved: a class whose category,
+tier and rate do not resolve to a price is refused at save time
+(`handlers_classes.go:238` and `:359`). The bad state then cannot be created,
+rather than being discovered a month later.
+
+Because the 34 existing classes predate the rule, the same check also drives a
+"classes needing a price" list in the admin UI so the backlog is visible and
+finite. No alert email — Nadine is not on-call for this.
 
 ### 3e. Switch both pricing paths to the enrolment band
 
@@ -151,42 +252,47 @@ will see it. No new alert email — she is not the on-call for this.
 
 ## 4. Retroactive September
 
-Depends on Q3.
+Confirmed by the audit: **no September invoice exists** for
+`STU_20260419163110116`. So this is a clean insert — nothing to void, nothing
+to amend, no revised invoice for a parent to query.
 
-- **No September invoice exists:** delete nothing. Once pricing lands, run
-  `generateMonthlyInvoices` for the month; the dedup guard
-  (`cron.go:333`) lets it through precisely because no row exists.
-- **A zero or partial invoice exists:** the guard will silently refuse to
-  issue a second one, and "retroactive" would quietly do nothing. The row is
-  voided and reissued rather than amended in place — an amended invoice that a
-  parent has already seen is a support conversation; a voided one with a
-  replacement has an audit trail.
+Once pricing lands, `generateMonthlyInvoices` runs for the month and the dedup
+guard (`cron.go:333`) lets it through precisely because no row exists.
 
-Either way this runs as an explicit one-off with the output checked against
-Nadine's expectation before anything is sent, and while `OUTBOUND_ALLOWLIST` is
-still set, so no parent receives a surprise bill mid-verification.
+Run as an explicit one-off with the output checked against Nadine's
+expectation before anything is sent, and while `OUTBOUND_ALLOWLIST` is still
+set, so no parent can receive a surprise bill mid-verification.
 
-## 5. Settings page (separate commit, lands after)
+## 5. Settings page and the category editor (separate commit, lands after)
 
 `_editPricingModal` and the matrix render currently live in
 `calendar.js:1064-1094, 1208`. Nobody looks for pricing on the Schedule page.
 
-This has no data dependency on anything above — it moves existing UI to a new
-home. Kept as its own commit so a rollback of the pricing model does not drag
-the relocation with it, and vice versa.
+The new screen does more than move: it is where Nadine adds a category, names
+its tiers and sets their prices. Editing a rate takes effect from the change
+forward, never backwards — an invoice already raised keeps the price it was
+raised at, the same rule migration `0047` established for schedules.
+
+Kept as its own commit so a rollback of the pricing model does not drag the
+relocation with it, and vice versa.
 
 ## 6. Risks
 
 | Risk | Handling |
 | --- | --- |
-| A backfilled band is wrong, so a parent is billed the wrong amount | Every band written by the backfill is derived, never invented. Nadine reviews the mapping before the first run. |
+| A derived tier is wrong, so a parent is billed the wrong amount | Only the 11 classes whose NAME states the level are derived. The other 23 are surfaced, never guessed. |
 | Rollback loses the level data | `students.level_band` keeps its data; nothing is dropped in this change. |
-| The `1-3` to `1-2`/`3-4` split is ambiguous | Not decided in code. Left empty and surfaced for Nadine. |
-| Retroactive run double-bills | Dedup guard plus an explicit dry-run check before sending. |
-| Bands drift out of sync between the two billing paths again | One resolution chain, one place. |
+| Retroactive run double-bills | Dedup guard, plus a dry run checked before anything is sent, with the allowlist still on. |
+| The two billing paths drift apart again | One resolution chain, one place, used by both. |
+| A user-defined tier is created with no price, recreating the hole | A tier with no price cannot be saved, and a class cannot reference a tier that has none. |
+| Self-Study priced as tuition, double-charging on top of the subscription | Its own category at 0 by design, with a comment saying why 0 is correct here and nowhere else. |
 
-## Open question for Nadine
+## 7. Not in this change
 
-Which band does each current `1-3` class become — `1-2` or `3-4`? The old band
-straddles the new boundary, so there is no correct automatic answer, and
-guessing changes what a parent pays.
+- **Duplicate class.** `Teacher Chiying Aria)` looks like a mistyped copy of
+  `Teacher Chiying (Aria)`. A human decides whether to delete it; a migration
+  must not.
+- **`Self-Study` vs `Self-study`.** Case-inconsistent names. Harmless while
+  nothing keys on the name; worth tidying when someone is in there.
+- **Mandarin's level.** Two classes with no level recorded anywhere. Surfaced
+  in the "needs a price" list for Nadine to set.
