@@ -76,19 +76,22 @@ else
   echo "$COPY_COUNTS" | sed 's/^/      /'
 fi
 
-echo "==> Applying pending migrations to the copy, then diffing resolvers ..."
-# The test harness boots InitDB, which runs the migrations, then the differ
-# compares the pre-migration rule against the migrated tables.
+echo "==> Applying pending migrations to the copy ..."
+# cmd/migrate, NOT `go test`. The test harness DELETEs every table before it
+# runs (feature_flow_test.go:41) and reseeds demo data, so running it here
+# destroyed the production copy and then measured eight seeded classes --
+# while printing PASS. The resolver differ still runs in CI against a fresh
+# schema, where synthetic data is the point; it cannot tell you anything about
+# production from inside a harness that deletes production first.
 cd backend
-TEST_DATABASE_URL="$DSN" go test ./internal/handlers/ \
-  -run 'TestScheduleBackfill_MatchesLegacyResolver' -count=1 -v 2>&1 |
-  grep -E 'compared|PASS|FAIL|legacy said' || true
+DATABASE_URL="$DSN" go run ./cmd/migrate 2>&1 | sed 's/^/    /'
+cd ..
 
 echo
 echo "==> Pricing coverage after migration (0051-0053, real data) ..."
-# What the schedule differ cannot tell us: how much of the tier backfill
-# actually landed. A migration that applies without error can still leave most
-# of the estate unpriceable, which is the state this rework exists to end.
+# The point of the whole script: how much of the tier backfill actually lands
+# on real data. A migration that applies without error can still leave most of
+# the estate unpriceable, which is the state this rework exists to end.
 docker exec "$CONTAINER" psql -U stratum -d studyhub_dryrun -q -c "
 SELECT COALESCE(pc.name, '(no category)') AS category,
        CASE WHEN COALESCE(c.default_tier_name,'') = '' THEN '(needs a tier)'
@@ -116,5 +119,5 @@ if [ "$COPY_TRUSTWORTHY" -eq 0 ]; then
   echo "production, so every check above ran against partial data."
   exit 1
 fi
-echo "PASS above means the migrated data answers identically to the old rule."
-echo "Any 'legacy said' line names a class and date that diverged — do not deploy."
+echo "Coverage above is measured on a real copy of production, after the real"
+echo "migrations. '(needs a tier)' is work for Nadine, not a bug."
