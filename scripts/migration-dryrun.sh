@@ -105,7 +105,10 @@ echo "==> Pricing coverage after migration (0051-0053, real data) ..."
 # the estate unpriceable, which is the state this rework exists to end.
 docker exec "$CONTAINER" psql -U stratum -d studyhub_dryrun -q -c "
 SELECT COALESCE(pc.name, '(no category)') AS category,
-       CASE WHEN COALESCE(c.default_tier_name,'') = '' THEN '(needs a tier)'
+       CASE WHEN COALESCE(pc.credit_covered, FALSE) THEN '(credit-covered)'
+            WHEN COALESCE(c.monthly_fee_override,0) > 0
+              OR COALESCE(c.session_rate,0) > 0        THEN '(own price)'
+            WHEN COALESCE(c.default_tier_name,'') = ''  THEN '(needs a tier)'
             ELSE c.default_tier_name END AS tier,
        COUNT(*) AS classes
   FROM classes c
@@ -115,14 +118,20 @@ SELECT COALESCE(pc.name, '(no category)') AS category,
 
 echo "    Live enrolments still needing a tier (Nadine's to-do list):"
 docker exec "$CONTAINER" psql -U stratum -d studyhub_dryrun -q -c "
-SELECT c.name AS class, COUNT(*) AS students
+SELECT c.name AS class, c.day, COUNT(*) AS students
   FROM enrollments e
   JOIN classes c ON c.id = e.class_id
   LEFT JOIN pricing_categories pc ON pc.id = c.pricing_category_id
  WHERE e.ended_on IS NULL AND c.deleted_at IS NULL
    AND COALESCE(e.tier_name,'') = ''
    AND COALESCE(pc.credit_covered, FALSE) = FALSE
- GROUP BY 1 ORDER BY 2 DESC, 1;"
+   -- A class carrying its own price needs no tier: the tier is only how a
+   -- price gets LOOKED UP, and these already have one. Listing them as work
+   -- pads Nadine's list with things that are already done, which is the
+   -- fastest way to get a list ignored.
+   AND COALESCE(c.monthly_fee_override,0) = 0
+   AND COALESCE(c.session_rate,0) = 0
+ GROUP BY 1,2 ORDER BY 3 DESC, 1;"
 
 echo
 if [ "$COPY_TRUSTWORTHY" -eq 0 ]; then
