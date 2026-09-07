@@ -80,6 +80,11 @@ Five findings that change the plan:
    billing is a clean insert. No void-and-reissue, no amended invoice for a
    parent to be confused by.
 
+   **CORRECTED 09-07 — the scope was 10x wrong. See section 12.** The insert is
+   still clean, but this student is one of ELEVEN. This finding was read off a
+   log line rather than counted from the invoice table, which is the exact
+   failure the standing warning describes.
+
 ### What is actually billing today
 
 The matrix prices almost nothing, yet only one student was skipped. So the
@@ -355,6 +360,13 @@ Confirmed by the audit: **no September invoice exists** for
 `STU_20260419163110116`. So this is a clean insert — nothing to void, nothing
 to amend, no revised invoice for a parent to query.
 
+**AMENDED 09-07.** Eleven active students are unbilled for September, not one
+(section 12). Two of them — Chase and Luther — hold one tiered class AND one
+unpriced one, so issuing their invoices before Nadine prices Mandarin bills
+them at 240 and silently drops the Mandarin line. That produces exactly the
+amended-invoice-a-parent-queries outcome this section was written to avoid.
+**Step 2 (Nadine) must therefore complete before step 4, not beside it.**
+
 Once pricing lands, `generateMonthlyInvoices` runs for the month and the dedup
 guard (`cron.go:333`) lets it through precisely because no row exists.
 
@@ -538,3 +550,123 @@ Ely's call (09-07): FLAG students whose live enrolments span more than one
 tier, the same way unpriced classes are flagged, and let Nadine decide per
 student. Ask her whether she wants the sum-minus-30 rule applied automatically
 or prefers to set those prices herself.
+
+## 12. Post-deploy re-audit — 09-07, against production after 0051-0054
+
+Migrations 0051-0054 are APPLIED in production (`9c4fa74`, healthy, 0 restarts).
+Verified from the data, not the boot log: all 13 `pricing_plans` rows present
+including `PP_self_overflow` at `hourly_rate` 10.00; all 37 live classes carry a
+`pricing_category_id` (16 Group, 11 Private, 10 Self-Study); 22 classes and 21
+live enrolments carry a tier.
+
+### 12a. Eleven students are unbilled for September, not one
+
+Section 0 finding 5 named one student because it read the boot log. The invoice
+table says eleven, all `status='Active'` with live enrolments, none holding a
+September invoice **of any type** (the control query below drops the `period`
+filter, so an Adhoc invoice would have shown):
+
+```
+  Aria Threw Xin Yu    Carina Poh       Carolina Cho    Chase James Gan
+  Geneva Ruytinx       Joy Kim          Lewis Liew      Luda Lee
+  Luther James Gan     Minjae Kim       Minsung Kim
+```
+
+Not hidden behind sibling billing: no September invoice carries a non-empty
+`sibling_ids`, so the `children[0].id` shape from `billing.js:1587-1589` is not
+masking anyone. Denominator: the 09-01 cron created 15 Monthly invoices against
+26 active students with live enrolments.
+
+Decomposed by what unblocks each one — the count alone is not actionable:
+
+| Group | Students | Unblocked by |
+| --- | --- | --- |
+| Every live enrolment already tiered | Carina Poh, Joy Kim, Lewis Liew, Minjae Kim, Minsung Kim | the switchover alone |
+| One tiered class AND one blank | Chase James Gan, Luther James Gan | Nadine pricing Mandarin, or they bill short |
+| Every enrolment blank | Aria, Carolina Cho, Geneva Ruytinx, Luda Lee | Nadine, entirely |
+
+### 12b. The real "needs a price" backlog, by name
+
+15 classes have no tier. Two have no live students (`Mandarin` with no day set,
+and `Teacher Nadine (Ya Shan)`), so the actionable backlog is 13:
+
+- **Mandarin** (Thursday, 3 live: Chase, Luther, Zayden) — no level recorded anywhere.
+- **Phonics (Aria & Aleena)** — priced by `monthly_fee_override` 239.96, not by tier.
+- **Teacher Nadine (Aleena)** — `session_rate` 30. See 12c.
+- **Ten Private classes**, one live student each, covering nine students: Aria
+  (two slots), Carolina Cho, Geneva, Luda, Gareth, Koki, Zia, Jiho Yoo, Lucas Lin.
+
+### 12c. Two miscategorisations to fix BEFORE the switchover
+
+Both are invisible today and become wrong prices the moment the catalogue goes live.
+
+1. **`Teacher Nadine (Aleena)` sits in `PC_group`.** It is 1-to-1 and named by
+   the Private convention, but its `class_type` is not `Private`, so 0053's
+   backfill filed it under Group. Aleena therefore holds two live `PC_group`
+   enrolments, and the derived sessions-per-week rule will read her as a 2x
+   Group student. Her `package_amount` of 360 masks it right now.
+2. **Aria holds two live `PC_private` enrolments** (Tue and Sat) with
+   `session_rate` 80 on the Saturday one only. This is the concrete instance of
+   the per-class-rate vs 2x-tier conflict left open in section 9 — she is
+   simultaneously a 2x Private student (1010) and a negotiated hourly one.
+
+### 12d. Two plan claims that did NOT survive, and one that did
+
+- **"The two billing paths disagree today" (section 1) is not true on counts.**
+  For all 26 active students with live enrolments,
+  `jsonb_array_length(enrolled_classes)` equals the count of live `enrollments`
+  rows. They may still disagree on WHICH classes; that is what the step-3
+  differ must check. But the switchover is not repairing a live divergence.
+- **OPEN, and it blocks step 3.** Only ONE class in production carries a
+  `level_band` (`4-6`); the other 36 are empty, and `pricing_tiers` has no
+  empty-band row. So the old matrix can price exactly one class — yet the 09-01
+  cron issued 15 invoices, 9 of them to students with `package_amount = 0` and
+  no priceable class. **Something is pricing those invoices that this plan has
+  not identified.** The old-vs-new comparison cannot be trusted until the "old"
+  side is understood, because a differ that models the old path wrongly will
+  report clean.
+- **Survived:** section 0's "(2 more) priced by `monthly_fee_override`" resolves
+  cleanly. `Level 3 & 4` carries override 260.00 and now also tier Level 3-4
+  whose 1x price is also 260.00 — the numbers agree, so override-beats-tier
+  precedence is safe either way.
+
+### The queries
+
+Read-only; `make psql`.
+
+```sql
+-- Q4. Active students with live enrolments and NO September invoice of any
+-- type. The `period` filter is deliberately absent: Monthly rows carry a
+-- period and everything else carries '', so filtering on it hides Adhoc rows.
+SELECT s.id, s.first_name||' '||s.last_name, s.status
+  FROM students s
+ WHERE s.deleted_at IS NULL AND s.status = 'Active'
+   AND EXISTS (SELECT 1 FROM enrollments e
+                WHERE e.student_id = s.id AND e.ended_on IS NULL)
+   AND NOT EXISTS (SELECT 1 FROM invoices i
+                    WHERE i.student_id = s.id AND i.deleted_at IS NULL
+                      AND i.created_on LIKE '2026-09%');
+
+-- Q5. Control: is anyone billed via a sibling invoice attached to a different
+-- child's id? Q4 keys on student_id and would miss them.
+SELECT id, student_id, amount, sibling_ids
+  FROM invoices
+ WHERE deleted_at IS NULL AND created_on LIKE '2026-09%'
+   AND COALESCE(sibling_ids,'') NOT IN ('','[]','null');
+
+-- Q6. Do the two billing paths actually disagree? JSON list vs enrolments.
+SELECT s.id, COALESCE(jsonb_array_length(NULLIF(s.enrolled_classes,'')::jsonb),0) AS json_classes,
+       (SELECT count(*) FROM enrollments e
+         WHERE e.student_id = s.id AND e.ended_on IS NULL) AS live_enrol
+  FROM students s
+ WHERE s.deleted_at IS NULL AND s.status = 'Active';
+
+-- Q7. The backlog by name, with the escape hatches that already price a class.
+SELECT c.id, c.name, c.pricing_category_id, c.day,
+       COALESCE(c.monthly_fee_override,0) AS ovr, COALESCE(c.session_rate,0) AS rate,
+       (SELECT count(*) FROM enrollments e
+         WHERE e.class_id = c.id AND e.ended_on IS NULL) AS live
+  FROM classes c
+ WHERE c.deleted_at IS NULL AND COALESCE(c.default_tier_name,'') = ''
+ ORDER BY c.pricing_category_id, c.name;
+```
