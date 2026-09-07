@@ -359,6 +359,26 @@
       });
     },
 
+    // rosterFor is who the attendance page draws: everyone enrolled on that
+    // date, plus anyone already holding a record for it. The second half is
+    // the guard -- 35 enrolments were created with startedOn set to the day
+    // the row was made, which hid 85 existing August records behind a window
+    // claiming the student had not joined yet (migration 0055).
+    //
+    // The guard reaches only as far as the snapshot carries attendance, which
+    // is 90 days (snapshot_bounded.go). It is defence in depth, not the fix:
+    // 0055 repaired the dates and the enrol form now asks for them, so a
+    // correct startedOn is what makes older dates render.
+    rosterFor(students, classId, dateStr, enrollments, attendance) {
+      var marked = {};
+      (attendance || []).forEach(function(a) {
+        if (a.classId === classId && a.date === dateStr) marked[a.personId] = true;
+      });
+      return (students || []).filter(function(s) {
+        return marked[s.id] || App.Utils.enrolledOn(s, classId, dateStr, enrollments);
+      });
+    },
+
     // holidayCovers is THE holiday range predicate (F4), mirrored by
     // core.HolidayCovers in Go -- keep the two in sync. Missing or malformed
     // endDate (before date) means single-day. Lexical compares: YYYY-MM-DD.

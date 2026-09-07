@@ -317,7 +317,7 @@
 
     const selectedClass    = classes.find(function(c) { return c.id === _attClassId; });
     const enrolledStudents = selectedClass
-      ? students.filter(function(s) { return App.Utils.enrolledOn(s, _attClassId, _attDate, App.Store.get().enrollments); })
+      ? App.Utils.rosterFor(students, _attClassId, _attDate, App.Store.get().enrollments, attendance)
       : [];
 
     const todayRecs    = attendance.filter(function(a) { return a.classId === _attClassId && a.date === _attDate; });
@@ -1048,7 +1048,7 @@
     }
     const selectedClass = myClasses.find(function(c) { return c.id === _attClassId; }) || myClasses[0];
     const enrolledStudents = selectedClass
-      ? students.filter(function(s) { return App.Utils.enrolledOn(s, selectedClass.id, _attDate, App.Store.get().enrollments); })
+      ? App.Utils.rosterFor(students, selectedClass.id, _attDate, App.Store.get().enrollments, attendance)
       : [];
     const todayRecs = attendance.filter(function(a) { return a.classId === selectedClass.id && a.date === _attDate; });
     const presentCount = todayRecs.filter(function(a) { return a.checkIn; }).length;
@@ -1082,7 +1082,7 @@
     var state = App.Store.get();
     var selectedClass = state.classes.find(function(c) { return c.id === _attClassId; });
     if (!selectedClass) return;
-    var enrolledStudents = state.students.filter(function(s) { return App.Utils.enrolledOn(s, _attClassId, _attDate, state.enrollments); });
+    var enrolledStudents = App.Utils.rosterFor(state.students, _attClassId, _attDate, state.enrollments, state.attendance);
     var now = App.Utils.nowTime();
     var today = _attDate || App.Utils.today();
     var newAtt = state.attendance.slice();

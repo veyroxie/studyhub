@@ -99,7 +99,31 @@ DATABASE_URL="$DSN" go run ./cmd/migrate 2>&1 | sed 's/^/    /'
 cd ..
 
 echo
-echo "==> Pricing coverage after migration (0051-0053, real data) ..."
+echo "==> Hidden attendance after migration (0055, real data) ..."
+# 0055 backdates an enrolment start to the student's first attendance record,
+# because 35 rows recorded when the ROW was made and hid 85 real August
+# records behind a window saying the student had not joined yet. "Migration
+# applied" proves nothing here -- the number that matters is how many records
+# are still unreachable from the roster afterwards, which must be zero.
+#
+# Scoped to the EARLIEST stint per student+class, matching what 0055 actually
+# guarantees. A student who left a class and rejoined has attendance from the
+# first stint sitting before the second stint's start, which is correct and
+# would otherwise read as a regression on every future run.
+docker exec "$CONTAINER" psql -U stratum -d studyhub_dryrun -q -c "
+SELECT COUNT(*) AS attendance_rows_before_their_enrolment
+  FROM attendance a
+  JOIN enrollments e ON e.student_id = a.person_id
+                    AND e.class_id  = a.class_id
+                    AND e.tenant_id = a.tenant_id
+ WHERE a.person_type = 'student' AND a.date < e.started_on
+   AND e.started_on = (SELECT MIN(e2.started_on) FROM enrollments e2
+                        WHERE e2.tenant_id  = e.tenant_id
+                          AND e2.student_id = e.student_id
+                          AND e2.class_id   = e.class_id);"
+
+echo
+echo "==> Pricing coverage after migration (0051-0054, 0056, real data) ..."
 # The point of the whole script: how much of the tier backfill actually lands
 # on real data. A migration that applies without error can still leave most of
 # the estate unpriceable, which is the state this rework exists to end.
