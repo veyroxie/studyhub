@@ -248,6 +248,18 @@ func listStudentsPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]model
 	return out, total
 }
 
+// validEnrolmentDate guards the only client-supplied value that reaches
+// enrollments.started_on. The column is TEXT and every comparison against it
+// is a lexical YYYY-MM-DD compare, so an unvalidated "05/08/2026" would store
+// happily and then sort wrong for the life of the row.
+func validEnrolmentDate(s string) bool {
+	if s == "" {
+		return true
+	}
+	_, err := time.Parse("2006-01-02", s)
+	return err == nil
+}
+
 func HandleStudents(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := core.ClaimsFrom(r)
@@ -275,6 +287,10 @@ func HandleStudents(db *store.DB) http.HandlerFunc {
 			// types "John@Email.com" would silently hide the kid from a
 			// parent who logs in as "john@email.com".
 			s.Contact = strings.ToLower(strings.TrimSpace(s.Contact))
+			if !validEnrolmentDate(s.EnrolledFrom) {
+				core.RespondError(w, "enrolledFrom must be YYYY-MM-DD", http.StatusBadRequest)
+				return
+			}
 			if msg := validationError("firstName", s.FirstName, "lastName", s.LastName, "contact", s.Contact); msg != "" {
 				core.RespondError(w, msg, 400)
 				return
@@ -327,7 +343,7 @@ func HandleStudents(db *store.DB) http.HandlerFunc {
 			}
 			recomputeFamilySiblings(db, c, s.FamilyID)
 			recomputeClassEnrollment(db, c, s.EnrolledClasses)
-			store.SyncEnrollments(db, tid, s.ID, s.EnrolledClasses, c.Email)
+			store.SyncEnrollments(db, tid, s.ID, s.EnrolledClasses, c.Email, s.EnrolledFrom)
 			// Ensure the parent (matched by contact email) has a login account.
 			// If not, create one in pending_verification status and email a
 			// set-password link so the parent can claim the account.
@@ -353,6 +369,10 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 				return
 			}
 			s.ID = id
+			if !validEnrolmentDate(s.EnrolledFrom) {
+				core.RespondError(w, "enrolledFrom must be YYYY-MM-DD", http.StatusBadRequest)
+				return
+			}
 			// Same normalisation as create — keep contact matchable against
 			// the lowercased login email parents authenticate with.
 			s.Contact = strings.ToLower(strings.TrimSpace(s.Contact))
@@ -460,7 +480,7 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 			if oldFamilyID != "" && oldFamilyID != s.FamilyID {
 				recomputeFamilySiblings(db, c, oldFamilyID)
 			}
-			store.SyncEnrollments(db, tid, id, s.EnrolledClasses, c.Email)
+			store.SyncEnrollments(db, tid, id, s.EnrolledClasses, c.Email, s.EnrolledFrom)
 			core.LogAudit(db, tid, c.Email, "student_updated", "student", id, s.FirstName+" "+s.LastName)
 			core.Respond(w, s)
 		case http.MethodDelete:

@@ -158,6 +158,10 @@ type Student struct {
 	InactiveOn     string  `json:"inactiveOn,omitempty"`
 	PausedAt       *string `json:"pausedAt,omitempty"`
 	ResumedAt      *string `json:"resumedAt,omitempty"`
+	// EnrolledFrom is write-only transport: the date classes added by this
+	// request start from. No column backs it -- it reaches SyncEnrollments and
+	// is never persisted on the student.
+	EnrolledFrom string `json:"enrolledFrom,omitempty"`
 }
 
 type Family struct {

@@ -538,7 +538,7 @@ func HandleRegistrationApprove(db *store.DB) http.HandlerFunc {
 		// Post-commit: shadow the new enrolment into the join table (B6
 		// dual-write). After commit so a rollback never leaves orphan rows.
 		if enrollStudentID != "" {
-			store.SyncEnrollments(db, store.TenantID(c), enrollStudentID, enrollClassIDs, c.Email)
+			store.SyncEnrollments(db, store.TenantID(c), enrollStudentID, enrollClassIDs, c.Email, "")
 		}
 
 		// Post-commit: enrollment-approved email. Fired only now so a rolled-back

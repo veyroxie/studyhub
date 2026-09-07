@@ -336,6 +336,9 @@
       + '<p class="text-sm text-slate-500 mb-4">' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</p>'
       + '<form id="enroll-classes-form" class="space-y-4">'
       + _multiClassField(s.enrolledClasses || [], state.classes || [], state.staff || [])
+      + _field('Starting from',
+          '<input name="enrolledFrom" type="date" class="form-input" value="' + App.Utils.today() + '" required>'
+          + '<p class="text-xs text-slate-400 mt-1">When newly ticked classes begin. Backdate it if the student has already been attending, or their earlier attendance will not show.</p>')
       + '<div class="flex justify-end gap-3 pt-1">'
       + '<button type="button" onclick="App.Students._viewModal(\'' + studentId + '\')" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>'
@@ -345,8 +348,12 @@
     );
     document.getElementById('enroll-classes-form').addEventListener('submit', async function(e) {
       e.preventDefault();
-      var newClasses = new FormData(e.target).getAll('classIds');
-      var updated = Object.assign({}, s, { enrolledClasses: newClasses });
+      var fd = new FormData(e.target);
+      var newClasses = fd.getAll('classIds');
+      var updated = Object.assign({}, s, {
+        enrolledClasses: newClasses,
+        enrolledFrom: fd.get('enrolledFrom') || ''
+      });
       var submitBtn = e.target.querySelector('button[type="submit"]');
       try {
         await App.Utils.withLoading(submitBtn, async function() {

@@ -17,8 +17,18 @@ import (
 // Errors are logged, not returned: the JSON write already succeeded and
 // unwinding it over shadow-table trouble would hurt more than drift, which
 // the 0043 backfill pattern can always repair.
-func SyncEnrollments(db *DB, tenantID int, studentID string, newClassIDs []string, actor string) {
+//
+// startedOn is the date the NEW enrolments begin; empty means today. It exists
+// because defaulting to today silently recorded when the row was created
+// rather than when the student joined, which hid 85 attendance rows behind
+// enrolment windows that had not opened yet (migration 0055). It governs
+// starts only: a removal still ends today, since the field the admin fills in
+// is labelled a start date.
+func SyncEnrollments(db *DB, tenantID int, studentID string, newClassIDs []string, actor, startedOn string) {
 	today := time.Now().Format("2006-01-02")
+	if startedOn == "" {
+		startedOn = today
+	}
 	want := map[string]bool{}
 	for _, cid := range newClassIDs {
 		want[cid] = true
@@ -51,7 +61,7 @@ func SyncEnrollments(db *DB, tenantID int, studentID string, newClassIDs []strin
 			if _, err := db.Exec(`INSERT INTO enrollments (id, tenant_id, student_id, class_id, started_on, created_by, created_on)
 				VALUES (?,?,?,?,?,?,?)
 				ON CONFLICT (tenant_id, student_id, class_id) WHERE ended_on IS NULL DO NOTHING`,
-				core.GenerateID("ENR"), tenantID, studentID, cid, today, actor, today); err != nil {
+				core.GenerateID("ENR"), tenantID, studentID, cid, startedOn, actor, today); err != nil {
 				core.Logger.Error("enrollment insert failed", "err", err, "student_id", studentID, "class_id", cid)
 			}
 		}
