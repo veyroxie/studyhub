@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -8,6 +9,7 @@ import (
 
 	"studyhub/internal/auth"
 	"studyhub/internal/core"
+	"studyhub/internal/models"
 	"studyhub/internal/store"
 )
 
@@ -176,5 +178,123 @@ func TestSessionRateOn_PricesTheDurationThatRan(t *testing.T) {
 	db.Exec(`UPDATE classes SET session_rate=35 WHERE id=?`, classID)
 	if got, err := store.SessionRateOn(db, classID, "", "10:00", "11:00"); err != nil || got != 35 {
 		t.Fatalf("override must win over duration: want 35, got %v (err %v)", got, err)
+	}
+}
+
+// TestClassCreate_AlwaysGetsAPricingCategory locks the create-path half of the
+// 0053/0056 fix. The migration categorised every class that existed when it
+// ran; the handler never wrote the column, so three classes were created with
+// none in the following two days, two of them with live students, each
+// silently unpriceable. Deriving on write is what stops the next one.
+func TestClassCreate_AlwaysGetsAPricingCategory(t *testing.T) {
+	r, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	tok := getToken(t, r, "admin@studyhub.com", "admin123")
+
+	categoryOf := func(id string) string {
+		var got string
+		db.QueryRow(`SELECT COALESCE(pricing_category_id,'') FROM classes WHERE id=?`, id).Scan(&got)
+		return got
+	}
+	create := func(name, classType string) string {
+		w := authedJSON(t, r, "POST", "/api/classes", tok, map[string]any{
+			"name": name, "day": "Wednesday", "time": "16:00", "endTime": "17:00",
+			"classroom": name + " Room", "capacity": 8, "classType": classType,
+		})
+		if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+			t.Fatalf("create %s failed: %d %s", name, w.Code, w.Body.String())
+		}
+		var out struct {
+			ID string `json:"id"`
+		}
+		json.Unmarshal(w.Body.Bytes(), &out)
+		if out.ID == "" {
+			t.Fatalf("create %s returned no id: %s", name, w.Body.String())
+		}
+		return out.ID
+	}
+
+	for _, tc := range []struct{ name, classType, wantCat string }{
+		{"Level 3 & 4", "Group", "Group"},
+		{"Teacher Rose (Someone)", "Private", "Private"},
+		{"Self-Study", "Group", "Self-Study"},
+	} {
+		id := create(tc.name, tc.classType)
+		var gotName string
+		db.QueryRow(`SELECT name FROM pricing_categories WHERE id=?`, categoryOf(id)).Scan(&gotName)
+		if gotName != tc.wantCat {
+			t.Fatalf("%s: want category %s, got %q", tc.name, tc.wantCat, gotName)
+		}
+	}
+
+	// A partial edit must not blank the tier. The class edit payload in
+	// calendar.js enumerates fields and never sends defaultTierName, so the
+	// UPDATE writing it is only safe because classByID prefills the stored row
+	// before the body decodes on top. Remove that prefill and every class edit
+	// silently destroys the tier 0053 backfilled -- flagged in review, and this
+	// is what proves it does not happen.
+	tiered := create("Level 1 & 2", "Group")
+	if _, err := db.Exec(`UPDATE classes SET default_tier_name='Level 1-2' WHERE id=?`, tiered); err != nil {
+		t.Fatalf("seed tier: %v", err)
+	}
+	w := authedJSON(t, r, "PUT", "/api/classes/"+tiered, tok, map[string]any{
+		"name": "Level 1 & 2", "day": "Wednesday", "time": "16:00", "endTime": "17:00",
+		"classroom": "Moved Room", "capacity": 8, "classType": "Group",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("edit class failed: %d %s", w.Code, w.Body.String())
+	}
+	var tierAfter string
+	db.QueryRow(`SELECT COALESCE(default_tier_name,'') FROM classes WHERE id=?`, tiered).Scan(&tierAfter)
+	if tierAfter != "Level 1-2" {
+		t.Fatalf("a partial class edit must not blank the tier: got %q", tierAfter)
+	}
+
+	// An explicit but unknown category is refused rather than dropped on the
+	// floor, which would leave the class uncategorised exactly as before.
+	w = authedJSON(t, r, "POST", "/api/classes", tok, map[string]any{
+		"name": "Bogus Cat", "day": "Friday", "time": "10:00", "endTime": "11:00",
+		"classroom": "Bogus Room", "capacity": 8, "classType": "Group",
+		"pricingCategoryId": "PC_does_not_exist",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("unknown pricing category must be refused, got %d %s", w.Code, w.Body.String())
+	}
+}
+
+// TestResolvePricingCategory_TenantWithoutCatalogue locks the superadmin case
+// found in review. store.TenantID returns 0 for a superadmin (scope.go:11) and
+// the catalogue is seeded at tenant 1, so requiring a category outright made
+// class create and edit fail unconditionally for that role. A tenant with no
+// catalogue at all is not onboarded onto it; one that HAS a catalogue but is
+// missing the category is a real fault and still errors.
+func TestResolvePricingCategory_TenantWithoutCatalogue(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+
+	var noCatalogue models.Class
+	noCatalogue.Name = "Level 3 & 4"
+	noCatalogue.ClassType = "Group"
+	if err := resolvePricingCategory(db, 0, &noCatalogue); err != nil {
+		t.Fatalf("a tenant with no catalogue must not block the save: %v", err)
+	}
+	if noCatalogue.PricingCategoryID != "" {
+		t.Fatalf("nothing to resolve to, so it stays blank: got %q", noCatalogue.PricingCategoryID)
+	}
+
+	var seeded models.Class
+	seeded.Name = "Level 3 & 4"
+	seeded.ClassType = "Group"
+	if err := resolvePricingCategory(db, 1, &seeded); err != nil {
+		t.Fatalf("tenant 1 has the catalogue: %v", err)
+	}
+	if seeded.PricingCategoryID == "" {
+		t.Fatal("tenant 1 must resolve to the Group category")
+	}
+
+	// A category that is named but absent is still a hard error.
+	bogus := models.Class{Name: "X", ClassType: "Group", PricingCategoryID: "PC_nope"}
+	if err := resolvePricingCategory(db, 1, &bogus); err == nil {
+		t.Fatal("an unknown category id must still be refused")
 	}
 }

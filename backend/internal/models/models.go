@@ -200,6 +200,12 @@ type Class struct {
 	// SessionRate prices ONE session of this class outright (0045), winning
 	// over the (classType, band) hourly matrix. 0 = unset.
 	SessionRate float64 `json:"sessionRate"`
+	// PricingCategoryID is which catalogue the class prices from (0051/0053).
+	// Structural, so the server derives it from ClassType when a caller omits
+	// it -- unlike DefaultTierName, which is the priced thing and is never
+	// guessed: blank means "needs a tier" and is surfaced, not billed at 0.
+	PricingCategoryID string `json:"pricingCategoryId"`
+	DefaultTierName   string `json:"defaultTierName"`
 	// ScheduleFrom is update-only and never stored on the classes row: the
 	// first date the edited day/time applies. See migration 0046.
 	ScheduleFrom string `json:"scheduleFrom,omitempty"`

@@ -5,12 +5,68 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"studyhub/internal/core"
 	"studyhub/internal/models"
 	"studyhub/internal/store"
 
 	"github.com/go-chi/chi/v5"
 )
+
+// resolvePricingCategory fills a class's catalogue when the caller omits one,
+// applying the same rule migration 0053 applied once: Self-Study by name,
+// else Private or Group by class_type.
+//
+// The rule lives HERE, not only in the migration, because a backfill repairs
+// the rows that exist and does nothing about the next one. Three classes were
+// created with no category in the two days after 0053 ran, two of them with
+// students, and each was silently unpriceable -- the same hole the pricing
+// rework exists to close, reopened through the create path.
+//
+// Category is derived but a tier never is. Category is structural (is this a
+// group, a one-to-one, or self-study), and the class already answers it.
+// A tier is the priced thing, so a blank one stays blank and is surfaced in
+// the "needs a tier" list rather than guessed into a bill.
+func resolvePricingCategory(db *store.DB, tenantID int, c *models.Class) error {
+	if c.PricingCategoryID != "" {
+		var n int
+		// A failed query is not the same as "no such category": collapsing them
+		// sends the operator hunting through their data over a connection blip.
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pricing_categories WHERE id=? AND tenant_id=? AND deleted_at IS NULL`,
+			c.PricingCategoryID, tenantID).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			return errors.New("unknown pricing category: " + c.PricingCategoryID)
+		}
+		return nil
+	}
+	name := "Group"
+	if strings.EqualFold(strings.TrimSpace(c.Name), "Self-Study") {
+		name = "Self-Study"
+	} else if c.ClassType == "Private" {
+		name = "Private"
+	}
+	err := db.QueryRow(`SELECT id FROM pricing_categories WHERE tenant_id=? AND name=? AND deleted_at IS NULL`,
+		tenantID, name).Scan(&c.PricingCategoryID)
+	if err == nil {
+		return nil
+	}
+	// A tenant with NO catalogue at all has not been onboarded onto it, and
+	// blocking every class save for them would be a regression -- superadmin
+	// resolves to tenant 0 (scope.go:11), which owns nothing. A tenant that
+	// HAS a catalogue but is missing this category is a real fault, so only
+	// the empty case is tolerated.
+	var total int
+	if e := db.QueryRow(`SELECT COUNT(*) FROM pricing_categories WHERE tenant_id=? AND deleted_at IS NULL`,
+		tenantID).Scan(&total); e != nil {
+		return e
+	}
+	if total == 0 {
+		return nil
+	}
+	return errors.New("no pricing category named " + name + " for this tenant")
+}
 
 // validateTeacherIDs rejects class create/update payloads referencing staff
 // rows that don't exist in the caller's tenant. Without this a typo or
@@ -39,7 +95,7 @@ func (e errClassTeacherNotFound) Error() string { return "teacher not found in t
 
 func listClasses(db *store.DB, c *core.Claims) []models.Class {
 	tw, twArgs := store.ScopeTenant(c, "")
-	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,COALESCE(class_type,'Group'),COALESCE(level_band,''),COALESCE(subject,''),COALESCE(monthly_fee_override,0),COALESCE(session_rate,0) FROM classes WHERE deleted_at IS NULL`+tw, twArgs...)
+	rows, err := db.Query(`SELECT id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,COALESCE(class_type,'Group'),COALESCE(level_band,''),COALESCE(subject,''),COALESCE(monthly_fee_override,0),COALESCE(session_rate,0),COALESCE(pricing_category_id,''),COALESCE(default_tier_name,'') FROM classes WHERE deleted_at IS NULL`+tw, twArgs...)
 	if err != nil {
 		core.Logger.Error("list query failed", "err", err, "type", "Class")
 		return []models.Class{}
@@ -49,7 +105,7 @@ func listClasses(db *store.DB, c *core.Claims) []models.Class {
 	for rows.Next() {
 		var c models.Class
 		var tids string
-		if err := rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color, &c.Category, &c.ClassType, &c.LevelBand, &c.Subject, &c.MonthlyFeeOverride, &c.SessionRate); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &tids, &c.Classroom, &c.Day, &c.Time, &c.EndTime, &c.Capacity, &c.Enrolled, &c.Color, &c.Category, &c.ClassType, &c.LevelBand, &c.Subject, &c.MonthlyFeeOverride, &c.SessionRate, &c.PricingCategoryID, &c.DefaultTierName); err != nil {
 			continue
 		}
 		c.TeacherIDs = models.ParseArr(tids)
@@ -235,8 +291,12 @@ func HandleClasses(db *store.DB) http.HandlerFunc {
 				c.Category = "Academic"
 			}
 			tid := store.TenantID(cl)
-			if _, err := db.Exec(`INSERT INTO classes(id,tenant_id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,class_type,level_band,subject,monthly_fee_override,session_rate) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				c.ID, tid, c.Name, models.JSONArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color, c.Category, c.ClassType, c.LevelBand, c.Subject, c.MonthlyFeeOverride, c.SessionRate); err != nil {
+			if err := resolvePricingCategory(db, tid, &c); err != nil {
+				core.RespondError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if _, err := db.Exec(`INSERT INTO classes(id,tenant_id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,class_type,level_band,subject,monthly_fee_override,session_rate,pricing_category_id,default_tier_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				c.ID, tid, c.Name, models.JSONArr(c.TeacherIDs), c.Classroom, c.Day, c.Time, c.EndTime, c.Capacity, c.Enrolled, c.Color, c.Category, c.ClassType, c.LevelBand, c.Subject, c.MonthlyFeeOverride, c.SessionRate, c.PricingCategoryID, c.DefaultTierName); err != nil {
 				core.RespondError(w, "could not create class", 500)
 				return
 			}
@@ -261,9 +321,9 @@ func classByID(db *store.DB, c *core.Claims, id string) (models.Class, error) {
 	tw, twArgs := store.ScopeTenant(c, "")
 	var cl models.Class
 	var tids string
-	err := db.QueryRow(`SELECT id,name,teacher_ids,COALESCE(classroom,''),COALESCE(day,''),COALESCE(time,''),COALESCE(end_time,''),capacity,enrolled,COALESCE(color,''),COALESCE(category,''),COALESCE(class_type,'Group'),COALESCE(level_band,''),COALESCE(subject,''),COALESCE(monthly_fee_override,0),COALESCE(session_rate,0)
+	err := db.QueryRow(`SELECT id,name,teacher_ids,COALESCE(classroom,''),COALESCE(day,''),COALESCE(time,''),COALESCE(end_time,''),capacity,enrolled,COALESCE(color,''),COALESCE(category,''),COALESCE(class_type,'Group'),COALESCE(level_band,''),COALESCE(subject,''),COALESCE(monthly_fee_override,0),COALESCE(session_rate,0),COALESCE(pricing_category_id,''),COALESCE(default_tier_name,'')
 		FROM classes WHERE id=? AND deleted_at IS NULL`+tw, append([]any{id}, twArgs...)...).
-		Scan(&cl.ID, &cl.Name, &tids, &cl.Classroom, &cl.Day, &cl.Time, &cl.EndTime, &cl.Capacity, &cl.Enrolled, &cl.Color, &cl.Category, &cl.ClassType, &cl.LevelBand, &cl.Subject, &cl.MonthlyFeeOverride, &cl.SessionRate)
+		Scan(&cl.ID, &cl.Name, &tids, &cl.Classroom, &cl.Day, &cl.Time, &cl.EndTime, &cl.Capacity, &cl.Enrolled, &cl.Color, &cl.Category, &cl.ClassType, &cl.LevelBand, &cl.Subject, &cl.MonthlyFeeOverride, &cl.SessionRate, &cl.PricingCategoryID, &cl.DefaultTierName)
 	if err != nil {
 		return cl, err
 	}
@@ -355,8 +415,14 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 			// (student add/edit/delete, registration approve). Trusting the
 			// client-supplied cl.Enrolled here let a class edit silently
 			// overwrite the true count, drifting capacity enforcement.
-			args := append([]any{cl.Name, models.JSONArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Color, cl.Category, cl.ClassType, cl.LevelBand, cl.Subject, cl.MonthlyFeeOverride, cl.SessionRate, id}, twArgs...)
-			res, err := db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,color=?,category=?,class_type=?,level_band=?,subject=?,monthly_fee_override=?,session_rate=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+			// Catches classes that predate the create-path rule as soon as
+			// anyone edits them, so the backlog drains itself.
+			if err := resolvePricingCategory(db, store.TenantID(c), &cl); err != nil {
+				core.RespondError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			args := append([]any{cl.Name, models.JSONArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Color, cl.Category, cl.ClassType, cl.LevelBand, cl.Subject, cl.MonthlyFeeOverride, cl.SessionRate, cl.PricingCategoryID, cl.DefaultTierName, id}, twArgs...)
+			res, err := db.Exec(`UPDATE classes SET name=?,teacher_ids=?,classroom=?,day=?,time=?,end_time=?,capacity=?,color=?,category=?,class_type=?,level_band=?,subject=?,monthly_fee_override=?,session_rate=?,pricing_category_id=?,default_tier_name=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 			if err != nil {
 				core.RespondError(w, "could not update class", 500)
 				return
