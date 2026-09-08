@@ -210,14 +210,14 @@
     }).join('');
 
     container.innerHTML = ''
-      // Centred, matching attendance, billing, profile and dashboard. This
-      // page was capped at 820px with no auto margin, so it hugged the left
-      // edge while every other screen sat in the middle. Wider too: the
-      // invoice check table has four columns and an explanation per row.
-      + '<div style="display:flex;flex-direction:column;gap:1rem;max-width:1000px;margin:0 auto">'
+      // Fills the width, matching attendance and every other page. It was
+      // capped at 820px, which left gutters nothing else has and read as
+      // left-aligned. Only the prose below is capped -- a table wants the
+      // room, a sentence does not.
+      + '<div style="display:flex;flex-direction:column;gap:1rem">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">'
       +   '<div><h1 style="font-size:1.4rem;font-weight:800;color:#0d0d0d;letter-spacing:-0.03em;margin:0">Pricing</h1>'
-      +   '<p style="font-size:0.82rem;color:#64748b;margin:2px 0 0">A category owns named tiers. A tier is one price.</p></div>'
+      +   '<p style="font-size:0.82rem;color:#64748b;margin:2px 0 0;max-width:62ch">A category owns named tiers. A tier is one price.</p></div>'
       +   (isAdmin && _tab === 'catalogue' ? '<button onclick="App.Pricing._addCategory()" style="padding:0.45rem 0.95rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">+ Add category</button>' : '')
       + '</div>'
       + _tabBar()
@@ -237,7 +237,7 @@
           + '<p style="font-size:0.72rem;color:#b45309;margin:0.55rem 0 0">Each needs a tier in its category, or its own fixed price on the class.</p>'
           + '</div>'
         : '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:0;padding:0.8rem 1rem;font-size:0.82rem;color:#166534;font-weight:600">Every class can be priced.</div>')
-        + '<div style="display:flex;flex-direction:column;gap:0.6rem">' + (rows || '<p style="font-size:0.85rem;color:#94a3b8">No categories yet.</p>') + '</div>')
+        + '<div style="display:flex;flex-direction:column;gap:0.6rem;max-width:900px">' + (rows || '<p style="font-size:0.85rem;color:#94a3b8">No categories yet.</p>') + '</div>')
       + '</div>';
   }
 
