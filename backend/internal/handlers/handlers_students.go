@@ -510,10 +510,17 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 	}
 }
 
-// handleStudentSubscription pauses, resumes, or freezes a student's monthly
-// subscription. Pausing skips them in the monthly invoice cron and hides them
-// from rosters; resuming restores them; freeze is a separate flag with the
-// same effect that's surfaced differently in reports.
+// handleStudentSubscription turns a student's monthly invoicing on or off.
+//
+// That is ALL it does. It does not hide them from rosters and never has --
+// attendance is decided by the enrolment's start and end dates. The old
+// comment here claimed pausing "hides them from rosters", and the field was
+// surfaced as "freeze", which is how 21 students who were attending every week
+// ended up switched off with the list still calling them Active (ADR-012).
+//
+// "pause" is still accepted so a stale client cannot break, and it means the
+// same thing it always did -- freeze and pause were one behaviour wearing two
+// names. Nothing sends it now and no row in production carries it.
 func HandleStudentSubscription(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := core.ClaimsFrom(r)
@@ -531,9 +538,7 @@ func HandleStudentSubscription(db *store.DB) http.HandlerFunc {
 		}
 		var newStatus string
 		switch body.Action {
-		case "pause":
-			newStatus = "paused"
-		case "freeze":
+		case "pause", "freeze":
 			newStatus = "frozen"
 		case "resume":
 			newStatus = "active"

@@ -296,3 +296,49 @@ not be designed around the assumption that it is common.
 cause -- the same mistake as the September invoice scope in
 `pricing-bands.md` section 12a, made twice in one day. Counting a thing and
 explaining it are separate steps, and the second one needs its own evidence.
+
+---
+
+## ADR-012 -- One switch, named for what it does
+**2026-09-08 · Accepted · supersedes ADR-011 and ADR-002**
+
+**Context.** Nadine, 09-08, asked for freezing and auto-billing NOT to be
+separated: "if they don't come they don't have to pay."
+
+That reasoning is sound but does not describe what she did. She switched off 21
+students who WERE attending, because she wanted to invoice by hand while
+learning the system. Her one-sentence model does not cover her own use case,
+which is why ADR-011 read it as two axes.
+
+**Decision.** One field, one control, named for the only thing it has ever
+done: **does the monthly run raise this student's invoice.**
+
+Both cases fit without a second axis:
+
+- The student is on a break, so nobody wants an invoice -> off.
+- The admin wants to raise it by hand -> off.
+
+`pause` is deleted; it was a third word for the second of two behaviours. The
+API still accepts it and maps it to the same state, so a stale client cannot
+break, and no production row carries it.
+
+**Why ADR-011 was wrong.** It treated a naming problem as a schema problem.
+The field never touched attendance -- freezing has never removed anyone from a
+roster, and the handler comment claiming it did was simply false. Attendance is
+decided by the enrolment's start and end dates, which is what Ely used for
+Zhang Zhan He. Once the switch is labelled honestly, one control covers both
+cases and the second axis buys nothing.
+
+**Consequences.** The Active badge now carries a "Not billed" chip beside it
+rather than a "Frozen" chip elsewhere in the row: both facts are true and they
+belong together, since it was reading them apart that let 21 attending students
+sit switched off. The profile says "Monthly invoicing ON/OFF" with one button,
+and the confirmation states plainly that the student stays in every class,
+roster and report.
+
+**Note on method.** This is the third position on the same question in one day:
+collapse (002), split (011), collapse-with-honest-naming (012). Each turn came
+from new evidence rather than a change of mind -- 002 from counting states, 011
+from Nadine's actual usage, 012 from her stating the intent. The lesson is not
+to decide slower; it is that a model argued from the shape of the data, without
+the operator's intent, will be wrong in a way the data cannot reveal.

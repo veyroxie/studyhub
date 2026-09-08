@@ -157,9 +157,13 @@
               });
               var _bal = _creditsByStudent[s.id] || 0;
               var rowSubStatus = s.subscriptionStatus || 'active';
-              var rowSubChip = '';
-              if (rowSubStatus === 'paused') rowSubChip = ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.6rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;vertical-align:middle;margin-left:4px">Paused</span>';
-              else if (rowSubStatus === 'frozen') rowSubChip = ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.6rem;font-weight:700;background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe;border-radius:999px;vertical-align:middle;margin-left:4px">Frozen</span>';
+              // One switch, one meaning: it decides whether the cron makes an
+              // invoice. It was called Frozen and sat beside a green Active
+              // badge, which read as a contradiction -- and 21 attending
+              // students were switched off without anyone noticing (ADR-012).
+              var rowNotBilled = rowSubStatus !== 'active'
+                ? ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.6rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;vertical-align:middle;margin-left:4px">Not billed</span>'
+                : '';
               // data-search holds the lower-cased haystack the live filter
               // checks against — name + id + contact + class names.
               var haystack = (s.firstName + ' ' + s.lastName + ' ' + s.id + ' ' + (s.contact || '') + ' ' + enrolledNames.join(' ')).toLowerCase();
@@ -169,7 +173,6 @@
                 +   '<div class="w-9 h-9 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center shrink-0">' + App.Utils.esc(s.firstName.charAt(0)) + App.Utils.esc(s.lastName.charAt(0)) + '</div>'
                 +   '<div><div class="font-medium text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName)
                 +     (_bal > 0 ? ' <span style="display:inline-block;padding:0.1rem 0.45rem;font-size:0.65rem;font-weight:700;background:#fffbeb;color:#92400e;border:1px solid #fef3c7;border-radius:999px;vertical-align:middle;margin-left:4px" title="Replacement balance">' + _bal + 'cr</span>' : '')
-                +     rowSubChip
                 +   '</div><div class="text-xs text-slate-400">' + App.Utils.esc(_studentDisplayId(s)) + '</div></div>'
                 + '</div></td>'
                 + '<td class="td"><div class="flex flex-wrap gap-1">'
@@ -178,7 +181,7 @@
                 + '</div></td>'
                 + '<td class="td text-sm text-slate-600">' + App.Utils.formatDate(s.dob) + '</td>'
                 + (isTeacher ? '' : '<td class="td text-sm"><div class="text-slate-700">' + App.Utils.esc(s.parentName) + '</div><div class="text-slate-400 text-xs">' + App.Utils.esc(s.contact) + '</div></td>')
-                + '<td class="td">' + App.Utils.statusBadge(s.status) + '</td>'
+                + '<td class="td">' + App.Utils.statusBadge(s.status) + rowNotBilled + '</td>'
                 + (isAdmin ? '<td class="td" onclick="event.stopPropagation()">'
                 +   '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;font-size:0.62rem;font-weight:700">'
                 +   '<button onclick="App.Students._activateStudent(\'' + s.id + '\')" title="Auto-bill on — include in monthly invoices" style="padding:0.15rem 0.45rem;border:none;cursor:pointer;background:' + (rowSubStatus === 'active' ? '#22c55e' : '#fff') + ';color:' + (rowSubStatus === 'active' ? '#fff' : '#94a3b8') + '">On</button>'
@@ -274,14 +277,17 @@
   }
 
   let _focusSearchAfterRender = false;
+  // One switch with one meaning: does the cron raise this student's monthly
+  // invoice. It says nothing about whether they attend -- that is the
+  // enrolment's start and end dates -- and it never did, despite being called
+  // "freeze" (ADR-012).
   async function _subscriptionAction(studentId, action) {
-    var label = { pause:'pause', resume:'resume', freeze:'freeze' }[action] || action;
     var ok = await App.Utils.showConfirm({
-      title: label.charAt(0).toUpperCase() + label.slice(1) + ' subscription',
+      title: action === 'resume' ? 'Turn monthly invoicing on' : 'Turn monthly invoicing off',
       message: action === 'resume'
-        ? 'Resume monthly invoicing for this student?'
-        : 'Stop monthly invoice generation for this student. They stay visible in lists and the schedule until resumed.',
-      confirmLabel: label.charAt(0).toUpperCase() + label.slice(1),
+        ? 'The monthly run will raise this student\'s invoice from now on.'
+        : 'The monthly run will skip this student. They stay in every class, roster and report -- only the invoice stops.',
+      confirmLabel: action === 'resume' ? 'Turn on' : 'Turn off',
       danger: action !== 'resume'
     });
     if (!ok) return;
@@ -291,7 +297,7 @@
       App.Store.set({ students: state.students.map(function(s) {
         return s.id === studentId ? Object.assign({}, s, { subscriptionStatus: res.subscriptionStatus }) : s;
       }) });
-      App.Utils.showToast('Subscription ' + label + 'd', 'success');
+      App.Utils.showToast(action === 'resume' ? 'Monthly invoicing on' : 'Monthly invoicing off', 'success');
       App.Router.refresh();
       _viewModal(studentId);
     } catch (err) {
@@ -401,20 +407,15 @@
     const totalPaid = studentInvoices.filter(function(i) { return i.status === 'Paid'; }).reduce(function(s, i) { return s + i.amount; }, 0);
 
     var subStatus = s.subscriptionStatus || 'active';
-    var subChip = '';
-    if (subStatus === 'paused') {
-      subChip = '<span style="display:inline-block;padding:0.15rem 0.55rem;font-size:0.65rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;margin-left:6px">Paused</span>';
-    } else if (subStatus === 'frozen') {
-      subChip = '<span style="display:inline-block;padding:0.15rem 0.55rem;font-size:0.65rem;font-weight:700;background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe;border-radius:999px;margin-left:6px">Frozen</span>';
-    }
+    var subChip = subStatus !== 'active' ? ' ' + '<span style="display:inline-block;padding:0.15rem 0.55rem;font-size:0.65rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px">Not billed</span>' : '';
 
     App.Utils.showModal(
       '<div class="p-6">'
       + '<div class="flex items-center gap-4 mb-6">'
       +   '<div class="w-16 h-16 rounded-2xl bg-blue-100 text-blue-700 font-bold text-2xl flex items-center justify-center">' + App.Utils.esc(s.firstName.charAt(0)) + App.Utils.esc(s.lastName.charAt(0)) + '</div>'
       +   '<div>'
-      +     '<h2 class="text-xl font-bold text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName) + subChip + '</h2>'
-      +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.statusBadge(s.status) + '<span class="text-xs text-slate-400">ID: ' + App.Utils.esc(_studentDisplayId(s)) + '</span></div>'
+      +     '<h2 class="text-xl font-bold text-slate-800">' + App.Utils.esc(s.firstName) + ' ' + App.Utils.esc(s.lastName) + '</h2>'
+      +     '<div class="flex items-center gap-2 mt-1">' + App.Utils.statusBadge(s.status) + subChip + '<span class="text-xs text-slate-400">ID: ' + App.Utils.esc(_studentDisplayId(s)) + '</span></div>'
       +   '</div>'
       +   (isAdmin ? '<div style="margin-left:auto;display:flex;gap:1rem;align-items:flex-end">'
       +     '<div style="text-align:right">'
@@ -506,8 +507,8 @@
             var paused = subStatus !== 'active';
             return '<div style="margin-top:1rem;padding:1rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px">'
               + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.65rem">'
-              +   '<div style="font-size:0.72rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.05em">Subscription</div>'
-              +   '<span style="font-size:0.7rem;font-weight:700;color:' + (paused ? '#92400e' : '#15803d') + '">' + (paused ? subStatus.toUpperCase() : 'ACTIVE') + '</span>'
+              +   '<div style="font-size:0.72rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.05em">Monthly invoicing</div>'
+              +   '<span style="font-size:0.7rem;font-weight:700;color:' + (paused ? '#92400e' : '#15803d') + '">' + (paused ? 'OFF' : 'ON') + '</span>'
               + '</div>'
               + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.83rem;color:#374151;margin-bottom:0.85rem">'
               +   '<div>Package: <strong>RM ' + pkgAmt.toFixed(2) + '/mo</strong></div>'
@@ -515,9 +516,8 @@
               + '</div>'
               + '<div style="display:flex;gap:0.5rem">'
               + (paused
-                  ? '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'resume\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:8px;cursor:pointer">Resume</button>'
-                  : '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'pause\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;cursor:pointer">Pause</button>'
-                  + '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'freeze\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe;border-radius:8px;cursor:pointer">Freeze</button>')
+                  ? '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'resume\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:8px;cursor:pointer">Turn invoicing on</button>'
+                  : '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'freeze\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;cursor:pointer">Turn invoicing off</button>')
               + '</div>'
               + '</div>';
           })() : '')
@@ -577,9 +577,20 @@
       + '<div id="tab-panel-invoices" class="hidden"' + (App.currentRole === 'teacher' ? ' style="display:none"' : '') + '>'
       + '<div class="flex justify-between items-center mb-3"><span class="text-sm text-slate-500">Total paid:</span><span class="font-bold text-emerald-600">' + App.Utils.formatCurrency(totalPaid) + '</span></div>'
       + (studentInvoices.length === 0 ? '<p class="text-sm text-slate-400 text-center py-6">No invoices</p>'
-        : '<table class="w-full text-sm"><thead><tr class="border-b"><th class="text-left py-2 text-slate-500 font-medium">Description</th><th class="text-right py-2 text-slate-500 font-medium">Amount</th><th class="text-right py-2 text-slate-500 font-medium">Status</th></tr></thead><tbody>'
+        : '<table class="w-full text-sm"><thead><tr class="border-b"><th class="text-left py-2 text-slate-500 font-medium">Description</th><th class="text-right py-2 text-slate-500 font-medium">Amount</th><th class="text-right py-2 text-slate-500 font-medium">Status</th><th></th></tr></thead><tbody>'
+          // Rows open the SAME modals the Billing page uses. A second edit
+          // path here would be a fourth way to change an invoice, and the
+          // total is server-owned -- NormalizeLineItems is the authority, so
+          // nothing about money may be recomputed in this file.
           + studentInvoices.map(function(inv) {
-              return '<tr class="border-b border-slate-50"><td class="py-2"><div>' + App.Utils.esc(inv.description) + '</div><div class="text-xs text-slate-400">Due ' + App.Utils.formatDate(inv.dueDate) + '</div></td><td class="py-2 text-right font-medium">' + App.Utils.formatCurrency(inv.amount) + '</td><td class="py-2 text-right">' + App.Utils.statusBadge(inv.status) + '</td></tr>';
+              var act = isAdmin
+                ? '<button onclick="event.stopPropagation();App.Students._editInvoice(\'' + inv.id + '\')" style="padding:0.15rem 0.5rem;font-size:0.68rem;font-weight:600;background:#fff;color:#475569;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer">Edit</button>'
+                : '';
+              return '<tr class="border-b border-slate-50 hover:bg-slate-50" style="cursor:pointer" onclick="App.Students._viewInvoice(\'' + inv.id + '\')" title="Open this invoice">'
+                + '<td class="py-2"><div>' + App.Utils.esc(inv.description) + '</div><div class="text-xs text-slate-400">Due ' + App.Utils.formatDate(inv.dueDate) + '</div></td>'
+                + '<td class="py-2 text-right font-medium">' + App.Utils.formatCurrency(inv.amount) + '</td>'
+                + '<td class="py-2 text-right">' + App.Utils.statusBadge(inv.status) + '</td>'
+                + '<td class="py-2 text-right">' + act + '</td></tr>';
             }).join('')
           + '</tbody></table>')
       + '</div>'
@@ -1398,6 +1409,26 @@
     });
   }
 
+  // Both hand straight to the Billing module: one invoice editor, reached
+  // from wherever the invoice is shown (ADR-001).
+  function _viewInvoice(invoiceId) {
+    if (!App.Billing || !App.Billing._viewInvoiceModal) {
+      App.Utils.showToast('Open Bills & Payments to view this invoice', 'info');
+      return;
+    }
+    App.Utils.hideModal(true);
+    App.Billing._viewInvoiceModal(invoiceId);
+  }
+
+  function _editInvoice(invoiceId) {
+    if (!App.Billing || !App.Billing._editModal) {
+      App.Utils.showToast('Open Bills & Payments to edit this invoice', 'info');
+      return;
+    }
+    App.Utils.hideModal(true);
+    App.Billing._editModal(invoiceId);
+  }
+
   async function _deleteCredit(creditId, studentId) {
     var ok = await App.Utils.showConfirm({ title: 'Delete replacement entry', confirmLabel: 'Delete', danger: true });
     if (!ok) return;
@@ -1791,6 +1822,8 @@
   }
 
   App.Students = {
+    _viewInvoice: _viewInvoice,
+    _editInvoice: _editInvoice,
     render: render,
     _onSearch: _onSearch,
     _onSearchLive: _onSearchLive,
