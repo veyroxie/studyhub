@@ -246,3 +246,53 @@ means inventing a bill.
 **Consequences.** A tenant with no catalogue at all passes through with a blank
 category rather than being blocked, because `store.TenantID` returns 0 for a
 superadmin and the catalogue is seeded at tenant 1.
+
+---
+
+## ADR-011 -- Attending and being invoiced are two separate facts
+**2026-09-08 · Accepted · supersedes ADR-002**
+
+**Context.** ADR-002 read three visible states (`active | paused | frozen`)
+against two behaviours and concluded the model should collapse to one concept.
+That was wrong, and Nadine said why on 09-08:
+
+> "I did freeze all of their auto payments I think"
+> "yes cause I was trying to learn how to use it hahaha"
+
+She was not freezing students. She turned auto-billing off across the roster
+while she learned the system. All 21 were attending normally throughout -- 19
+of them have attendance since 1 September.
+
+**Decision.** Two independent axes, two values each.
+
+```
+  attendance_state   active | on a break     does the student come?
+  billing_mode       auto   | manual         how is the invoice made?
+```
+
+The cron bills when `billing_mode = auto` AND the student is not on a break. A
+break implies no invoice regardless of mode; manual billing says nothing about
+whether the child attends.
+
+`pause` is still deleted. That half of ADR-002 stands: `pause` and `freeze` were
+the same thing on the attendance axis, and one word is enough there.
+
+**Why ADR-002 was wrong.** It counted the states and inferred the model. The
+real fault was not three words for one state -- it was **one control doing two
+jobs**. Nadine reached for the attendance axis because it was the only switch
+that stopped invoices. Collapsing to one concept would have removed the symptom
+and kept the cause, leaving her with no way to say "keep billing this one by
+hand" except by pretending the student had stopped coming.
+
+**Consequences.** The migration changes shape entirely. The 21 are not frozen
+students to be unfrozen; they are `attending + manual billing`, which is what
+she meant. Moving them to auto is then a decision she makes when she trusts the
+pricing, per student or in bulk, rather than a correction of a wrong state.
+
+It also means `on a break` currently has **no users at all**, so a screen must
+not be designed around the assumption that it is common.
+
+**Note on method.** ADR-002 was written from a correct count and an assumed
+cause -- the same mistake as the September invoice scope in
+`pricing-bands.md` section 12a, made twice in one day. Counting a thing and
+explaining it are separate steps, and the second one needs its own evidence.
