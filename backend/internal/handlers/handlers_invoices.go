@@ -216,6 +216,19 @@ func HandleInvoiceUpdate(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "bad body", http.StatusBadRequest)
 			return
 		}
+		// Editing the itemisation, mirroring create: the total is derived from
+		// the lines and the client's amount is ignored, so NormalizeLineItems
+		// stays the single authority on what an invoice adds up to. Until this
+		// existed the only way to change an invoice was to overwrite its total,
+		// which then WIPED the breakdown (see the CASE below) -- so correcting
+		// a figure silently destroyed the itemisation the PDF prints.
+		editingItems := len(inv.LineItems) > 0
+		if editingItems {
+			inv.Amount = models.NormalizeLineItems(inv.LineItems)
+			if inv.Description == "" {
+				inv.Description = models.LineItemsSummary(inv.LineItems)
+			}
+		}
 		if msg := validationError("description", inv.Description, "dueDate", inv.DueDate); msg != "" {
 			core.RespondError(w, msg, http.StatusBadRequest)
 			return
@@ -233,8 +246,18 @@ func HandleInvoiceUpdate(db *store.DB) http.HandlerFunc {
 		// period is recomputed rather than carried: this endpoint can change both
 		// type and created_on, and a stale period would hide the invoice from the
 		// monthly run's duplicate check.
-		args := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn, monthlyPeriod(inv.Type, inv.CreatedOn), inv.Amount, id}, twArgs...)
-		res, err := db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, period=?, line_items=CASE WHEN ROUND(amount::numeric,2)<>ROUND(?::numeric,2) THEN '[]' ELSE line_items END WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+		var res sql.Result
+		var err error
+		if editingItems {
+			// Lines were sent, so they ARE the new breakdown and the total came
+			// from them. No CASE: there is nothing inconsistent to clear.
+			itemArgs := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn,
+				monthlyPeriod(inv.Type, inv.CreatedOn), models.MarshalLineItems(inv.LineItems), id}, twArgs...)
+			res, err = db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, period=?, line_items=? WHERE id=?`+tw+` AND deleted_at IS NULL`, itemArgs...)
+		} else {
+			args := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn, monthlyPeriod(inv.Type, inv.CreatedOn), inv.Amount, id}, twArgs...)
+			res, err = db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, period=?, line_items=CASE WHEN ROUND(amount::numeric,2)<>ROUND(?::numeric,2) THEN '[]' ELSE line_items END WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+		}
 		if err != nil {
 			core.RespondError(w, "could not update invoice", http.StatusInternalServerError)
 			return

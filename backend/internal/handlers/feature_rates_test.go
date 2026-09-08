@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -392,5 +393,78 @@ func TestPricingCatalogue_CRUD(t *testing.T) {
 	db.QueryRow(`SELECT COUNT(*) FROM pricing_plans WHERE category_id=? AND deleted_at IS NULL`, cat.ID).Scan(&livePlans)
 	if livePlans != 0 {
 		t.Fatalf("deleting a category must retire its tiers, %d left", livePlans)
+	}
+}
+
+// TestInvoiceUpdate_LineItemsAreAuthoritative locks the editable itemisation.
+// Before it existed the only way to change an invoice was to overwrite the
+// total, and doing so WIPED line_items -- so correcting a figure silently
+// destroyed the breakdown the PDF prints.
+func TestInvoiceUpdate_LineItemsAreAuthoritative(t *testing.T) {
+	r, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	tok := getToken(t, r, "admin@studyhub.com", "admin123")
+
+	var tenantID int
+	db.QueryRow(`SELECT tenant_id FROM users WHERE email=?`, "admin@studyhub.com").Scan(&tenantID)
+	stuID := core.GenerateID("STU")
+	db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,contact,status) VALUES(?,?,?,?,?,?)`,
+		stuID, tenantID, "Line", "Items", "lineitems@example.com", "Active")
+
+	w := authedJSON(t, r, "POST", "/api/invoices", tok, map[string]any{
+		"studentId": stuID, "description": "Monthly tuition", "type": "Monthly",
+		"amount": 240, "dueDate": "2026-10-07", "createdOn": "2026-10-01",
+	})
+	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+		t.Fatalf("create invoice: %d %s", w.Code, w.Body.String())
+	}
+	var made struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &made)
+
+	// Edit with lines, and a deliberately WRONG amount. The server must derive
+	// the total from the lines and ignore what the client claimed -- 260 + 60
+	// minus a 10 discount is 310, not the 999 posted.
+	w = authedJSON(t, r, "PUT", "/api/invoices/"+made.ID, tok, map[string]any{
+		"description": "Monthly tuition", "type": "Monthly", "amount": 999,
+		"dueDate": "2026-10-07", "createdOn": "2026-10-01",
+		"lineItems": []map[string]any{
+			{"kind": "item", "name": "Group Class Level 3-4", "qty": 1, "unitPrice": 260},
+			{"kind": "item", "name": "Extra class 12 Oct", "qty": 1, "unitPrice": 60},
+			{"kind": "discount", "name": "Goodwill", "qty": 1, "unitPrice": 10, "amount": -10},
+		},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("edit with lines: %d %s", w.Code, w.Body.String())
+	}
+
+	var amount float64
+	var lineJSON string
+	db.QueryRow(`SELECT amount, COALESCE(line_items,'') FROM invoices WHERE id=?`, made.ID).Scan(&amount, &lineJSON)
+	if amount != 310 {
+		t.Fatalf("total must come from the lines, not the posted amount: want 310, got %v", amount)
+	}
+	// The breakdown has to SURVIVE, which is the whole point: the old path
+	// cleared it whenever the amount changed, and the amount changed here.
+	if !strings.Contains(lineJSON, "Extra class 12 Oct") {
+		t.Fatalf("hand-typed line must be stored, got %q", lineJSON)
+	}
+	if !strings.Contains(lineJSON, "Goodwill") {
+		t.Fatalf("discount line must be stored, got %q", lineJSON)
+	}
+
+	// A plain edit with no lines keeps the old behaviour, so nothing that
+	// relied on setting a bare total breaks.
+	w = authedJSON(t, r, "PUT", "/api/invoices/"+made.ID, tok, map[string]any{
+		"description": "Monthly tuition", "type": "Monthly", "amount": 275,
+		"dueDate": "2026-10-07", "createdOn": "2026-10-01",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("plain edit: %d %s", w.Code, w.Body.String())
+	}
+	db.QueryRow(`SELECT amount FROM invoices WHERE id=?`, made.ID).Scan(&amount)
+	if amount != 275 {
+		t.Fatalf("a bare amount edit must still work: want 275, got %v", amount)
 	}
 }

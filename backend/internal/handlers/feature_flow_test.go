@@ -123,6 +123,7 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 		r.Get("/api/invoices", HandleInvoices(db))
 		r.Post("/api/invoices", HandleInvoices(db))
 		r.Put("/api/invoices/{id}/pay", HandleInvoicePay(db))
+		r.Put("/api/invoices/{id}", HandleInvoiceUpdate(db))
 		r.Get("/api/attendance", HandleAttendance(db, hub))
 		r.Post("/api/attendance", HandleAttendance(db, hub))
 		r.Delete("/api/attendance/{id}", HandleDeleteAttendance(db))

@@ -102,6 +102,18 @@
     _renderLineItems();
   }
 
+  // A free-text line. It is an ordinary item -- same shape, same renderer, so
+  // it prints on the invoice and the PDF exactly like a catalogue line rather
+  // than looking bolted on. The name starts empty so the field is obviously
+  // the thing to fill in.
+  function _addBlankLine(kind) {
+    _lineSeq++;
+    _lineItems.push({ id: _lineSeq, kind: kind === 'discount' ? 'discount' : 'item',
+      name: kind === 'discount' ? 'Discount' : '', descriptor: '',
+      qty: 1, unitPrice: 0, editableQty: true });
+    _renderLineItems();
+  }
+
   function _removeLineItem(id) {
     _lineItems = _lineItems.filter(function(li) { return li.id !== id; });
     _renderLineItems();
@@ -129,7 +141,8 @@
   function _lineItemRow(li) {
     var isDiscount = li.kind === 'discount';
     var priceInput = isDiscount
-      ? ''
+      ? '<input type="number" min="0" step="0.01" value="' + (li.unitPrice || 0)
+        + '" oninput="App.Billing._editLineItem(' + li.id + ',\'unitPrice\',this.value)" style="width:74px;padding:0.25rem 0.4rem;border:1px solid #bbf7d0;border-radius:6px;font-size:0.78rem;color:#166534" title="Amount off (RM)">'
       : '<input type="number" min="0" step="0.01" value="' + (li.unitPrice || 0)
         + '" oninput="App.Billing._editLineItem(' + li.id + ',\'unitPrice\',this.value)" style="width:74px;padding:0.25rem 0.4rem;border:1px solid #e2e8f0;border-radius:6px;font-size:0.78rem" title="Unit price (RM)">';
     var qtyInput = (!isDiscount && li.editableQty)
@@ -140,7 +153,12 @@
     // class) can be labelled properly until session billing carries real
     // class names. esc() is attribute-safe: it escapes quotes.
     var nameCell = isDiscount
-      ? '<div style="font-size:0.84rem;font-weight:600;color:#166534">' + App.Utils.esc(li.name) + '</div>'
+      ? '<input type="text" value="' + App.Utils.esc(li.name) + '"'
+        + ' oninput="App.Billing._editLineItem(' + li.id + ',\'name\',this.value)"'
+        + ' style="width:100%;padding:0.2rem 0.3rem;border:1px solid transparent;border-radius:6px;font-size:0.84rem;font-weight:600;color:#166534;background:transparent"'
+        + ' onfocus="this.style.borderColor=\'#bbf7d0\';this.style.background=\'#fff\'"'
+        + ' onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'"'
+        + ' title="Discount wording, click to edit">'
       : '<input type="text" value="' + App.Utils.esc(li.name)
         + '" oninput="App.Billing._editLineItem(' + li.id + ',\'name\',this.value)" '
         + 'style="width:100%;padding:0.2rem 0.3rem;border:1px solid transparent;border-radius:6px;font-size:0.84rem;font-weight:600;color:#111;background:transparent" '
@@ -1169,7 +1187,21 @@
       + _field('Description', '<input name="description" class="form-input" value="' + App.Utils.esc(inv.description) + '" required>')
       + '<div class="grid grid-cols-2 gap-4">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input">' + typeOptions + '</select></div>'
-      + _field('Amount (RM)', '<input name="amount" type="number" min="0" step="0.01" class="form-input" value="' + inv.amount + '" required>')
+      + _field('Amount (RM)', '<input name="amount" id="edit-amount" type="number" min="0" step="0.01" class="form-input" value="' + inv.amount + '" required>')
+      + '</div>'
+      // The itemisation, editable. Without this the only way to change an
+      // invoice was to overwrite the total, which wiped the breakdown the PDF
+      // prints -- so a correction quietly destroyed the detail.
+      + '<div style="border-top:1px solid #f0ede8;padding-top:0.85rem">'
+      +   '<label class="block text-sm font-medium text-slate-700 mb-1">Lines</label>'
+      +   '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">'
+      +     '<select id="pkg-catalog" class="form-input" style="flex:1;min-width:180px" onchange="App.Billing._addLineItem(this.value); this.selectedIndex=0;">' + _packageCatalogOptions() + '</select>'
+      +     '<button type="button" onclick="App.Billing._addBlankLine(\'item\')" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;white-space:nowrap">+ Own wording</button>'
+      +     '<button type="button" onclick="App.Billing._addBlankLine(\'discount\')" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:8px;cursor:pointer;white-space:nowrap">+ Discount</button>'
+      +   '</div>'
+      +   '<div id="line-items-list"></div>'
+      +   '<div id="line-items-total" style="text-align:right;font-size:0.9rem;color:#111;margin-top:0.35rem"></div>'
+      +   '<p class="text-xs text-slate-400 mt-1">Any line you add is typed by you and prints like the rest. With lines present the total comes from them and the Amount box is ignored; leave the list empty to just set a total.</p>'
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Invoice Date', '<input name="invoiceDate" type="date" class="form-input" value="' + (inv.createdOn || '') + '" required>')
@@ -1182,6 +1214,15 @@
       + '</form>'
       + '</div>'
     );
+    _lineItems = (inv.lineItems || []).map(function(li, i) {
+      _lineSeq++;
+      return { id: _lineSeq, kind: li.kind || 'item', name: li.name || '',
+        descriptor: li.descriptor || '', qty: li.qty == null ? 1 : li.qty,
+        unitPrice: li.unitPrice == null ? li.amount : li.unitPrice,
+        editableQty: true };
+    });
+    _renderLineItems();
+
     document.getElementById('edit-invoice-form').addEventListener('submit', function(e) {
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -1192,6 +1233,16 @@
         dueDate: fd.get('dueDate'),
         createdOn: fd.get('invoiceDate')
       };
+      // Lines win when present: the server recomputes the total from them and
+      // ignores the amount, which is what keeps NormalizeLineItems the single
+      // authority on what an invoice adds up to.
+      if (_lineItems.length > 0) {
+        payload.lineItems = _lineItems.map(function(li) {
+          return { kind: li.kind, name: li.name, descriptor: li.descriptor || '',
+            qty: parseFloat(li.qty) || 0, unitPrice: parseFloat(li.unitPrice) || 0,
+            amount: _lineItemAmount(li) };
+        });
+      }
       App.Utils.hideModal(true);
       App.Api.put('/api/invoices/' + invoiceId, payload).then(function() {
         return App.Api.loadSnapshot();
@@ -1740,6 +1791,7 @@
     _updateNetAmount: _updateNetAmount,
     _addLineItem: _addLineItem,
     _removeLineItem: _removeLineItem,
+    _addBlankLine: _addBlankLine,
     _editLineItem: _editLineItem,
     _updateSelfStudyAmount: _updateSelfStudyAmount,
     _updateSiblingChildren: _updateSiblingChildren,
