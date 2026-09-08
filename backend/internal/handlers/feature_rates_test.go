@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -296,5 +297,100 @@ func TestResolvePricingCategory_TenantWithoutCatalogue(t *testing.T) {
 	bogus := models.Class{Name: "X", ClassType: "Group", PricingCategoryID: "PC_nope"}
 	if err := resolvePricingCategory(db, 1, &bogus); err == nil {
 		t.Fatal("an unknown category id must still be refused")
+	}
+}
+
+// TestPricingCatalogue_CRUD locks the guards on the catalogue editor. Until
+// these routes existed the prices were in the database with no way to change
+// them without a deploy (ADR-004), so the editor is the switchover's
+// precondition -- and the two rules below are what stop it reintroducing the
+// silent zero the whole rework exists to close.
+func TestPricingCatalogue_CRUD(t *testing.T) {
+	r, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	tok := getToken(t, r, "admin@studyhub.com", "admin123")
+
+	post := func(path string, body map[string]any) *httptest.ResponseRecorder {
+		return authedJSON(t, r, "POST", path, tok, body)
+	}
+
+	// A category Nadine could add herself -- Mandarin, which has no level and
+	// so never fitted the old grid.
+	w := post("/api/pricing-categories", map[string]any{"name": "Mandarin", "sortOrder": 9})
+	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+		t.Fatalf("create category: %d %s", w.Code, w.Body.String())
+	}
+	var cat struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &cat)
+	if cat.ID == "" {
+		t.Fatalf("no category id: %s", w.Body.String())
+	}
+
+	// Duplicate names are refused, so two "Mandarin" categories cannot exist
+	// for a class to point at the wrong one.
+	if w = post("/api/pricing-categories", map[string]any{"name": "Mandarin"}); w.Code != http.StatusConflict {
+		t.Fatalf("duplicate category must conflict, got %d", w.Code)
+	}
+
+	// RULE 1: a tier with no price at all cannot be saved.
+	w = post("/api/pricing-plans", map[string]any{
+		"categoryId": cat.ID, "tierName": "Group", "sessionsPerWeek": 1,
+		"monthlyFee": 0, "hourlyRate": 0,
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("an unpriced tier must be refused, got %d %s", w.Code, w.Body.String())
+	}
+
+	w = post("/api/pricing-plans", map[string]any{
+		"categoryId": cat.ID, "tierName": "Group", "sessionsPerWeek": 1, "monthlyFee": 240,
+	})
+	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+		t.Fatalf("create plan: %d %s", w.Code, w.Body.String())
+	}
+	var plan struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &plan)
+
+	var fee float64
+	db.QueryRow(`SELECT monthly_fee FROM pricing_plans WHERE id=?`, plan.ID).Scan(&fee)
+	if fee != 240 {
+		t.Fatalf("stored fee: want 240, got %v", fee)
+	}
+
+	// An hourly-only tier is legitimate -- self-study overflow is priced that
+	// way (0054) -- so the rule is "priced somehow", not "has a monthly fee".
+	w = post("/api/pricing-plans", map[string]any{
+		"categoryId": cat.ID, "tierName": "Beyond included hours", "sessionsPerWeek": 1, "hourlyRate": 10,
+	})
+	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+		t.Fatalf("hourly-only tier must be allowed: %d %s", w.Code, w.Body.String())
+	}
+
+	// RULE 2: a category still used by a class cannot be deleted, because
+	// those classes would resolve to no price and be skipped in silence.
+	var tenantID int
+	db.QueryRow(`SELECT tenant_id FROM users WHERE email=?`, "admin@studyhub.com").Scan(&tenantID)
+	clsID := core.GenerateID("CLS")
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,classroom,pricing_category_id) VALUES(?,?,?,?,?,?,?,?)`,
+		clsID, tenantID, "Mandarin", "Thursday", "16:00", "17:00", "Room M", cat.ID)
+
+	w = authedJSON(t, r, "DELETE", "/api/pricing-categories/"+cat.ID, tok, nil)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("a category in use must not be deletable, got %d %s", w.Code, w.Body.String())
+	}
+
+	// Freed up, it deletes -- and takes its tiers with it, so a later category
+	// of the same name does not inherit prices nobody set.
+	db.Exec(`UPDATE classes SET pricing_category_id=NULL WHERE id=?`, clsID)
+	if w = authedJSON(t, r, "DELETE", "/api/pricing-categories/"+cat.ID, tok, nil); w.Code != http.StatusOK {
+		t.Fatalf("delete freed category: %d %s", w.Code, w.Body.String())
+	}
+	var livePlans int
+	db.QueryRow(`SELECT COUNT(*) FROM pricing_plans WHERE category_id=? AND deleted_at IS NULL`, cat.ID).Scan(&livePlans)
+	if livePlans != 0 {
+		t.Fatalf("deleting a category must retire its tiers, %d left", livePlans)
 	}
 }

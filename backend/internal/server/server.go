@@ -250,6 +250,16 @@ func Build(db *store.DB) http.Handler {
 		})
 
 		r.Put("/api/pricing/{id}", handlers.HandleUpdatePricingTier(db))
+		// The catalogue (0051/0054). Until these routes existed the tables had
+		// the right prices and no way to change them without a deploy.
+		r.Get("/api/pricing-categories", handlers.HandlePricingCategories(db))
+		r.Post("/api/pricing-categories", handlers.HandlePricingCategories(db))
+		r.Put("/api/pricing-categories/{id}", handlers.HandlePricingCategoryByID(db))
+		r.Delete("/api/pricing-categories/{id}", handlers.HandlePricingCategoryByID(db))
+		r.Get("/api/pricing-plans", handlers.HandlePricingPlans(db))
+		r.Post("/api/pricing-plans", handlers.HandlePricingPlans(db))
+		r.Put("/api/pricing-plans/{id}", handlers.HandlePricingPlanByID(db))
+		r.Delete("/api/pricing-plans/{id}", handlers.HandlePricingPlanByID(db))
 
 		r.Route("/api/self-study", func(r chi.Router) {
 			r.Get("/", handlers.HandleListSelfStudy(db))

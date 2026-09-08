@@ -11,6 +11,7 @@
     attendance:    'Attendance',
     progress:      'Progress Reports',
     analytics:     'Analytics',
+    pricing:       'Pricing',
     profile:       'My Profile'
   };
 

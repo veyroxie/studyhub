@@ -584,6 +584,32 @@ type ProgressReport struct {
 	UpdatedAt      string `json:"updatedAt"`
 }
 
+// PricingCategory owns a set of named tiers (0051). Free-form, so it carries
+// the subject where that matters -- Group, Private, Mandarin, Phonics -- which
+// is why pricing does not need a subject dimension of its own (ADR-003).
+// CreditCovered marks a category billed from a credit balance rather than a
+// monthly fee; Self-Study is the one today.
+type PricingCategory struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	CreditCovered bool   `json:"creditCovered"`
+	SortOrder     int    `json:"sortOrder"`
+}
+
+// PricingPlan is one price: a (category, tier, sessions per week) triple.
+// MonthlyFee prices a subscription, HourlyRate prices overflow by the hour
+// (0054). At least one must be set -- a plan priced at neither is the silent
+// zero this whole rework exists to make unstorable.
+type PricingPlan struct {
+	ID              string  `json:"id"`
+	CategoryID      string  `json:"categoryId"`
+	TierName        string  `json:"tierName"`
+	SessionsPerWeek int     `json:"sessionsPerWeek"`
+	MonthlyFee      float64 `json:"monthlyFee"`
+	HourlyRate      float64 `json:"hourlyRate"`
+	SortOrder       int     `json:"sortOrder"`
+}
+
 // Snapshot is what GET /api/snapshot returns — identical shape to App.DATA
 type Snapshot struct {
 	Students           []Student           `json:"students"`
@@ -596,6 +622,8 @@ type Snapshot struct {
 	Registrations      []Registration      `json:"registrations,omitempty"`
 	Feedback           []Feedback          `json:"feedback"`
 	PricingTiers       []PricingTier       `json:"pricingTiers"`
+	PricingCategories  []PricingCategory   `json:"pricingCategories"`
+	PricingPlans       []PricingPlan       `json:"pricingPlans"`
 	Workshops          []Workshop          `json:"workshops"`
 	SelfStudySessions  []SelfStudySession  `json:"selfStudySessions"`
 	PerformanceReviews []PerformanceReview `json:"performanceReviews"`

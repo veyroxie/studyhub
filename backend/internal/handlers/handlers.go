@@ -244,6 +244,8 @@ func HandleSnapshot(db *store.DB) http.HandlerFunc {
 		run(func() { snap.Feedback = store.ListFeedbackRecent(db, c) })
 		run(func() { snap.Workshops = listWorkshops(db, c) })
 		run(func() { snap.PricingTiers = listPricingTiers(db, c) })
+		run(func() { snap.PricingCategories = listPricingCategories(db, c) })
+		run(func() { snap.PricingPlans = listPricingPlans(db, c) })
 		run(func() { snap.SelfStudySessions = store.ListSelfStudyRecent(db, c) })
 		run(func() { snap.PerformanceReviews = listPerformanceReviews(db, c) })
 		run(func() { snap.CancelledClasses = listCancelledClasses(db, c) })

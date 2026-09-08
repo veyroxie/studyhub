@@ -190,11 +190,20 @@
       el.style.display = isAdmin ? '' : 'none';
     });
 
+    // Same for the sidebar. Only Pricing carries this today; Staff and
+    // Analytics have shown in every role's sidebar since before this class
+    // existed, and gating them is a behaviour change to make deliberately
+    // rather than in passing.
+    document.querySelectorAll('.nav-admin').forEach(function(el) {
+      el.style.display = isAdmin ? '' : 'none';
+    });
+
     // Show/hide role-specific dock buttons
     var pageHidden = {
       billing:    isTeacher,
       staff:      !isAdmin,
       analytics:  !isAdmin,
+      pricing:    !isAdmin,
       students:   App.currentRole === 'client',
       attendance: false,
       feedback:   false

@@ -67,6 +67,20 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 			tier[0], tier[1], tier[2], tier[3], tier[4])
 	}
 
+	// Same problem as the tiers above, and the catalogue is now writable by a
+	// handler so tests actively create rows in it. The seeded catalogue comes
+	// from migrations 0051/0054, so it is restored rather than re-inserted:
+	// anything a test added is dropped, and anything a test soft-deleted is
+	// revived. Without this, TestPricingCatalogue_CRUD passes once and then
+	// conflicts with its own leftovers on every later run.
+	db.Exec(`DELETE FROM pricing_plans WHERE id NOT IN (
+		'PP_grp_12_1','PP_grp_12_2','PP_grp_34_1','PP_grp_34_2','PP_grp_56_1','PP_grp_56_2',
+		'PP_prv_12_1','PP_prv_12_2','PP_prv_34_1','PP_prv_34_2','PP_prv_56_1','PP_prv_56_2',
+		'PP_self_overflow')`)
+	db.Exec(`DELETE FROM pricing_categories WHERE id NOT IN ('PC_group','PC_private','PC_selfstudy')`)
+	db.Exec(`UPDATE pricing_categories SET deleted_at=NULL WHERE deleted_at IS NOT NULL`)
+	db.Exec(`UPDATE pricing_plans SET deleted_at=NULL WHERE deleted_at IS NOT NULL`)
+
 	t.Setenv("RESEND_API_KEY", "")
 	core.InitLogger()
 	mailer.Init()
@@ -94,6 +108,14 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 		r.Get("/api/classes", HandleClasses(db))
 		r.Post("/api/classes", HandleClasses(db))
 		r.Put("/api/classes/{id}", HandleClassByID(db))
+		r.Get("/api/pricing-categories", HandlePricingCategories(db))
+		r.Post("/api/pricing-categories", HandlePricingCategories(db))
+		r.Put("/api/pricing-categories/{id}", HandlePricingCategoryByID(db))
+		r.Delete("/api/pricing-categories/{id}", HandlePricingCategoryByID(db))
+		r.Get("/api/pricing-plans", HandlePricingPlans(db))
+		r.Post("/api/pricing-plans", HandlePricingPlans(db))
+		r.Put("/api/pricing-plans/{id}", HandlePricingPlanByID(db))
+		r.Delete("/api/pricing-plans/{id}", HandlePricingPlanByID(db))
 		r.Delete("/api/students/{id}", HandleStudent(db))
 		r.Get("/api/families", HandleFamilies(db))
 		r.Post("/api/families", HandleFamilies(db))
