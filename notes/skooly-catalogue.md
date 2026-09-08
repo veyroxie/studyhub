@@ -147,11 +147,58 @@ so the row is internally consistent and the derived sessions-per-week concern
 still applies but the price does not contradict the category. Whether a 1-to-1
 class should charge the group rate is Nadine's call, not a data fault.
 
-## 7. Still unanswered after the chat export
+## 7. Both Skooly conflicts are RESOLVED by the chat -- Skooly is wrong
 
-Neither the Skooly list nor the full group chat resolves these:
+Nadine gave both figures directly. Where Skooly and the chat disagree, the
+chat wins: it is her stating a price, not a system holding an old option.
 
-1. Group 5-6 twice-weekly: 1,010 or 490?
-2. Private 5-6: 520 or 780?
-3. Aria's second (Tuesday) Level 0 slot -- another RM80, or a two-slot rate?
-4. Why `Phonics (Aria & Aleena)` has no Aria enrolment.
+**Private Level 5 is RM520, not RM780.** Per-level list, Nadine 07-02:
+
+```
+  Group     L1 240  L2 240  L3 240  L4 260  L5 260  L6 260
+  Private   L1 480  L2 480  L3 480  L4 520  L5 520  L6 520
+```
+
+Skooly's RM780 (RM195/week) appears only as a manual-billing option and is not
+the current price. Geneva, Zia and Carolina all pay RM520.
+
+**Group Level 5-6 twice-weekly is RM490, not RM1,010.** Nadine, 09-02:
+
+```
+  Twice a week
+  Group    Level 1-3  RM450     Level 4-6  RM490
+  Private  Level 1-3  RM930     Level 4-6  RM1,010
+```
+
+Mapped onto the new bands by the agreed rule (new 1-2 takes old 1-3; 3-4 and
+5-6 both take old 4-6), that is exactly what migration 0051 seeded:
+
+| Tier | 1x | 2x | Seeded |
+| --- | --- | --- | --- |
+| Group 1-2 | 240 | 450 | correct |
+| Group 3-4 | 260 | 490 | correct |
+| Group 5-6 | 260 | 490 | correct |
+| Private 1-2 | 480 | 930 | correct |
+| Private 3-4 | 520 | 1,010 | correct |
+| Private 5-6 | 520 | 1,010 | correct |
+
+**The catalogue needs no change.** Skooly's RM1,010 against a Group course is a
+mis-entry, which the pattern already suggested and the chat now confirms.
+
+## 8. One live discrepancy the per-level list exposes
+
+Nadine prices **Level 3 at the Level 1-3 rate** (Group 240, Private 480), but
+the new bands put Level 3 into `Level 3-4` at 260/520. `pricing-bands.md`
+section 3c anticipated this -- "Level 3 discounted by hand" -- but it now has a
+name attached: **Gareth is Level 3 and private**, so the catalogue will price
+him at RM520 where Nadine's own list says RM480.
+
+Not a bug in the seed, which followed the agreed mapping. It is the first real
+instance of the hand-discount the mapping assumed, and it should be settled
+before the switchover rather than discovered on his invoice.
+
+## 9. Still unanswered
+
+1. Aria's second (Tuesday) Level 0 slot -- another RM80, or a two-slot rate?
+   Skooly has no twice-weekly Level 0 price and the chat never discusses one.
+2. Why `Phonics (Aria & Aleena)` has no Aria enrolment.
