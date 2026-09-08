@@ -28,8 +28,8 @@
     return '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;padding:0.75rem 1rem;">'
       + '<span style="font-size:0.8rem;color:#64748b;">Showing ' + start + '–' + end + ' of ' + total + '</span>'
       + '<div style="display:flex;gap:0.5rem;">'
-      + '<button onclick="' + moduleFn + '(' + (page - 1) + ')"' + (prevDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;cursor:' + (prevDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (prevDis ? 'opacity:0.4;' : '') + '">Prev</button>'
-      + '<button onclick="' + moduleFn + '(' + (page + 1) + ')"' + (nextDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;cursor:' + (nextDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (nextDis ? 'opacity:0.4;' : '') + '">Next</button>'
+      + '<button onclick="' + moduleFn + '(' + (page - 1) + ')"' + (prevDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:4px;cursor:' + (prevDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (prevDis ? 'opacity:0.4;' : '') + '">Prev</button>'
+      + '<button onclick="' + moduleFn + '(' + (page + 1) + ')"' + (nextDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:4px;cursor:' + (nextDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (nextDis ? 'opacity:0.4;' : '') + '">Next</button>'
       + '</div></div>';
   }
 
@@ -85,9 +85,9 @@
       +   '</div>'
       + '</div>'
 
-      + (isAdmin ? '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px;margin-bottom:1rem;width:fit-content">'
-      + '<button onclick="App.Students._setTab(\'students\')" style="padding:0.35rem 1rem;font-size:0.78rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_studentsTab==='students'?'var(--gold)':'transparent') + ';color:' + (_studentsTab==='students'?'#0a0a0a':'#94a3b8') + '">Students</button>'
-      + '<button onclick="App.Students._setTab(\'families\')" style="padding:0.35rem 1rem;font-size:0.78rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_studentsTab==='families'?'var(--gold)':'transparent') + ';color:' + (_studentsTab==='families'?'#0a0a0a':'#94a3b8') + '">Families</button>'
+      + (isAdmin ? '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:4px;padding:3px;margin-bottom:1rem;width:fit-content">'
+      + '<button onclick="App.Students._setTab(\'students\')" style="padding:0.35rem 1rem;font-size:0.78rem;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:' + (_studentsTab==='students'?'var(--gold)':'transparent') + ';color:' + (_studentsTab==='students'?'#0a0a0a':'#94a3b8') + '">Students</button>'
+      + '<button onclick="App.Students._setTab(\'families\')" style="padding:0.35rem 1rem;font-size:0.78rem;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:' + (_studentsTab==='families'?'var(--gold)':'transparent') + ';color:' + (_studentsTab==='families'?'#0a0a0a':'#94a3b8') + '">Families</button>'
       + '</div>' : '');
 
     if (_studentsTab === 'families' && isAdmin) {
@@ -135,7 +135,7 @@
           ? '<tr><td colspan="' + colCount + '" style="padding:0">' + App.Utils.emptyState(
               (_search || _statusFilter !== 'All') ? 'No students match your filters' : 'No students yet',
               (_search || _statusFilter !== 'All') ? 'Try adjusting your search or status filter.' : 'Add your first student to get started.',
-              (isAdmin && !(_search || _statusFilter !== 'All')) ? '<button onclick="App.Students._addModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Student</button>' : (_search || _statusFilter !== 'All') ? '<button onclick="App.Students._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer">Clear Filters</button>' : ''
+              (isAdmin && !(_search || _statusFilter !== 'All')) ? '<button onclick="App.Students._addModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">+ Add Student</button>' : (_search || _statusFilter !== 'All') ? '<button onclick="App.Students._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:4px;cursor:pointer">Clear Filters</button>' : ''
             ) + '</td></tr>'
           : (function() {
               // Pre-compute lookups once instead of inside the per-row map.
@@ -183,7 +183,7 @@
                 + (isTeacher ? '' : '<td class="td text-sm"><div class="text-slate-700">' + App.Utils.esc(s.parentName) + '</div><div class="text-slate-400 text-xs">' + App.Utils.esc(s.contact) + '</div></td>')
                 + '<td class="td">' + App.Utils.statusBadge(s.status) + rowNotBilled + '</td>'
                 + (isAdmin ? '<td class="td" onclick="event.stopPropagation()">'
-                +   '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;font-size:0.62rem;font-weight:700">'
+                +   '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:4px;overflow:hidden;font-size:0.62rem;font-weight:700">'
                 +   '<button onclick="App.Students._activateStudent(\'' + s.id + '\')" title="Auto-bill on — include in monthly invoices" style="padding:0.15rem 0.45rem;border:none;cursor:pointer;background:' + (rowSubStatus === 'active' ? '#22c55e' : '#fff') + ';color:' + (rowSubStatus === 'active' ? '#fff' : '#94a3b8') + '">On</button>'
                 +   '<button onclick="App.Students._deactivateStudent(\'' + s.id + '\')" title="Auto-bill off — pause invoices (student stays visible)" style="padding:0.15rem 0.45rem;border:none;border-left:1px solid #e2e8f0;cursor:pointer;background:' + (rowSubStatus !== 'active' ? '#f59e0b' : '#fff') + ';color:' + (rowSubStatus !== 'active' ? '#fff' : '#94a3b8') + '">Off</button>'
                 + '</div></td>' : '')
@@ -212,9 +212,9 @@
   function _bulkBar() {
     var count = Object.keys(_selected).length;
     if (count === 0) return '';
-    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 1rem;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.25);border-radius:10px;margin-bottom:0.75rem">'
+    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 1rem;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.35);border-radius:0;margin-bottom:0.75rem">'
       + '<span style="font-size:0.82rem;font-weight:700;color:#92400e">' + count + ' selected</span>'
-      + '<button onclick="App.Students._bulkDeselect()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:transparent;color:#92400e;border:1px solid rgba(201,162,39,0.3);border-radius:7px;cursor:pointer">Clear</button>'
+      + '<button onclick="App.Students._bulkDeselect()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:transparent;color:#92400e;border:1px solid rgba(201,162,39,0.35);border-radius:4px;cursor:pointer">Clear</button>'
       + '</div>';
   }
 
@@ -420,7 +420,7 @@
       +   (isAdmin ? '<div style="margin-left:auto;display:flex;gap:1rem;align-items:flex-end">'
       +     '<div style="text-align:right">'
       +       '<div style="font-size:0.62rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem">Auto-bill</div>'
-      +       '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;font-size:0.72rem;font-weight:700">'
+      +       '<div style="display:inline-flex;border:1px solid #e2e8f0;border-radius:4px;overflow:hidden;font-size:0.72rem;font-weight:700">'
       +         '<button onclick="App.Students._activateStudent(\'' + studentId + '\')" style="padding:0.32rem 0.72rem;border:none;cursor:pointer;background:' + (subStatus === 'active' ? '#22c55e' : '#fff') + ';color:' + (subStatus === 'active' ? '#fff' : '#64748b') + '">On</button>'
       +         '<button onclick="App.Students._deactivateStudent(\'' + studentId + '\')" style="padding:0.32rem 0.72rem;border:none;border-left:1px solid #e2e8f0;cursor:pointer;background:' + (subStatus !== 'active' ? '#f59e0b' : '#fff') + ';color:' + (subStatus !== 'active' ? '#fff' : '#64748b') + '">Off</button>'
       +       '</div>'
@@ -481,15 +481,15 @@
                 + '<span style="color:#64748b"> · ' + App.Utils.esc(s.contact) + '</span>'
                 + (fam ? '<span style="color:#94a3b8"> · ' + App.Utils.esc(fam.name) + '</span>' : '')
               : '<span style="color:#dc2626;font-weight:600">No parent linked</span>';
-            return '<div style="margin-top:1rem;padding:0.85rem 1rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px;display:flex;align-items:center;gap:0.75rem">'
+            return '<div style="margin-top:1rem;padding:0.85rem 1rem;background:#fff;border:1px solid #e2e8f0;border-radius:0;display:flex;align-items:center;gap:0.75rem">'
               + '<div style="flex:1;min-width:0;font-size:0.83rem">'
               +   '<div style="font-size:0.65rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.2rem">Linked Parent</div>'
               +   summary
               + '</div>'
-              + '<button onclick="App.Students._relinkModal(\'' + studentId + '\')" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold-dim);color:#92400e;border:1px solid rgba(201,162,39,0.3);border-radius:8px;cursor:pointer;white-space:nowrap">' + (linked ? 'Change link' : 'Link parent') + '</button>'
+              + '<button onclick="App.Students._relinkModal(\'' + studentId + '\')" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold-dim);color:#92400e;border:1px solid rgba(201,162,39,0.35);border-radius:4px;cursor:pointer;white-space:nowrap">' + (linked ? 'Change link' : 'Link parent') + '</button>'
               + '</div>';
           })() : '')
-      +   '<div style="margin-top:1rem;padding:1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px">'
+      +   '<div style="margin-top:1rem;padding:1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:0">'
       +     '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.65rem">'
       +       '<svg style="width:18px;height:18px;color:#b45309" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342"/></svg>'
       +       '<span style="font-size:0.78rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.05em">Health Information</span>'
@@ -505,7 +505,7 @@
             var pkgAmt = s.packageAmount || 0;
             var pkgHrs = (s.packageSelfStudyHours == null) ? 4 : s.packageSelfStudyHours;
             var paused = subStatus !== 'active';
-            return '<div style="margin-top:1rem;padding:1rem;background:#fff;border:1px solid #e2e8f0;border-radius:12px">'
+            return '<div style="margin-top:1rem;padding:1rem;background:#fff;border:1px solid #e2e8f0;border-radius:0">'
               + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.65rem">'
               +   '<div style="font-size:0.72rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.05em">Monthly invoicing</div>'
               +   '<span style="font-size:0.7rem;font-weight:700;color:' + (paused ? '#92400e' : '#15803d') + '">' + (paused ? 'OFF' : 'ON') + '</span>'
@@ -516,16 +516,16 @@
               + '</div>'
               + '<div style="display:flex;gap:0.5rem">'
               + (paused
-                  ? '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'resume\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:8px;cursor:pointer">Turn invoicing on</button>'
-                  : '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'freeze\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;cursor:pointer">Turn invoicing off</button>')
+                  ? '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'resume\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:4px;cursor:pointer">Turn invoicing on</button>'
+                  : '<button onclick="App.Students._subscriptionAction(\'' + studentId + '\',\'freeze\')" style="padding:0.45rem 0.95rem;font-size:0.78rem;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:4px;cursor:pointer">Turn invoicing off</button>')
               + '</div>'
               + '</div>';
           })() : '')
       +   (App.currentRole === 'teacher'
-        ? '<div style="margin-top:1rem;padding:1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px">'
+        ? '<div style="margin-top:1rem;padding:1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:0">'
           + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">Quick Note</div>'
-          + '<textarea id="teacher-quick-note" rows="2" placeholder="e.g. Had trouble focusing today..." style="width:100%;padding:0.5rem 0.75rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:8px;resize:none;outline:none;font-family:inherit"></textarea>'
-          + '<button onclick="App.Students._saveQuickNote(\'' + studentId + '\')" style="margin-top:0.5rem;padding:0.4rem 1rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Save Note</button>'
+          + '<textarea id="teacher-quick-note" rows="2" placeholder="e.g. Had trouble focusing today..." style="width:100%;padding:0.5rem 0.75rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:4px;resize:none;outline:none;font-family:inherit"></textarea>'
+          + '<button onclick="App.Students._saveQuickNote(\'' + studentId + '\')" style="margin-top:0.5rem;padding:0.4rem 1rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save Note</button>'
           + '</div>'
         : '')
       +   (function() {
@@ -538,7 +538,7 @@
             const monthHr = monthMin / 60;
             const freeRem = Math.max(0, 4 - monthHr);
             const billable = Math.max(0, monthHr - 4);
-            return '<div style="margin-top:1rem;padding:0.85rem 1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px">'
+            return '<div style="margin-top:1rem;padding:0.85rem 1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:0">'
               + '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">Self Study Membership</div>'
               + '<div style="display:flex;gap:1.5rem;flex-wrap:wrap">'
               +   '<div><div style="font-size:0.7rem;color:#94a3b8">Monthly free</div><div style="font-weight:700;color:#0d0d0d">4 hrs (RM40 off)</div></div>'
@@ -552,7 +552,7 @@
 
       + '<div id="tab-panel-classes" class="hidden">'
       + (isAdmin ? '<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem">'
-      +   '<button onclick="App.Students._enrollClassesModal(\'' + studentId + '\')" style="padding:0.4rem 0.9rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Enrol / manage classes</button>'
+      +   '<button onclick="App.Students._enrollClassesModal(\'' + studentId + '\')" style="padding:0.4rem 0.9rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Enrol / manage classes</button>'
       + '</div>' : '')
       + (enrolledClasses.length === 0
           ? '<p class="text-sm text-slate-400 text-center py-6">Not enrolled in any class'
@@ -584,7 +584,7 @@
           // nothing about money may be recomputed in this file.
           + studentInvoices.map(function(inv) {
               var act = isAdmin
-                ? '<button onclick="event.stopPropagation();App.Students._editInvoice(\'' + inv.id + '\')" style="padding:0.15rem 0.5rem;font-size:0.68rem;font-weight:600;background:#fff;color:#475569;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer">Edit</button>'
+                ? '<button onclick="event.stopPropagation();App.Students._editInvoice(\'' + inv.id + '\')" style="padding:0.15rem 0.5rem;font-size:0.68rem;font-weight:600;background:#fff;color:#475569;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Edit</button>'
                 : '';
               return '<tr class="border-b border-slate-50 hover:bg-slate-50" style="cursor:pointer" onclick="App.Students._viewInvoice(\'' + inv.id + '\')" title="Open this invoice">'
                 + '<td class="py-2"><div>' + App.Utils.esc(inv.description) + '</div><div class="text-xs text-slate-400">Due ' + App.Utils.formatDate(inv.dueDate) + '</div></td>'
@@ -597,8 +597,8 @@
 
       + '<div id="tab-panel-replacements" class="hidden">'
       + '<div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem">'
-      +   '<div style="flex:1;min-width:140px;padding:0.85rem 1rem;background:' + (balanceMin > 0 ? '#fffbeb' : '#f8fafc') + ';border:1px solid ' + (balanceMin > 0 ? '#fef3c7' : '#e2e8f0') + ';border-radius:12px;display:flex;align-items:center;gap:0.65rem">'
-      +     '<div style="width:36px;height:36px;border-radius:10px;background:' + (balanceMin > 0 ? 'var(--gold-dim)' : '#f1f5f9') + ';display:flex;align-items:center;justify-content:center">'
+      +   '<div style="flex:1;min-width:140px;padding:0.85rem 1rem;background:' + (balanceMin > 0 ? '#fffbeb' : '#f8fafc') + ';border:1px solid ' + (balanceMin > 0 ? '#fef3c7' : '#e2e8f0') + ';border-radius:0;display:flex;align-items:center;gap:0.65rem">'
+      +     '<div style="width:36px;height:36px;border-radius:0;background:' + (balanceMin > 0 ? 'var(--gold-dim)' : '#f1f5f9') + ';display:flex;align-items:center;justify-content:center">'
       +       '<svg width="18" height="18" fill="none" stroke="' + (balanceMin > 0 ? '#b08d20' : '#94a3b8') + '" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/></svg>'
       +     '</div>'
       +     '<div>'
@@ -607,8 +607,8 @@
       +     '</div>'
       +   '</div>'
       +   ((isAdmin || isTeacher) ? '<div style="display:flex;gap:0.5rem">'
-      +     '<button onclick="App.Students._addCreditModal(\'' + studentId + '\')" title="Student missed a class — records the absence and gives them a credit" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer;white-space:nowrap">Mark absent (+ credit)</button>'
-      +     '<button onclick="App.Students._useCreditModal(\'' + studentId + '\')" title="Student is attending a make-up session — spends a credit they already have" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;white-space:nowrap">Book make-up (− credit)</button>'
+      +     '<button onclick="App.Students._addCreditModal(\'' + studentId + '\')" title="Student missed a class — records the absence and gives them a credit" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Mark absent (+ credit)</button>'
+      +     '<button onclick="App.Students._useCreditModal(\'' + studentId + '\')" title="Student is attending a make-up session — spends a credit they already have" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer;white-space:nowrap">Book make-up (− credit)</button>'
       +   '</div>' : '')
       + '</div>'
       + (stuCredits.length === 0
@@ -901,7 +901,7 @@
     }).join(', ');
     var sub = when + ' · ' + (c.classType || 'Group') + ' · ' + (names || 'no teacher assigned');
     return '<label data-search="' + App.Utils.esc((c.name + ' ' + sub).toLowerCase()) + '"'
-      + ' style="display:flex;align-items:flex-start;gap:0.55rem;padding:0.45rem 0.5rem;border-radius:8px;cursor:pointer"'
+      + ' style="display:flex;align-items:flex-start;gap:0.55rem;padding:0.45rem 0.5rem;border-radius:4px;cursor:pointer"'
       + ' onmouseover="this.style.background=\'#faf9f7\'" onmouseout="this.style.background=\'\'">'
       + '<input type="checkbox" name="classIds" value="' + c.id + '"' + (isChecked ? ' checked' : '') + ' style="margin-top:0.15rem;accent-color:var(--gold);cursor:pointer">'
       + '<span style="flex:1;line-height:1.3">'
@@ -995,7 +995,7 @@
                     if (allClasses.length === 0) return '';
                     return '<div style="margin-bottom:0.75rem">'
                       + '<div style="font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.4rem">Assign classes (optional)</div>'
-                      + '<div style="max-height:120px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:0.4rem">'
+                      + '<div style="max-height:120px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:4px;padding:0.4rem">'
                       + allClasses.map(function(cls) {
                           var full = cls.enrolled >= cls.capacity;
                           return '<label style="display:flex;align-items:center;gap:0.4rem;padding:0.25rem 0.35rem;font-size:0.78rem;cursor:' + (full ? 'not-allowed' : 'pointer') + ';opacity:' + (full ? '0.5' : '1') + '">'
@@ -1192,8 +1192,8 @@
       : _ei(field, raw, spec.type);
     row.querySelector('[data-value]').innerHTML = control
       + '<div style="display:flex;gap:0.35rem;margin-top:0.45rem">'
-      +   '<button type="button" onclick="event.stopPropagation();App.Students._saveField(\'' + studentId + '\',\'' + field + '\')" style="padding:0.25rem 0.7rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:6px;cursor:pointer">Save</button>'
-      +   '<button type="button" onclick="event.stopPropagation();App.Students._cancelField(\'' + studentId + '\')" style="padding:0.25rem 0.7rem;font-size:0.75rem;border:1px solid #e2e8f0;background:#fff;color:#64748b;border-radius:6px;cursor:pointer">Cancel</button>'
+      +   '<button type="button" onclick="event.stopPropagation();App.Students._saveField(\'' + studentId + '\',\'' + field + '\')" style="padding:0.25rem 0.7rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save</button>'
+      +   '<button type="button" onclick="event.stopPropagation();App.Students._cancelField(\'' + studentId + '\')" style="padding:0.25rem 0.7rem;font-size:0.75rem;border:1px solid #e2e8f0;background:#fff;color:#64748b;border-radius:4px;cursor:pointer">Cancel</button>'
       + '</div>';
 
     var input = row.querySelector('[name="' + field + '"]');
@@ -1240,7 +1240,7 @@
   // are the only ones billable via the manual self-study invoice option (package
   // students are auto-billed by the cron), so this tag gates that picker.
   function _dropinField(checked) {
-    return '<label style="display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.8rem;background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;cursor:pointer">'
+    return '<label style="display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.8rem;background:#fafaf8;border:1px solid #f0ede8;border-radius:0;cursor:pointer">'
       + '<input type="checkbox" name="dropinSelfStudy"' + (checked ? ' checked' : '') + ' style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">'
       + '<span style="font-size:0.83rem;color:#374151"><strong>Pay-per-session drop-in</strong>'
       + '<br><span style="font-size:0.74rem;color:#94a3b8">Self-study billed manually per session — not on the monthly package</span></span>'
@@ -1284,7 +1284,7 @@
       + '<p class="text-sm text-slate-500 mb-4">If informed at least 3 hours before class start, the child earns a replacement credit. If informed late, tick "Late absence" to skip the credit.</p>'
       + '<form id="add-credit-form" class="space-y-4">'
       + _field('Class', App.Utils.filterFor('cred-class', 'Filter classes...') + '<select id="cred-class" name="classId" class="form-input">' + classOpts + '</select>')
-      + '<label style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;color:#374151;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:0.55rem 0.75rem;cursor:pointer">'
+      + '<label style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;color:#374151;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;padding:0.55rem 0.75rem;cursor:pointer">'
       +   '<input type="checkbox" name="lateAbsence" style="cursor:pointer">'
       +   'Late absence (informed less than 3 hours before — no credit)'
       + '</label>'
@@ -1294,7 +1294,7 @@
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
       + '<div class="flex justify-end gap-2 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Mark absent</button>'
+      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Mark absent</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -1370,7 +1370,7 @@
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
       + '<div class="flex justify-end gap-2 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Use credit</button>'
+      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Use credit</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -1492,10 +1492,10 @@
             + '</span>';
         }).join('');
 
-        return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.25rem 1rem;cursor:pointer;transition:box-shadow 0.15s" onclick="App.Students._familyModal(\'' + f.id + '\')" onmouseover="this.style.boxShadow=\'0 4px 12px rgba(0,0,0,0.08)\'" onmouseout="this.style.boxShadow=\'none\'">'
+        return '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.25rem 1rem;cursor:pointer;transition:box-shadow 0.15s" onclick="App.Students._familyModal(\'' + f.id + '\')" onmouseover="this.style.boxShadow=\'0 4px 12px rgba(0,0,0,0.08)\'" onmouseout="this.style.boxShadow=\'none\'">'
             // Family name + avatar
             + '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.65rem">'
-            +   '<div style="width:2.5rem;height:2.5rem;border-radius:10px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + App.Utils.esc(f.name).charAt(0) + '</div>'
+            +   '<div style="width:2.5rem;height:2.5rem;border-radius:0;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:1rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + App.Utils.esc(f.name).charAt(0) + '</div>'
             +   '<div style="flex:1;min-width:0">'
             +     '<div style="font-weight:700;font-size:0.95rem;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(f.name) + '</div>'
             +     '<div style="font-size:0.73rem;color:#64748b">' + App.Utils.esc(f.parentName || '') + '</div>'
@@ -1521,16 +1521,16 @@
 
     // Search bar + Add Family button
     var toolbar = '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">'
-        + '<input type="text" placeholder="Search families..." oninput="App.Students._searchFamilies(this.value)" value="' + App.Utils.esc(_familySearch) + '" style="flex:1;min-width:200px;padding:0.5rem 0.85rem;font-size:0.84rem;border:1px solid #e2e8f0;border-radius:10px;outline:none;background:#fff;font-family:inherit">'
+        + '<input type="text" placeholder="Search families..." oninput="App.Students._searchFamilies(this.value)" value="' + App.Utils.esc(_familySearch) + '" style="flex:1;min-width:200px;padding:0.5rem 0.85rem;font-size:0.84rem;border:1px solid #e2e8f0;border-radius:0;outline:none;background:#fff;font-family:inherit">'
         + (isAdmin ? '<button onclick="App.Students._addFamilyModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700" style="white-space:nowrap">+ Add Family</button>' : '')
         + '</div>';
 
     return toolbar
         + (familyCards.length === 0
-            ? '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07)">' + App.Utils.emptyState(
+            ? '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07)">' + App.Utils.emptyState(
                 _familySearch ? 'No families match your search' : 'No families yet',
                 _familySearch ? 'Try adjusting your search term.' : 'Families will be created automatically when students are added.',
-                _familySearch ? '<button onclick="App.Students._searchFamilies(\'\')" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer">Clear Search</button>' : ''
+                _familySearch ? '<button onclick="App.Students._searchFamilies(\'\')" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:4px;cursor:pointer">Clear Search</button>' : ''
               ) + '</div>'
             : '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem">' + familyCards + '</div>');
   }
@@ -1559,10 +1559,10 @@
       var earnedTotal = familyReferralRewards
         .filter(function(r) { return r.status === 'earned'; })
         .reduce(function(a, r) { return a + (r.creditsRemaining || 0); }, 0);
-      referralHtml = '<div style="margin-top:1rem;padding:1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px">'
+      referralHtml = '<div style="margin-top:1rem;padding:1rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:0">'
         + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">'
         +   '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.05em">Referrals</div>'
-        +   (f.referralCode ? '<button data-copy="' + App.Utils.esc(f.referralCode) + '" onclick="App.Utils.copyFrom(this,\'Code copied\')" style="font-size:0.7rem;padding:0.25rem 0.65rem;background:var(--gold);color:#0a0a0a;border:none;border-radius:6px;cursor:pointer;font-weight:700">Copy code</button>' : '')
+        +   (f.referralCode ? '<button data-copy="' + App.Utils.esc(f.referralCode) + '" onclick="App.Utils.copyFrom(this,\'Code copied\')" style="font-size:0.7rem;padding:0.25rem 0.65rem;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer;font-weight:700">Copy code</button>' : '')
         + '</div>'
         + (f.referralCode ? '<div style="font-family:var(--serif);font-size:1.2rem;font-weight:700;color:var(--gold);letter-spacing:0.04em">' + App.Utils.esc(f.referralCode) + '</div>' : '')
         + (earnedTotal > 0 ? '<div style="margin-top:0.4rem;font-size:0.72rem;color:#92400e;font-weight:600">Active credit · ' + earnedTotal + ' invoice' + (earnedTotal !== 1 ? 's' : '') + ' remaining</div>' : '')
@@ -1684,21 +1684,21 @@
     App.Utils.showModal(
         '<div class="p-6">'
         + '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem">'
-        +   '<div style="width:3rem;height:3rem;border-radius:12px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:1.25rem;display:flex;align-items:center;justify-content:center">' + App.Utils.esc(f.name).charAt(0) + '</div>'
+        +   '<div style="width:3rem;height:3rem;border-radius:0;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:1.25rem;display:flex;align-items:center;justify-content:center">' + App.Utils.esc(f.name).charAt(0) + '</div>'
         +   '<div>'
         +     '<h2 style="font-size:1.15rem;font-weight:700;color:#111;margin:0">' + App.Utils.esc(f.name) + '</h2>'
         +     '<div style="font-size:0.78rem;color:#94a3b8">' + App.Utils.esc(f.contact) + (f.phone ? ' · ' + App.Utils.esc(f.phone) : '') + '</div>'
         +   '</div>'
-        +   (isAdmin ? '<button onclick="App.Students._editFamilyModal(\'' + familyId + '\')" style="margin-left:auto;font-size:0.75rem;padding:0.35rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Edit</button>' : '')
+        +   (isAdmin ? '<button onclick="App.Students._editFamilyModal(\'' + familyId + '\')" style="margin-left:auto;font-size:0.75rem;padding:0.35rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;cursor:pointer">Edit</button>' : '')
         + '</div>'
 
         // Billing summary
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1.25rem">'
-        +   '<div style="padding:0.75rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;text-align:center">'
+        +   '<div style="padding:0.75rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:0;text-align:center">'
         +     '<div style="font-size:0.65rem;color:#15803d;text-transform:uppercase;font-weight:600;letter-spacing:0.04em">Total Paid</div>'
         +     '<div style="font-family:var(--serif);font-size:1.1rem;font-weight:700;color:#15803d">' + App.Utils.formatCurrency(totalPaid) + '</div>'
         +   '</div>'
-        +   '<div style="padding:0.75rem;background:' + (outstanding > 0 ? '#fef2f2' : '#f8fafc') + ';border:1px solid ' + (outstanding > 0 ? '#fecaca' : '#e2e8f0') + ';border-radius:10px;text-align:center">'
+        +   '<div style="padding:0.75rem;background:' + (outstanding > 0 ? '#fef2f2' : '#f8fafc') + ';border:1px solid ' + (outstanding > 0 ? '#fecaca' : '#e2e8f0') + ';border-radius:0;text-align:center">'
         +     '<div style="font-size:0.65rem;color:' + (outstanding > 0 ? '#dc2626' : '#64748b') + ';text-transform:uppercase;font-weight:600;letter-spacing:0.04em">Outstanding</div>'
         +     '<div style="font-family:var(--serif);font-size:1.1rem;font-weight:700;color:' + (outstanding > 0 ? '#dc2626' : '#64748b') + '">' + App.Utils.formatCurrency(outstanding) + '</div>'
         +   '</div>'
@@ -1730,10 +1730,10 @@
         + (f.notes ? '<div style="margin-top:0.5rem;font-size:0.78rem;color:#64748b"><span style="font-weight:600">Notes:</span> ' + App.Utils.esc(f.notes) + '</div>' : '')
 
         + '<div style="margin-top:1.25rem;display:flex;justify-content:space-between;align-items:center">'
-        + (isAdmin ? '<button onclick="App.Students._pdpaDelete(\'' + familyId + '\')" style="padding:0.4rem 0.85rem;font-size:0.72rem;border:1px solid #fecaca;border-radius:8px;background:#fff;color:#dc2626;cursor:pointer" title="PDPA: permanently anonymise this family\'s data">Delete account</button>' : '<div></div>')
+        + (isAdmin ? '<button onclick="App.Students._pdpaDelete(\'' + familyId + '\')" style="padding:0.4rem 0.85rem;font-size:0.72rem;border:1px solid #fecaca;border-radius:4px;background:#fff;color:#dc2626;cursor:pointer" title="PDPA: permanently anonymise this family\'s data">Delete account</button>' : '<div></div>')
         + '<div style="display:flex;gap:0.5rem">'
-        + (isAdmin ? '<button onclick="App.Utils.hideModal(true);App.Students._addModal(\'' + familyId + '\')" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Child</button>' : '')
-        + '<button onclick="App.Utils.hideModal()" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Close</button>'
+        + (isAdmin ? '<button onclick="App.Utils.hideModal(true);App.Students._addModal(\'' + familyId + '\')" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">+ Add Child</button>' : '')
+        + '<button onclick="App.Utils.hideModal()" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;cursor:pointer">Close</button>'
         + '</div></div>'
         + '</div>'
     );
@@ -1752,7 +1752,7 @@
         + _field('Notes', '<textarea name="notes" class="form-input" rows="2" placeholder="Any notes"></textarea>')
         + '<div class="flex justify-end gap-2 pt-2">'
         + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-        + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Family</button>'
+        + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Add Family</button>'
         + '</div>'
         + '</form>'
         + '</div>'
@@ -1795,7 +1795,7 @@
         + _field('Notes', '<textarea name="notes" class="form-input" rows="2">' + App.Utils.esc(f.notes || '') + '</textarea>')
         + '<div class="flex justify-end gap-2 pt-2">'
         + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-        + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save</button>'
+        + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save</button>'
         + '</div>'
         + '</form>'
         + '</div>'
@@ -1881,10 +1881,10 @@
       +   _field('Parent name', '<input name="parentName" class="form-input" value="' + App.Utils.esc(s.parentName || '') + '">')
       +   _field('Parent phone (optional, used only if a new family is created)', '<input name="phone" class="form-input" value="' + App.Utils.esc(s.phone || '') + '">')
       +   '<div class="flex justify-between items-center pt-2">'
-      +     (s.contact ? '<button type="button" onclick="App.Students._relinkUnlink(\'' + studentId + '\')" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:600;background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:8px;cursor:pointer">Unlink (no parent)</button>' : '<span></span>')
+      +     (s.contact ? '<button type="button" onclick="App.Students._relinkUnlink(\'' + studentId + '\')" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:600;background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:4px;cursor:pointer">Unlink (no parent)</button>' : '<span></span>')
       +     '<div class="flex gap-2">'
       +       '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      +       '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Re-link</button>'
+      +       '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Re-link</button>'
       +     '</div>'
       +   '</div>'
       + '</form>'

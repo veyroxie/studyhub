@@ -17,9 +17,9 @@
     var viewToggle = '';
     if (isAdmin) {
       viewToggle = '<div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:1rem">'
-        + '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px">'
-        + '<button onclick="App.Dashboard._setView(\'mine\')" style="padding:0.3rem 1rem;font-size:0.75rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_dashView==='mine'?'var(--gold)':'transparent') + ';color:' + (_dashView==='mine'?'#0a0a0a':'#94a3b8') + '">My View</button>'
-        + '<button onclick="App.Dashboard._setView(\'ops\')" style="padding:0.3rem 1rem;font-size:0.75rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_dashView==='ops'?'var(--gold)':'transparent') + ';color:' + (_dashView==='ops'?'#0a0a0a':'#94a3b8') + '">Operations</button>'
+        + '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:4px;padding:3px">'
+        + '<button onclick="App.Dashboard._setView(\'mine\')" style="padding:0.3rem 1rem;font-size:0.75rem;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:' + (_dashView==='mine'?'var(--gold)':'transparent') + ';color:' + (_dashView==='mine'?'#0a0a0a':'#94a3b8') + '">My View</button>'
+        + '<button onclick="App.Dashboard._setView(\'ops\')" style="padding:0.3rem 1rem;font-size:0.75rem;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:' + (_dashView==='ops'?'var(--gold)':'transparent') + ';color:' + (_dashView==='ops'?'#0a0a0a':'#94a3b8') + '">Operations</button>'
         + '</div>'
         + '</div>';
     }
@@ -138,12 +138,12 @@
                   +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + (teachers ? '&nbsp;·&nbsp;' + App.Utils.esc(teachers) : '') + '&nbsp;·&nbsp;' + App.Utils.esc(c.classroom) + '</div>'
                   + '</div>'
                   + '<div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">'
-                  +   '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:2px 7px;border-radius:5px;background:' + pillColor.bg + ';color:' + pillColor.text + '">' + pillLabel + '</span>'
+                  +   '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:2px 7px;border-radius:4px;background:' + pillColor.bg + ';color:' + pillColor.text + '">' + pillLabel + '</span>'
                   +   '<div style="text-align:right">'
                   +     '<div style="font-size:0.8rem;font-weight:700;color:' + (pct >= 100 ? '#dc2626' : '#374151') + '">' + c.enrolled + '/' + c.capacity + '</div>'
                   +     '<div style="width:44px;height:3px;background:#f1f5f9;border-radius:99px;margin-top:3px;overflow:hidden"><div style="width:' + Math.min(pct,100) + '%;height:100%;background:' + (pct>=100?'#ef4444':'var(--gold)') + ';border-radius:99px"></div></div>'
                   +   '</div>'
-                  +   '<button onclick="App.Router.navigate(\'attendance\')" style="font-size:0.7rem;font-weight:600;padding:0.25rem 0.6rem;border:1px solid rgba(201,162,39,0.3);border-radius:6px;background:var(--gold-dim);color:var(--gold);cursor:pointer;white-space:nowrap;transition:all 0.15s" onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" onmouseout="this.style.background=\'var(--gold-dim)\';this.style.color=\'var(--gold)\'">Mark</button>'
+                  +   '<button onclick="App.Router.navigate(\'attendance\')" style="font-size:0.7rem;font-weight:600;padding:0.25rem 0.6rem;border:1px solid rgba(201,162,39,0.35);border-radius:4px;background:var(--gold-dim);color:var(--gold);cursor:pointer;white-space:nowrap;transition:all 0.15s" onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" onmouseout="this.style.background=\'var(--gold-dim)\';this.style.color=\'var(--gold)\'">Mark</button>'
                   + '</div>'
                   + '</div>';
               }).join(''))
@@ -166,7 +166,7 @@
         + recentStudents.map(function(stu) {
             var cls = classes.filter(function(c) { return stu.enrolledClasses.indexOf(c.id) > -1; }).map(function(c) { return c.name; }).join(', ');
             return '<div style="display:flex;align-items:center;gap:0.7rem;padding:0.55rem 0;border-bottom:1px solid #f4f4f2">'
-              + '<div style="width:2rem;height:2rem;border-radius:50%;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.25);color:var(--gold);font-weight:800;font-size:0.78rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + App.Utils.esc(stu.firstName.charAt(0)) + '</div>'
+              + '<div style="width:2rem;height:2rem;border-radius:50%;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.35);color:var(--gold);font-weight:800;font-size:0.78rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + App.Utils.esc(stu.firstName.charAt(0)) + '</div>'
               + '<div style="flex:1;min-width:0">'
               +   '<div style="font-size:0.83rem;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(stu.firstName) + ' ' + App.Utils.esc(stu.lastName) + '</div>'
               +   '<div style="font-size:0.71rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(cls || 'No class') + '</div>'
@@ -226,8 +226,8 @@
       + card('Pending Replacements', 'students')
       + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.75rem">'
       + rows.map(function(r) {
-          return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0.85rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:12px;cursor:pointer" onclick="App.Students._viewModal(\'' + r.id + '\')">'
-            + '<div style="width:2.2rem;height:2.2rem;border-radius:10px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:0.85rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + App.Utils.esc(r.name.charAt(0)) + '</div>'
+          return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.7rem 0.85rem;background:#fffbeb;border:1px solid #fef3c7;border-radius:0;cursor:pointer" onclick="App.Students._viewModal(\'' + r.id + '\')">'
+            + '<div style="width:2.2rem;height:2.2rem;border-radius:0;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:0.85rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + App.Utils.esc(r.name.charAt(0)) + '</div>'
             + '<div style="flex:1;min-width:0">'
             +   '<div style="font-size:0.83rem;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(r.name) + '</div>'
             +   '<div style="font-size:0.7rem;color:#94a3b8">Earned ' + r.earned + ' · Used ' + r.used + '</div>'
@@ -283,7 +283,7 @@
       return i.type === 'Monthly' && (i.status === 'Unpaid' || i.status === 'Overdue');
     });
     var paymentGateBanner = unpaidMonthly.length > 0
-      ? '<div style="background:#fef3c7;border:1px solid #fde68a;border-left:4px solid #d97706;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:flex-start;gap:0.85rem">'
+      ? '<div style="background:#fef3c7;border:1px solid #fde68a;border-left:4px solid #d97706;border-radius:0;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:flex-start;gap:0.85rem">'
         + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#92400e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
         + '<div>'
         +   '<div style="font-size:0.92rem;font-weight:700;color:#92400e;margin-bottom:2px">You have ' + unpaidMonthly.length + ' unpaid invoice' + (unpaidMonthly.length !== 1 ? 's' : '') + '</div>'
@@ -302,7 +302,7 @@
       +     '<h1 style="font-family:var(--serif);font-size:1.7rem;font-weight:700;letter-spacing:-0.04em;color:#1a1a1a;line-height:1.2;margin:0">' + (childNames || 'Dashboard') + '</h1>'
       +     '<p style="font-size:0.82rem;color:#64748b;margin:4px 0 0">' + myStudents.length + ' child' + (myStudents.length !== 1 ? 'ren' : '') + ' enrolled</p>'
       +   '</div>'
-      +   '<button onclick="App.Router.navigate(\'profile\')" title="Edit profile" style="padding:0.45rem 0.9rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:0.4rem;transition:all 0.15s" onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'#374151\'" onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#64748b\'">'
+      +   '<button onclick="App.Router.navigate(\'profile\')" title="Edit profile" style="padding:0.45rem 0.9rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:0.4rem;transition:all 0.15s" onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'#374151\'" onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#64748b\'">'
       +     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
       +     'My Profile'
       +   '</button>'
@@ -339,7 +339,7 @@
       }
       var allDone = checkItems.every(function(item) { return item.done; });
 
-      html += '<div style="background:#fff;border-radius:14px;border:1px solid rgba(201,162,39,0.2);padding:1.25rem 1.5rem;margin-bottom:0.5rem">'
+      html += '<div style="background:#fff;border-radius:0;border:1px solid rgba(201,162,39,0.35);padding:1.25rem 1.5rem;margin-bottom:0.5rem">'
         + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
         +   '<div>'
         +     '<div style="font-size:0.95rem;font-weight:700;color:#111">' + csTitle + '</div>'
@@ -351,7 +351,7 @@
 
       checkItems.forEach(function(item) {
         html += '<button onclick="App.Dashboard._checklistGo(\'' + item.key + '\',\'' + item.page + '\')" '
-          + 'style="display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.85rem;border-radius:10px;border:1px solid ' + (item.done ? '#bbf7d0' : '#e2e8f0') + ';background:' + (item.done ? '#f0fdf4' : '#fff') + ';cursor:pointer;text-align:left;transition:all 0.15s;font-family:inherit" '
+          + 'style="display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.85rem;border-radius:0;border:1px solid ' + (item.done ? '#bbf7d0' : '#e2e8f0') + ';background:' + (item.done ? '#f0fdf4' : '#fff') + ';cursor:pointer;text-align:left;transition:all 0.15s;font-family:inherit" '
           + 'onmouseover="this.style.borderColor=\'var(--gold)\'" onmouseout="this.style.borderColor=\'' + (item.done ? '#bbf7d0' : '#e2e8f0') + '\'">'
           + '<span style="width:18px;height:18px;border-radius:50%;border:2px solid ' + (item.done ? '#22c55e' : '#d1d5db') + ';background:' + (item.done ? '#22c55e' : '#fff') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">'
           + (item.done ? '<svg width="10" height="10" fill="none" stroke="#fff" stroke-width="3" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>' : '')
@@ -369,13 +369,13 @@
 
     // ── Alert banner ──────────────────────────────────────────────────────────
     if (overdueInvs.length > 0) {
-      html += '<div style="padding:0.85rem 1.1rem;background:#fef2f2;border:1px solid #fecaca;border-left:3px solid #dc2626;border-radius:12px;display:flex;align-items:center;gap:0.75rem">'
+      html += '<div style="padding:0.85rem 1.1rem;background:#fef2f2;border:1px solid #fecaca;border-left:3px solid #dc2626;border-radius:0;display:flex;align-items:center;gap:0.75rem">'
         + '<div style="flex:1;font-size:0.83rem;color:#991b1b"><strong>Payment overdue</strong> — ' + overdueInvs.length + ' invoice' + (overdueInvs.length !== 1 ? 's are' : ' is') + ' past due.</div>'
-        + '<button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#dc2626;background:#fff;border:1px solid #fecaca;border-radius:7px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">Pay Now</button></div>';
+        + '<button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#dc2626;background:#fff;border:1px solid #fecaca;border-radius:4px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">Pay Now</button></div>';
     } else if (dueSoonInvs.length > 0) {
-      html += '<div style="padding:0.85rem 1.1rem;background:#fffbeb;border:1px solid #fde68a;border-left:3px solid #d97706;border-radius:12px;display:flex;align-items:center;gap:0.75rem">'
+      html += '<div style="padding:0.85rem 1.1rem;background:#fffbeb;border:1px solid #fde68a;border-left:3px solid #d97706;border-radius:0;display:flex;align-items:center;gap:0.75rem">'
         + '<div style="flex:1;font-size:0.83rem;color:#92400e"><strong>Payment due soon</strong> — ' + dueSoonInvs.length + ' invoice' + (dueSoonInvs.length !== 1 ? 's' : '') + ' due within 7 days.</div>'
-        + '<button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#d97706;background:#fff;border:1px solid #fde68a;border-radius:7px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">View</button></div>';
+        + '<button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#d97706;background:#fff;border:1px solid #fde68a;border-radius:4px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">View</button></div>';
     }
 
     // ── No children: check for pending enrollments, show register-your-child form ──
@@ -388,9 +388,9 @@
         return !!App.clientParent && r.type === 'enrollment' && r.status === 'pending' && r.email === App.clientParent;
       });
 
-      html += '<div style="background:#fff;border-radius:16px;border:1px solid rgba(201,162,39,0.2);padding:2.5rem 2rem;max-width:560px;margin:1rem auto 0">'
+      html += '<div style="background:#fff;border-radius:0;border:1px solid rgba(201,162,39,0.35);padding:2.5rem 2rem;max-width:560px;margin:1rem auto 0">'
         + '<div style="text-align:center;margin-bottom:1.5rem">'
-        +   '<div style="width:56px;height:56px;border-radius:50%;background:rgba(201,162,39,0.08);display:flex;align-items:center;justify-content:center;margin:0 auto 1rem">'
+        +   '<div style="width:56px;height:56px;border-radius:50%;background:#FFFDF6;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem">'
         +     '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#C9A227" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>'
         +   '</div>'
         +   '<h2 style="font-family:var(--serif);font-size:1.35rem;font-weight:700;color:#0a0a0a;margin:0 0 0.35rem">Register your child</h2>'
@@ -399,7 +399,7 @@
 
       // Show pending enrollment requests if any.
       if (pendingEnrollments.length > 0) {
-        html += '<div style="margin-bottom:1.5rem;padding:0.85rem 1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:10px">'
+        html += '<div style="margin-bottom:1.5rem;padding:0.85rem 1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:0">'
           + '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.35rem">Pending enrolments</div>';
         pendingEnrollments.forEach(function(r) {
           html += '<div style="font-size:0.82rem;color:#92400e;padding:0.25rem 0">' + App.Utils.esc(r.studentFirstName || '') + ' ' + App.Utils.esc(r.studentLastName || '') + ' <span style="font-size:0.7rem;color:#94a3b8">— submitted ' + App.Utils.formatDate(r.submittedOn) + '</span></div>';
@@ -410,21 +410,21 @@
       // Enrollment form
       html += '<form id="enroll-child-form" style="display:flex;flex-direction:column;gap:0.85rem">'
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">First Name *</label><input name="studentFirstName" required style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px rgba(201,162,39,0.1)\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Last Name</label><input name="studentLastName" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px rgba(201,162,39,0.1)\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">First Name *</label><input name="studentFirstName" required style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px #FFFDF6\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Last Name</label><input name="studentLastName" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px #FFFDF6\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
         + '</div>'
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Date of Birth</label><input name="studentDob" type="date" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Gender</label><select name="studentGender" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><option>Male</option><option>Female</option></select></div>'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Date of Birth</label><input name="studentDob" type="date" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Gender</label><select name="studentGender" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><option>Male</option><option>Female</option></select></div>'
         + '</div>'
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">School</label><input name="schoolName" placeholder="e.g. SK Taman Melawati" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Year / Grade</label><select name="yearGrade" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><optgroup label="Primary"><option>Standard 1</option><option>Standard 2</option><option>Standard 3</option><option>Standard 4</option><option>Standard 5</option><option>Standard 6</option></optgroup><optgroup label="Secondary"><option>Form 1</option><option>Form 2</option><option>Form 3</option><option>Form 4</option><option>Form 5</option></optgroup><optgroup label="Pre-school"><option>Pre-school (4-5)</option><option>Pre-school (5-6)</option></optgroup></select></div>'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">School</label><input name="schoolName" placeholder="e.g. SK Taman Melawati" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
+        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Year / Grade</label><select name="yearGrade" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><optgroup label="Primary"><option>Standard 1</option><option>Standard 2</option><option>Standard 3</option><option>Standard 4</option><option>Standard 5</option><option>Standard 6</option></optgroup><optgroup label="Secondary"><option>Form 1</option><option>Form 2</option><option>Form 3</option><option>Form 4</option><option>Form 5</option></optgroup><optgroup label="Pre-school"><option>Pre-school (4-5)</option><option>Pre-school (5-6)</option></optgroup></select></div>'
         + '</div>'
-        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Subjects Interested In</label><input name="subjectInterest" placeholder="e.g. Mathematics, English, Science" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
-        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Notes <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#94a3b8">- optional</span></label><textarea name="notes" rows="2" placeholder="Learning needs, allergies, or anything we should know" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit;resize:vertical"></textarea></div>'
-        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Referral Code <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#94a3b8">- optional</span></label><input name="referralCode" placeholder="SH-XXXX" maxlength="10" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;font-family:inherit;text-transform:uppercase;letter-spacing:0.05em"><p style="margin:0.3rem 0 0;font-size:0.7rem;color:#94a3b8">Got a code from a friend? Their family gets RM10/month off when your child stays for 3 months.</p></div>'
-        + '<button type="submit" id="enroll-submit-btn" style="width:100%;padding:0.7rem;background:var(--gold,#C9A227);color:#0a0a0a;font-weight:700;font-size:0.82rem;border:none;border-radius:8px;cursor:pointer;transition:opacity 0.15s;font-family:inherit">Submit enrolment request</button>'
+        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Subjects Interested In</label><input name="subjectInterest" placeholder="e.g. Mathematics, English, Science" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
+        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Notes <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#94a3b8">- optional</span></label><textarea name="notes" rows="2" placeholder="Learning needs, allergies, or anything we should know" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;resize:vertical"></textarea></div>'
+        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Referral Code <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#94a3b8">- optional</span></label><input name="referralCode" placeholder="SH-XXXX" maxlength="10" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;text-transform:uppercase;letter-spacing:0.05em"><p style="margin:0.3rem 0 0;font-size:0.7rem;color:#94a3b8">Got a code from a friend? Their family gets RM10/month off when your child stays for 3 months.</p></div>'
+        + '<button type="submit" id="enroll-submit-btn" style="width:100%;padding:0.7rem;background:var(--gold,#C9A227);color:#0a0a0a;font-weight:700;font-size:0.82rem;border:none;border-radius:4px;cursor:pointer;transition:opacity 0.15s;font-family:inherit">Submit enrolment request</button>'
         + '</form>'
         + '</div>';
 
@@ -547,11 +547,11 @@
       // Avatar initial
       var initial = App.Utils.esc(stu.firstName).charAt(0).toUpperCase();
 
-      html += '<div onclick="App.Students._viewModal(\'' + stu.id + '\')" style="background:#fff;border-radius:16px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 2px 8px rgba(0,0,0,0.04);cursor:pointer;transition:box-shadow 0.2s,transform 0.2s;overflow:hidden" onmouseover="this.style.boxShadow=\'0 4px 16px rgba(0,0,0,0.1)\';this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.boxShadow=\'0 2px 8px rgba(0,0,0,0.04)\';this.style.transform=\'none\'">'
+      html += '<div onclick="App.Students._viewModal(\'' + stu.id + '\')" style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);box-shadow:0 2px 8px rgba(0,0,0,0.04);cursor:pointer;transition:box-shadow 0.2s,transform 0.2s;overflow:hidden" onmouseover="this.style.boxShadow=\'0 4px 16px rgba(0,0,0,0.1)\';this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.boxShadow=\'0 2px 8px rgba(0,0,0,0.04)\';this.style.transform=\'none\'">'
 
         // Header row: avatar + name + status
         + '<div style="padding:1.25rem 1.5rem 0.75rem;display:flex;align-items:center;gap:0.9rem">'
-        +   '<div style="width:3rem;height:3rem;border-radius:12px;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:1.2rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:var(--serif)">' + initial + '</div>'
+        +   '<div style="width:3rem;height:3rem;border-radius:0;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:1.2rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:var(--serif)">' + initial + '</div>'
         +   '<div style="flex:1;min-width:0">'
         +     '<div style="font-size:1.05rem;font-weight:700;color:#111;font-family:var(--serif)">' + App.Utils.esc(stu.firstName) + ' ' + App.Utils.esc(stu.lastName) + '</div>'
         +     '<div style="font-size:0.78rem;color:#64748b;margin-top:2px">' + App.Utils.esc(stu.grade || '') + (subjects ? ' · ' + subjects : '') + '</div>'
@@ -581,21 +581,21 @@
                 }
               })()
         +   '</div>'
-        +   '<span style="font-size:0.68rem;font-weight:700;color:' + statusColor + ';background:' + statusBg + ';padding:3px 10px;border-radius:6px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.04em">' + App.Utils.esc(stu.status) + '</span>'
+        +   '<span style="font-size:0.68rem;font-weight:700;color:' + statusColor + ';background:' + statusBg + ';padding:3px 10px;border-radius:4px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.04em">' + App.Utils.esc(stu.status) + '</span>'
         + '</div>'
 
         // Mini stats grid — each tile is a shortcut into the matching page
         + '<div style="padding:0.5rem 1.5rem 1rem;display:grid;grid-template-columns:repeat(4,1fr);gap:0.6rem">'
 
         // Attendance
-        +   '<div onclick="App.Router.navigate(\'attendance\')" style="background:#f0fdf4;border-radius:10px;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(21,128,61,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
+        +   '<div onclick="App.Router.navigate(\'attendance\')" style="background:#f0fdf4;border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(21,128,61,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#15803d;margin-bottom:0.3rem">Attendance</div>'
         +     '<div style="font-family:var(--serif);font-size:1.15rem;font-weight:700;color:#15803d">' + presentCount + '/' + totalSessions + '</div>'
         +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">Present</div>'
         +   '</div>'
 
         // Next class
-        +   '<div onclick="App.Router.navigate(\'calendar\')" style="background:#eff6ff;border-radius:10px;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(37,99,235,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
+        +   '<div onclick="App.Router.navigate(\'calendar\')" style="background:#eff6ff;border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(37,99,235,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#2563eb;margin-bottom:0.3rem">Next Class</div>'
         +     (nextClass
               ? '<div style="font-size:0.82rem;font-weight:700;color:#2563eb">' + nextClassDay + ' ' + App.Utils.formatTime(nextClass.time) + '</div>'
@@ -606,14 +606,14 @@
         // Replacement balance — opens the student modal already switched to
         // the Replacements tab so parents see the credit breakdown without
         // having to hunt for the right tab.
-        +   '<div onclick="if(App.Students){App.Students._viewModal(\'' + stu.id + '\');App.Students._switchTab(\'replacements\');}" style="background:' + (repBalance > 0 ? '#fffbeb' : '#f8fafc') + ';border-radius:10px;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(146,64,14,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
+        +   '<div onclick="if(App.Students){App.Students._viewModal(\'' + stu.id + '\');App.Students._switchTab(\'replacements\');}" style="background:' + (repBalance > 0 ? '#fffbeb' : '#f8fafc') + ';border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(146,64,14,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (repBalance > 0 ? '#92400e' : '#94a3b8') + ';margin-bottom:0.3rem">Replace</div>'
         +     '<div style="font-family:var(--serif);font-size:1.15rem;font-weight:700;color:' + (repBalance > 0 ? '#92400e' : '#64748b') + '">' + repBalance + 'cr</div>'
         +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (repBalance > 0 ? 'credits' : 'none') + '</div>'
         +   '</div>'
 
         // Billing
-        +   '<div onclick="App.Router.navigate(\'billing\')" style="background:' + (outstanding > 0 ? '#fef2f2' : '#f0fdf4') + ';border-radius:10px;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(0,0,0,0.08)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
+        +   '<div onclick="App.Router.navigate(\'billing\')" style="background:' + (outstanding > 0 ? '#fef2f2' : '#f0fdf4') + ';border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(0,0,0,0.08)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (outstanding > 0 ? '#991b1b' : '#15803d') + ';margin-bottom:0.3rem">Billing</div>'
         +     '<div style="font-family:var(--serif);font-size:1.05rem;font-weight:700;color:' + (outstanding > 0 ? '#991b1b' : '#15803d') + '">RM ' + outstanding.toFixed(0) + '</div>'
         +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (outstanding > 0 ? 'outstanding' : 'Paid up') + '</div>'
@@ -625,7 +625,7 @@
       if (latestFb) {
         var notePreview = latestFbNote.length > 120 ? latestFbNote.slice(0, 120) + '...' : latestFbNote;
         html += '<div style="padding:0 1.5rem 1.15rem">'
-          + '<div style="background:linear-gradient(135deg,#fef9ec 0%,#fff 70%);border:1px solid #fef3c7;border-radius:10px;padding:0.75rem 0.9rem">'
+          + '<div style="background:linear-gradient(135deg,#fef9ec 0%,#fff 70%);border:1px solid #fef3c7;border-radius:0;padding:0.75rem 0.9rem">'
           +   '<div style="font-size:0.8rem;color:#44403c;line-height:1.45;font-style:italic">"' + App.Utils.esc(notePreview) + '"</div>'
           +   '<div style="font-size:0.68rem;color:#94a3b8;margin-top:0.4rem">— ' + latestFbTeacher + ', ' + App.Utils.formatDate(latestFb.date) + '</div>'
           + '</div>'
@@ -639,7 +639,7 @@
 
     // ── Empty state ───────────────────────────────────────────────────────────
     if (myStudents.length === 0) {
-      html += '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:3rem;text-align:center">'
+      html += '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);padding:3rem;text-align:center">'
         + '<p style="font-size:1rem;font-weight:600;color:#475569">No children enrolled yet</p>'
         + '<p style="font-size:0.82rem;color:#94a3b8;margin-top:0.4rem">Contact the centre to register your child.</p>'
         + '</div>';
@@ -650,7 +650,7 @@
       .sort(function(a, b) { return a.dueDate.localeCompare(b.dueDate); });
 
     if (unpaidInvs.length > 0) {
-      html += '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
+      html += '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
         + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Payments Due</div>';
 
       unpaidInvs.forEach(function(inv) {
@@ -663,7 +663,7 @@
           +   '<div style="font-size:0.68rem;color:#94a3b8;margin-top:2px">Due ' + App.Utils.formatDate(inv.dueDate) + (isOverdue ? ' <span style="color:#dc2626;font-weight:700">OVERDUE</span>' : '') + '</div>'
           + '</div>'
           + '<div style="font-size:0.95rem;font-weight:700;color:' + (isOverdue ? '#dc2626' : '#111') + ';white-space:nowrap;font-family:var(--serif)">RM ' + inv.amount.toFixed(2) + '</div>'
-          + '<button onclick="event.stopPropagation();App.Router.navigate(\'billing\')" style="font-size:0.72rem;font-weight:700;color:#0a0a0a;background:var(--gold);border:none;border-radius:7px;padding:0.35rem 0.75rem;cursor:pointer;white-space:nowrap">Pay</button>'
+          + '<button onclick="event.stopPropagation();App.Router.navigate(\'billing\')" style="font-size:0.72rem;font-weight:700;color:#0a0a0a;background:var(--gold);border:none;border-radius:4px;padding:0.35rem 0.75rem;cursor:pointer;white-space:nowrap">Pay</button>'
           + '</div>';
       });
       html += '</div>';
@@ -677,7 +677,7 @@
       .sort(function(a, b) { return b.date.localeCompare(a.date); })
       .slice(0, 5);
 
-    html += '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
+    html += '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
       + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Teacher Notes</div>';
 
     if (recentFeedbacks.length === 0) {
@@ -719,7 +719,7 @@
       .slice().sort(function(a, b) { return (b.updatedOn || b.createdOn).localeCompare(a.updatedOn || a.createdOn); });
 
     if (pinnedAnns.length > 0) {
-      html += '<div style="background:#fffbeb;border-radius:14px;border:1px solid #fde68a;padding:1.25rem 1.5rem;margin-top:1rem">'
+      html += '<div style="background:#fffbeb;border-radius:0;border:1px solid #fde68a;padding:1.25rem 1.5rem;margin-top:1rem">'
         + '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Please read</div>';
       pinnedAnns.forEach(function(a) {
         // Show when the text last CHANGED, not when it was first written — a
@@ -738,7 +738,7 @@
     var latestAnnounce = published.filter(function(a) { return !a.pinned; })
       .slice().sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); }).slice(0, 3);
 
-    html += '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
+    html += '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
       + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Announcements</div>';
 
     if (latestAnnounce.length === 0) {
@@ -789,12 +789,12 @@
 
     var creditPill = '';
     if (creditsRemaining > 0) {
-      creditPill = '<span style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.3rem 0.7rem;background:rgba(201,162,39,0.12);border:1px solid rgba(201,162,39,0.3);border-radius:999px;font-size:0.72rem;font-weight:700;color:#92400e">Active credit · ' + creditsRemaining + ' invoice' + (creditsRemaining !== 1 ? 's' : '') + ' remaining</span>';
+      creditPill = '<span style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.3rem 0.7rem;background:#FFFDF6;border:1px solid rgba(201,162,39,0.35);border-radius:999px;font-size:0.72rem;font-weight:700;color:#92400e">Active credit · ' + creditsRemaining + ' invoice' + (creditsRemaining !== 1 ? 's' : '') + ' remaining</span>';
     } else if (pendingCount > 0) {
       creditPill = '<span style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.3rem 0.7rem;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;font-size:0.72rem;font-weight:700;color:#475569">' + pendingCount + ' referral' + (pendingCount !== 1 ? 's' : '') + ' in progress</span>';
     }
 
-    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
+    return '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
       + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Refer a Friend</div>'
       + '<div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">'
       +   '<div style="flex:1;min-width:200px">'
@@ -802,7 +802,7 @@
       +     '<p style="margin:0.5rem 0 0;font-size:0.78rem;color:#64748b;line-height:1.45">Share your code with a friend. When their child stays for 3 months, you get <strong>RM10 off for 3 months</strong>.</p>'
       +     (creditPill ? '<div style="margin-top:0.65rem">' + creditPill + '</div>' : '')
       +   '</div>'
-      + (code ? '<button ' + copyAttr + ' style="padding:0.55rem 1.1rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Copy code</button>' : '')
+      + (code ? '<button ' + copyAttr + ' style="padding:0.55rem 1.1rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Copy code</button>' : '')
       + '</div>'
       + '</div>';
   }
@@ -837,7 +837,7 @@
   }
 
   function qbtn(label, onclick, primary) {
-    return '<button onclick="' + onclick + '" style="padding:0.45rem 0.9rem;font-size:0.78rem;font-weight:700;border-radius:8px;cursor:pointer;transition:opacity 0.15s;'
+    return '<button onclick="' + onclick + '" style="padding:0.45rem 0.9rem;font-size:0.78rem;font-weight:700;border-radius:4px;cursor:pointer;transition:opacity 0.15s;'
       + (primary ? 'background:var(--gold);color:#0a0a0a;border:none;' : 'background:#fff;color:#374151;border:1px solid #e2e8f0;')
       + '" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">' + label + '</button>';
   }
@@ -929,7 +929,7 @@
       var clickAction = item.action
         ? 'App.Dashboard.' + item.action + '()'
         : 'App.Router.navigate(\'' + item.page + '\')';
-      return '<div onclick="' + clickAction + '" style="display:flex;align-items:center;gap:0.65rem;padding:0.6rem 0.5rem;margin:0 -0.5rem;border-radius:8px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid #f4f4f2" onmouseover="this.style.background=\'#fafaf8\'" onmouseout="this.style.background=\'transparent\'">'
+      return '<div onclick="' + clickAction + '" style="display:flex;align-items:center;gap:0.65rem;padding:0.6rem 0.5rem;margin:0 -0.5rem;border-radius:4px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid #f4f4f2" onmouseover="this.style.background=\'#fafaf8\'" onmouseout="this.style.background=\'transparent\'">'
         + '<span style="width:7px;height:7px;border-radius:50%;background:' + (DOTS[item.sev]||DOTS.info) + ';flex-shrink:0"></span>'
         + '<div style="flex:1;min-width:0">'
         +   '<div style="font-size:0.81rem;font-weight:600;color:#111">' + App.Utils.esc(item.title) + '</div>'
@@ -972,7 +972,7 @@
         return i.status === 'Paid' && catStudents.some(function(stu) { return stu.id === i.studentId; });
       }).reduce(function(acc, i) { return acc + i.amount; }, 0);
       var todayCount  = catClasses.filter(function(c) { return App.Utils.runsOnDate(c, today, s); }).length;
-      return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);padding:1.1rem 1.2rem;border-top:3px solid ' + catColors[cat] + '">'
+      return '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);padding:1.1rem 1.2rem;border-top:3px solid ' + catColors[cat] + '">'
         + '<div style="font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:' + catColors[cat] + ';margin-bottom:0.7rem">' + cat + '</div>'
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
         + _miniStat('Classes', catClasses.length)
@@ -1027,7 +1027,7 @@
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">'
 
       // Pending actions
-      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden">'
+      + '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden">'
       +   '<div style="padding:0.85rem 1.25rem;border-bottom:1px solid #f0ede8;background:#faf9f7"><p style="font-size:0.8rem;font-weight:700;color:#111;margin:0">Pending Actions</p></div>'
       +   '<div style="padding:0.85rem 1.25rem">'
       +   (pendingItems.length === 0
@@ -1043,7 +1043,7 @@
       + '</div>'
 
       // Today's classes
-      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden">'
+      + '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden">'
       +   '<div style="padding:0.85rem 1.25rem;border-bottom:1px solid #f0ede8;background:#faf9f7;display:flex;justify-content:space-between;align-items:center">'
       +     '<p style="font-size:0.8rem;font-weight:700;color:#111;margin:0">Today\'s Classes (' + todayClasses.length + ')</p>'
       +     '<span style="font-size:0.72rem;color:#94a3b8">' + staffCheckedIn + '/' + staff.length + ' staff in</span>'
@@ -1069,13 +1069,13 @@
       + '</div>'
 
       // Financial summary
-      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);padding:1.1rem 1.5rem;display:flex;align-items:center;gap:2rem;flex-wrap:wrap">'
+      + '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);padding:1.1rem 1.5rem;display:flex;align-items:center;gap:2rem;flex-wrap:wrap">'
       +   '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#94a3b8;white-space:nowrap">This Month</div>'
       +   _miniStat('Collected', 'RM ' + monthRevenue.toFixed(0))
       +   _miniStat('Target', 'RM ' + monthTarget.toFixed(0))
       +   _miniStat('Collection Rate', collectRate + '%')
       +   _miniStat('Overdue', overdueInvs.length + ' inv.')
-      +   '<button onclick="App.Router.navigate(\'billing\')" style="margin-left:auto;padding:0.4rem 1rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">View Billing</button>'
+      +   '<button onclick="App.Router.navigate(\'billing\')" style="margin-left:auto;padding:0.4rem 1rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">View Billing</button>'
       + '</div>'
 
       + '</div>';
@@ -1116,8 +1116,8 @@
         +   '<p style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--gold);margin:0 0 6px">' + _dateFull() + '</p>'
         +   '<p style="font-family:var(--serif);font-size:1.3rem;font-weight:700;color:#1a1a1a;margin:0">Good ' + _tod + ', ' + App.Utils.esc(teacher.name || 'Teacher') + '</p>'
         + '</div></div>'
-        + '<div style="background:#fff;border-radius:16px;border:1px solid rgba(201,162,39,0.2);padding:2.5rem 2rem;text-align:center;max-width:500px;margin:0 auto">'
-        +   '<div style="width:56px;height:56px;border-radius:50%;background:rgba(201,162,39,0.08);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem">'
+        + '<div style="background:#fff;border-radius:0;border:1px solid rgba(201,162,39,0.35);padding:2.5rem 2rem;text-align:center;max-width:500px;margin:0 auto">'
+        +   '<div style="width:56px;height:56px;border-radius:50%;background:#FFFDF6;display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem">'
         +     '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#C9A227" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
         +   '</div>'
         +   '<h2 style="font-family:var(--serif);font-size:1.3rem;font-weight:700;color:#0a0a0a;margin:0 0 0.5rem">No classes assigned yet</h2>'
@@ -1138,7 +1138,7 @@
       +   '<div style="text-align:right">'
       +     (myRec && myRec.checkIn
               ? '<div style="font-size:0.78rem;font-weight:700;color:#15803d">Checked in ' + App.Utils.formatTime(myRec.checkIn) + '</div>'
-              : '<button onclick="App.Router.navigate(\'attendance\')" style="padding:0.4rem 0.9rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Check In</button>')
+              : '<button onclick="App.Router.navigate(\'attendance\')" style="padding:0.4rem 0.9rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Check In</button>')
       +   '</div>'
       + '</div>'
       + '</div>'
@@ -1165,10 +1165,10 @@
                 +   '<div style="font-size:0.85rem;font-weight:600;color:#111">' + App.Utils.esc(c.name) + '</div>'
                 +   '<div style="font-size:0.7rem;color:#94a3b8">' + App.Utils.esc(c.classroom) + ' · ' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + '</div>'
                 + '</div>'
-                + '<div style="font-size:0.78rem;font-weight:700;color:#15803d;background:#f0fdf4;padding:0.25rem 0.6rem;border-radius:6px">'
+                + '<div style="font-size:0.78rem;font-weight:700;color:#15803d;background:#f0fdf4;padding:0.25rem 0.6rem;border-radius:4px">'
                 +   attCount + '/' + enrolled.length + ' in'
                 + '</div>'
-                + '<button onclick="App._preselectedClass=\'' + c.id + '\';App.Router.navigate(\'attendance\')" style="padding:0.3rem 0.7rem;font-size:0.72rem;font-weight:700;background:#f1f5f9;color:#374151;border:none;border-radius:7px;cursor:pointer">Attend</button>'
+                + '<button onclick="App._preselectedClass=\'' + c.id + '\';App.Router.navigate(\'attendance\')" style="padding:0.3rem 0.7rem;font-size:0.72rem;font-weight:700;background:#f1f5f9;color:#374151;border:none;border-radius:4px;cursor:pointer">Attend</button>'
                 + '</div>';
             }).join(''))
       +   '</div>'
@@ -1182,7 +1182,7 @@
           { label:'Attendance', page:'attendance', color:'#10b981' },
           { label:'Announcements', page:'communication', color:'#f59e0b' }
         ].map(function(item) {
-          return '<button onclick="App.Router.navigate(\'' + item.page + '\')" style="padding:0.85rem;background:#fff;border:1px solid rgba(0,0,0,0.07);border-radius:12px;font-size:0.82rem;font-weight:700;color:' + item.color + ';cursor:pointer;border-left:3px solid ' + item.color + '">' + item.label + '</button>';
+          return '<button onclick="App.Router.navigate(\'' + item.page + '\')" style="padding:0.85rem;background:#fff;border:1px solid rgba(0,0,0,0.07);border-radius:0;font-size:0.82rem;font-weight:700;color:' + item.color + ';cursor:pointer;border-left:3px solid ' + item.color + '">' + item.label + '</button>';
         }).join('')
       + '</div>'
       + '</div>';
@@ -1190,17 +1190,17 @@
 
   function _heroBtn(label, onclick) {
     return '<button onclick="' + onclick + '" '
-      + 'style="padding:0.4rem 0.85rem;font-size:0.75rem;font-weight:700;border-radius:8px;cursor:pointer;'
-      + 'border:1.5px solid rgba(201,162,39,0.4);background:rgba(201,162,39,0.06);color:#9a7b1a;transition:all 0.15s;white-space:nowrap" '
+      + 'style="padding:0.4rem 0.85rem;font-size:0.75rem;font-weight:700;border-radius:4px;cursor:pointer;'
+      + 'border:1.5px solid rgba(201,162,39,0.35);background:#FFFDF6;color:#9a7b1a;transition:all 0.15s;white-space:nowrap" '
       + 'onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\';this.style.borderColor=\'var(--gold)\'" '
-      + 'onmouseout="this.style.background=\'rgba(201,162,39,0.06)\';this.style.color=\'#9a7b1a\';this.style.borderColor=\'rgba(201,162,39,0.4)\'">'
+      + 'onmouseout="this.style.background=\'#FFFDF6\';this.style.color=\'#9a7b1a\';this.style.borderColor=\'rgba(201,162,39,0.35)\'">'
       + label + '</button>';
   }
 
   function _qaBtn(label, page, icon, customOnclick) {
     var onclick = customOnclick || "App.Router.navigate('" + page + "')";
     return '<button onclick="' + onclick + '" '
-      + 'style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;font-size:0.78rem;font-weight:600;border-radius:8px;cursor:pointer;background:#fff;border:1px solid #e8e4df;color:#374151;text-align:left;transition:all 0.15s;white-space:nowrap" '
+      + 'style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;font-size:0.78rem;font-weight:600;border-radius:4px;cursor:pointer;background:#fff;border:1px solid #e8e4df;color:#374151;text-align:left;transition:all 0.15s;white-space:nowrap" '
       + 'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
       + 'onmouseout="this.style.borderColor=\'#e8e4df\';this.style.color=\'#374151\'">'
       + '<span style="font-size:0.85rem;font-weight:700;color:inherit">' + icon + '</span>'
@@ -1277,11 +1277,11 @@
     if (enabled) {
       sec.innerHTML = '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.5rem">Two-factor authentication</h3>'
         + '<p style="font-size:0.78rem;color:#64748b;margin:0 0 0.75rem">Active — you\'ll be prompted for a 6-digit code at login.</p>'
-        + '<button onclick="App.Dashboard._mfaDisable()" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #fecaca;border-radius:8px;background:#fff;color:#dc2626;cursor:pointer">Disable 2FA</button>';
+        + '<button onclick="App.Dashboard._mfaDisable()" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #fecaca;border-radius:4px;background:#fff;color:#dc2626;cursor:pointer">Disable 2FA</button>';
     } else {
       sec.innerHTML = '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.5rem">Two-factor authentication</h3>'
         + '<p style="font-size:0.78rem;color:#64748b;margin:0 0 0.75rem">Strongly recommended for admin accounts. Uses any TOTP app (Google Authenticator, 1Password, Authy).</p>'
-        + '<button onclick="App.Dashboard._mfaStart()" style="padding:0.45rem 1rem;font-size:0.8rem;font-weight:700;background:#0a0a0a;color:#fff;border:none;border-radius:8px;cursor:pointer">Enable 2FA</button>';
+        + '<button onclick="App.Dashboard._mfaStart()" style="padding:0.45rem 1rem;font-size:0.8rem;font-weight:700;background:#0a0a0a;color:#fff;border:none;border-radius:4px;cursor:pointer">Enable 2FA</button>';
     }
   }
 
@@ -1294,7 +1294,7 @@
       // seed). If absent, fall back to manual entry of the secret shown below.
       var qr = res.qr || '';
       var qrImg = qr
-        ? '<img src="' + App.Utils.esc(qr) + '" alt="QR code" style="width:140px;height:140px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:6px">'
+        ? '<img src="' + App.Utils.esc(qr) + '" alt="QR code" style="width:140px;height:140px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;padding:6px">'
         : '<div style="width:140px;font-size:0.72rem;color:#64748b">QR unavailable — enter the secret manually.</div>';
       var sec = document.getElementById('mfa-section');
       sec.innerHTML = '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.5rem">Scan with your authenticator</h3>'
@@ -1302,12 +1302,12 @@
         +   qrImg
         +   '<div style="flex:1;font-size:0.74rem;color:#64748b;line-height:1.5">'
         +     '<p style="margin:0 0 0.5rem">Or enter this secret manually:</p>'
-        +     '<code style="display:block;background:#f8fafc;padding:0.5rem;border-radius:6px;border:1px solid #e2e8f0;font-size:0.7rem;word-break:break-all">' + App.Utils.esc(res.secret) + '</code>'
+        +     '<code style="display:block;background:#f8fafc;padding:0.5rem;border-radius:4px;border:1px solid #e2e8f0;font-size:0.7rem;word-break:break-all">' + App.Utils.esc(res.secret) + '</code>'
         +   '</div>'
         + '</div>'
         + '<form id="mfa-confirm-form" style="display:flex;gap:0.5rem;align-items:center">'
-        +   '<input name="code" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required style="font-family:ui-monospace,monospace;font-size:1rem;letter-spacing:0.2em;text-align:center;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:8px;width:11ch">'
-        +   '<button type="submit" style="padding:0.55rem 1rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Confirm</button>'
+        +   '<input name="code" placeholder="6-digit code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required style="font-family:ui-monospace,monospace;font-size:1rem;letter-spacing:0.2em;text-align:center;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;width:11ch">'
+        +   '<button type="submit" style="padding:0.55rem 1rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Confirm</button>'
         + '</form>';
       document.getElementById('mfa-confirm-form').addEventListener('submit', async function(e) {
         e.preventDefault();
@@ -1334,7 +1334,7 @@
     sec.innerHTML = '<h3 style="font-size:0.9rem;font-weight:700;color:#111;margin:0 0 0.5rem">2FA enabled — save your recovery codes</h3>'
       + '<p style="font-size:0.78rem;color:#dc2626;margin:0 0 0.75rem;font-weight:600">These won\'t be shown again. Store them somewhere safe.</p>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.75rem">' + list + '</div>'
-      + '<button onclick="App.Dashboard._mfaCopyCodes(' + JSON.stringify(JSON.stringify(codes)).replace(/"/g,'&quot;') + ')" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;cursor:pointer">Copy all</button>';
+      + '<button onclick="App.Dashboard._mfaCopyCodes(' + JSON.stringify(JSON.stringify(codes)).replace(/"/g,'&quot;') + ')" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#374151;cursor:pointer">Copy all</button>';
   }
 
   function _mfaCopyCodes(codesJson) {
@@ -1376,8 +1376,8 @@
             +   '<div style="font-size:0.85rem;font-weight:600;color:#111">' + App.Utils.esc(u.name || u.email) + '</div>'
             +   '<div style="font-size:0.75rem;color:#94a3b8">' + App.Utils.esc(u.email) + ' · ' + App.Utils.esc(u.role) + '</div>'
             + '</div>'
-            + '<button onclick="App.Dashboard._verifyUser(' + u.id + ')" style="padding:0.35rem 0.7rem;font-size:0.72rem;font-weight:600;border:1px solid #10b981;border-radius:6px;background:#f0fdf4;color:#059669;cursor:pointer">Verify</button>'
-            + '<button onclick="App.Dashboard._resendVerification(' + u.id + ')" style="padding:0.35rem 0.7rem;font-size:0.72rem;font-weight:600;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;cursor:pointer">Resend</button>'
+            + '<button onclick="App.Dashboard._verifyUser(' + u.id + ')" style="padding:0.35rem 0.7rem;font-size:0.72rem;font-weight:600;border:1px solid #10b981;border-radius:4px;background:#f0fdf4;color:#059669;cursor:pointer">Verify</button>'
+            + '<button onclick="App.Dashboard._resendVerification(' + u.id + ')" style="padding:0.35rem 0.7rem;font-size:0.72rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;cursor:pointer">Resend</button>'
             + '</div>';
         }).join('');
 

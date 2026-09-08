@@ -3,12 +3,14 @@
    ============================== */
 
 :root {
-  /* Gold — kept, with deeper antique companion */
+  /* Gold — kept exactly, but it stops being a FILL. On cream a translucent
+     gold wash reads as warmth; on white it reads as cheap, so --gold-dim is
+     now an almost-white tint rather than 12% gold, and the gold drop-shadow
+     is gone. Gold survives as rules, marks and labels. */
   --gold:        #C9A227;
   --gold-light:  #E8C84A;
   --gold-deep:   #8a6a14;
-  --gold-dim:    rgba(201,162,39,0.12);
-  --gold-glow:   0 0 0 1px #C9A227, 0 8px 32px rgba(201,162,39,0.15);
+  --gold-dim:    #FFFDF6;
   --gold-text:   #8a6a14;
 
   /* Ink — warm near-black, not pure */
@@ -16,11 +18,15 @@
   --ink-soft:    #3a342c;
   --ink-mute:    #6b6258;
 
-  /* Paper layers — three distinct warm cream tones, not one flat beige */
-  --paper:       #F7F4EC;   /* base canvas */
-  --paper-warm:  #EFE9DB;   /* tonal step */
-  --paper-card:  #FDFBF5;   /* card surface — slightly warmer than white */
-  --rule:        #E5DECB;   /* hairline rules */
+  /* Paper — white, not cream. Warm cream plus a serif display plus a metallic
+     accent is the most common signature of generated design, and the cream is
+     the removable part. A card no longer needs to be warmer than the page,
+     because the page is white; the tonal step keeps a trace of warmth so it
+     does not go blue next to the gold. */
+  --paper:       #FFFFFF;   /* base canvas */
+  --paper-warm:  #F5F4F2;   /* recessed strips */
+  --paper-card:  #FFFFFF;   /* card surface */
+  --rule:        #ECE9E2;   /* hairline rules — grey, not tan */
 
   /* Legacy aliases (kept so existing rules still resolve) */
   --black:       var(--ink);
@@ -397,7 +403,7 @@ body.theme-b .dash-card {
 .dock-topbar-logo {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -425,7 +431,7 @@ body.theme-b .dash-card {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 0;
   border: none;
   background: transparent;
   color: #64748b;
@@ -440,7 +446,7 @@ body.theme-b .dash-card {
   padding: 0.3rem 0.75rem;
   font-size: 0.75rem;
   font-weight: 700;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1.5px solid rgba(201,162,39,0.3);
   background: var(--gold-dim);
   color: var(--gold);
@@ -466,7 +472,7 @@ body.theme-b .dash-card {
   background: rgba(15,15,15,0.92);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-radius: 18px;
+  border-radius: 0;
   padding: 6px 10px;
   gap: 2px;
   align-items: center;
@@ -488,7 +494,7 @@ body.theme-b .dash-card {
   padding: 6px 8px;
   border: none;
   background: transparent;
-  border-radius: 12px;
+  border-radius: 0;
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
@@ -687,7 +693,7 @@ body.sidebar-collapsed #sidebar .nav-btn:hover::after {
   font-size: 0.72rem;
   font-weight: 600;
   padding: 0.3rem 0.6rem;
-  border-radius: 6px;
+  border-radius: 4px;
   white-space: nowrap;
   z-index: 100;
   pointer-events: none;
@@ -768,7 +774,7 @@ body.sidebar-collapsed #sidebar .nav-btn:hover::after {
   background: var(--gold);
   color: var(--ink);
   border: 1px solid var(--gold);
-  border-radius: 8px;
+  border-radius: 4px;
   cursor: pointer;
   transition: background 0.15s ease, transform 0.06s ease, box-shadow 0.18s ease;
   box-shadow: 0 1px 0 rgba(26,22,18,0.05);
@@ -789,7 +795,7 @@ body.sidebar-collapsed #sidebar .nav-btn:hover::after {
   background: var(--paper-card, #fff);
   color: var(--ink-soft);
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: 4px;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
@@ -839,7 +845,7 @@ button[disabled]:hover,
   background: #c1272d;
   color: #fff;
   border: 1px solid #c1272d;
-  border-radius: 8px;
+  border-radius: 4px;
   cursor: pointer;
   transition: background 0.15s ease, transform 0.06s ease, box-shadow 0.18s ease;
   box-shadow: 0 1px 0 rgba(0,0,0,0.06);
@@ -856,14 +862,14 @@ button[disabled]:hover,
    ────────────────────────────────────────────────────────────────── */
 #modal-content.sh-confirm-frame {
   max-width: 440px;
-  border-radius: 18px;
+  border-radius: 0;
   box-shadow: 0 24px 60px -22px rgba(20, 14, 8, 0.35), 0 2px 6px rgba(20, 14, 8, 0.06);
 }
 .sh-confirm {
   padding: 1.6rem 1.6rem 1.25rem;
   font-family: var(--sans);
   background: var(--paper-card, #fdfbf5);
-  border-radius: 18px;
+  border-radius: 0;
 }
 .sh-confirm-head {
   display: flex;
@@ -908,7 +914,7 @@ button[disabled]:hover,
   margin: 0.6rem 0 0;
   padding: 0.55rem 0.7rem;
   background: rgba(0,0,0,0.025);
-  border-radius: 7px;
+  border-radius: 4px;
   border-left: 2px solid var(--gold-dim, rgba(201,162,39,0.35));
 }
 .sh-confirm-actions {
@@ -926,7 +932,7 @@ button[disabled]:hover,
 }
 @media (max-width: 520px) {
   #modal-content.sh-confirm-frame { max-width: 100%; }
-  .sh-confirm { padding: 1.25rem 1.25rem 1rem; border-radius: 14px; }
+  .sh-confirm { padding: 1.25rem 1.25rem 1rem; border-radius: 0; }
   .sh-confirm-title { font-size: 1.15rem; }
   .sh-confirm-head { gap: 0.8rem; }
   .sh-confirm-icon { width: 40px; height: 40px; }
@@ -1140,7 +1146,7 @@ button[disabled]:hover,
   cursor: pointer;
   text-align: center;
   padding: 0.5rem;
-  border-radius: 8px;
+  border-radius: 4px;
   transition: background 0.15s ease;
 }
 .dash-link:hover {

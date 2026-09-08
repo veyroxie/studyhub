@@ -205,7 +205,7 @@
       if (opts.action && opts.action.label && typeof opts.action.onClick === 'function') {
         var actBtn = document.createElement('button');
         actBtn.textContent = opts.action.label;
-        actBtn.setAttribute('style', 'background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;font-weight:700;font-size:0.78rem;padding:0.25rem 0.65rem;border-radius:6px;cursor:pointer;margin-right:0.35rem');
+        actBtn.setAttribute('style', 'background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;font-weight:700;font-size:0.78rem;padding:0.25rem 0.65rem;border-radius:4px;cursor:pointer;margin-right:0.35rem');
         actBtn.addEventListener('click', function() {
           try { opts.action.onClick(); } catch(e) {}
           _removeToast(el);

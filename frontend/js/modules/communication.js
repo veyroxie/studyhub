@@ -67,8 +67,8 @@
                   +   '<div class="text-xs text-slate-600 mt-1">' + App.Utils.esc(ann.message.slice(0,80)) + (ann.message.length > 80 ? '…' : '') + '</div>'
                   + '</div>'
                   + '<div class="flex gap-2 shrink-0">'
-                  +   '<button onclick="App.Communication._approve(\'' + ann.id + '\')" style="padding:0.3rem 0.8rem;font-size:0.75rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:7px;cursor:pointer">Approve</button>'
-                  +   '<button onclick="App.Communication._reject(\'' + ann.id + '\')" style="padding:0.3rem 0.8rem;font-size:0.75rem;font-weight:700;background:#f1f5f9;color:#ef4444;border:none;border-radius:7px;cursor:pointer">Reject</button>'
+                  +   '<button onclick="App.Communication._approve(\'' + ann.id + '\')" style="padding:0.3rem 0.8rem;font-size:0.75rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:4px;cursor:pointer">Approve</button>'
+                  +   '<button onclick="App.Communication._reject(\'' + ann.id + '\')" style="padding:0.3rem 0.8rem;font-size:0.75rem;font-weight:700;background:#f1f5f9;color:#ef4444;border:none;border-radius:4px;cursor:pointer">Reject</button>'
                   + '</div>'
                   + '</div>';
               }).join('')
@@ -115,7 +115,7 @@
         ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">' + App.Utils.emptyState(
             _typeFilter !== 'All' ? 'No announcements match this filter' : 'No announcements yet',
             _typeFilter !== 'All' ? 'Try selecting a different type filter.' : 'Post your first announcement to reach parents.',
-            (canWrite && _typeFilter === 'All') ? '<button onclick="App.Communication._newModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">' + btnLabel + '</button>' : ''
+            (canWrite && _typeFilter === 'All') ? '<button onclick="App.Communication._newModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">' + btnLabel + '</button>' : ''
           ) + '</div>'
         : '<div class="space-y-3">' + filtered.map(function(ann) { return _annCard(ann, isAdmin, today); }).join('') + '</div>'
       );

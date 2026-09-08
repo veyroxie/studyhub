@@ -104,11 +104,11 @@
     // Parents only see Week view; force it before rendering the toggle.
     if (isClient && _view !== 'week') _view = 'week';
 
-    const viewToggle = isClient ? '' : '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:8px;padding:3px">'
-      + '<button onclick="App.Calendar._setView(\'week\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='week'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='week'?'#0a0a0a':'#94a3b8') + '">Week</button>'
-      + '<button onclick="App.Calendar._setView(\'month\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='month'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='month'?'#0a0a0a':'#94a3b8') + '">Month</button>'
-      + '<button onclick="App.Calendar._setView(\'timetable\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='timetable'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='timetable'?'#0a0a0a':'#94a3b8') + '">Timetable</button>'
-      + (isAdmin ? '<button onclick="App.Calendar._setView(\'programs\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:' + (_view==='programs'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='programs'?'#0a0a0a':'#94a3b8') + '">Settings</button>' : '')
+    const viewToggle = isClient ? '' : '<div style="display:flex;gap:0.25rem;background:#f1f5f9;border-radius:4px;padding:3px">'
+      + '<button onclick="App.Calendar._setView(\'week\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:' + (_view==='week'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='week'?'#0a0a0a':'#94a3b8') + '">Week</button>'
+      + '<button onclick="App.Calendar._setView(\'month\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:' + (_view==='month'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='month'?'#0a0a0a':'#94a3b8') + '">Month</button>'
+      + '<button onclick="App.Calendar._setView(\'timetable\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:' + (_view==='timetable'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='timetable'?'#0a0a0a':'#94a3b8') + '">Timetable</button>'
+      + (isAdmin ? '<button onclick="App.Calendar._setView(\'programs\')" style="padding:0.3rem 0.85rem;font-size:0.72rem;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:' + (_view==='programs'?'var(--gold, #f59e0b)':'transparent') + ';color:' + (_view==='programs'?'#0a0a0a':'#94a3b8') + '">Settings</button>' : '')
       + '</div>';
 
     const headerHtml = ''
@@ -145,14 +145,14 @@
     // Parents only get the week view with their child's classes — no
     // search box, no teacher dropdown (those are admin/teacher affordances).
     const filterBar = isClient ? '' : '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem;flex-wrap:wrap">'
-      + '<input id="cal-search" type="search" placeholder="Search class..." value="' + App.Utils.esc(_filterSearch) + '" oninput="App.Calendar._setSearch(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;width:180px;background:#fff">'
+      + '<input id="cal-search" type="search" placeholder="Search class..." value="' + App.Utils.esc(_filterSearch) + '" oninput="App.Calendar._setSearch(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;width:180px;background:#fff">'
       + (!isTeacher
-        ? '<select onchange="App.Calendar._setTeacher(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;cursor:pointer">'
+        ? '<select onchange="App.Calendar._setTeacher(this.value)" style="padding:0.45rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#374151;cursor:pointer">'
           + '<option value="">All Tutors</option>'
           + staff.map(function(s) { return '<option value="' + s.id + '" ' + (_filterTeacher === s.id ? 'selected' : '') + '>' + App.Utils.esc(s.name) + '</option>'; }).join('')
           + '</select>'
         : '')
-      + (_filterTeacher || _filterSearch ? '<button onclick="App.Calendar._clearFilters()" style="padding:0.45rem 0.85rem;font-size:0.8rem;border:none;border-radius:8px;background:#f1f5f9;color:#64748b;cursor:pointer">Clear</button>' : '')
+      + (_filterTeacher || _filterSearch ? '<button onclick="App.Calendar._clearFilters()" style="padding:0.45rem 0.85rem;font-size:0.8rem;border:none;border-radius:4px;background:#f1f5f9;color:#64748b;cursor:pointer">Clear</button>' : '')
       + '</div>';
 
     const hasActiveFilter = !!(_filterTeacher || _filterSearch);
@@ -173,7 +173,7 @@
           + App.Utils.emptyState(
               'No classes match your filters',
               'Try clearing the tutor or search filter to see all classes.',
-              '<button onclick="App.Calendar._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer">Clear Filters</button>'
+              '<button onclick="App.Calendar._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:4px;cursor:pointer">Clear Filters</button>'
             )
           + '</div>'
         : '';
@@ -204,7 +204,7 @@
         + App.Utils.emptyState(
             'No classes match your filters',
             'Try clearing the tutor or search filter to see all classes.',
-            '<button onclick="App.Calendar._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:8px;cursor:pointer">Clear Filters</button>'
+            '<button onclick="App.Calendar._clearFilters()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:#f1f5f9;color:#475569;border:none;border-radius:4px;cursor:pointer">Clear Filters</button>'
           )
         + '</div>'
       : '';
@@ -317,9 +317,9 @@
     return '<div>'
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
       +   '<div style="display:flex;align-items:center;gap:0.5rem">'
-      +     '<button onclick="App.Calendar._prevMonth()" style="width:2rem;height:2rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center">‹</button>'
+      +     '<button onclick="App.Calendar._prevMonth()" style="width:2rem;height:2rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center">‹</button>'
       +     '<span style="font-size:0.95rem;font-weight:700;color:#111;min-width:160px;text-align:center">' + monthName + '</span>'
-      +     '<button onclick="App.Calendar._nextMonth()" style="width:2rem;height:2rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center">›</button>'
+      +     '<button onclick="App.Calendar._nextMonth()" style="width:2rem;height:2rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center">›</button>'
       +   '</div>'
       + '</div>'
       + '<table style="width:100%;border-collapse:collapse;table-layout:fixed">'
@@ -367,7 +367,7 @@
       }
       var meta = isClient ? App.Utils.esc(teachers) : App.Utils.esc(teachers) + ' · ' + c.enrolled + '/' + c.capacity + ' enrolled';
       return '<button type="button" onclick="App.Utils.hideModal(true);App.Calendar._classModal(\'' + c.id + '\')" '
-        + 'style="display:flex;align-items:center;gap:0.6rem;width:100%;text-align:left;padding:0.6rem 0.7rem;margin-bottom:0.4rem;border:1px solid #eceae5;border-radius:10px;background:#fff;cursor:pointer' + (isCancelled ? ';opacity:0.55' : '') + '">'
+        + 'style="display:flex;align-items:center;gap:0.6rem;width:100%;text-align:left;padding:0.6rem 0.7rem;margin-bottom:0.4rem;border:1px solid #eceae5;border-radius:0;background:#fff;cursor:pointer' + (isCancelled ? ';opacity:0.55' : '') + '">'
         + '<span style="width:0.32rem;align-self:stretch;border-radius:4px" class="' + colors.bg + '"></span>'
         + '<span style="flex:1;min-width:0">'
         +   '<span style="display:block;font-size:0.85rem;font-weight:700;color:#111">' + App.Utils.formatTime(c.time) + ' ' + App.Utils.esc(c.name) + childTags + (isCancelled ? ' <span style="color:#dc2626;font-size:0.7rem">(Cancelled)</span>' : '') + '</span>'
@@ -376,10 +376,10 @@
         + '<span style="color:#cbd5e1;font-size:0.95rem">&#8250;</span>'
         + '</button>'
         + (isAdmin && !isCancelled ? '<div style="text-align:right;margin:-0.2rem 0 0.4rem">'
-          + '<button type="button" onclick="App.Utils.hideModal(true);App.Calendar._moveSessionModal(\'' + c.id + '\',\'' + dateStr + '\')" style="font-size:0.66rem;font-weight:700;color:#0369a1;background:none;border:1px dashed #bae6fd;border-radius:5px;padding:1px 7px;cursor:pointer">Reschedule</button>'
+          + '<button type="button" onclick="App.Utils.hideModal(true);App.Calendar._moveSessionModal(\'' + c.id + '\',\'' + dateStr + '\')" style="font-size:0.66rem;font-weight:700;color:#0369a1;background:none;border:1px dashed #bae6fd;border-radius:4px;padding:1px 7px;cursor:pointer">Reschedule</button>'
           + '</div>' : '')
         + (isAdmin && isCancelled ? '<div style="text-align:right;margin:-0.2rem 0 0.4rem">'
-          + '<button type="button" onclick="App.Utils.hideModal(true);App.Calendar._undoCancellation(\'' + ccRow.id + '\')" style="font-size:0.66rem;font-weight:700;color:#64748b;background:none;border:1px dashed #cbd5e1;border-radius:5px;padding:1px 7px;cursor:pointer">Undo cancellation</button>'
+          + '<button type="button" onclick="App.Utils.hideModal(true);App.Calendar._undoCancellation(\'' + ccRow.id + '\')" style="font-size:0.66rem;font-weight:700;color:#64748b;background:none;border:1px dashed #cbd5e1;border-radius:4px;padding:1px 7px;cursor:pointer">Undo cancellation</button>'
           + '</div>' : '');
     }).join('');
 
@@ -406,7 +406,7 @@
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Reason (optional, shown to parents)</label><input name="reason" class="form-input" placeholder="e.g. Public holiday make-up"></div>'
       + '<div class="flex justify-end gap-2 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Reschedule</button>'
+      + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Reschedule</button>'
       + '</div></form></div>'
     );
     document.getElementById('move-session-form').addEventListener('submit', async function(e) {
@@ -486,7 +486,7 @@
       });
       if (myKidsInClass.length > 0) {
         childBadges = '<div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:3px">' + myKidsInClass.map(function(st) {
-          return '<span style="font-size:0.6rem;font-weight:700;background:rgba(201,162,39,0.18);color:#92400e;padding:1px 5px;border-radius:4px">' + U.esc(st.firstName) + '</span>';
+          return '<span style="font-size:0.6rem;font-weight:700;background:#FFFDF6;color:#92400e;padding:1px 5px;border-radius:4px">' + U.esc(st.firstName) + '</span>';
         }).join('') + '</div>';
       }
     }
@@ -517,7 +517,7 @@
         + '<div class="text-xs text-slate-400 mt-0.5">Now on ' + U.formatDate(movedOut.toDate) + '</div>'
         + childBadges
         + (App.currentRole === 'admin'
-          ? '<button onclick="event.stopPropagation();App.Calendar._undoMove(\'' + movedOut.id + '\')" style="margin-top:4px;font-size:0.62rem;font-weight:700;color:#64748b;background:none;border:1px dashed #cbd5e1;border-radius:5px;padding:1px 6px;cursor:pointer">Undo move</button>'
+          ? '<button onclick="event.stopPropagation();App.Calendar._undoMove(\'' + movedOut.id + '\')" style="margin-top:4px;font-size:0.62rem;font-weight:700;color:#64748b;background:none;border:1px dashed #cbd5e1;border-radius:4px;padding:1px 6px;cursor:pointer">Undo move</button>'
           : '')
         + '</div>';
     }
@@ -530,7 +530,7 @@
         + '<div class="text-xs text-red-200 mt-0.5 truncate">' + U.esc(teachers) + '</div>'
         + childBadges
         + (App.currentRole === 'admin'
-          ? '<button onclick="event.stopPropagation();App.Calendar._undoCancellation(\'' + ccRow.id + '\')" style="margin-top:4px;font-size:0.62rem;font-weight:700;color:#64748b;background:none;border:1px dashed #cbd5e1;border-radius:5px;padding:1px 6px;cursor:pointer">Undo cancellation</button>'
+          ? '<button onclick="event.stopPropagation();App.Calendar._undoCancellation(\'' + ccRow.id + '\')" style="margin-top:4px;font-size:0.62rem;font-weight:700;color:#64748b;background:none;border:1px dashed #cbd5e1;border-radius:4px;padding:1px 6px;cursor:pointer">Undo cancellation</button>'
           : '')
         + '</div>';
     }
@@ -614,7 +614,7 @@
               + '<div style="display:flex;flex-wrap:wrap;gap:0.4rem">'
               + enrolledStu.map(function(s) {
                   return '<button onclick="App.Utils.hideModal(true);App.Students._viewModal(\'' + s.id + '\')" '
-                    + 'style="padding:0.25rem 0.65rem;font-size:0.74rem;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:14px;color:#374151;cursor:pointer">'
+                    + 'style="padding:0.25rem 0.65rem;font-size:0.74rem;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:0;color:#374151;cursor:pointer">'
                     + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</button>';
                 }).join('')
               + '</div></div>';
@@ -740,7 +740,7 @@
       +   ['Private','Group'].map(function(t) {
             const cap = t === 'Private' ? 1 : 5;
             const desc = t === 'Private' ? 'Max 1 student' : 'Max 5 students';
-            return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.65rem 0.85rem;border:2px solid #e2e8f0;border-radius:10px;cursor:pointer;transition:all 0.15s" class="class-type-opt">'
+            return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.65rem 0.85rem;border:2px solid #e2e8f0;border-radius:0;cursor:pointer;transition:all 0.15s" class="class-type-opt">'
               + '<input type="radio" name="classType" value="' + t + '" data-cap="' + cap + '" onchange="App.Calendar._onTypeChange(this)" ' + (t === 'Group' ? 'checked' : '') + ' style="accent-color:var(--gold)">'
               + '<div><div style="font-size:0.83rem;font-weight:600">' + t + '</div><div style="font-size:0.7rem;color:#94a3b8">' + desc + '</div></div>'
               + '</label>';
@@ -772,7 +772,7 @@
       + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Class</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Add Class</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -947,7 +947,7 @@
     });
     if (showSlots.length === 0) showSlots = slots;
 
-    var header = '<div style="display:grid;grid-template-columns:60px repeat(7,1fr);border-radius:14px 14px 0 0;overflow:hidden;background:#f8fafc;border:1px solid #e2e8f0;border-bottom:none">'
+    var header = '<div style="display:grid;grid-template-columns:60px repeat(7,1fr);border-radius:0 14px 0 0;overflow:hidden;background:#f8fafc;border:1px solid #e2e8f0;border-bottom:none">'
       + '<div style="padding:0.65rem 0.5rem;font-size:0.68rem;font-weight:700;color:#94a3b8;text-align:center;border-right:1px solid #e2e8f0">TIME</div>'
       + DAYS_TT.map(function(d, i) {
           return '<div style="padding:0.65rem 0.5rem;font-size:0.72rem;font-weight:700;color:#374151;text-align:center;' + (i < 6 ? 'border-right:1px solid #e2e8f0;' : '') + '">' + DAYS_SHORT_TT[i] + '</div>';
@@ -976,7 +976,7 @@
                   var endH   = parseInt((c.endTime||c.time||'08:00').split(':')[0],10), endM = parseInt((c.endTime||c.time||'08:00').split(':')[1]||'0',10);
                   var dur = (endH*60+endM) - (startH*60+startM);
                   var fmtT = function(hh,mm){ return (hh>12?hh-12:hh)+':'+(mm<10?'0'+mm:mm)+(hh>=12?'pm':'am'); };
-                  return '<div onclick="App.Calendar._classModal(\'' + c.id + '\')" style="background:' + col.bg + ';border:1px solid ' + col.border + ';border-left:3px solid ' + col.border + ';border-radius:6px;padding:0.3rem 0.45rem;cursor:pointer" title="' + App.Utils.esc(c.name) + '">'
+                  return '<div onclick="App.Calendar._classModal(\'' + c.id + '\')" style="background:' + col.bg + ';border:1px solid ' + col.border + ';border-left:3px solid ' + col.border + ';border-radius:4px;padding:0.3rem 0.45rem;cursor:pointer" title="' + App.Utils.esc(c.name) + '">'
                     + '<div style="font-size:0.72rem;font-weight:700;color:' + col.text + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + App.Utils.esc(c.name) + '</div>'
                     + '<div style="font-size:0.62rem;color:' + col.text + ';opacity:0.75">' + fmtT(startH,startM) + (dur>0?' · '+dur+'m':'') + '</div>'
                     + (teacher ? '<div style="font-size:0.62rem;color:' + col.text + ';opacity:0.65">' + App.Utils.esc(teacher.name) + '</div>' : '')
@@ -1027,7 +1027,7 @@
         +   '<div style="font-size:0.72rem;font-weight:700;color:' + (pct >= 100 ? '#dc2626' : '#374151') + '">' + ws.enrolled + '/' + ws.capacity + '</div>'
         +   '<div style="width:48px;height:3px;background:#f1f5f9;border-radius:99px;overflow:hidden;margin-top:3px"><div style="width:' + Math.min(pct,100) + '%;height:100%;background:var(--gold);border-radius:99px"></div></div>'
         + '</div>'
-        + '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:' + (ws.status==='completed'?'#f1f5f9':ws.status==='cancelled'?'#fef2f2':'#f0fdf4') + ';color:' + statusColor + ';flex-shrink:0">' + ws.status + '</span>'
+        + '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:4px;background:' + (ws.status==='completed'?'#f1f5f9':ws.status==='cancelled'?'#fef2f2':'#f0fdf4') + ';color:' + statusColor + ';flex-shrink:0">' + ws.status + '</span>'
         + '<span style="font-size:0.78rem;font-weight:700;color:var(--gold);flex-shrink:0">RM ' + ws.fee + '</span>'
         + (isAdmin ? '<button onclick="App.Calendar._deleteWorkshop(\'' + ws.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Delete">&#10005;</button>' : '')
         + '</div>';
@@ -1053,7 +1053,7 @@
         +   '<div style="font-size:0.85rem;font-weight:700;color:#111">' + App.Utils.esc(h.name) + '</div>'
         +   '<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px">' + dateDisplay + (h.notes ? ' · ' + App.Utils.esc(h.notes) : '') + '</div>'
         + '</div>'
-        + '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:' + typeBg + ';color:' + typeColor + ';flex-shrink:0">' + App.Utils.esc(h.type) + '</span>'
+        + '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:4px;background:' + typeBg + ';color:' + typeColor + ';flex-shrink:0">' + App.Utils.esc(h.type) + '</span>'
         + (isAdmin ? '<div style="display:flex;gap:0.3rem;flex-shrink:0">'
           + '<button onclick="App.Calendar._editHolidayModal(\'' + h.id + '\')" style="font-size:0.68rem;color:#64748b;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Edit">&#9998;</button>'
           + '<button onclick="App.Calendar._deleteHoliday(\'' + h.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Delete">&#10005;</button>'
@@ -1089,7 +1089,7 @@
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
       +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Pricing <span style="font-size:0.72rem;font-weight:500;color:#94a3b8">(monthly fee by type × level)</span></h2>'
       + '</div>'
-      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden;margin-bottom:2rem">'
+      + '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden;margin-bottom:2rem">'
       + (tiers.length === 0
           ? '<div style="padding:2rem;text-align:center;color:#94a3b8;font-size:0.84rem">Pricing not set up yet.</div>'
           : pricingTable)
@@ -1098,9 +1098,9 @@
       // Workshops
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
       +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Workshops</h2>'
-      +   (isAdmin ? '<button onclick="App.Calendar._addWorkshopModal()" style="padding:0.35rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Workshop</button>' : '')
+      +   (isAdmin ? '<button onclick="App.Calendar._addWorkshopModal()" style="padding:0.35rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">+ Add Workshop</button>' : '')
       + '</div>'
-      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden;margin-bottom:2rem">'
+      + '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden;margin-bottom:2rem">'
       + (workshops.length === 0
           ? '<div style="padding:2rem;text-align:center;color:#94a3b8;font-size:0.84rem">No workshops yet.</div>'
           : workshopRows)
@@ -1109,9 +1109,9 @@
       // Holidays / Closures
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
       +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Holidays / Closures</h2>'
-      +   (isAdmin ? '<button onclick="App.Calendar._addHolidayModal()" style="padding:0.35rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Holiday</button>' : '')
+      +   (isAdmin ? '<button onclick="App.Calendar._addHolidayModal()" style="padding:0.35rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">+ Add Holiday</button>' : '')
       + '</div>'
-      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden;margin-bottom:2rem">'
+      + '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);overflow:hidden;margin-bottom:2rem">'
       + (holidays.length === 0
           ? '<div style="padding:2rem;text-align:center;color:#94a3b8;font-size:0.84rem">No holidays or closures scheduled.</div>'
           : holidayRows)
@@ -1129,7 +1129,7 @@
     return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
       +   '<h2 style="font-size:1rem;font-weight:700;color:#111;margin:0">Business &amp; Invoice details <span style="font-size:0.72rem;font-weight:500;color:#94a3b8">(letterhead, bank &amp; receipt)</span></h2>'
       + '</div>'
-      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);padding:1.5rem">'
+      + '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.04);padding:1.5rem">'
       +   '<form id="business-settings-form" class="space-y-3" onsubmit="return App.Calendar._saveBusinessSettings(event)">'
       +     _settingsField('Registered name', 'brandName', 'text', 'e.g. The Study Hub Sdn Bhd')
       +     _settingsField('Tagline', 'brandTagline', 'text', 'shown under the name')
@@ -1145,7 +1145,7 @@
       +     _settingsTextarea('Invoice terms', 'invoiceTerms', 'Terms & Conditions printed on the PDF')
       +     _settingsTextarea('Invoice footer notes', 'invoiceFooterHtml', 'Footer line on the PDF')
       +     '<div class="flex justify-end pt-2">'
-      +       '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save details</button>'
+      +       '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save details</button>'
       +     '</div>'
       +   '</form>'
       + '</div>';
@@ -1220,7 +1220,7 @@
       + _field('Hourly Rate (RM, for session billing)', '<input name="hourlyRate" type="number" min="0" step="0.01" class="form-input" value="' + (t.hourlyRate != null ? t.hourlyRate : '') + '" required>')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save</button>'
       + '</div></form></div>'
     );
     document.getElementById('pricing-form').addEventListener('submit', function(e) {
@@ -1266,7 +1266,7 @@
       + '</select></div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Workshop</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Add Workshop</button>'
       + '</div>'
       + '</form></div>'
     );
@@ -1346,7 +1346,7 @@
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Teacher(s)</label>' + teacherCheckboxes + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save Changes</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save Changes</button>'
       + '</div>'
       + '</form></div>'
     );
@@ -1446,7 +1446,7 @@
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Notes</label><textarea name="notes" class="form-input" rows="2" placeholder="Optional notes"></textarea></div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Add Holiday</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Add Holiday</button>'
       + '</div>'
       + '</form></div>'
     );
@@ -1490,7 +1490,7 @@
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Notes</label><textarea name="notes" class="form-input" rows="2">' + App.Utils.esc(h.notes || '') + '</textarea></div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save Changes</button>'
+      + '<button type="submit" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save Changes</button>'
       + '</div>'
       + '</form></div>'
     );

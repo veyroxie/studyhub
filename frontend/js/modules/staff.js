@@ -22,9 +22,9 @@
         ? '<div class="bg-white rounded-xl border border-slate-100 shadow-sm">' + App.Utils.emptyState(
             'No staff yet',
             'Add your first staff member to get started.',
-            isAdmin ? '<button onclick="App.Staff._addModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add Staff</button>' : ''
+            isAdmin ? '<button onclick="App.Staff._addModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">+ Add Staff</button>' : ''
           ) + '</div>'
-        : '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
+        : '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
           + staff.map(function(s, idx) { return _staffCard(s, idx, classes, isAdmin); }).join('')
           + '</div>');
   }
@@ -58,7 +58,7 @@
       +   (isAdmin ? metric('Salary', App.Utils.formatCurrency(s.salary) + '/mo') : '')
       +   metric('Since', App.Utils.formatDate(s.joinDate))
       +   App.Utils.statusBadge(s.status)
-      +   '<button onclick="event.stopPropagation();App.Staff._viewModal(\'' + s.id + '\')" style="padding:0.35rem 0.9rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#374151;border:1px solid #e2e8f0;border-radius:7px;cursor:pointer">View</button>'
+      +   '<button onclick="event.stopPropagation();App.Staff._viewModal(\'' + s.id + '\')" style="padding:0.35rem 0.9rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#374151;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">View</button>'
       + '</div>'
       + '</div>';
   }
@@ -98,7 +98,7 @@
 
     // Metric cards
     function metricCard(label, value, color) {
-      return '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;text-align:center">'
+      return '<div style="background:#f8fafc;border-radius:0;padding:0.85rem 1rem;text-align:center">'
         + '<div style="font-size:1.4rem;font-weight:800;color:' + color + '">' + value + '</div>'
         + '<div style="font-size:0.68rem;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-top:3px">' + label + '</div>'
         + '</div>';
@@ -117,12 +117,12 @@
     var reviewsHtml = '<div style="margin-top:1rem">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6rem">'
       +   '<span style="font-size:0.82rem;font-weight:700;color:#374151">Performance Reviews</span>'
-      +   '<button onclick="App.Staff._addReviewModal(\'' + s.id + '\')" style="padding:0.28rem 0.75rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">+ Add Review</button>'
+      +   '<button onclick="App.Staff._addReviewModal(\'' + s.id + '\')" style="padding:0.28rem 0.75rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">+ Add Review</button>'
       + '</div>'
       + (reviews.length === 0
           ? '<div style="text-align:center;padding:1.25rem 0;font-size:0.82rem;color:#94a3b8">No reviews yet</div>'
           : reviews.map(function(rv) {
-              return '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;margin-bottom:0.6rem">'
+              return '<div style="background:#f8fafc;border-radius:0;padding:0.85rem 1rem;margin-bottom:0.6rem">'
                 + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.35rem">'
                 +   '<span style="font-size:1rem;letter-spacing:-1px">' + stars(rv.rating) + '</span>'
                 +   '<span style="font-size:0.7rem;color:#94a3b8">' + App.Utils.formatDate(rv.date) + '</span>'
@@ -142,7 +142,7 @@
       + metricCard('Attend. Rate', attRate !== null ? attRate + '%' : '—', attRate !== null && attRate >= 80 ? '#22c55e' : '#94a3b8')
       + '</div>'
       + (avgRating !== null
-          ? '<div style="background:#fafaf8;border-radius:10px;padding:0.85rem 1rem;display:flex;align-items:center;justify-content:space-between">'
+          ? '<div style="background:#fafaf8;border-radius:0;padding:0.85rem 1rem;display:flex;align-items:center;justify-content:space-between">'
           +   '<span style="font-size:0.82rem;font-weight:600;color:#374151">Parent Feedback</span>'
           +   '<span style="font-size:0.95rem;font-weight:800;color:#d97706">' + avgRating + '/5</span>'
           +   '<span style="font-size:0.72rem;color:#94a3b8">(' + myFeedback.length + ' reviews)</span>'
@@ -150,8 +150,8 @@
           : '')
       + '<div>'
       +   '<label style="display:block;font-size:0.8rem;font-weight:600;color:#374151;margin-bottom:0.4rem">Internal Notes</label>'
-      +   '<textarea id="perf-notes-' + s.id + '" rows="3" style="width:100%;padding:0.5rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;resize:vertical;outline:none">' + App.Utils.esc(s.performanceNotes || '') + '</textarea>'
-      +   '<button onclick="App.Staff._saveNotes(\'' + s.id + '\')" style="margin-top:0.5rem;padding:0.35rem 0.9rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Save Notes</button>'
+      +   '<textarea id="perf-notes-' + s.id + '" rows="3" style="width:100%;padding:0.5rem 0.75rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:4px;resize:vertical;outline:none">' + App.Utils.esc(s.performanceNotes || '') + '</textarea>'
+      +   '<button onclick="App.Staff._saveNotes(\'' + s.id + '\')" style="margin-top:0.5rem;padding:0.35rem 0.9rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save Notes</button>'
       + '</div>'
       + reviewsHtml
       + '</div>';
@@ -174,7 +174,7 @@
       + _field('Reviewed By', '<input name="reviewedBy" class="form-input" value="Admin">')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save Review</button>'
+      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save Review</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -274,7 +274,7 @@
         +   '<span style="font-size:0.78rem;color:#94a3b8">'
         +     (s.employmentType === 'parttime' ? 'Part-time · RM ' + (s.hourlyRate || 0) + '/hr' : 'Full-time · RM ' + App.Utils.formatCurrency(s.salary) + '/mo')
         +   '</span>'
-        +   '<button onclick="App.Staff._recalcPayrollModal(\'' + staffId + '\')" style="padding:0.3rem 0.8rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Recalculate from check-ins</button>'
+        +   '<button onclick="App.Staff._recalcPayrollModal(\'' + staffId + '\')" style="padding:0.3rem 0.8rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Recalculate from check-ins</button>'
         + '</div>'
         + (staffPayroll.length === 0 ? '<p class="text-sm text-slate-400 text-center py-6">No payroll records — rows are generated automatically at month start, or press Recalculate.</p>'
           : '<table class="w-full text-sm"><thead><tr class="border-b">'
@@ -516,7 +516,7 @@
       + _field('Month', '<input name="month" type="month" class="form-input" value="' + defaultMonth + '" required>')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Recalculate</button>'
+      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Recalculate</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -557,10 +557,10 @@
       + _field('Deductions (RM)', '<input name="deductions" type="number" min="0" step="0.01" class="form-input" value="' + (p.deductions || 0) + '" oninput="App.Staff._previewPayrollTotal()">')
       + '</div>'
       + _field('Status', '<select name="status" class="form-input"><option' + (p.status === 'Pending' ? ' selected' : '') + '>Pending</option><option' + (p.status === 'Paid' ? ' selected' : '') + '>Paid</option></select>')
-      + '<div id="pay-total-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem;font-size:0.82rem;color:#166534"></div>'
+      + '<div id="pay-total-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:0;padding:0.65rem;font-size:0.82rem;color:#166534"></div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save</button>'
+      + '<button type="submit" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save</button>'
       + '</div>'
       + '</form>'
       + '</div>'

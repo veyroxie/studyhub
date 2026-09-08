@@ -19,8 +19,8 @@
     return '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;padding:0.75rem 1rem;">'
       + '<span style="font-size:0.8rem;color:#64748b;">Showing ' + start + '–' + end + ' of ' + total + '</span>'
       + '<div style="display:flex;gap:0.5rem;">'
-      + '<button onclick="' + moduleFn + '(' + (page - 1) + ')"' + (prevDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;cursor:' + (prevDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (prevDis ? 'opacity:0.4;' : '') + '">Prev</button>'
-      + '<button onclick="' + moduleFn + '(' + (page + 1) + ')"' + (nextDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;cursor:' + (nextDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (nextDis ? 'opacity:0.4;' : '') + '">Next</button>'
+      + '<button onclick="' + moduleFn + '(' + (page - 1) + ')"' + (prevDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:4px;cursor:' + (prevDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (prevDis ? 'opacity:0.4;' : '') + '">Prev</button>'
+      + '<button onclick="' + moduleFn + '(' + (page + 1) + ')"' + (nextDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:4px;cursor:' + (nextDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (nextDis ? 'opacity:0.4;' : '') + '">Next</button>'
       + '</div></div>';
   }
 
@@ -47,38 +47,38 @@
     var undoBtn = (rec && App.currentRole === 'admin')
       ? '<button onclick="App.Attendance._undoAttendance(\'' + rec.id + '\',\'' + s.id + '\',' + (isAbsent ? 'true' : 'false') + ')" style="'
         + 'min-height:30px;width:100%;margin-top:0.3rem;padding:0.25rem 0.6rem;background:none;color:#94a3b8;border:1px dashed #e2e8f0;'
-        + 'border-radius:8px;font-size:0.7rem;font-weight:600;cursor:pointer" title="Remove this record as if it was never marked">Undo</button>'
+        + 'border-radius:4px;font-size:0.7rem;font-weight:600;cursor:pointer" title="Remove this record as if it was never marked">Undo</button>'
       : '';
     var actionBtn;
     if (isAbsent) {
       actionBtn = '<div style="display:flex;align-items:center;justify-content:center;padding:0.6rem 1rem;'
-        + 'background:#fee2e2;border-radius:12px;min-height:52px">'
+        + 'background:#fee2e2;border-radius:0;min-height:52px">'
         + '<span style="font-size:0.95rem;font-weight:700;color:#dc2626">Absent</span></div>' + undoBtn;
     } else if (!checkedIn) {
       actionBtn = '<button onclick="App.Attendance._checkInStudent(\'' + s.id + '\')" style="'
         + 'min-height:52px;width:100%;padding:0.6rem 1.1rem;background:#22c55e;color:#fff;border:none;'
-        + 'border-radius:12px;font-size:0.95rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
+        + 'border-radius:0;font-size:0.95rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
         + 'onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check In</button>'
         + ((App.currentRole === 'admin' || App.currentRole === 'teacher')
           ? '<button onclick="App.Attendance._markAbsentCredit(\'' + s.id + '\')" style="'
             + 'min-height:36px;width:100%;margin-top:0.35rem;padding:0.35rem 0.75rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;'
-            + 'border-radius:10px;font-size:0.75rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
+            + 'border-radius:0;font-size:0.75rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
             + 'title="Parent informed at least 3 hours before class"'
             + '>Absent + Replacement</button>'
             + '<button onclick="App.Attendance._markAbsentNoCredit(\'' + s.id + '\')" style="'
             + 'min-height:32px;width:100%;margin-top:0.3rem;padding:0.3rem 0.75rem;background:#fff;color:#64748b;border:1px solid #e2e8f0;'
-            + 'border-radius:10px;font-size:0.72rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
+            + 'border-radius:0;font-size:0.72rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
             + 'title="Late notice (less than 3 hours) — no credit issued"'
             + '>Absent (no credit)</button>'
           : '');
     } else if (!checkedOut) {
       actionBtn = '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" style="'
         + 'min-height:52px;width:100%;padding:0.6rem 1.1rem;background:#64748b;color:#fff;border:none;'
-        + 'border-radius:12px;font-size:0.95rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
+        + 'border-radius:0;font-size:0.95rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
         + 'onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check Out</button>' + undoBtn;
     } else {
       actionBtn = '<div style="display:flex;align-items:center;justify-content:center;padding:0.6rem 1rem;'
-        + 'background:#dcfce7;border-radius:12px;min-height:52px">'
+        + 'background:#dcfce7;border-radius:0;min-height:52px">'
         + '<span style="font-size:0.95rem;font-weight:700;color:#15803d">Done</span></div>' + undoBtn;
     }
 
@@ -111,12 +111,12 @@
       container.innerHTML = '<div style="display:flex;flex-direction:column;gap:1rem">'
         + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">'
         +   '<h1 style="font-size:1.4rem;font-weight:800;color:#0d0d0d;letter-spacing:-0.03em;margin:0">Attendance</h1>'
-        +   (isClient ? '<div style="font-size:0.78rem;color:#94a3b8;background:#f1f5f9;padding:0.4rem 0.85rem;border-radius:8px">Viewing: ' + (App.clientParent || 'Your child') + '</div>' : '')
+        +   (isClient ? '<div style="font-size:0.78rem;color:#94a3b8;background:#f1f5f9;padding:0.4rem 0.85rem;border-radius:4px">Viewing: ' + (App.clientParent || 'Your child') + '</div>' : '')
         + '</div>'
         + (isClient ? _renderClientView() : isTeacher ? _renderTeacherView() : _renderAdminView())
         + '</div>';
     } catch(err) {
-      container.innerHTML = '<div style="padding:2rem;background:#fef2f2;border:1px solid #fca5a5;border-radius:14px;color:#dc2626;font-size:0.9rem">'
+      container.innerHTML = '<div style="padding:2rem;background:#fef2f2;border:1px solid #fca5a5;border-radius:0;color:#dc2626;font-size:0.9rem">'
         + '<strong>Attendance failed to load.</strong> ' + (err && err.message ? err.message : '') + '</div>';
     }
   }
@@ -177,17 +177,17 @@
 
   function _renderAdminView() {
     return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.25rem">'
-      + '<div style="display:flex;gap:0.35rem;background:#f1f5f9;border-radius:10px;padding:3px;width:fit-content">'
+      + '<div style="display:flex;gap:0.35rem;background:#f1f5f9;border-radius:0;padding:3px;width:fit-content">'
       + ['staff','students','self-study','kiosk'].map(function(t) {
           const active = t === _attTab;
           const label  = t === 'staff' ? 'Staff' : t === 'students' ? 'Students' : t === 'kiosk' ? 'Kiosk' : 'Self Study';
           return '<button onclick="App.Attendance._setTab(\'' + t + '\')" style="'
-            + 'padding:0.5rem 1.2rem;font-size:0.85rem;font-weight:700;border:none;border-radius:8px;cursor:pointer;min-height:44px;transition:all 0.15s;'
+            + 'padding:0.5rem 1.2rem;font-size:0.85rem;font-weight:700;border:none;border-radius:4px;cursor:pointer;min-height:44px;transition:all 0.15s;'
             + (active ? 'background:var(--gold);color:#0a0a0a;' : 'background:transparent;color:#94a3b8;')
             + '">' + label + '</button>';
         }).join('')
       + '</div>'
-      + '<button onclick="App.Attendance._exportCSV()" style="padding:0.45rem 1rem;font-size:0.8rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;cursor:pointer;white-space:nowrap;min-height:36px;transition:background 0.15s" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'#fff\'">Export CSV</button>'
+      + '<button onclick="App.Attendance._exportCSV()" style="padding:0.45rem 1rem;font-size:0.8rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#374151;cursor:pointer;white-space:nowrap;min-height:36px;transition:background 0.15s" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'#fff\'">Export CSV</button>'
       + '</div>'
       + (_attTab === 'staff' ? _staffTab() : _attTab === 'kiosk' ? _kioskTab() : _attTab === 'self-study' ? _selfStudyTab() : _studentTab());
   }
@@ -202,7 +202,7 @@
     }).sort(function(a, b) { return b.date.localeCompare(a.date); });
 
     if (myRecords.length === 0) {
-      return '<div style="background:#fff;border-radius:14px;border:1px solid var(--rule,#e2e8f0);overflow:hidden">'
+      return '<div style="background:#fff;border-radius:0;border:1px solid var(--rule,#e2e8f0);overflow:hidden">'
         + App.Utils.emptyState('No attendance records yet',
             'Your child\'s check-ins for the selected date appear here once school marks them present.')
         + '</div>';
@@ -211,7 +211,7 @@
     var pagedRecords = myRecords.slice(_attClientPage * _ATT_PAGE_SIZE, (_attClientPage + 1) * _ATT_PAGE_SIZE);
 
     // Card-list layout — works on all screen widths without a horizontal-scroll table
-    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
+    return '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
       + pagedRecords.map(function(rec) {
           const stu = App.Store.get().students.find(function(s) { return s.id === rec.personId; });
           const stuName = stu ? stu.firstName + ' ' + stu.lastName : rec.personId;
@@ -249,9 +249,9 @@
     const displayStaff = _showAllStaff ? staff : (staffWithClass.length > 0 ? staffWithClass : staff);
     const hiddenCount = staff.length - staffWithClass.length;
 
-    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
+    return '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
       + '<div style="padding:0.9rem 1rem;border-bottom:1px solid #f0ede8;background:#faf9f7;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">'
-      +   '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px">'
+      +   '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;min-height:48px">'
       +   '<span style="font-size:0.82rem;color:#94a3b8">' + dayOfWeek + ' · ' + displayStaff.length + ' staff with classes</span>'
       +   (hiddenCount > 0 || _showAllStaff
           ? '<button onclick="App.Attendance._toggleAllStaff()" style="margin-left:auto;font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;white-space:nowrap">'
@@ -267,7 +267,7 @@
             : 'Not recorded';
           return '<div style="' + ROW_STYLE + '">'
             + '<div style="display:flex;align-items:center;gap:0.85rem;flex:1 1 auto;min-width:0">'
-            +   '<div style="' + AVATAR_STYLE + ';background:var(--gold-dim);color:var(--gold);border:1px solid rgba(201,162,39,0.2)">' + (s.name || s.fullName || '?').charAt(0) + '</div>'
+            +   '<div style="' + AVATAR_STYLE + ';background:var(--gold-dim);color:var(--gold);border:1px solid rgba(201,162,39,0.35)">' + (s.name || s.fullName || '?').charAt(0) + '</div>'
             +   '<div style="min-width:0">'
             +     '<div style="' + NAME_STYLE + '">' + App.Utils.esc(s.fullName) + '</div>'
             +     '<div style="' + TIME_STYLE + '">' + timeStr + '</div>'
@@ -323,23 +323,23 @@
     const todayRecs    = attendance.filter(function(a) { return a.classId === _attClassId && a.date === _attDate; });
     const presentCount = todayRecs.filter(function(a) { return a.checkIn; }).length;
 
-    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
+    return '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
       + '<div style="padding:0.9rem 1rem;border-bottom:1px solid #f0ede8;background:#faf9f7">'
       +   '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">'
-      +     '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px;flex:1;min-width:140px">'
-      +     '<select onchange="App.Attendance._setClass(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px;flex:2;min-width:180px;background:#fff">'
+      +     '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;min-height:48px;flex:1;min-width:140px">'
+      +     '<select onchange="App.Attendance._setClass(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;min-height:48px;flex:2;min-width:180px;background:#fff">'
       +     displayClasses.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === _attClassId ? 'selected' : '') + '>' + App.Utils.esc(c.name) + ' — ' + App.Utils.formatTime(c.time) + '</option>'; }).join('')
       +     '</select>'
       +     (classes.length !== scheduledClasses.length || _showAllClasses
             ? '<button onclick="App.Attendance._toggleAllClasses()" style="font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;white-space:nowrap;min-height:48px">'
               + (_showAllClasses ? 'Scheduled only' : 'All classes') + '</button>'
             : '')
-      +     '<button onclick="App.Attendance._markAllPresent()" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer;white-space:nowrap">Mark All Present</button>'
+      +     '<button onclick="App.Attendance._markAllPresent()" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Mark All Present</button>'
       +   '</div>'
       +   (selectedClass
           ? '<div style="margin-top:0.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem">'
           +   '<span style="font-size:0.78rem;color:#94a3b8">' + enrolledStudents.length + ' enrolled  ·  <span style="color:#15803d;font-weight:600">' + presentCount + ' checked in today</span></span>'
-          +   '<button onclick="App.Attendance._quickFeedback()" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.35rem 0.75rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer;white-space:nowrap;transition:background 0.15s" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'#fff\'">'
+          +   '<button onclick="App.Attendance._quickFeedback()" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.35rem 0.75rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;cursor:pointer;white-space:nowrap;transition:background 0.15s" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'#fff\'">'
           +     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>'
           +     'Quick Note</button>'
           + '</div>'
@@ -360,15 +360,15 @@
             });
             if (allMarked && enrolledStudents.length > 0 && (App.currentRole === 'admin' || App.currentRole === 'teacher')) {
               return '<div id="post-att-prompt" style="padding:0 1rem 1rem">'
-                + '<div style="margin-top:1rem;padding:1.25rem;background:linear-gradient(135deg,#fef9ec 0%,#fff 70%);border:1px solid #fef3c7;border-radius:14px">'
+                + '<div style="margin-top:1rem;padding:1.25rem;background:linear-gradient(135deg,#fef9ec 0%,#fff 70%);border:1px solid #fef3c7;border-radius:0">'
                 +   '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.65rem">'
                 +     '<svg width="16" height="16" fill="none" stroke="#b08d20" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>'
                 +     '<span style="font-size:0.78rem;font-weight:700;color:#92400e">Attendance complete — add class notes?</span>'
                 +   '</div>'
-                +   '<textarea id="post-att-notes" rows="2" placeholder="How was the class? Any highlights?" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:10px;resize:none;font-family:inherit;outline:none"></textarea>'
+                +   '<textarea id="post-att-notes" rows="2" placeholder="How was the class? Any highlights?" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:0;resize:none;font-family:inherit;outline:none"></textarea>'
                 +   '<div style="display:flex;gap:0.5rem;margin-top:0.5rem">'
-                +     '<button onclick="App.Attendance._savePostAttFeedback()" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save Note</button>'
-                +     '<button onclick="document.getElementById(\'post-att-prompt\').style.display=\'none\'" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Skip</button>'
+                +     '<button onclick="App.Attendance._savePostAttFeedback()" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save Note</button>'
+                +     '<button onclick="document.getElementById(\'post-att-prompt\').style.display=\'none\'" style="padding:0.4rem 0.85rem;font-size:0.78rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;cursor:pointer">Skip</button>'
                 +   '</div>'
                 + '</div>'
                 + '</div>';
@@ -393,14 +393,14 @@
     }).join('');
 
     var feedHtml = '<div id="kiosk-feedback" style="'
-      + 'margin-top:1.5rem;padding:1.5rem;border-radius:16px;text-align:center;'
+      + 'margin-top:1.5rem;padding:1.5rem;border-radius:0;text-align:center;'
       + 'transition:opacity 0.3s;display:none'
       + '"></div>';
 
-    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
+    return '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
       + '<div style="padding:1rem;border-bottom:1px solid #f0ede8;background:#faf9f7;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">'
       +   '<span style="font-size:0.78rem;font-weight:700;color:#94a3b8">CLASS</span>'
-      +   '<select onchange="App.Attendance._setKioskClass(this.value)" style="padding:0.5rem 0.8rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;background:#fff;flex:1;min-width:180px">' + classOpts + '</select>'
+      +   '<select onchange="App.Attendance._setKioskClass(this.value)" style="padding:0.5rem 0.8rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;background:#fff;flex:1;min-width:180px">' + classOpts + '</select>'
       +   '<span style="font-size:0.78rem;color:#94a3b8">Date: ' + App.Utils.formatDate(_attDate) + '</span>'
       + '</div>'
       + '<div style="padding:2rem;text-align:center">'
@@ -409,10 +409,10 @@
       +   '<div style="display:flex;gap:0.6rem;max-width:360px;margin:0 auto">'
       +     '<input id="kiosk-input" type="text" placeholder="e.g. STU001" '
       +       'onkeydown="if(event.key===\'Enter\'){ App.Attendance._kioskScan(this.value); this.value=\'\'; }" '
-      +       'style="flex:1;padding:0.85rem 1rem;font-size:1.1rem;border:2px solid #e2e8f0;border-radius:12px;outline:none;text-align:center;letter-spacing:0.08em;font-weight:700" '
+      +       'style="flex:1;padding:0.85rem 1rem;font-size:1.1rem;border:2px solid #e2e8f0;border-radius:0;outline:none;text-align:center;letter-spacing:0.08em;font-weight:700" '
       +       'autofocus>'
       +     '<button onclick="var el=document.getElementById(\'kiosk-input\');App.Attendance._kioskScan(el.value);el.value=\'\';" '
-      +       'style="padding:0.85rem 1.1rem;background:var(--gold);color:#0a0a0a;border:none;border-radius:12px;font-size:0.9rem;font-weight:700;cursor:pointer">Check</button>'
+      +       'style="padding:0.85rem 1.1rem;background:var(--gold);color:#0a0a0a;border:none;border-radius:0;font-size:0.9rem;font-weight:700;cursor:pointer">Check</button>'
       +   '</div>'
       + feedHtml
       + '</div>'
@@ -591,8 +591,8 @@
         + '</div>'
         + '<div style="flex:0 0 auto;align-self:center">'
         +   '<button onclick="App.Attendance._logSelfStudy(\'' + s.id + '\')" style="'
-        +     'min-height:46px;padding:0.5rem 1rem;background:var(--gold-dim);color:var(--gold);border:1px solid rgba(201,162,39,0.3);'
-        +     'border-radius:10px;font-size:0.82rem;font-weight:700;cursor:pointer">Log Session</button>'
+        +     'min-height:46px;padding:0.5rem 1rem;background:var(--gold-dim);color:var(--gold);border:1px solid rgba(201,162,39,0.35);'
+        +     'border-radius:0;font-size:0.82rem;font-weight:700;cursor:pointer">Log Session</button>'
         + '</div>'
         + '</div>';
     }).join('');
@@ -609,7 +609,7 @@
       return acc + Math.max(0, myHr - _freeHours(s));
     }, 0);
 
-    return '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
+    return '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);overflow:hidden">'
       + '<div style="padding:0.9rem 1rem;border-bottom:1px solid #f0ede8;background:#faf9f7;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">'
       +   '<div>'
       +     '<span style="font-size:0.9rem;font-weight:700;color:#0d0d0d">Self Study Membership</span>'
@@ -652,7 +652,7 @@
       + '</div>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Notes <span class="text-xs text-slate-400 font-normal">(optional)</span></label>'
       + '<input name="notes" class="form-input" placeholder="e.g. Worked on kanji revision" maxlength="200"></div>'
-      + '<div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:10px;padding:0.75rem;font-size:0.82rem;color:#92400e">'
+      + '<div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:0;padding:0.75rem;font-size:0.82rem;color:#92400e">'
       + 'Free allowance: per student package (default 4hr/month). Extra hours billed at RM' + SELF_STUDY_RATE + '/hr.'
       + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
@@ -761,7 +761,7 @@
       + '<p class="text-sm text-slate-500 mb-4">' + App.Utils.esc(staffName) + ' is absent on ' + App.Utils.formatDate(_attDate) + '. These classes will be affected:</p>'
       + '<div class="space-y-2 mb-5">'
       + affectedClasses.map(function(c) {
-          return '<div style="padding:0.65rem 0.85rem;background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;display:flex;justify-content:space-between;align-items:center">'
+          return '<div style="padding:0.65rem 0.85rem;background:#fef2f2;border:1px solid #fca5a5;border-radius:0;display:flex;justify-content:space-between;align-items:center">'
             + '<div><span style="font-weight:600;font-size:0.85rem">' + App.Utils.esc(c.name) + '</span>'
             + '<span style="font-size:0.78rem;color:#94a3b8;margin-left:0.5rem">' + App.Utils.formatTime(c.time) + '–' + App.Utils.formatTime(c.endTime) + '</span></div>'
             + App.Utils.badge(c.enrolled + ' student' + (c.enrolled !== 1 ? 's' : ''), 'red')
@@ -771,7 +771,7 @@
       + '<p class="text-sm text-slate-500 mb-4">Enrolled parents will receive an in-app message notification.</p>'
       + '<div class="flex gap-3">'
       + '<button onclick="App.Utils.hideModal()" class="flex-1 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Skip</button>'
-      + '<button onclick="App.Attendance._doCancelClasses(\'' + ids.join(',') + '\')" style="flex:1;padding:0.5rem;font-size:0.85rem;font-weight:700;background:#ef4444;color:#fff;border:none;border-radius:8px;cursor:pointer">Cancel &amp; Notify Parents</button>'
+      + '<button onclick="App.Attendance._doCancelClasses(\'' + ids.join(',') + '\')" style="flex:1;padding:0.5rem;font-size:0.85rem;font-weight:700;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer">Cancel &amp; Notify Parents</button>'
       + '</div>'
       + '</div>'
     );
@@ -920,20 +920,20 @@
     if (!checkedIn) {
       btnHtml = '<button onclick="App.Attendance._teacherCheckIn()" style="'
         + 'min-height:48px;padding:0.6rem 1.4rem;background:#22c55e;color:#fff;border:none;'
-        + 'border-radius:12px;font-size:0.9rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
+        + 'border-radius:0;font-size:0.9rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
         + 'onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check In</button>';
     } else if (!checkedOut) {
       btnHtml = '<button onclick="App.Attendance._teacherCheckOut()" style="'
         + 'min-height:48px;padding:0.6rem 1.4rem;background:#64748b;color:#fff;border:none;'
-        + 'border-radius:12px;font-size:0.9rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
+        + 'border-radius:0;font-size:0.9rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
         + 'onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check Out</button>';
     } else {
       btnHtml = '<div style="display:flex;align-items:center;gap:0.4rem;padding:0.5rem 1rem;'
-        + 'background:#dcfce7;border-radius:12px">'
+        + 'background:#dcfce7;border-radius:0">'
         + '<span style="font-size:0.9rem;font-weight:700;color:#15803d">Done for today</span></div>';
     }
 
-    return '<div style="background:' + bgColor + ';border-radius:14px;border:2px solid ' + borderColor + ';padding:1rem 1.25rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">'
+    return '<div style="background:' + bgColor + ';border-radius:0;border:2px solid ' + borderColor + ';padding:1rem 1.25rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">'
       + '<div style="display:flex;align-items:center;gap:0.85rem">'
       +   '<div style="' + AVATAR_STYLE + ';background:rgba(139,92,246,0.12);color:#7c3aed;border:1px solid rgba(139,92,246,0.2)">' + App.Utils.esc(teacherName.charAt(0)) + '</div>'
       +   '<div>'
@@ -1030,7 +1030,7 @@
     }
 
     return _renderTeacherSelfCheckIn()
-      + '<div style="background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);margin-bottom:1rem;overflow:hidden">'
+      + '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);margin-bottom:1rem;overflow:hidden">'
       + '<div style="padding:0.75rem 1.1rem;border-bottom:1px solid #f0ede8;background:rgba(139,92,246,0.05)">'
       +   '<span style="font-size:0.78rem;font-weight:700;color:#7c3aed">MY CLASSES — Student Attendance</span>'
       + '</div>'
@@ -1041,7 +1041,7 @@
   function _studentTabFiltered(myClasses) {
     const { students, attendance } = App.Store.get();
     if (myClasses.length === 0) {
-      return '<div style="background:#fff;border-radius:14px;border:1px solid var(--rule,#e2e8f0);overflow:hidden">'
+      return '<div style="background:#fff;border-radius:0;border:1px solid var(--rule,#e2e8f0);overflow:hidden">'
         + App.Utils.emptyState('No classes assigned to you yet',
             'Once admin assigns you to a class, the attendance roster shows here.')
         + '</div>';
@@ -1055,15 +1055,15 @@
 
     return '<div style="padding:0.9rem 1rem;border-bottom:1px solid #f0ede8;background:#faf9f7">'
       +   '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">'
-      +     '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px">'
-      +     '<select onchange="App.Attendance._setClass(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:9px;outline:none;min-height:48px;background:#fff">'
+      +     '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;min-height:48px">'
+      +     '<select onchange="App.Attendance._setClass(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;min-height:48px;background:#fff">'
       +     myClasses.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === selectedClass.id ? 'selected' : '') + '>' + App.Utils.esc(c.name) + ' — ' + c.day + ' ' + App.Utils.formatTime(c.time) + '</option>'; }).join('')
       +     '</select>'
-      +     '<button onclick="App.Attendance._checkAllIn()" style="padding:0.5rem 0.9rem;font-size:0.82rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:9px;cursor:pointer;min-height:48px;white-space:nowrap;transition:opacity 0.15s" onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check All In</button>'
+      +     '<button onclick="App.Attendance._checkAllIn()" style="padding:0.5rem 0.9rem;font-size:0.82rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:4px;cursor:pointer;min-height:48px;white-space:nowrap;transition:opacity 0.15s" onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check All In</button>'
       +   '</div>'
       +   '<div style="margin-top:0.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem">'
       +     '<span style="font-size:0.78rem;color:#94a3b8">' + enrolledStudents.length + ' enrolled  ·  <span style="color:#15803d;font-weight:600">' + presentCount + ' checked in</span></span>'
-      +     '<button onclick="App.Attendance._quickFeedback()" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.35rem 0.75rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer;white-space:nowrap;transition:background 0.15s" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'#fff\'">'
+      +     '<button onclick="App.Attendance._quickFeedback()" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.35rem 0.75rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;cursor:pointer;white-space:nowrap;transition:background 0.15s" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'#fff\'">'
       +       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>'
       +       'Quick Note</button>'
       +   '</div>'
@@ -1279,10 +1279,10 @@
       + '<h2 style="font-size:1.1rem;font-weight:700;margin-bottom:0.25rem">Quick Note</h2>'
       + '<p style="font-size:0.8rem;color:#94a3b8;margin-bottom:1rem">' + App.Utils.esc(cls.name) + ' &middot; ' + App.Utils.formatDate(today) + '</p>'
       + '<form id="quick-feedback-form">'
-      + '<textarea name="notes" rows="3" required placeholder="How was the class? Any student highlights?" style="width:100%;padding:0.6rem 0.8rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:10px;resize:vertical;font-family:inherit;outline:none" autofocus></textarea>'
+      + '<textarea name="notes" rows="3" required placeholder="How was the class? Any student highlights?" style="width:100%;padding:0.6rem 0.8rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:0;resize:vertical;font-family:inherit;outline:none" autofocus></textarea>'
       + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.75rem">'
-      + '<button type="button" onclick="App.Utils.hideModal()" style="padding:0.4rem 0.85rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer">Cancel</button>'
-      + '<button type="submit" style="padding:0.4rem 0.85rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save</button>'
+      + '<button type="button" onclick="App.Utils.hideModal()" style="padding:0.4rem 0.85rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;cursor:pointer">Cancel</button>'
+      + '<button type="submit" style="padding:0.4rem 0.85rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save</button>'
       + '</div>'
       + '</form>'
       + '</div>'

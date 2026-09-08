@@ -130,7 +130,7 @@
     var list = document.getElementById('line-items-list');
     if (!list) return;
     if (_lineItems.length === 0) {
-      list.innerHTML = '<div style="background:#fafaf8;border:1px dashed #e2ded7;border-radius:10px;padding:0.75rem;font-size:0.82rem;color:#94a3b8;text-align:center">No packages added yet.</div>';
+      list.innerHTML = '<div style="background:#fafaf8;border:1px dashed #e2ded7;border-radius:0;padding:0.75rem;font-size:0.82rem;color:#94a3b8;text-align:center">No packages added yet.</div>';
       _updateLineItemsTotal();
       return;
     }
@@ -142,12 +142,12 @@
     var isDiscount = li.kind === 'discount';
     var priceInput = isDiscount
       ? '<input type="number" min="0" step="0.01" value="' + (li.unitPrice || 0)
-        + '" oninput="App.Billing._editLineItem(' + li.id + ',\'unitPrice\',this.value)" style="width:74px;padding:0.25rem 0.4rem;border:1px solid #bbf7d0;border-radius:6px;font-size:0.78rem;color:#166534" title="Amount off (RM)">'
+        + '" oninput="App.Billing._editLineItem(' + li.id + ',\'unitPrice\',this.value)" style="width:74px;padding:0.25rem 0.4rem;border:1px solid #bbf7d0;border-radius:4px;font-size:0.78rem;color:#166534" title="Amount off (RM)">'
       : '<input type="number" min="0" step="0.01" value="' + (li.unitPrice || 0)
-        + '" oninput="App.Billing._editLineItem(' + li.id + ',\'unitPrice\',this.value)" style="width:74px;padding:0.25rem 0.4rem;border:1px solid #e2e8f0;border-radius:6px;font-size:0.78rem" title="Unit price (RM)">';
+        + '" oninput="App.Billing._editLineItem(' + li.id + ',\'unitPrice\',this.value)" style="width:74px;padding:0.25rem 0.4rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.78rem" title="Unit price (RM)">';
     var qtyInput = (!isDiscount && li.editableQty)
       ? '<input type="number" min="1" step="1" value="' + (li.qty || 1)
-        + '" oninput="App.Billing._editLineItem(' + li.id + ',\'qty\',this.value)" style="width:48px;padding:0.25rem 0.4rem;border:1px solid #e2e8f0;border-radius:6px;font-size:0.78rem" title="Quantity"> ×'
+        + '" oninput="App.Billing._editLineItem(' + li.id + ',\'qty\',this.value)" style="width:48px;padding:0.25rem 0.4rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.78rem" title="Quantity"> ×'
       : '';
     // The name is editable so one-off lines (Phonics, the 30-minute Math
     // class) can be labelled properly until session billing carries real
@@ -155,13 +155,13 @@
     var nameCell = isDiscount
       ? '<input type="text" value="' + App.Utils.esc(li.name) + '"'
         + ' oninput="App.Billing._editLineItem(' + li.id + ',\'name\',this.value)"'
-        + ' style="width:100%;padding:0.2rem 0.3rem;border:1px solid transparent;border-radius:6px;font-size:0.84rem;font-weight:600;color:#166534;background:transparent"'
+        + ' style="width:100%;padding:0.2rem 0.3rem;border:1px solid transparent;border-radius:4px;font-size:0.84rem;font-weight:600;color:#166534;background:transparent"'
         + ' onfocus="this.style.borderColor=\'#bbf7d0\';this.style.background=\'#fff\'"'
         + ' onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'"'
         + ' title="Discount wording, click to edit">'
       : '<input type="text" value="' + App.Utils.esc(li.name)
         + '" oninput="App.Billing._editLineItem(' + li.id + ',\'name\',this.value)" '
-        + 'style="width:100%;padding:0.2rem 0.3rem;border:1px solid transparent;border-radius:6px;font-size:0.84rem;font-weight:600;color:#111;background:transparent" '
+        + 'style="width:100%;padding:0.2rem 0.3rem;border:1px solid transparent;border-radius:4px;font-size:0.84rem;font-weight:600;color:#111;background:transparent" '
         + 'onfocus="this.style.borderColor=\'#e2e8f0\';this.style.background=\'#fff\'" onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'" '
         + 'title="Line name, click to edit">';
     return '<div style="display:flex;align-items:center;gap:0.5rem;padding:0.45rem 0;border-bottom:1px solid #f2efea">'
@@ -199,8 +199,8 @@
     return '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;padding:0.75rem 1rem;">'
       + '<span style="font-size:0.8rem;color:#64748b;">Showing ' + start + '–' + end + ' of ' + total + '</span>'
       + '<div style="display:flex;gap:0.5rem;">'
-      + '<button onclick="' + moduleFn + '(' + (page - 1) + ')"' + (prevDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;cursor:' + (prevDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (prevDis ? 'opacity:0.4;' : '') + '">Prev</button>'
-      + '<button onclick="' + moduleFn + '(' + (page + 1) + ')"' + (nextDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;cursor:' + (nextDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (nextDis ? 'opacity:0.4;' : '') + '">Next</button>'
+      + '<button onclick="' + moduleFn + '(' + (page - 1) + ')"' + (prevDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:4px;cursor:' + (prevDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (prevDis ? 'opacity:0.4;' : '') + '">Prev</button>'
+      + '<button onclick="' + moduleFn + '(' + (page + 1) + ')"' + (nextDis ? ' disabled' : '') + ' style="padding:0.35rem 0.75rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:4px;cursor:' + (nextDis ? 'default' : 'pointer') + ';background:#fff;color:#374151;' + (nextDis ? 'opacity:0.4;' : '') + '">Next</button>'
       + '</div></div>';
   }
 
@@ -354,7 +354,7 @@
           ? '<tr><td colspan="' + colCount + '" style="padding:0">' + App.Utils.emptyState(
               (_filter !== 'All' || _studentFilter) ? 'No invoices match this filter' : 'No invoices yet',
               (_filter !== 'All' || _studentFilter) ? 'Try selecting a different filter or student.' : 'Create your first invoice to start tracking payments.',
-              (isAdmin && _filter === 'All' && !_studentFilter) ? '<button onclick="App.Billing._createModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Create Invoice</button>' : ''
+              (isAdmin && _filter === 'All' && !_studentFilter) ? '<button onclick="App.Billing._createModal()" style="padding:0.5rem 1.25rem;font-size:0.83rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">+ Create Invoice</button>' : ''
             ) + '</td></tr>'
           : paged.map(function(inv) {
               const stu = _studentMap[inv.studentId];
@@ -396,7 +396,7 @@
                   + '</div>'
                   + '</td>'
                   : isClient && (inv.status === 'Unpaid' || inv.status === 'Overdue')
-                  ? '<td class="td"><div style="display:flex;gap:0.5rem;align-items:center;justify-content:flex-end;flex-wrap:wrap"><a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="font-size:0.7rem;color:#475569;text-decoration:underline">Invoice PDF</a><button onclick="App.Billing._payOnline(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:#0a0a0a;color:#ffffff;border:none;border-radius:7px;cursor:pointer;white-space:nowrap">Pay Online</button><button onclick="App.Billing._parentSubmitPaid(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer;white-space:nowrap">I\'ve Paid</button></div></td>'
+                  ? '<td class="td"><div style="display:flex;gap:0.5rem;align-items:center;justify-content:flex-end;flex-wrap:wrap"><a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="font-size:0.7rem;color:#475569;text-decoration:underline">Invoice PDF</a><button onclick="App.Billing._payOnline(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:#0a0a0a;color:#ffffff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Pay Online</button><button onclick="App.Billing._parentSubmitPaid(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">I\'ve Paid</button></div></td>'
                   : isClient && inv.status === 'Pending Verification'
                   ? '<td class="td"><span style="font-size:0.72rem;color:#7c3aed;font-weight:600">Awaiting confirmation</span></td>'
                   : isClient && inv.status === 'Paid'
@@ -421,11 +421,11 @@
   function _bulkBar() {
     var count = Object.keys(_selectedInv).length;
     if (count === 0) return '';
-    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 1rem;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.25);border-radius:10px;margin-bottom:0.75rem">'
+    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 1rem;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.35);border-radius:0;margin-bottom:0.75rem">'
       + '<span style="font-size:0.82rem;font-weight:700;color:#92400e">' + count + ' invoice' + (count !== 1 ? 's' : '') + ' selected</span>'
-      + '<button onclick="App.Billing._bulkMarkPaid()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">Mark All Paid</button>'
-      + '<button onclick="App.Billing._bulkDeleteInv()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:#dc2626;color:#fff;border:none;border-radius:7px;cursor:pointer">Delete Selected</button>'
-      + '<button onclick="App.Billing._bulkDeselectInv()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:transparent;color:#92400e;border:1px solid rgba(201,162,39,0.3);border-radius:7px;cursor:pointer">Clear</button>'
+      + '<button onclick="App.Billing._bulkMarkPaid()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Mark All Paid</button>'
+      + '<button onclick="App.Billing._bulkDeleteInv()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:#dc2626;color:#fff;border:none;border-radius:4px;cursor:pointer">Delete Selected</button>'
+      + '<button onclick="App.Billing._bulkDeselectInv()" style="padding:0.35rem 0.85rem;font-size:0.75rem;font-weight:600;background:transparent;color:#92400e;border:1px solid rgba(201,162,39,0.35);border-radius:4px;cursor:pointer">Clear</button>'
       + '</div>';
   }
 
@@ -530,7 +530,7 @@
 
   function _statCard(label, value, textClass, bgClass, filter) {
     var isActive = filter && filter === _filter;
-    var activeStyle = isActive ? 'border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-dim, rgba(201,162,39,0.18));' : '';
+    var activeStyle = isActive ? 'border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-dim, #FFFDF6);' : '';
     var clickAttr = filter ? ' onclick="App.Billing._setFilter(\'' + filter + '\')" style="cursor:pointer;' + activeStyle + '"' : '';
     return '<div class="' + bgClass + ' rounded-xl border border-slate-100 shadow-sm p-4 transition-shadow hover:shadow-md"' + clickAttr + '>'
       + '<div class="text-xl font-bold ' + textClass + '">' + value + '</div>'
@@ -590,16 +590,16 @@
       // Admin proof upload area
       + '<div id="admin-proof-upload-area" style="display:none">'
       +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.4rem">Reference number <span style="color:#dc2626">*required</span></p>'
-      +   '<input type="text" id="admin-payment-ref" placeholder="e.g. bank slip / QR txn ID" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;margin-bottom:1rem">'
+      +   '<input type="text" id="admin-payment-ref" placeholder="e.g. bank slip / QR txn ID" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;margin-bottom:1rem">'
       +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#64748b;font-weight:500">(optional)</span></p>'
-      +   '<div style="border:2px dashed #e2e8f0;border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'admin-proof-file\').click()">'
+      +   '<div style="border:2px dashed #e2e8f0;border-radius:0;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'admin-proof-file\').click()">'
       +     '<input type="file" id="admin-proof-file" accept="image/*,.pdf" style="display:none" onchange="App.Billing._previewAdminProof(this)">'
       +     '<div id="admin-proof-preview" style="margin-bottom:0.5rem"></div>'
       +     '<p id="admin-proof-placeholder" style="font-size:0.8rem;color:#94a3b8;margin:0">Click to upload receipt image or PDF</p>'
       +   '</div>'
       +   '<div style="display:flex;gap:0.5rem;margin-top:1rem">'
-      +     '<button id="admin-proof-submit-btn" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer">Confirm Payment</button>'
-      +     '<button onclick="App.Billing._showAdminPaymentMethods()" style="padding:0.55rem 1rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#64748b">Back</button>'
+      +     '<button id="admin-proof-submit-btn" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer">Confirm Payment</button>'
+      +     '<button onclick="App.Billing._showAdminPaymentMethods()" style="padding:0.55rem 1rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;color:#64748b">Back</button>'
       +   '</div>'
       + '</div>'
       + '<button id="admin-cancel-btn" onclick="App.Utils.hideModal()" class="w-full py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -648,12 +648,12 @@
     if (file.type.startsWith('image/')) {
       var reader = new FileReader();
       reader.onload = function(e) {
-        preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:200px;max-height:150px;border-radius:8px;margin:0 auto;display:block;border:1px solid #e2e8f0">';
+        preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:200px;max-height:150px;border-radius:4px;margin:0 auto;display:block;border:1px solid #e2e8f0">';
         if (placeholder) placeholder.style.display = 'none';
       };
       reader.readAsDataURL(file);
     } else {
-      preview.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.5rem;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">'
+      preview.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.5rem;background:#f8fafc;border-radius:4px;border:1px solid #e2e8f0">'
         + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
         + '<span style="font-size:0.82rem;font-weight:600;color:#374151">' + App.Utils.esc(file.name) + '</span>'
         + '</div>';
@@ -825,7 +825,7 @@
       '<div class="p-6">'
       + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 0.25rem">Submit Payment</h2>'
       + '<p style="font-size:0.82rem;color:#94a3b8;margin:0 0 1.25rem">Let admin know you\'ve paid — they\'ll confirm receipt.</p>'
-      + '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;margin-bottom:1.25rem">'
+      + '<div style="background:#f8fafc;border-radius:0;padding:0.85rem 1rem;margin-bottom:1.25rem">'
       +   '<div style="font-size:0.78rem;color:#94a3b8">Invoice</div>'
       +   '<div style="font-size:0.9rem;font-weight:700;color:#111">' + App.Utils.esc(inv.description) + '</div>'
       +   (_invoiceBreakdownHtml(inv) || '<div style="font-size:1rem;font-weight:800;color:var(--gold);margin-top:2px">' + App.Utils.formatCurrency(inv.amount) + '</div>')
@@ -834,36 +834,36 @@
       + '<div id="payment-methods-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:1.25rem">'
       // Cash — direct submit (no proof needed)
       + '<button onclick="App.Billing._parentConfirmSubmit(\'' + invId + '\',\'Cash\')" '
-      +   'style="padding:0.65rem 0.5rem;border:2px solid #e2e8f0;border-radius:10px;font-size:0.8rem;font-weight:600;color:#374151;background:#fff;cursor:pointer;text-align:center;transition:all 0.15s" '
+      +   'style="padding:0.65rem 0.5rem;border:2px solid #e2e8f0;border-radius:0;font-size:0.8rem;font-weight:600;color:#374151;background:#fff;cursor:pointer;text-align:center;transition:all 0.15s" '
       +   'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
       +   'onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#374151\'">Cash</button>'
       // Bank Transfer — show proof upload
       + '<button onclick="App.Billing._showProofUpload(\'' + invId + '\',\'Bank Transfer\')" '
-      +   'style="padding:0.65rem 0.5rem;border:2px solid #e2e8f0;border-radius:10px;font-size:0.8rem;font-weight:600;color:#374151;background:#fff;cursor:pointer;text-align:center;transition:all 0.15s" '
+      +   'style="padding:0.65rem 0.5rem;border:2px solid #e2e8f0;border-radius:0;font-size:0.8rem;font-weight:600;color:#374151;background:#fff;cursor:pointer;text-align:center;transition:all 0.15s" '
       +   'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
       +   'onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#374151\'">Bank Transfer</button>'
       // QR Pay — show proof upload
       + '<button onclick="App.Billing._showProofUpload(\'' + invId + '\',\'QR Pay\')" '
-      +   'style="padding:0.65rem 0.5rem;border:2px solid #e2e8f0;border-radius:10px;font-size:0.8rem;font-weight:600;color:#374151;background:#fff;cursor:pointer;text-align:center;transition:all 0.15s" '
+      +   'style="padding:0.65rem 0.5rem;border:2px solid #e2e8f0;border-radius:0;font-size:0.8rem;font-weight:600;color:#374151;background:#fff;cursor:pointer;text-align:center;transition:all 0.15s" '
       +   'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
       +   'onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#374151\'">QR Pay</button>'
       + '</div>'
       // Proof upload area (hidden initially)
       + '<div id="proof-upload-area" style="display:none">'
       +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.4rem">Reference number <span style="color:#dc2626">*required</span></p>'
-      +   '<input type="text" id="parent-payment-ref" placeholder="bank slip or transaction ID" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;margin-bottom:1rem">'
+      +   '<input type="text" id="parent-payment-ref" placeholder="bank slip or transaction ID" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;margin-bottom:1rem">'
       +   '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Upload payment receipt <span style="color:#64748b;font-weight:500">(optional)</span></p>'
-      +   '<div id="proof-drop-zone" style="border:2px dashed #e2e8f0;border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'proof-file\').click()">'
+      +   '<div id="proof-drop-zone" style="border:2px dashed #e2e8f0;border-radius:0;padding:1.5rem;text-align:center;cursor:pointer" onclick="document.getElementById(\'proof-file\').click()">'
       +     '<input type="file" id="proof-file" accept="image/*,.pdf" style="display:none" onchange="App.Billing._previewProof(this)">'
       +     '<div id="proof-preview" style="margin-bottom:0.5rem"></div>'
       +     '<p id="proof-placeholder" style="font-size:0.8rem;color:#94a3b8;margin:0">Click to upload receipt image or PDF</p>'
       +   '</div>'
       +   '<div style="display:flex;gap:0.5rem;margin-top:1rem">'
-      +     '<button id="proof-submit-btn" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Submit Payment</button>'
-      +     '<button onclick="App.Billing._showPaymentMethods()" style="padding:0.55rem 1rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#64748b">Back</button>'
+      +     '<button id="proof-submit-btn" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Submit Payment</button>'
+      +     '<button onclick="App.Billing._showPaymentMethods()" style="padding:0.55rem 1rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;color:#64748b">Back</button>'
       +   '</div>'
       + '</div>'
-      + '<button id="cancel-payment-btn" onclick="App.Utils.hideModal()" style="width:100%;padding:0.5rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#64748b">Cancel</button>'
+      + '<button id="cancel-payment-btn" onclick="App.Utils.hideModal()" style="width:100%;padding:0.5rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;color:#64748b">Cancel</button>'
       + '</div>'
     );
   }
@@ -911,13 +911,13 @@
     if (file.type.startsWith('image/')) {
       var reader = new FileReader();
       reader.onload = function(e) {
-        preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:200px;max-height:150px;border-radius:8px;margin:0 auto;display:block;border:1px solid #e2e8f0">';
+        preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:200px;max-height:150px;border-radius:4px;margin:0 auto;display:block;border:1px solid #e2e8f0">';
         if (placeholder) placeholder.style.display = 'none';
       };
       reader.readAsDataURL(file);
     } else {
       // PDF
-      preview.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.5rem;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">'
+      preview.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.5rem;background:#f8fafc;border-radius:4px;border:1px solid #e2e8f0">'
         + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
         + '<span style="font-size:0.82rem;font-weight:600;color:#374151">' + App.Utils.esc(file.name) + '</span>'
         + '</div>';
@@ -1019,19 +1019,19 @@
         proofSection = '<div style="margin-bottom:1rem">'
           + '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Payment Receipt</p>'
           + '<a href="/api/' + App.Utils.esc(inv.paymentProof) + '" target="_blank">'
-          + '<img src="/api/' + App.Utils.esc(inv.paymentProof) + '" style="max-width:100%;max-height:300px;border-radius:10px;border:1px solid #e2e8f0;cursor:pointer">'
+          + '<img src="/api/' + App.Utils.esc(inv.paymentProof) + '" style="max-width:100%;max-height:300px;border-radius:0;border:1px solid #e2e8f0;cursor:pointer">'
           + '</a>'
           + '</div>';
       } else {
         proofSection = '<div style="margin-bottom:1rem">'
           + '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.5rem">Payment Receipt</p>'
-          + '<a href="/api/' + App.Utils.esc(inv.paymentProof) + '" target="_blank" style="display:inline-flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;text-decoration:none;color:#374151;font-size:0.82rem;font-weight:600">'
+          + '<a href="/api/' + App.Utils.esc(inv.paymentProof) + '" target="_blank" style="display:inline-flex;align-items:center;gap:0.5rem;padding:0.5rem 1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;text-decoration:none;color:#374151;font-size:0.82rem;font-weight:600">'
           + '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
           + 'View PDF Receipt'
           + '</a></div>';
       }
     } else {
-      proofSection = '<div style="margin-bottom:1rem;padding:0.75rem;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:0.8rem;color:#92400e">'
+      proofSection = '<div style="margin-bottom:1rem;padding:0.75rem;background:#fefce8;border:1px solid #fde68a;border-radius:4px;font-size:0.8rem;color:#92400e">'
         + 'No receipt uploaded by parent.'
         + '</div>';
     }
@@ -1040,7 +1040,7 @@
       '<div class="p-6">'
       + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 0.25rem">Verify Payment</h2>'
       + '<p style="font-size:0.82rem;color:#94a3b8;margin:0 0 1rem">' + App.Utils.esc(stuName) + ' · ' + App.Utils.esc(inv.id) + '</p>'
-      + '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;margin-bottom:1rem">'
+      + '<div style="background:#f8fafc;border-radius:0;padding:0.85rem 1rem;margin-bottom:1rem">'
       +   '<div style="display:flex;justify-content:space-between;align-items:center">'
       +     '<div>'
       +       '<div style="font-size:0.78rem;color:#94a3b8">' + App.Utils.esc(inv.paymentMethod || 'Unknown method') + '</div>'
@@ -1058,10 +1058,10 @@
       + '<div style="margin-bottom:0.75rem"><p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.4rem">Reference number' + ((inv.paymentMethod && inv.paymentMethod !== 'Cash') ? ' <span style="color:#dc2626">*required for ' + App.Utils.esc(inv.paymentMethod) + '</span>' : '') + '</p>'
       +   '<input id="verify-ref" class="form-input" value="' + App.Utils.esc(inv.referenceNo || '') + '" placeholder="From the receipt or bank statement"></div>'
       + '<div style="display:flex;gap:0.5rem">'
-      +   '<button onclick="App.Billing._confirmVerify(\'' + invId + '\')" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer">Confirm Payment</button>'
-      +   '<button onclick="App.Billing._markUnpaid(\'' + invId + '\')" style="padding:0.55rem 1rem;font-size:0.83rem;border:1px solid #fca5a5;border-radius:8px;background:#fff;cursor:pointer;color:#dc2626;font-weight:600">Reject</button>'
+      +   '<button onclick="App.Billing._confirmVerify(\'' + invId + '\')" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer">Confirm Payment</button>'
+      +   '<button onclick="App.Billing._markUnpaid(\'' + invId + '\')" style="padding:0.55rem 1rem;font-size:0.83rem;border:1px solid #fca5a5;border-radius:4px;background:#fff;cursor:pointer;color:#dc2626;font-weight:600">Reject</button>'
       + '</div>'
-      + '<button onclick="App.Utils.hideModal()" style="width:100%;padding:0.5rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;color:#64748b;margin-top:0.5rem">Cancel</button>'
+      + '<button onclick="App.Utils.hideModal()" style="width:100%;padding:0.5rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;color:#64748b;margin-top:0.5rem">Cancel</button>'
       + '</div>'
     );
   }
@@ -1196,8 +1196,8 @@
       +   '<label class="block text-sm font-medium text-slate-700 mb-1">Lines</label>'
       +   '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">'
       +     '<select id="pkg-catalog" class="form-input" style="flex:1;min-width:180px" onchange="App.Billing._addLineItem(this.value); this.selectedIndex=0;">' + _packageCatalogOptions() + '</select>'
-      +     '<button type="button" onclick="App.Billing._addBlankLine(\'item\')" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;white-space:nowrap">+ Own wording</button>'
-      +     '<button type="button" onclick="App.Billing._addBlankLine(\'discount\')" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:8px;cursor:pointer;white-space:nowrap">+ Discount</button>'
+      +     '<button type="button" onclick="App.Billing._addBlankLine(\'item\')" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer;white-space:nowrap">+ Own wording</button>'
+      +     '<button type="button" onclick="App.Billing._addBlankLine(\'discount\')" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:4px;cursor:pointer;white-space:nowrap">+ Discount</button>'
       +   '</div>'
       +   '<div id="line-items-list"></div>'
       +   '<div id="line-items-total" style="text-align:right;font-size:0.9rem;color:#111;margin-top:0.35rem"></div>'
@@ -1274,7 +1274,7 @@
     students.forEach(function(s) { if (s.contact) { byParent[s.contact] = byParent[s.contact] || []; byParent[s.contact].push(s); } });
     var families = Object.keys(byParent).filter(function(e) { return byParent[e].length >= 2; });
 
-    var modeTabStyle = 'padding:0.4rem 0.9rem;border-radius:8px;font-size:0.8rem;font-weight:600;cursor:pointer;border:2px solid transparent;transition:all 0.15s;';
+    var modeTabStyle = 'padding:0.4rem 0.9rem;border-radius:4px;font-size:0.8rem;font-weight:600;cursor:pointer;border:2px solid transparent;transition:all 0.15s;';
     var modeActiveStyle = 'background:var(--gold);color:#0a0a0a;border-color:var(--gold);';
     var modeInactiveStyle = 'background:transparent;color:#64748b;border-color:#e2e8f0;';
 
@@ -1326,7 +1326,7 @@
           return '<option value="' + App.Utils.esc(email) + '">' + App.Utils.esc(label) + '</option>';
         }).join('')
       + '</select></div>'
-      + '<div id="sibling-children-list" style="display:none;background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;padding:0.75rem">'
+      + '<div id="sibling-children-list" style="display:none;background:#fafaf8;border:1px solid #f0ede8;border-radius:0;padding:0.75rem">'
       +   '<p class="text-xs font-semibold text-slate-500 mb-2">Include children:</p>'
       +   '<div id="sibling-children-checks"></div>'
       + '</div>'
@@ -1335,14 +1335,14 @@
       + _field('Amount per child (RM)', '<input id="sibling-per-child" name="amountPerChild" type="number" min="0" step="0.01" class="form-input" value="150" oninput="App.Billing._updateSiblingTotal()">')
       + _field('Sibling Discount %', '<input id="sibling-discount" name="siblingDiscount" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateSiblingTotal()">')
       + '</div>'
-      + '<div id="sibling-total-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem;font-size:0.82rem;color:#166534;display:none"></div>'
+      + '<div id="sibling-total-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:0;padding:0.65rem;font-size:0.82rem;color:#166534;display:none"></div>'
       + '</div>'
 
       // ── SELF-STUDY (flat per-session, drop-ins only) fields ──
       + '<div id="inv-selfstudy-fields" style="display:none">'
       + '<p class="text-xs text-slate-500 mb-3">Flat rate per session for drop-in self-study. Package students are auto-billed for extra hours, so only pay-per-session drop-ins appear here.</p>'
       + (dropInStudents.length === 0
-          ? '<div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:10px;padding:0.85rem;font-size:0.82rem;color:#92400e">No drop-in students yet — tick <strong>"Pay-per-session drop-in"</strong> on a student\'s profile to bill them here.</div>'
+          ? '<div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:0;padding:0.85rem;font-size:0.82rem;color:#92400e">No drop-in students yet — tick <strong>"Pay-per-session drop-in"</strong> on a student\'s profile to bill them here.</div>'
           : '<div><label class="block text-sm font-medium text-slate-700 mb-1">Student</label>'
             + '<select name="ssStudentId" class="form-input">'
             + '<option value="">Select student...</option>'
@@ -1354,11 +1354,11 @@
             + _field('Number of sessions', '<input name="ssVisits" type="number" min="1" step="1" class="form-input" value="1" oninput="App.Billing._updateSelfStudyAmount()">')
             + _field('Rate per session (RM)', '<input name="ssRate" type="number" min="0" step="0.01" class="form-input" value="' + SELF_STUDY_SESSION_RATE + '" oninput="App.Billing._updateSelfStudyAmount()">')
             + '</div>'
-            + '<div id="selfstudy-amount-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:0.65rem;font-size:0.82rem;color:#166534;margin-top:0.5rem"></div>')
+            + '<div id="selfstudy-amount-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:0;padding:0.65rem;font-size:0.82rem;color:#166534;margin-top:0.5rem"></div>')
       + '</div>'
 
       // ── Shared: early bird + due date ──
-      + '<div id="inv-early-bird-section" style="background:#fafaf8;border:1px solid #f0ede8;border-radius:10px;padding:0.85rem">'
+      + '<div id="inv-early-bird-section" style="background:#fafaf8;border:1px solid #f0ede8;border-radius:0;padding:0.85rem">'
       +   '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem">'
       +     '<input type="checkbox" id="early-bird-cb" onchange="App.Billing._toggleEarlyBird()" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">'
       +     '<label for="early-bird-cb" style="font-size:0.83rem;font-weight:600;color:#374151;cursor:pointer">Early Bird Discount</label>'
@@ -1379,7 +1379,7 @@
 
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" id="inv-submit-btn" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Create Invoice</button>'
+      + '<button type="submit" id="inv-submit-btn" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Create Invoice</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -1545,7 +1545,7 @@
     var stu = (state.students || []).find(function(s) { return s.id === inv.studentId; });
     var stuName = stu ? stu.firstName + ' ' + stu.lastName : inv.studentId;
     var breakdown = _invoiceBreakdownHtml(inv);
-    var fallback = '<div style="background:#f8fafc;border-radius:10px;padding:0.85rem 1rem;margin:0.5rem 0"><div style="display:flex;justify-content:space-between;font-weight:700"><span>' + App.Utils.esc(inv.description) + '</span><span>' + App.Utils.formatCurrency(inv.amount) + '</span></div></div>';
+    var fallback = '<div style="background:#f8fafc;border-radius:0;padding:0.85rem 1rem;margin:0.5rem 0"><div style="display:flex;justify-content:space-between;font-weight:700"><span>' + App.Utils.esc(inv.description) + '</span><span>' + App.Utils.formatCurrency(inv.amount) + '</span></div></div>';
     App.Utils.showModal(
       '<div class="p-6" style="min-width:360px;max-width:480px">'
       + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 0.15rem">' + App.Utils.esc(inv.description) + '</h2>'
@@ -1553,9 +1553,15 @@
       + (breakdown || fallback)
       + '<div style="display:flex;gap:1rem;font-size:0.78rem;color:#64748b;margin-top:0.75rem"><span>Issued ' + App.Utils.formatDate(inv.createdOn) + '</span><span>Due ' + App.Utils.formatDate(inv.dueDate) + '</span></div>'
       + '<div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1.25rem">'
-      +   '<a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;color:#374151;text-decoration:none">Download PDF</a>'
-      +   (inv.status === 'Paid' ? '<a href="/api/invoices/' + inv.id + '/receipt.pdf" target="_blank" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;color:#374151;text-decoration:none">Receipt</a>' : '')
-      +   '<button onclick="App.Utils.hideModal()" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Close</button>'
+      // Edit lived only inside a dropdown on the Billing page, so opening an
+      // invoice from the student profile or from Invoice check dead-ended with
+      // a Close button. An invoice should be editable wherever it is shown.
+      +   (App.currentRole === 'admin'
+          ? '<button onclick="App.Utils.hideModal(true);setTimeout(function(){App.Billing._editModal(\'' + inv.id + '\')},60)" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#374151;cursor:pointer">Edit</button>'
+          : '')
+      +   '<a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;color:#374151;text-decoration:none">Download PDF</a>'
+      +   (inv.status === 'Paid' ? '<a href="/api/invoices/' + inv.id + '/receipt.pdf" target="_blank" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;color:#374151;text-decoration:none">Receipt</a>' : '')
+      +   '<button onclick="App.Utils.hideModal()" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Close</button>'
       + '</div>'
       + '</div>'
     );

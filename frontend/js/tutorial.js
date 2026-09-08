@@ -112,7 +112,7 @@
 
     _tooltip = document.createElement('div');
     _tooltip.id = 'tutorial-tooltip';
-    _tooltip.style.cssText = 'position:fixed;z-index:10001;background:#fff;border-radius:16px;padding:1.5rem;'
+    _tooltip.style.cssText = 'position:fixed;z-index:10001;background:#fff;border-radius:0;padding:1.5rem;'
       + 'box-shadow:0 20px 60px rgba(0,0,0,0.25),0 2px 8px rgba(0,0,0,0.1);max-width:340px;width:90vw;pointer-events:auto;'
       + 'border:1px solid rgba(0,0,0,0.08)';
 
@@ -159,7 +159,7 @@
 
     var highlight = document.createElement('div');
     highlight.id = 'tutorial-highlight';
-    highlight.style.cssText = 'position:fixed;z-index:10000;border-radius:12px;pointer-events:none;'
+    highlight.style.cssText = 'position:fixed;z-index:10000;border-radius:0;pointer-events:none;'
       + 'box-shadow:0 0 0 4000px rgba(0,0,0,0.45);'
       + 'border:2px solid var(--gold,#C9A227);'
       + 'transition:all 0.3s ease;'
@@ -237,8 +237,8 @@
       + '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem">'
       + '<button onclick="App.Tutorial.skip()" style="font-size:0.8rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0.25rem 0">Skip tour</button>'
       + '<div style="display:flex;gap:0.5rem">'
-      + (!isFirst ? '<button onclick="App.Tutorial._prev()" style="padding:0.4rem 0.9rem;font-size:0.8rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#334155;cursor:pointer">Back</button>' : '')
-      + '<button onclick="App.Tutorial._next()" style="padding:0.4rem 0.9rem;font-size:0.8rem;font-weight:600;background:var(--gold,#C9A227);color:#fff;border:none;border-radius:8px;cursor:pointer">'
+      + (!isFirst ? '<button onclick="App.Tutorial._prev()" style="padding:0.4rem 0.9rem;font-size:0.8rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#334155;cursor:pointer">Back</button>' : '')
+      + '<button onclick="App.Tutorial._next()" style="padding:0.4rem 0.9rem;font-size:0.8rem;font-weight:600;background:var(--gold,#C9A227);color:#fff;border:none;border-radius:4px;cursor:pointer">'
       + (isLast ? 'Finish' : 'Next') + '</button>'
       + '</div>'
       + '</div>';

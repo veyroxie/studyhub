@@ -65,10 +65,10 @@
   function _tabBar() {
     var btn = function(id, label) {
       var on = _tab === id;
-      return '<button onclick="App.Pricing._setTab(\'' + id + '\')" style="padding:0.35rem 0.9rem;font-size:0.78rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:'
+      return '<button onclick="App.Pricing._setTab(\'' + id + '\')" style="padding:0.35rem 0.9rem;font-size:0.78rem;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:'
         + (on ? 'var(--gold)' : 'transparent') + ';color:' + (on ? '#0a0a0a' : '#94a3b8') + '">' + label + '</button>';
     };
-    return '<div style="display:inline-flex;gap:0.15rem;background:#f1f5f9;border-radius:8px;padding:0.2rem">'
+    return '<div style="display:inline-flex;gap:0.15rem;background:#f1f5f9;border-radius:4px;padding:0.2rem">'
       + btn('catalogue', 'Catalogue') + btn('check', 'Invoice check') + '</div>';
   }
 
@@ -95,14 +95,14 @@
     var month = _pvMonth || _thisMonth();
     var head = '<div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.9rem">'
       + '<label style="font-size:0.8rem;color:#64748b">Month</label>'
-      + '<input type="month" value="' + month + '" onchange="App.Pricing._loadPreview(this.value)" style="padding:0.4rem 0.6rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:8px">'
+      + '<input type="month" value="' + month + '" onchange="App.Pricing._loadPreview(this.value)" style="padding:0.4rem 0.6rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:4px">'
       + '</div>';
 
     if (!_preview) return head + '<p style="font-size:0.85rem;color:#94a3b8">Loading…</p>';
 
     var p = _preview;
     var tile = function(label, n, colour) {
-      return '<div style="flex:1;min-width:96px;background:#fff;border:1px solid #e7e0d2;border-radius:10px;padding:0.6rem 0.75rem">'
+      return '<div style="flex:1;min-width:96px;background:#fff;border:1px solid #e7e0d2;border-radius:0;padding:0.6rem 0.75rem">'
         + '<div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8">' + label + '</div>'
         + '<div style="font-size:1.15rem;font-weight:700;color:' + colour + ';font-variant-numeric:tabular-nums">' + n + '</div></div>';
     };
@@ -178,7 +178,7 @@
       var used = _classesUsing(cat.id).length;
       var open = _openCat === cat.id;
       return ''
-        + '<div style="border:1px solid #e7e0d2;border-radius:12px;background:#fff;overflow:hidden">'
+        + '<div style="border:1px solid #e7e0d2;border-radius:0;background:#fff;overflow:hidden">'
         +   '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.9rem 1rem;cursor:pointer" onclick="App.Pricing._toggle(\'' + cat.id + '\')">'
         +     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5" style="transform:rotate(' + (open ? '90' : '0') + 'deg);transition:transform 0.15s"><path d="M9 18l6-6-6-6"/></svg>'
         +     '<div style="flex:1;min-width:0">'
@@ -187,7 +187,7 @@
         +       '</div>'
         +       '<div style="font-size:0.75rem;color:#94a3b8">' + mine.length + ' tier' + (mine.length === 1 ? '' : 's') + ' · ' + used + ' class' + (used === 1 ? '' : 'es') + '</div>'
         +     '</div>'
-        +     (isAdmin ? '<button onclick="event.stopPropagation();App.Pricing._editCategory(\'' + cat.id + '\')" style="padding:0.3rem 0.7rem;font-size:0.72rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:7px;cursor:pointer">Rename</button>' : '')
+        +     (isAdmin ? '<button onclick="event.stopPropagation();App.Pricing._editCategory(\'' + cat.id + '\')" style="padding:0.3rem 0.7rem;font-size:0.72rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Rename</button>' : '')
         +   '</div>'
         + (open
           ? '<div style="border-top:1px solid #f0ede8;padding:0.5rem 1rem 1rem">'
@@ -195,15 +195,15 @@
               ? '<p style="font-size:0.8rem;color:#94a3b8;padding:0.6rem 0">No tiers yet.' + (cat.creditCovered ? ' A credit-covered category only needs one if it charges for overflow.' : '') + '</p>'
               : '<div style="display:flex;flex-direction:column;gap:0.3rem;padding-top:0.5rem">'
                 + mine.map(function(p) {
-                    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0.65rem;background:#faf9f7;border-radius:8px">'
+                    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0.65rem;background:#faf9f7;border-radius:4px">'
                       + '<div style="flex:1;min-width:0"><div style="font-size:0.86rem;font-weight:600;color:#111">' + App.Utils.esc(p.tierName) + '</div>'
                       +   '<div style="font-size:0.72rem;color:#94a3b8">' + _freqLabel(p.sessionsPerWeek) + '</div></div>'
                       + '<div style="font-family:var(--mono,monospace);font-size:0.84rem;font-weight:600;color:#111;font-variant-numeric:tabular-nums">' + _priceLabel(p) + '</div>'
-                      + (isAdmin ? '<button onclick="App.Pricing._editPlan(\'' + p.id + '\')" style="padding:0.25rem 0.6rem;font-size:0.7rem;font-weight:600;background:#fff;color:#475569;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer">Edit</button>' : '')
+                      + (isAdmin ? '<button onclick="App.Pricing._editPlan(\'' + p.id + '\')" style="padding:0.25rem 0.6rem;font-size:0.7rem;font-weight:600;background:#fff;color:#475569;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Edit</button>' : '')
                       + '</div>';
                   }).join('')
                 + '</div>')
-            + (isAdmin ? '<button onclick="App.Pricing._addPlan(\'' + cat.id + '\')" style="margin-top:0.7rem;padding:0.35rem 0.8rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:7px;cursor:pointer">+ Add tier</button>' : '')
+            + (isAdmin ? '<button onclick="App.Pricing._addPlan(\'' + cat.id + '\')" style="margin-top:0.7rem;padding:0.35rem 0.8rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">+ Add tier</button>' : '')
             + '</div>'
           : '')
         + '</div>';
@@ -214,7 +214,7 @@
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">'
       +   '<div><h1 style="font-size:1.4rem;font-weight:800;color:#0d0d0d;letter-spacing:-0.03em;margin:0">Pricing</h1>'
       +   '<p style="font-size:0.82rem;color:#64748b;margin:2px 0 0">A category owns named tiers. A tier is one price.</p></div>'
-      +   (isAdmin && _tab === 'catalogue' ? '<button onclick="App.Pricing._addCategory()" style="padding:0.45rem 0.95rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add category</button>' : '')
+      +   (isAdmin && _tab === 'catalogue' ? '<button onclick="App.Pricing._addCategory()" style="padding:0.45rem 0.95rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">+ Add category</button>' : '')
       + '</div>'
       + _tabBar()
       + (_tab === 'check' ? _checkPanel() : ''
@@ -222,7 +222,7 @@
       // The backlog is the point of the catalogue tab, so it sits above the
       // list rather than being something you have to go looking for.
       + (_tab !== 'catalogue' ? '' : (needing.length > 0
-        ? '<div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:12px;padding:0.9rem 1rem">'
+        ? '<div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:0;padding:0.9rem 1rem">'
           + '<div style="font-size:0.8rem;font-weight:700;color:#92400e;margin-bottom:0.4rem">' + needing.length + ' class' + (needing.length === 1 ? '' : 'es') + ' cannot be priced yet</div>'
           + '<div style="display:flex;flex-wrap:wrap;gap:0.35rem">'
           + needing.map(function(c) {
@@ -232,7 +232,7 @@
           + '</div>'
           + '<p style="font-size:0.72rem;color:#b45309;margin:0.55rem 0 0">Each needs a tier in its category, or its own fixed price on the class.</p>'
           + '</div>'
-        : '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:0.8rem 1rem;font-size:0.82rem;color:#166534;font-weight:600">Every class can be priced.</div>')
+        : '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:0;padding:0.8rem 1rem;font-size:0.82rem;color:#166534;font-weight:600">Every class can be priced.</div>')
         + '<div style="display:flex;flex-direction:column;gap:0.6rem">' + (rows || '<p style="font-size:0.85rem;color:#94a3b8">No categories yet.</p>') + '</div>')
       + '</div>';
   }
@@ -273,11 +273,11 @@
           + '<span>Covered by credits. Nothing is billed monthly; only overflow beyond the included allowance is charged.</span></label>')
       + '<div class="flex justify-between items-center gap-3 pt-2">'
       +   (cat
-          ? '<button type="button" onclick="App.Pricing._deleteCategory(\'' + cat.id + '\')" style="padding:0.45rem 0.9rem;font-size:0.78rem;font-weight:600;background:#fff;color:' + (used > 0 ? '#cbd5e1' : '#dc2626') + ';border:1px solid ' + (used > 0 ? '#e2e8f0' : '#fecaca') + ';border-radius:8px;cursor:' + (used > 0 ? 'not-allowed' : 'pointer') + '"' + (used > 0 ? ' disabled title="' + used + ' class(es) still use this"' : '') + '>Delete</button>'
+          ? '<button type="button" onclick="App.Pricing._deleteCategory(\'' + cat.id + '\')" style="padding:0.45rem 0.9rem;font-size:0.78rem;font-weight:600;background:#fff;color:' + (used > 0 ? '#cbd5e1' : '#dc2626') + ';border:1px solid ' + (used > 0 ? '#e2e8f0' : '#fecaca') + ';border-radius:4px;cursor:' + (used > 0 ? 'not-allowed' : 'pointer') + '"' + (used > 0 ? ' disabled title="' + used + ' class(es) still use this"' : '') + '>Delete</button>'
           : '<span></span>')
       +   '<div class="flex gap-2">'
       +     '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      +     '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save</button>'
+      +     '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save</button>'
       +   '</div>'
       + '</div></form></div>'
     );
@@ -338,10 +338,10 @@
       + '</div>'
       + '<p class="text-xs text-slate-400" style="margin-top:-0.4rem">Set whichever applies. A tier with neither cannot price anything and will be refused.</p>'
       + '<div class="flex justify-between items-center gap-3 pt-2">'
-      +   (plan ? '<button type="button" onclick="App.Pricing._deletePlan(\'' + plan.id + '\')" style="padding:0.45rem 0.9rem;font-size:0.78rem;font-weight:600;background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:8px;cursor:pointer">Delete</button>' : '<span></span>')
+      +   (plan ? '<button type="button" onclick="App.Pricing._deletePlan(\'' + plan.id + '\')" style="padding:0.45rem 0.9rem;font-size:0.78rem;font-weight:600;background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:4px;cursor:pointer">Delete</button>' : '<span></span>')
       +   '<div class="flex gap-2">'
       +     '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      +     '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save</button>'
+      +     '<button type="submit" style="padding:0.45rem 1rem;font-size:0.84rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save</button>'
       +   '</div>'
       + '</div></form></div>'
     );

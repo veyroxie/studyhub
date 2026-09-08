@@ -158,7 +158,7 @@
   }
 
   function _wrap(sidebar, main) {
-    return '<div style="display:flex;height:calc(100vh - 120px);gap:0;border-radius:16px;overflow:hidden;border:1px solid rgba(0,0,0,0.08);box-shadow:0 1px 4px rgba(0,0,0,0.06)">'
+    return '<div style="display:flex;height:calc(100vh - 120px);gap:0;border-radius:0;overflow:hidden;border:1px solid rgba(0,0,0,0.08);box-shadow:0 1px 4px rgba(0,0,0,0.06)">'
       + sidebar + main + '</div>';
   }
 
@@ -171,7 +171,7 @@
       var unread = unreadCount(messages, tid, 'parent');
       var active = _selectedThread === tid;
       return '<div onclick="App.Messages._selectThread(\'' + _esc(tid) + '\')" style="display:flex;align-items:center;gap:0.65rem;padding:0.85rem 1rem;cursor:pointer;border-bottom:1px solid #f4f4f2;transition:background 0.12s;background:' + (active ? '#fef9ec' : 'transparent') + '">'
-        + '<div style="width:2.2rem;height:2.2rem;border-radius:50%;background:' + (active ? 'var(--gold)' : 'var(--gold-dim)') + ';color:' + (active ? '#0a0a0a' : 'var(--gold)') + ';font-weight:800;font-size:0.78rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(201,162,39,0.25)">' + _esc(c.avatar) + '</div>'
+        + '<div style="width:2.2rem;height:2.2rem;border-radius:50%;background:' + (active ? 'var(--gold)' : 'var(--gold-dim)') + ';color:' + (active ? '#0a0a0a' : 'var(--gold)') + ';font-weight:800;font-size:0.78rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(201,162,39,0.35)">' + _esc(c.avatar) + '</div>'
         + '<div style="flex:1;min-width:0">'
         +   '<div style="font-size:0.83rem;font-weight:' + (unread > 0 ? '700' : '600') + ';color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _esc(c.label) + '</div>'
         +   '<div style="font-size:0.7rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (lastMsg ? _esc(lastMsg.text.slice(0,35)) + (lastMsg.text.length > 35 ? '…' : '') : _esc(c.sublabel)) + '</div>'
@@ -198,7 +198,7 @@
       var active = _selectedThread === t.threadId;
       var p = t.parent || { name: t.parentEmail, kids: [] };
       return '<div onclick="App.Messages._selectThread(\'' + _esc(t.threadId) + '\')" style="display:flex;align-items:center;gap:0.65rem;padding:0.85rem 1rem;cursor:pointer;border-bottom:1px solid #f4f4f2;transition:background 0.12s;background:' + (active ? '#fef9ec' : 'transparent') + '">'
-        + '<div style="width:2.2rem;height:2.2rem;border-radius:50%;background:' + (active ? 'var(--gold)' : 'var(--gold-dim)') + ';color:' + (active ? '#0a0a0a' : 'var(--gold)') + ';font-weight:800;font-size:0.82rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(201,162,39,0.25)">' + (p.name || '?').charAt(0).toUpperCase() + '</div>'
+        + '<div style="width:2.2rem;height:2.2rem;border-radius:50%;background:' + (active ? 'var(--gold)' : 'var(--gold-dim)') + ';color:' + (active ? '#0a0a0a' : 'var(--gold)') + ';font-weight:800;font-size:0.82rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid rgba(201,162,39,0.35)">' + (p.name || '?').charAt(0).toUpperCase() + '</div>'
         + '<div style="flex:1;min-width:0">'
         +   '<div style="font-size:0.83rem;font-weight:' + (unread > 0 ? '700' : '600') + ';color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _esc(p.name) + '</div>'
         +   '<div style="font-size:0.7rem;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (lastMsg ? _esc(lastMsg.text.slice(0,35)) + (lastMsg.text.length > 35 ? '…' : '') : _esc((p.kids || []).join(', '))) + '</div>'
@@ -208,7 +208,7 @@
     }).join('');
 
     var searchBar = '<div style="padding:0.5rem 0.85rem;border-bottom:1px solid #f0ede8">'
-      + '<input type="search" placeholder="Search…" value="' + _esc(_search) + '" oninput="App.Messages._setSearch(this.value)" style="width:100%;padding:0.35rem 0.65rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:8px;outline:none;background:#faf9f7;box-sizing:border-box">'
+      + '<input type="search" placeholder="Search…" value="' + _esc(_search) + '" oninput="App.Messages._setSearch(this.value)" style="width:100%;padding:0.35rem 0.65rem;font-size:0.8rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;background:#faf9f7;box-sizing:border-box">'
       + '</div>';
 
     return '<div style="width:250px;flex-shrink:0;background:#fff;border-right:1px solid #f0ede8;display:flex;flex-direction:column">'
@@ -252,7 +252,7 @@
     }
 
     var header = '<div style="display:flex;align-items:center;gap:0.65rem;padding:0.85rem 1.1rem;background:#faf9f7;border-bottom:1px solid #f0ede8">'
-      + '<div style="width:2rem;height:2rem;border-radius:50%;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:0.8rem;display:flex;align-items:center;justify-content:center;border:1px solid rgba(201,162,39,0.25)">' + (headerName || '?').charAt(0).toUpperCase() + '</div>'
+      + '<div style="width:2rem;height:2rem;border-radius:50%;background:var(--gold-dim);color:var(--gold);font-weight:800;font-size:0.8rem;display:flex;align-items:center;justify-content:center;border:1px solid rgba(201,162,39,0.35)">' + (headerName || '?').charAt(0).toUpperCase() + '</div>'
       + '<div><div style="font-size:0.85rem;font-weight:700;color:#111">' + _esc(headerName || '') + '</div>'
       +      '<div style="font-size:0.7rem;color:#94a3b8">' + _esc(headerSub || '') + '</div></div>'
       + '</div>';
@@ -277,8 +277,8 @@
       + '</div>';
 
     var compose = '<div style="padding:0.75rem 1rem;border-top:1px solid #f0ede8;background:#fff;display:flex;gap:0.5rem">'
-      + '<input id="msg-input" type="text" placeholder="Type a message…" onkeydown="if(event.key===\'Enter\')App.Messages._send()" style="flex:1;padding:0.5rem 0.85rem;font-size:0.84rem;border:1px solid #e2e8f0;border-radius:10px;outline:none;background:#faf9f7" onfocus="this.style.borderColor=\'var(--gold)\'" onblur="this.style.borderColor=\'#e2e8f0\'">'
-      + '<button onclick="App.Messages._send()" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:10px;cursor:pointer">Send</button>'
+      + '<input id="msg-input" type="text" placeholder="Type a message…" onkeydown="if(event.key===\'Enter\')App.Messages._send()" style="flex:1;padding:0.5rem 0.85rem;font-size:0.84rem;border:1px solid #e2e8f0;border-radius:0;outline:none;background:#faf9f7" onfocus="this.style.borderColor=\'var(--gold)\'" onblur="this.style.borderColor=\'#e2e8f0\'">'
+      + '<button onclick="App.Messages._send()" style="padding:0.5rem 1rem;font-size:0.82rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:0;cursor:pointer">Send</button>'
       + '</div>';
 
     return '<div style="flex:1;display:flex;flex-direction:column;background:#fff;min-width:0">'

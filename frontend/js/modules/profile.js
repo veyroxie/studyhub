@@ -24,7 +24,7 @@
   ];
 
   function _card(inner) {
-    return '<div style="background:#fff;border:1px solid rgba(0,0,0,0.07);border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04);padding:1.25rem 1.4rem">' + inner + '</div>';
+    return '<div style="background:#fff;border:1px solid rgba(0,0,0,0.07);border-radius:0;box-shadow:0 1px 3px rgba(0,0,0,0.04);padding:1.25rem 1.4rem">' + inner + '</div>';
   }
 
   function _heading(text, sub) {
@@ -48,7 +48,7 @@
       + '<form id="pf-account-form" style="display:flex;flex-direction:column;gap:0.85rem;margin-top:1rem">'
       + '<div>' + _label('Name') + '<input name="name" value="' + App.Utils.esc(profile.name || '') + '" class="form-input" required></div>'
       + '<div>' + _label('Phone') + '<input name="phone" value="' + App.Utils.esc(profile.phone || '') + '" class="form-input"></div>'
-      + '<button type="submit" style="align-self:flex-start;padding:0.5rem 1.1rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">Save changes</button>'
+      + '<button type="submit" style="align-self:flex-start;padding:0.5rem 1.1rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Save changes</button>'
       + '</form>'
     );
   }
@@ -68,7 +68,7 @@
     var classes = (s.enrolledClasses || s.enrolled_classes || []);
     var count = Array.isArray(classes) ? classes.length : 0;
     var status = App.Utils.esc(s.status || 'Active');
-    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0.8rem;background:#fafaf8;border:1px solid #f0eee8;border-radius:10px">'
+    return '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0.8rem;background:#fafaf8;border:1px solid #f0eee8;border-radius:0">'
       + '<div style="width:34px;height:34px;border-radius:50%;background:var(--gold-dim);color:#8a6d12;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem">' + App.Utils.esc((s.firstName || '?').charAt(0)) + '</div>'
       + '<div style="flex:1;min-width:0"><div style="font-size:0.88rem;font-weight:600;color:#111">' + App.Utils.esc(s.firstName + ' ' + (s.lastName || '')) + '</div>'
       + '<div style="font-size:0.74rem;color:#94a3b8">' + count + ' class' + (count !== 1 ? 'es' : '') + ' · ' + status + '</div></div></div>';
@@ -97,7 +97,7 @@
     var label = granted ? 'Push alerts enabled on this device' : 'Enable push alerts';
     var disabled = granted ? ' disabled' : '';
     return '<div style="margin:1rem 0 0.25rem">'
-      + '<button type="button" id="pf-push-btn"' + disabled + ' style="padding:0.55rem 1.1rem;font-size:0.82rem;font-weight:700;background:#0a0a0a;color:#fff;border:none;border-radius:8px;cursor:pointer' + (granted ? ';opacity:0.6;cursor:default' : '') + '">' + label + '</button>'
+      + '<button type="button" id="pf-push-btn"' + disabled + ' style="padding:0.55rem 1.1rem;font-size:0.82rem;font-weight:700;background:#0a0a0a;color:#fff;border:none;border-radius:4px;cursor:pointer' + (granted ? ';opacity:0.6;cursor:default' : '') + '">' + label + '</button>'
       + '</div>';
   }
 
@@ -109,7 +109,7 @@
       + '<form id="pf-pw-form" style="display:flex;flex-direction:column;gap:0.75rem;margin-top:1rem">'
       + '<input name="currentPassword" type="password" placeholder="Current password" class="form-input" required>'
       + '<input name="newPassword" type="password" placeholder="New password (min 8 chars)" class="form-input" required minlength="8">'
-      + '<button type="submit" style="align-self:flex-start;padding:0.5rem 1.1rem;font-size:0.8rem;font-weight:600;background:#fff;color:#374151;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer">Update password</button>'
+      + '<button type="submit" style="align-self:flex-start;padding:0.5rem 1.1rem;font-size:0.8rem;font-weight:600;background:#fff;color:#374151;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Update password</button>'
       + '</form>' + mfa
     );
   }

@@ -72,7 +72,7 @@
     });
 
     var gateBanner = hasUnpaid
-      ? '<div style="background:#fef3c7;border:1px solid #fde68a;border-left:4px solid #d97706;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem">'
+      ? '<div style="background:#fef3c7;border:1px solid #fde68a;border-left:4px solid #d97706;border-radius:0;padding:1rem 1.25rem;margin-bottom:1.25rem">'
         + '<div style="font-size:0.92rem;font-weight:700;color:#92400e">Progress reports paused</div>'
         + '<div style="font-size:0.83rem;color:#78350f;margin-top:3px">Settle this month\'s invoice to download your child\'s termly reports.</div>'
         + '</div>'
@@ -91,7 +91,7 @@
     } else {
       students.forEach(function(st) {
         var list = byChild[st.id] || [];
-        body += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;margin-bottom:1rem">'
+        body += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:0;padding:1.25rem;margin-bottom:1rem">'
           + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
           +   '<div style="font-size:1.05rem;font-weight:700;color:#0f0f0f">' + App.Utils.esc(st.firstName + ' ' + st.lastName) + '</div>'
           +   '<div style="font-size:0.75rem;color:#94a3b8">' + list.length + ' report' + (list.length !== 1 ? 's' : '') + '</div>'
@@ -101,14 +101,14 @@
         } else {
           body += '<div style="display:grid;gap:0.75rem">';
           list.forEach(function(pr) {
-            body += '<div style="border:1px solid #e2e8f0;border-radius:10px;padding:0.85rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">'
+            body += '<div style="border:1px solid #e2e8f0;border-radius:0;padding:0.85rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">'
               + '<div>'
               +   '<div style="font-size:0.85rem;font-weight:700;color:#0f0f0f">' + App.Utils.esc(_termLabel(pr.term)) + (pr.subject ? ' · ' + App.Utils.esc(pr.subject) : '') + '</div>'
               +   (pr.grade ? '<div style="font-size:0.78rem;color:#92400e;font-weight:600;margin-top:2px">Grade: ' + App.Utils.esc(pr.grade) + '</div>' : '')
               + '</div>'
               + (hasUnpaid
                   ? '<span style="font-size:0.72rem;color:#94a3b8;font-style:italic">paused</span>'
-                  : '<a href="/api/progress-reports/' + pr.id + '/pdf" target="_blank" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border-radius:8px;text-decoration:none">Download PDF</a>')
+                  : '<a href="/api/progress-reports/' + pr.id + '/pdf" target="_blank" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border-radius:4px;text-decoration:none">Download PDF</a>')
               + '</div>';
           });
           body += '</div>';
@@ -165,7 +165,7 @@
       : filtered.map(function(pr) {
           var st = students.find(function(x) { return x.id === pr.studentId; });
           var teacher = staff.find(function(x) { return x.id === pr.teacherId; });
-          return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1rem 1.15rem;margin-bottom:0.75rem;display:flex;align-items:flex-start;gap:1rem">'
+          return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:0;padding:1rem 1.15rem;margin-bottom:0.75rem;display:flex;align-items:flex-start;gap:1rem">'
             + '<div style="flex:1;min-width:0">'
             +   '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:4px">'
             +     '<span style="font-size:0.92rem;font-weight:700;color:#0f0f0f">' + (st ? App.Utils.esc(st.firstName + ' ' + st.lastName) : pr.studentId) + '</span>'
@@ -175,8 +175,8 @@
             +   (pr.grade ? '<div style="font-size:0.78rem;color:#92400e;font-weight:600;margin-top:3px">Grade: ' + App.Utils.esc(pr.grade) + '</div>' : '')
             + '</div>'
             + '<div style="display:flex;gap:0.4rem;flex-shrink:0">'
-            +   (canEdit ? '<button onclick="App.Progress._editModal(\'' + pr.id + '\')" style="padding:0.35rem 0.75rem;font-size:0.72rem;font-weight:600;background:#fff;color:#475569;border:1px solid #e2e8f0;border-radius:7px;cursor:pointer">Edit</button>' : '')
-            +   '<a href="/api/progress-reports/' + pr.id + '/pdf" target="_blank" style="padding:0.35rem 0.75rem;font-size:0.72rem;font-weight:600;background:var(--gold);color:#0a0a0a;border-radius:7px;text-decoration:none">PDF</a>'
+            +   (canEdit ? '<button onclick="App.Progress._editModal(\'' + pr.id + '\')" style="padding:0.35rem 0.75rem;font-size:0.72rem;font-weight:600;background:#fff;color:#475569;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Edit</button>' : '')
+            +   '<a href="/api/progress-reports/' + pr.id + '/pdf" target="_blank" style="padding:0.35rem 0.75rem;font-size:0.72rem;font-weight:600;background:var(--gold);color:#0a0a0a;border-radius:4px;text-decoration:none">PDF</a>'
             + '</div>'
             + '</div>';
         }).join('');

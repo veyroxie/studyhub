@@ -8,7 +8,7 @@
       el = document.createElement('div');
       el.id = 'loading-overlay';
       el.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(15,15,15,0.6);backdrop-filter:blur(2px)';
-      el.innerHTML = '<div style="text-align:center;padding:2rem 2.5rem;background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.15)">'
+      el.innerHTML = '<div style="text-align:center;padding:2rem 2.5rem;background:#fff;border-radius:0;box-shadow:0 4px 24px rgba(0,0,0,0.15)">'
         + '<div id="loading-spinner" style="width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:var(--gold,#C9A227);border-radius:50%;animation:spin 0.7s linear infinite;margin:0 auto 1rem"></div>'
         + '<div id="loading-text" style="font-size:0.9rem;font-weight:600;color:#334155">' + (msg || 'Loading...') + '</div>'
         + '</div>';
@@ -40,12 +40,12 @@
       var overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,15,15,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(4px)';
       overlay.innerHTML =
-        '<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;padding:1.75rem;box-shadow:0 20px 60px rgba(0,0,0,0.3)">'
+        '<div style="background:#fff;border-radius:0;max-width:380px;width:100%;padding:1.75rem;box-shadow:0 20px 60px rgba(0,0,0,0.3)">'
         + '<h2 style="margin:0 0 0.35rem;font-family:\'Fraunces\',\'Cormorant Garamond\',serif;font-size:1.35rem;font-weight:500;color:#0a0a0a">Two-factor code</h2>'
         + '<p id="mfa-gate-hint" style="margin:0 0 1rem;font-size:0.8rem;color:#94a3b8">Enter the 6-digit code from your authenticator app.</p>'
-        + '<input id="mfa-gate-code" inputmode="numeric" autocomplete="one-time-code" maxlength="16" style="width:100%;padding:0.6rem 0.75rem;font-size:1.1rem;letter-spacing:0.2em;text-align:center;border:1px solid #e2e8f0;border-radius:10px;outline:none" autofocus>'
+        + '<input id="mfa-gate-code" inputmode="numeric" autocomplete="one-time-code" maxlength="16" style="width:100%;padding:0.6rem 0.75rem;font-size:1.1rem;letter-spacing:0.2em;text-align:center;border:1px solid #e2e8f0;border-radius:0;outline:none" autofocus>'
         + '<p id="mfa-gate-err" style="display:none;margin:0.6rem 0 0;font-size:0.78rem;color:#dc2626"></p>'
-        + '<button id="mfa-gate-verify" style="width:100%;margin-top:1rem;padding:0.6rem;font-size:0.9rem;font-weight:700;background:var(--gold,#C9A227);color:#0a0a0a;border:none;border-radius:10px;cursor:pointer">Verify</button>'
+        + '<button id="mfa-gate-verify" style="width:100%;margin-top:1rem;padding:0.6rem;font-size:0.9rem;font-weight:700;background:var(--gold,#C9A227);color:#0a0a0a;border:none;border-radius:0;cursor:pointer">Verify</button>'
         + '<div style="display:flex;justify-content:space-between;margin-top:0.85rem">'
         +   '<button id="mfa-gate-recovery" style="background:none;border:none;font-size:0.75rem;color:#64748b;cursor:pointer;text-decoration:underline">Use a recovery code</button>'
         +   '<button id="mfa-gate-cancel" style="background:none;border:none;font-size:0.75rem;color:#64748b;cursor:pointer">Cancel</button>'
@@ -86,7 +86,7 @@
       var overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,15,15,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(4px)';
       overlay.innerHTML =
-        '<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3)">'
+        '<div style="background:#fff;border-radius:0;max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3)">'
         + '<div style="padding:1.5rem 1.75rem 0.75rem;border-bottom:1px solid #f1f5f9">'
         +   '<h2 style="margin:0;font-family:\'Fraunces\',\'Cormorant Garamond\',serif;font-size:1.5rem;font-weight:500;color:#0a0a0a">Terms of Service</h2>'
         +   '<p style="margin:0.35rem 0 0;font-size:0.78rem;color:#94a3b8">Please review and accept before continuing.</p>'
@@ -104,8 +104,8 @@
         +   '<p style="margin:0">We may update these terms; if material, we\'ll ask you to accept again. Contact us at hello@studyhub.fit for any questions.</p>'
         + '</div>'
         + '<div style="padding:1rem 1.75rem;border-top:1px solid #f1f5f9;display:flex;gap:0.6rem;justify-content:flex-end;background:#fafaf8">'
-        +   '<button id="tos-decline" style="padding:0.55rem 1.1rem;font-size:0.82rem;font-weight:600;background:#fff;border:1px solid #e2e8f0;border-radius:8px;color:#64748b;cursor:pointer">Decline &amp; sign out</button>'
-        +   '<button id="tos-accept" style="padding:0.55rem 1.4rem;font-size:0.82rem;font-weight:700;background:#0a0a0a;color:#fff;border:none;border-radius:8px;cursor:pointer">Accept &amp; continue</button>'
+        +   '<button id="tos-decline" style="padding:0.55rem 1.1rem;font-size:0.82rem;font-weight:600;background:#fff;border:1px solid #e2e8f0;border-radius:4px;color:#64748b;cursor:pointer">Decline &amp; sign out</button>'
+        +   '<button id="tos-accept" style="padding:0.55rem 1.4rem;font-size:0.82rem;font-weight:700;background:#0a0a0a;color:#fff;border:none;border-radius:4px;cursor:pointer">Accept &amp; continue</button>'
         + '</div>'
         + '</div>';
       document.body.appendChild(overlay);
@@ -532,10 +532,10 @@
           + '<p style="font-size:0.82rem;color:#94a3b8;margin-bottom:1.25rem">Enter your email and we\'ll send a reset link.</p>'
           + '<form id="forgot-pw-form" class="space-y-4">'
           + '<div><label style="display:block;font-size:0.82rem;font-weight:600;color:#cbd5e1;margin-bottom:0.35rem">Email</label>'
-          + '<input name="email" type="email" required placeholder="your@email.com" class="form-input" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:10px"></div>'
+          + '<input name="email" type="email" required placeholder="your@email.com" class="form-input" style="width:100%;padding:0.55rem 0.75rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:0"></div>'
           + '<div style="display:flex;justify-content:flex-end;gap:0.75rem;padding-top:0.5rem">'
-          + '<button type="button" onclick="App.Utils.hideModal()" style="padding:0.45rem 1rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:8px;background:transparent;color:#64748b;cursor:pointer">Cancel</button>'
-          + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.82rem;font-weight:700;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer">Reset Password</button>'
+          + '<button type="button" onclick="App.Utils.hideModal()" style="padding:0.45rem 1rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:4px;background:transparent;color:#64748b;cursor:pointer">Cancel</button>'
+          + '<button type="submit" style="padding:0.45rem 1rem;font-size:0.82rem;font-weight:700;background:#3b82f6;color:#fff;border:none;border-radius:4px;cursor:pointer">Reset Password</button>'
           + '</div>'
           + '</form>'
           + '</div>'

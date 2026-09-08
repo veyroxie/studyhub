@@ -6,3 +6,17 @@
 @source "./set-password.html";
 @source "./verify.html";
 @source "./js/**/*.js";
+
+/* Two radii, each with a job: surfaces square, controls softened. The utility
+   classes are remapped rather than hunted down across 200 call sites, so
+   rounded-lg and rounded-xl stop being a third and fourth radius competing
+   with the inline ones. rounded-full is untouched -- pills and avatars are
+   round on purpose. */
+@theme {
+  --radius-sm:  4px;
+  --radius-md:  4px;
+  --radius-lg:  4px;
+  --radius-xl:  0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+}
