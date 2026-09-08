@@ -342,3 +342,65 @@ from new evidence rather than a change of mind -- 002 from counting states, 011
 from Nadine's actual usage, 012 from her stating the intent. The lesson is not
 to decide slower; it is that a model argued from the shape of the data, without
 the operator's intent, will be wrong in a way the data cannot reveal.
+
+---
+
+## ADR-013 -- A hand-typed discount becomes a recorded discount
+**2026-09-08 · Accepted**
+
+**Context.** The first real differ run found Rui Xiang, Sukie Ren and Jiho Choi
+each invoiced exactly RM10 below the catalogue, with every discount column at
+zero: `early_bird_discount`, `sibling_discount`, `referral_credit` and
+`discount_pct` alike. The reduction exists only as a smaller number typed into
+the amount. Utaha differs by 30 -- the same RM10 plus the Level 3 band question
+in ADR-007.
+
+Left alone, the switchover RAISES those bills by RM10 and nothing in the data
+explains why, to Nadine or to a parent who asks.
+
+**Decision.** Record it. A standing per-student monthly discount, carried as an
+amount and a reason, applied by the cron as its own invoice line.
+
+**Why a line and not a lower price.** The tier price is what the centre charges
+for that tier; the RM10 is what this family was given. Folding it into the tier
+would reprice everyone on it, and folding it into a typed total is the state we
+are leaving. A line says who got it and why, survives a price change, and shows
+up on the invoice where a parent can see it.
+
+**Why not the existing discount fields.** Early bird is a mutation with a
+clawback (`applyEarlyBirdExpiry` restores the exact RM removed), sibling and
+referral are derived from family and referral state. This is none of those --
+it is a standing arrangement with one student, and reusing a field whose
+semantics are already load-bearing is how the sibling discount ended up with
+two different shapes.
+
+**Consequences.** Every affected student needs the discount entered before the
+switchover, or their bill rises. The differ then compares like with like,
+because the computed side can subtract the same line.
+
+**Open:** whether Nadine wants these as a fixed RM amount or a percentage. The
+three known cases are all a flat RM10, so flat is the assumption until she says
+otherwise.
+
+---
+
+## ADR-014 -- Only three students should have invoicing off
+**2026-09-08 · Accepted, not yet applied**
+
+**Context.** 60 of 70 students have monthly invoicing switched off, from
+Nadine's bulk action in August while she was learning the system (ADR-012).
+Asked which should genuinely be off, she named three: **Zhang Zhan He, Stella
+Kim and Joy Kim.**
+
+**Decision.** Those three stay off. The rest go back to automatic invoicing.
+
+**Not yet applied, deliberately.** Switching 57 students back on while the cron
+still prices from `pricing_tiers` -- which can price exactly one class in the
+whole estate -- would reproduce September: a run that bills the package
+students and skips everyone else with a warning. The order recorded in
+`pricing-bands.md` section 13 stands: fix the pricing, prove it with the
+differ, then switch them on. Unfreezing is the LAST step of the switchover, not
+a precondition for it.
+
+**Consequences.** The 1 October run bills almost nobody unless the switchover
+lands first. That is the deadline this work is actually against.
