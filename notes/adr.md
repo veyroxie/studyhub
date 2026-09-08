@@ -379,8 +379,48 @@ switchover, or their bill rises. The differ then compares like with like,
 because the computed side can subtract the same line.
 
 **Open:** whether Nadine wants these as a fixed RM amount or a percentage. The
-three known cases are all a flat RM10, so flat is the assumption until she says
-otherwise.
+known cases are flat, so flat is the assumption until she says otherwise.
+
+---
+
+### CORRECTED 09-09 -- the premise was wrong for three of the five
+
+Ely asked why any of this needed asking when the records were already to hand.
+Checking them settles it, and settles it against me.
+
+Nadine, 08-07: "the early bird discount, can change to RM10 instead of
+discount?" -- and `cron.go:21` carries `EarlyBirdRM = 10.0`, applied to any
+monthly invoice raised on or before the cutoff. Against her own per-level list
+the September arithmetic is exact:
+
+| Student | Her price | Invoiced | What the gap is |
+| --- | --- | --- | --- |
+| Rui Xiang | Level 2 = 240 | 230 | early bird |
+| Sukie Ren | Level 2 = 240 | 230 | early bird |
+| Jiho Choi | Group 3-4 2x = 490 | 480 | early bird |
+| Utaha Luo | Level 3 = 240 | 230 | early bird, plus 20 of band gap |
+| Gareth Lee | Level 3 private = 480 | 480 | band gap only, no early bird |
+
+So **three of the five need nothing**. The cron already applies that RM10; they
+only showed as differences because Nadine hand-made September's invoices and
+typed the early bird into a smaller total, while the differ compares against
+the catalogue's gross.
+
+**What survives.** The standing discount is still the right mechanism, for a
+smaller and different reason: ADR-007 has Level 3 billed at the Level 4 rate
+and discounted by hand until the three-tier pricing is settled. That is Gareth
+at 40 and Utaha at 20 -- two students, not five, and a hand-discount made
+visible rather than typed into a total.
+
+**What I got wrong.** I read "five invoices below the catalogue with every
+discount column at zero" and concluded the discounts were invisible. Zero in
+those columns was true; the inference was not. The differ compares gross to
+net, and I did not check its arithmetic against Nadine's own price list before
+writing the ADR -- a list I had already read. Same failure as the September
+invoice scope and as ADR-002: a correct measurement, an assumed cause.
+
+**Consequence for the switchover.** Two bills change at switchover, not five,
+and both are the Level 3 question rather than anything new.
 
 ---
 

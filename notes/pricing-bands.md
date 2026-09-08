@@ -831,6 +831,26 @@ including Lucy's twice-weekly 490 as ONE charge rather than two.
 
 ### The differences are two separate causes, and neither is a pricing bug
 
+**CORRECTED 09-09. The RM10 is the early bird, and it needs nothing.**
+
+The paragraph below concluded these were invisible hand discounts. The zeroes
+in the discount columns were real; the inference was not. Nadine asked on 08-07
+for "the early bird discount, can change to RM10", `cron.go:21` carries
+`EarlyBirdRM = 10.0`, and against her own per-level list the arithmetic is
+exact: Rui and Sukie are Level 2 at 240 invoiced 230, Jiho Choi is twice-weekly
+at 490 invoiced 480. Every one is her price less the early bird.
+
+They only appear as differences because September's invoices were hand-made, so
+the early bird was typed into a smaller total while the differ compares against
+the catalogue's gross. **The cron applies that RM10 itself, so these three
+resolve at switchover with no work.**
+
+What survives is smaller: Gareth at 40 and Utaha at 20, both the Level 3 band
+question in ADR-007, and both wanting the standing discount so a hand-discount
+is visible rather than typed away.
+
+The superseded reasoning, kept because the mistake is instructive:
+
 **A RM10 hand discount that the system cannot see.** Rui Xiang, Sukie Ren and
 Jiho Choi are each invoiced exactly 10 below the catalogue. Every discount
 column on those invoices is 0.00 -- `early_bird_discount`, `sibling_discount`,
@@ -868,8 +888,9 @@ month the switchover actually affects.
 
 ### What has to happen before the switchover
 
-1. **Record the RM10 discounts as discounts**, or accept that three parents'
-   invoices rise. This is the only finding that changes what a parent pays.
+1. **Two bills change, not five** (corrected 09-09). Gareth 40 and Utaha 20,
+   both the Level 3 band. The three RM10s are the early bird and the cron
+   applies it itself.
 2. **Blake and Valerie need enrolments**, or an explanation of what they are
    being billed for.
 3. The nine unpriceable are the known backlog: the private classes and
