@@ -741,6 +741,23 @@ That makes this a workflow question rather than a bug. The October risk is
 unchanged: if those 21 are attending and meant to pay, nobody is invoiced and
 nothing says so.
 
+**Read as of 09-08 (Ely, not yet confirmed by Nadine): she froze them because
+she did not want auto-billing.** Everything fits that. The old matrix prices
+exactly one class, so the cron's amounts were unusable; freezing stops it
+producing them; and she then typed all thirteen September invoices by hand.
+19 of the 21 have attended since 1 September, so they are active students
+whose billing was switched off deliberately.
+
+The consequence for sequencing: **the freeze is a symptom, not the problem.**
+Unfreezing before the pricing is trustworthy would just restore wrong invoices.
+The fix is to make auto-billing correct, prove it, and then unfreeze -- in that
+order.
+
+It also changes what the step-3 differ must do. Comparing "did an invoice
+appear" would show nothing for 21 frozen students. The differ has to compare
+the COMPUTED price per student under old and new rules, regardless of
+subscription state, so the freeze stops blocking verification.
+
 It also lands on the lifecycle work in `student-lifecycle-dates.md`: freeze is
 a single current-state flag with no dates, so nobody can answer "was this
 student frozen in September" from the data, and the UI gives no hint that
