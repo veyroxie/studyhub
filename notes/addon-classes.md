@@ -108,9 +108,15 @@ date, and refuses rather than silently over-filling.
 
 For Nadine:
 
-1. If an add-on is booked and the student does not come, is it still charged?
-   Ely put three options to her 09-08: charge it, charge it and grant a class
-   credit, or do not charge. Awaiting her answer.
+ANSWERED, Nadine 09-08: **an unattended add-on is charged, and it follows the
+ordinary absence rule.** "Charge by session. Probably the same like usual. If
+they inform earlier then they get the credits, otherwise, it will be absent
+without credits."
+
+So an add-on needs no special no-show handling at all: it is charged when
+booked, and the existing 3-hour notice rule decides whether a credit is
+granted. Her reason was explicitly that this is easier to manage, which is
+also why it should not be special-cased -- one absence rule, not two.
 
 ANSWERED, Ely 09-08: **early bird applies to the monthly subscription only,
 not to add-on lines.** So the add-on total is added AFTER the stacking chain in

@@ -559,12 +559,35 @@ including `PP_self_overflow` at `hourly_rate` 10.00; all 37 live classes carry a
 `pricing_category_id` (16 Group, 11 Private, 10 Self-Study); 22 classes and 21
 live enrolments carry a tier.
 
-### 12a. Eleven students are unbilled for September, not one
+### 12a. Eleven students are unbilled for September -- but only two for the reason this plan is about
 
-Section 0 finding 5 named one student because it read the boot log. The invoice
-table says eleven, all `status='Active'` with live enrolments, none holding a
-September invoice **of any type** (the control query below drops the `period`
-filter, so an Adhoc invoice would have shown):
+**CORRECTED 09-08. The paragraph below overstated the pricing hole, and section
+0 finding 5 was closer to right than this correction was.** Eleven active
+students hold no September invoice, which is true. But the monthly cron also
+requires `COALESCE(subscription_status,'active')='active'` (`cron.go:233, 362,
+424`), and NINE of the eleven were already frozen when the 1 September run
+happened -- `paused_at` 2026-08-03 or 2026-08-12, `resumed_at` never. They were
+skipped for being frozen, not for being unpriceable.
+
+That leaves **Luther** (paused 08-12, resumed 08-19, so active on the 1st) and
+**Minsung** (frozen only on 09-04, so active on the 1st) as the students the
+pricing hole actually skipped. The original audit named Luther from the log and
+was substantially correct.
+
+The error here is the same shape as the standing warning, turned on this file's
+own author: a number was counted correctly and its CAUSE was assumed. Eleven
+missing invoices is a fact; "eleven missing because of pricing" was not
+checked before it was written down.
+
+What survives from the correction: the retroactive September run must still
+wait for Mandarin to be priced, because Luther's only unpriced class is
+Mandarin. Section 4's amendment stands.
+
+### 12a-bis. The original (over-broad) finding, kept for the record
+
+The invoice table says eleven, all `status='Active'` with live enrolments, none
+holding a September invoice **of any type** (the control query below drops the
+`period` filter, so an Adhoc invoice would have shown):
 
 ```
   Aria Threw Xin Yu    Carina Poh       Carolina Cho    Chase James Gan
@@ -670,3 +693,77 @@ SELECT c.id, c.name, c.pricing_category_id, c.day,
  WHERE c.deleted_at IS NULL AND COALESCE(c.default_tier_name,'') = ''
  ORDER BY c.pricing_category_id, c.name;
 ```
+
+
+## 13. URGENT, found 09-08: 21 enrolled students are frozen
+
+`subscription_status` across the whole roster:
+
+```
+  frozen | paused 2026-08-03 | 36 students
+  frozen | paused 2026-08-12 | 18
+  active | never paused      |  6
+  ... (59 of 70 students are frozen)
+```
+
+Narrowed to the students who actually matter for billing -- those holding a
+live enrolment:
+
+| Subscription | Students | Of which have a package |
+| --- | --- | --- |
+| frozen | 21 | 5 |
+| active | 9 | 6 |
+
+The monthly cron bills only `subscription_status='active'`. **So on 1 October
+it will skip 21 students who are enrolled and attending.** Two thirds of the
+teaching roster would go uninvoiced, silently, exactly as September did.
+
+This has to be confirmed with Nadine before the October run, and it is a
+better explanation for September's low invoice count than anything in section
+0. It is not obviously deliberate: 36 students were frozen on one day in
+August, which reads like a bulk action during a break that was never undone.
+
+It also lands on the lifecycle work in `student-lifecycle-dates.md`: freeze is
+a single current-state flag with no dates, so nobody can answer "was this
+student frozen in September" from the data, and the UI gives no hint that
+freezing stops the invoice. A dated `student_billing_periods` row would make
+both visible.
+
+## 14. Nadine's levels, 09-08 -- and the two things they do not cover
+
+| Level given | Students | Maps to tier |
+| --- | --- | --- |
+| Level 0 | Aria (math), Aleena (math) | **NOTHING -- see below** |
+| Level 2 | Koki | Level 1-2 |
+| Level 3 | Gareth | Level 3-4 |
+| Level 4 | Luda, Jiho Yoo | Level 3-4 |
+| Level 5 | Geneva, Zia, Carolina | Level 5-6 |
+
+Seven of the nine private students resolve cleanly.
+
+### Level 0 has no tier and no price
+
+The catalogue holds `Level 1-2`, `Level 3-4`, `Level 5-6` (0051). There is no
+Level 0, so Aria and Aleena remain unpriceable -- the same state they were in
+before the question was asked. This needs a price from Nadine, not a mapping
+decision: extending `Level 1-2` downward would invent a rate for a level she
+has told us is distinct.
+
+Aria is the harder of the two, because she also holds two live Private
+enrolments with `session_rate` 80 on one of them. She is simultaneously a
+twice-weekly tier student and a negotiated hourly one, and that conflict
+(section 9) is still open.
+
+### Mandarin and Phonics have a shape but still no price
+
+Confirmed 09-08: these subjects have NO level, and Ely confirmed the model
+supports a level-less subject. That settles the SHAPE -- a category whose
+single tier carries a price, no level dimension.
+
+It does not settle the PRICE, and nobody has asked for one. Mandarin has three
+live students (Chase, Zayden, Luther) and no price of any kind. Phonics prices
+by a `monthly_fee_override` of 239.96, which is an odd enough number to be
+worth confirming rather than inheriting.
+
+**Luther's retroactive September invoice is still blocked on the Mandarin
+price.** That is the only remaining blocker on step 4.
