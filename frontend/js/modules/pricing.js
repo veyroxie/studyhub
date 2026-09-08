@@ -210,7 +210,11 @@
     }).join('');
 
     container.innerHTML = ''
-      + '<div style="display:flex;flex-direction:column;gap:1rem;max-width:820px">'
+      // Centred, matching attendance, billing, profile and dashboard. This
+      // page was capped at 820px with no auto margin, so it hugged the left
+      // edge while every other screen sat in the middle. Wider too: the
+      // invoice check table has four columns and an explanation per row.
+      + '<div style="display:flex;flex-direction:column;gap:1rem;max-width:1000px;margin:0 auto">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">'
       +   '<div><h1 style="font-size:1.4rem;font-weight:800;color:#0d0d0d;letter-spacing:-0.03em;margin:0">Pricing</h1>'
       +   '<p style="font-size:0.82rem;color:#64748b;margin:2px 0 0">A category owns named tiers. A tier is one price.</p></div>'
