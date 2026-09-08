@@ -444,3 +444,35 @@ a precondition for it.
 
 **Consequences.** The 1 October run bills almost nobody unless the switchover
 lands first. That is the deadline this work is actually against.
+
+---
+
+## ADR-015 -- Outbound mail stays restricted
+**2026-09-09 · Accepted**
+
+**Context.** `OUTBOUND_ALLOWLIST=etee3001@gmail.com` has been live in production
+since before this work started. Every message to any other address is dropped
+and marked `suppressed`. The original plan listed clearing it as a precondition
+for the system opening to parents.
+
+**Decision.** It stays. Ely, 09-09: no opening the mail.
+
+**Consequences, and they are the point.**
+
+- **No parent receives anything.** Not invoices, not payment confirmations, not
+  announcements, not password links. The system runs internally only.
+- **The billing switchover is therefore reversible in a way it would not
+  otherwise be.** A wrong invoice raised by the cron is a row in a table that
+  can be corrected or soft-deleted; a wrong invoice *emailed* is a conversation
+  with a parent. Keeping the allowlist on through the switchover removes the
+  one consequence that cannot be undone.
+- **Parent accounts still work.** Fifty-one exist and the portal is unaffected;
+  they simply are not notified. A parent who logs in sees their invoices.
+- **`email_queue` keeps filling.** Twelve rows are already permanently failed.
+  Suppressed messages are recorded rather than sent, so the queue is a log of
+  what would have gone out, and worth reading before the allowlist is ever
+  lifted.
+
+**Revisit when** the centre actually wants parents contacted by the system.
+Until then, treat any feature whose value depends on a parent receiving mail as
+not yet delivering that value, and say so rather than reporting it as done.
