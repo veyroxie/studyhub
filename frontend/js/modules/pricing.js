@@ -15,6 +15,9 @@
   // the server said.
 
   var _openCat = null;   // category id whose tiers are expanded
+  var _tab = 'catalogue';
+  var _preview = null;   // last price-preview response
+  var _pvMonth = '';
 
   function _money(n) { return 'RM' + (Number(n) || 0).toFixed(2); }
 
@@ -52,6 +55,101 @@
       if (!c.defaultTierName) return true;
       return !known[c.pricingCategoryId + '|' + c.defaultTierName];
     });
+  }
+
+  function _thisMonth() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  function _tabBar() {
+    var btn = function(id, label) {
+      var on = _tab === id;
+      return '<button onclick="App.Pricing._setTab(\'' + id + '\')" style="padding:0.35rem 0.9rem;font-size:0.78rem;font-weight:600;border:none;border-radius:6px;cursor:pointer;background:'
+        + (on ? 'var(--gold)' : 'transparent') + ';color:' + (on ? '#0a0a0a' : '#94a3b8') + '">' + label + '</button>';
+    };
+    return '<div style="display:inline-flex;gap:0.15rem;background:#f1f5f9;border-radius:8px;padding:0.2rem">'
+      + btn('catalogue', 'Catalogue') + btn('check', 'Invoice check') + '</div>';
+  }
+
+  function _setTab(t) {
+    _tab = t;
+    App.Router.refresh();
+    if (t === 'check' && !_preview) _loadPreview(_pvMonth || _thisMonth());
+  }
+
+  // The differ. It compares COMPUTED prices against what was invoiced, not
+  // whether an invoice exists -- 60 of 70 students have monthly invoicing off,
+  // so an existence check would look clean while verifying nothing.
+  async function _loadPreview(month) {
+    _pvMonth = month;
+    try {
+      _preview = await App.Api.get('/api/billing/price-preview?month=' + encodeURIComponent(month));
+    } catch (err) {
+      _preview = null;
+    }
+    App.Router.refresh();
+  }
+
+  function _checkPanel() {
+    var month = _pvMonth || _thisMonth();
+    var head = '<div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.9rem">'
+      + '<label style="font-size:0.8rem;color:#64748b">Month</label>'
+      + '<input type="month" value="' + month + '" onchange="App.Pricing._loadPreview(this.value)" style="padding:0.4rem 0.6rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:8px">'
+      + '</div>';
+
+    if (!_preview) return head + '<p style="font-size:0.85rem;color:#94a3b8">Loading…</p>';
+
+    var p = _preview;
+    var tile = function(label, n, colour) {
+      return '<div style="flex:1;min-width:96px;background:#fff;border:1px solid #e7e0d2;border-radius:10px;padding:0.6rem 0.75rem">'
+        + '<div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8">' + label + '</div>'
+        + '<div style="font-size:1.15rem;font-weight:700;color:' + colour + ';font-variant-numeric:tabular-nums">' + n + '</div></div>';
+    };
+
+    var rows = (p.students || []).map(function(st) {
+      var flag, colour;
+      if (st.unpriceable)      { flag = 'Cannot price'; colour = '#92400e'; }
+      else if (!st.hasInvoice) { flag = 'No invoice';   colour = '#64748b'; }
+      else if (st.difference === 0) { flag = 'Matches'; colour = '#15803d'; }
+      else { flag = (st.difference > 0 ? '+' : '') + _money(st.difference); colour = '#9c3b23'; }
+
+      var why = (st.lines || []).map(function(l) {
+        var bits = [l.className || l.categoryName];
+        if (l.tierName) bits.push(l.tierName);
+        if (l.sessionsPerWeek > 1) bits.push(l.sessionsPerWeek + 'x a week');
+        var txt = App.Utils.esc(bits.join(' · '));
+        if (l.problem) return '<div style="color:#92400e">' + txt + ' — ' + App.Utils.esc(l.problem) + '</div>';
+        if (l.source === 'credit-covered') return '<div style="color:#64748b">' + txt + ' — covered by credits</div>';
+        return '<div style="color:#64748b">' + txt + ' — ' + _money(l.amount) + ' (' + App.Utils.esc(l.source) + ')</div>';
+      }).join('');
+
+      return '<tr style="border-bottom:1px solid #f1f5f9">'
+        + '<td style="padding:0.55rem 0.5rem 0.55rem 0"><div style="font-weight:600;color:#111">' + App.Utils.esc(st.studentName) + '</div>'
+        +   '<div style="font-size:0.72rem;margin-top:0.15rem">' + why + '</div></td>'
+        + '<td style="padding:0.55rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums">' + (st.hasInvoice ? _money(st.invoiced) : '—') + '</td>'
+        + '<td style="padding:0.55rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums">' + (st.unpriceable ? '—' : _money(st.computed)) + '</td>'
+        + '<td style="padding:0.55rem 0 0.55rem 0.5rem;text-align:right;font-weight:700;color:' + colour + ';white-space:nowrap">' + flag + '</td>'
+        + '</tr>';
+    }).join('');
+
+    return head
+      + '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:1rem">'
+      +   tile('Matches', p.matching, '#15803d')
+      +   tile('Different', p.differing, '#9c3b23')
+      +   tile('Cannot price', p.unpriceable, '#92400e')
+      +   tile('No invoice', p.notInvoiced, '#64748b')
+      + '</div>'
+      + '<p style="font-size:0.76rem;color:#94a3b8;margin:0 0 0.6rem">Nothing here changes an invoice. It shows what the catalogue would charge beside what was actually billed.</p>'
+      + (rows
+        ? '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.85rem">'
+          + '<thead><tr style="border-bottom:1px solid #d6cdb9">'
+          + '<th style="text-align:left;padding:0 0.5rem 0.5rem 0;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;font-weight:600">Student</th>'
+          + '<th style="text-align:right;padding:0 0.5rem 0.5rem;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;font-weight:600">Invoiced</th>'
+          + '<th style="text-align:right;padding:0 0.5rem 0.5rem;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;font-weight:600">Catalogue</th>'
+          + '<th style="text-align:right;padding:0 0 0.5rem 0.5rem;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;font-weight:600">Result</th>'
+          + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : '<p style="font-size:0.85rem;color:#94a3b8">No students to compare for this month.</p>');
   }
 
   function render(container) {
@@ -102,11 +200,14 @@
       + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">'
       +   '<div><h1 style="font-size:1.4rem;font-weight:800;color:#0d0d0d;letter-spacing:-0.03em;margin:0">Pricing</h1>'
       +   '<p style="font-size:0.82rem;color:#64748b;margin:2px 0 0">A category owns named tiers. A tier is one price.</p></div>'
-      +   (isAdmin ? '<button onclick="App.Pricing._addCategory()" style="padding:0.45rem 0.95rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add category</button>' : '')
+      +   (isAdmin && _tab === 'catalogue' ? '<button onclick="App.Pricing._addCategory()" style="padding:0.45rem 0.95rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:8px;cursor:pointer">+ Add category</button>' : '')
       + '</div>'
-      // The backlog is the point of the screen, so it sits above the catalogue
-      // rather than being something you have to go looking for.
-      + (needing.length > 0
+      + _tabBar()
+      + (_tab === 'check' ? _checkPanel() : ''
+      )
+      // The backlog is the point of the catalogue tab, so it sits above the
+      // list rather than being something you have to go looking for.
+      + (_tab !== 'catalogue' ? '' : (needing.length > 0
         ? '<div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:12px;padding:0.9rem 1rem">'
           + '<div style="font-size:0.8rem;font-weight:700;color:#92400e;margin-bottom:0.4rem">' + needing.length + ' class' + (needing.length === 1 ? '' : 'es') + ' cannot be priced yet</div>'
           + '<div style="display:flex;flex-wrap:wrap;gap:0.35rem">'
@@ -118,7 +219,7 @@
           + '<p style="font-size:0.72rem;color:#b45309;margin:0.55rem 0 0">Each needs a tier in its category, or its own fixed price on the class.</p>'
           + '</div>'
         : '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:0.8rem 1rem;font-size:0.82rem;color:#166534;font-weight:600">Every class can be priced.</div>')
-      + '<div style="display:flex;flex-direction:column;gap:0.6rem">' + (rows || '<p style="font-size:0.85rem;color:#94a3b8">No categories yet.</p>') + '</div>'
+        + '<div style="display:flex;flex-direction:column;gap:0.6rem">' + (rows || '<p style="font-size:0.85rem;color:#94a3b8">No categories yet.</p>') + '</div>')
       + '</div>';
   }
 
@@ -257,6 +358,8 @@
 
   App.Pricing = {
     render: render,
+    _setTab: _setTab,
+    _loadPreview: _loadPreview,
     _toggle: _toggle,
     _addCategory: _addCategory,
     _editCategory: _editCategory,
