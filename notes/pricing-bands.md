@@ -640,14 +640,21 @@ Both are invisible today and become wrong prices the moment the catalogue goes l
   `jsonb_array_length(enrolled_classes)` equals the count of live `enrollments`
   rows. They may still disagree on WHICH classes; that is what the step-3
   differ must check. But the switchover is not repairing a live divergence.
-- **OPEN, and it blocks step 3.** Only ONE class in production carries a
-  `level_band` (`4-6`); the other 36 are empty, and `pricing_tiers` has no
-  empty-band row. So the old matrix can price exactly one class — yet the 09-01
-  cron issued 15 invoices, 9 of them to students with `package_amount = 0` and
-  no priceable class. **Something is pricing those invoices that this plan has
-  not identified.** The old-vs-new comparison cannot be trusted until the "old"
-  side is understood, because a differ that models the old path wrongly will
-  report clean.
+- **CLOSED 09-08 by the audit log. There was no unknown mechanism.** The
+  reasoning was right that the old matrix can price exactly one class (one
+  `level_band` of `4-6`, the other 36 empty, no empty-band tier row). The wrong
+  step was inferring that the cron therefore priced 15 invoices some other way.
+
+  It did not price them. `audit_logs` holds **no `invoice_created` row on
+  2026-09-01 at all**; it holds thirteen between 04:18 and 05:14 on 09-02, one
+  at a time, from `admin@studyhub.com`, plus one on 09-04. Nadine created
+  September's invoices BY HAND through the UI and set `created_on` to 09-01,
+  which is an editable field. The monthly cron created none of them.
+
+  So the old path is exactly as threadbare as the audit said and the step-3
+  differ has nothing hidden to model. What it must handle instead is that most
+  of September's invoices are hand-entered amounts with no derivation behind
+  them to compare against.
 - **Survived:** section 0's "(2 more) priced by `monthly_fee_override`" resolves
   cleanly. `Level 3 & 4` carries override 260.00 and now also tier Level 3-4
   whose 1x price is also 260.00 — the numbers agree, so override-beats-tier
@@ -720,8 +727,19 @@ teaching roster would go uninvoiced, silently, exactly as September did.
 
 This has to be confirmed with Nadine before the October run, and it is a
 better explanation for September's low invoice count than anything in section
-0. It is not obviously deliberate: 36 students were frozen on one day in
-August, which reads like a bulk action during a break that was never undone.
+0. **It was deliberate, and the audit log proves it** (checked 09-08): 37
+`subscription_freeze` actions by `admin@studyhub.com` on 2026-08-03 and 22 more
+on 08-12, through the UI. No migration touches the column. On 08-12 ten
+invoices were created and ten deleted the same day alongside the freezes, which
+reads as "generate, decide these should not be billed, freeze them".
+
+Ely confirmed the intended use to Nadine on 09-01: "press the freeze /
+auto-bill off button so he doesn't get invoiced". So freeze IS the sanctioned
+way to stop an invoice, and the 21 frozen students are a deliberate state.
+
+That makes this a workflow question rather than a bug. The October risk is
+unchanged: if those 21 are attending and meant to pay, nobody is invoiced and
+nothing says so.
 
 It also lands on the lifecycle work in `student-lifecycle-dates.md`: freeze is
 a single current-state flag with no dates, so nobody can answer "was this

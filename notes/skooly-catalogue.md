@@ -113,3 +113,45 @@ Ordered by what blocks work.
    students are in the group class.
 6. **English - Private (400)** -- is this a live product? No class in StudyHub
    references it.
+
+## 6. Answered by the group chat, 08-13 to 08-17
+
+Found in the WhatsApp export, so these needed no new question:
+
+**Phonics is RM60 per hour, group only, no level** (Nadine, 08-17: "Phonics
+will also cost RM60 per hour for group. No private. No level for phonics").
+`Phonics (Aria & Aleena)` runs Saturday 10:30-11:30, one hour, so RM60/session
+and RM240/month.
+
+**Its stored `monthly_fee_override` of 239.96 is therefore wrong, not merely
+odd.** It should be 240.00. Four sen, invisible while Aleena is on a package,
+real the moment she is not.
+
+**The RM30 thirty-minute Math class is Aleena's, and she is Level 0** (Nadine,
+08-17: "only one specific class. The girl is currently level 0"), answering the
+request from 08-13 for "Math group class (30 minutes options for RM30)".
+
+Aleena's week reconciles exactly against her `package_amount`:
+
+```
+  Phonics            1.0 h @ RM60/h = RM60   (group hourly rate)
+  Math, 30 min       0.5 h           = RM30
+                                       ----
+                                       RM90 x 4 weeks = RM360 = package_amount
+```
+
+**A note on the category flag raised earlier.** `Teacher Nadine (Aleena)` sits
+in `PC_group` despite being one-to-one, which `pricing-bands.md` section 12c
+called a miscategorisation. It is priced at the GROUP hourly rate of RM60,
+so the row is internally consistent and the derived sessions-per-week concern
+still applies but the price does not contradict the category. Whether a 1-to-1
+class should charge the group rate is Nadine's call, not a data fault.
+
+## 7. Still unanswered after the chat export
+
+Neither the Skooly list nor the full group chat resolves these:
+
+1. Group 5-6 twice-weekly: 1,010 or 490?
+2. Private 5-6: 520 or 780?
+3. Aria's second (Tuesday) Level 0 slot -- another RM80, or a two-slot rate?
+4. Why `Phonics (Aria & Aleena)` has no Aria enrolment.
