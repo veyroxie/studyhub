@@ -54,7 +54,7 @@
   }
 
   function _childrenCard() {
-    var students = (App.Store.get().students || []).filter(function(s) { return s.contact === App.clientParent; });
+    var students = App.Utils.childrenOf(App.Store.get().students, App.clientParent);
     var body;
     if (students.length === 0) {
       body = '<p style="font-size:0.85rem;color:#94a3b8;margin:1rem 0 0">No children linked to your account yet.</p>';

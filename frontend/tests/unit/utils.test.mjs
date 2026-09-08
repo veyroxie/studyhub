@@ -391,3 +391,35 @@ describe('runsOnDate — the one client-side answer to "is this class on today"'
     assert.equal(U.runsOnDate(cls, '2026-09-07', { scheduleVersions: versions, sessionMoves: moves }), true);
   });
 });
+
+// childrenOf — the parent-to-student match. Production has 21 students with a
+// blank contact and the admin's parent preview defaults to an empty string, so
+// the empty case is the one that matters: it rendered seven unrelated children
+// as one family on the parent dashboard.
+describe('childrenOf — an empty parent owns nobody', () => {
+  const students = [
+    { id: 'a', contact: 'mum@example.com' },
+    { id: 'b', contact: 'mum@example.com' },
+    { id: 'c', contact: 'dad@example.com' },
+    { id: 'd', contact: '' },
+    { id: 'e' },
+  ];
+
+  test('returns only that parent\'s children', () => {
+    assert.deepEqual(U.childrenOf(students, 'mum@example.com').map(s => s.id), ['a', 'b']);
+  });
+
+  test('an empty parent matches nobody, not every blank-contact student', () => {
+    assert.equal(U.childrenOf(students, '').length, 0);
+    assert.equal(U.childrenOf(students, null).length, 0);
+    assert.equal(U.childrenOf(students, undefined).length, 0);
+  });
+
+  test('a parent with no children is empty, not an error', () => {
+    assert.equal(U.childrenOf(students, 'nobody@example.com').length, 0);
+  });
+
+  test('a missing student list is empty, not an error', () => {
+    assert.equal(U.childrenOf(null, 'mum@example.com').length, 0);
+  });
+});

@@ -288,7 +288,7 @@
               // The same gate applies to progress reports + receipts so
               // the unpaid-invoice consequence is consistent everywhere.
               const isParent = App.currentRole === 'client';
-              const isMyChild = isParent && stu && stu.contact === App.clientParent;
+              const isMyChild = isParent && stu && !!App.clientParent && stu.contact === App.clientParent;
 
               const hasUnpaidMonthly = isParent && (state.invoices || []).some(function(i) {
                 return i.type === 'Monthly' && (i.status === 'Unpaid' || i.status === 'Overdue');

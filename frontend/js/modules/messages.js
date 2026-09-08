@@ -40,7 +40,7 @@
     var isParent  = App.currentRole === 'client';
     if (isParent) {
       return messages.filter(function(m) {
-        return m.toParent === App.clientParent && m.fromRole !== 'parent' && !m.read;
+        return !!App.clientParent && m.toParent === App.clientParent && m.fromRole !== 'parent' && !m.read;
       }).length;
     }
     if (isTeacher) {
@@ -325,7 +325,7 @@
       fromLabel = me ? (me.name || me.fullName) : 'Teacher';
     } else {
       fromRole  = 'parent';
-      var myStu = (s.students || []).find(function(st) { return st.contact === App.clientParent; });
+      var myStu = App.Utils.childrenOf(s.students, App.clientParent)[0];
       fromLabel = myStu ? myStu.parentName : 'Parent';
     }
 

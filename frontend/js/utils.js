@@ -379,6 +379,16 @@
       });
     },
 
+    // childrenOf is THE parent-to-student match. It exists because every caller
+    // used to write `s.contact === App.clientParent` by hand, and an empty
+    // clientParent -- the admin's parent preview with nothing selected -- then
+    // matched the 21 students who have no contact email, rendering seven
+    // unrelated children as one family. An empty parent owns nobody.
+    childrenOf(students, parentEmail) {
+      if (!parentEmail) return [];  // guard: blank must not match blank
+      return (students || []).filter(function(s) { return s.contact === parentEmail; });
+    },
+
     // holidayCovers is THE holiday range predicate (F4), mirrored by
     // core.HolidayCovers in Go -- keep the two in sync. Missing or malformed
     // endDate (before date) means single-day. Lexical compares: YYYY-MM-DD.

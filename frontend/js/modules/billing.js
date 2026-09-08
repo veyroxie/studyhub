@@ -199,7 +199,7 @@
 
     let displayInvoices = invoices;
     if (isClient && App.clientParent) {
-      const myStudentIds = students.filter(function(s) { return s.contact === App.clientParent; }).map(function(s) { return s.id; });
+      const myStudentIds = App.Utils.childrenOf(students, App.clientParent).map(function(s) { return s.id; });
       displayInvoices = invoices.filter(function(inv) { return myStudentIds.indexOf(inv.studentId) > -1; });
     }
 
@@ -237,7 +237,7 @@
     // ── Notification banners ──────────────────────────────────────────────────
     let notifBanner = '';
     if (isClient) {
-      const myIds = students.filter(function(s) { return s.contact === App.clientParent; }).map(function(s) { return s.id; });
+      const myIds = App.Utils.childrenOf(students, App.clientParent).map(function(s) { return s.id; });
       const myOverdue  = overdueInvs.filter(function(i) { return myIds.indexOf(i.studentId) > -1; });
       const myDueSoon  = dueSoon.filter(function(i) { return myIds.indexOf(i.studentId) > -1; });
       if (myOverdue.length > 0) {
@@ -315,7 +315,7 @@
       +   '<div class="ml-auto">'
       +     '<select onchange="App.Billing._setStudentFilter(this.value)" class="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 text-slate-600">'
       +     '<option value="">All Students</option>'
-      +     (isClient ? students.filter(function(s) { return s.contact === App.clientParent; }) : students).map(function(s) {
+      +     (isClient ? App.Utils.childrenOf(students, App.clientParent) : students).map(function(s) {
               return '<option value="' + s.id + '"' + (s.id === _studentFilter ? ' selected' : '') + '>' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</option>';
             }).join('')
       +     '</select>'
@@ -1661,7 +1661,7 @@
   function checkLoginNotifications() {
     const { invoices, students } = App.Store.get();
     if (App.currentRole !== 'client' || !App.clientParent) return;
-    const myIds = students.filter(function(s) { return s.contact === App.clientParent; }).map(function(s) { return s.id; });
+    const myIds = App.Utils.childrenOf(students, App.clientParent).map(function(s) { return s.id; });
     const myOverdue = invoices.filter(function(i) { return i.status === 'Overdue' && myIds.indexOf(i.studentId) > -1; });
     const today = new Date();
     const in7 = new Date(today); in7.setDate(today.getDate() + 7);

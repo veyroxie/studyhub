@@ -62,7 +62,7 @@
   function _renderParent(container) {
     var s = App.Store.get();
     var students = (s.students || []).filter(function(st) {
-      return st.contact === App.clientParent && st.status !== 'Inactive';
+      return !!App.clientParent && st.contact === App.clientParent && st.status !== 'Inactive';
     });
     var invoices = s.invoices || [];
     var reports  = (s.progressReports || []);

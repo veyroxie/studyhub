@@ -256,7 +256,7 @@
     var repCredits    = s.replacementCredits || [];
     var staff         = s.staff         || [];
 
-    var myStudents = students.filter(function(st) { return st.contact === App.clientParent && st.status !== 'Inactive'; });
+    var myStudents = App.Utils.childrenOf(students, App.clientParent).filter(function(st) { return st.status !== 'Inactive'; });
     var myIds      = myStudents.map(function(st) { return st.id; });
     var myInvoices = invoices.filter(function(i)  { return myIds.indexOf(i.studentId) > -1; });
 
@@ -293,14 +293,13 @@
       : '';
 
     var childNames = myStudents.map(function(st) { return App.Utils.esc(st.firstName); }).join(' &amp; ');
-    var _tod = _timeOfDay();
 
     // ── Hero ──────────────────────────────────────────────────────────────────
     var html = paymentGateBanner + '<div class="dash-hero">'
       + '<div style="display:flex;align-items:start;justify-content:space-between;gap:1rem;flex-wrap:wrap;position:relative;z-index:1">'
       +   '<div>'
       +     '<p style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--gold);margin:0 0 6px">' + _dateFull() + '</p>'
-      +     '<h1 style="font-family:var(--serif);font-size:1.7rem;font-weight:700;letter-spacing:-0.04em;color:#1a1a1a;line-height:1.2;margin:0">Good ' + _tod + (childNames ? ', ' + childNames + '\'s family' : '') + '</h1>'
+      +     '<h1 style="font-family:var(--serif);font-size:1.7rem;font-weight:700;letter-spacing:-0.04em;color:#1a1a1a;line-height:1.2;margin:0">' + (childNames || 'Dashboard') + '</h1>'
       +     '<p style="font-size:0.82rem;color:#64748b;margin:4px 0 0">' + myStudents.length + ' child' + (myStudents.length !== 1 ? 'ren' : '') + ' enrolled</p>'
       +   '</div>'
       +   '<button onclick="App.Router.navigate(\'profile\')" title="Edit profile" style="padding:0.45rem 0.9rem;font-size:0.75rem;font-weight:600;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:0.4rem;transition:all 0.15s" onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'#374151\'" onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#64748b\'">'
@@ -386,7 +385,7 @@
     if (myStudents.length === 0) {
       // Check if the parent already has pending enrollment requests.
       var pendingEnrollments = (s.registrations || []).filter(function(r) {
-        return r.type === 'enrollment' && r.status === 'pending' && r.email === App.clientParent;
+        return !!App.clientParent && r.type === 'enrollment' && r.status === 'pending' && r.email === App.clientParent;
       });
 
       html += '<div style="background:#fff;border-radius:16px;border:1px solid rgba(201,162,39,0.2);padding:2.5rem 2rem;max-width:560px;margin:1rem auto 0">'
@@ -772,7 +771,7 @@
   function _referAFriendCard(state) {
     var families = state.families || [];
     var rewards  = state.referralRewards || [];
-    var myFamily = families.find(function(f) { return f.contact === App.clientParent; });
+    var myFamily = App.clientParent ? families.find(function(f) { return f.contact === App.clientParent; }) : null;
     if (!myFamily) return '';
 
     var myRewards = rewards.filter(function(r) { return r.referrerFamilyId === myFamily.id; });

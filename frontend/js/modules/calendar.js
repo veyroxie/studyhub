@@ -639,7 +639,7 @@
     if (!rating) { App.Utils.showToast('Please select a star rating', 'warning'); return; }
     var comment = (document.getElementById('feedback-comment-' + classId)||{}).value || '';
     var state = App.Store.get();
-    var parentStudentIds = state.students.filter(function(s){ return s.contact===App.clientParent; }).map(function(s){ return s.id; });
+    var parentStudentIds = App.Utils.childrenOf(state.students, App.clientParent).map(function(s){ return s.id; });
     var studentId = parentStudentIds[0] || '';
     var newFeedback = {
       id: App.Utils.generateId('fb'),

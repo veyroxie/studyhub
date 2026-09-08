@@ -660,7 +660,7 @@
           statusEl.innerHTML = '<span class="text-purple-400 font-semibold">Teacher</span>: ' + App.Utils.esc(t ? t.fullName : App.currentTeacher);
         } else {
           const { students } = App.Store.get();
-          const myStudents = students.filter(function(s) { return s.contact === App.clientParent; });
+          const myStudents = App.Utils.childrenOf(students, App.clientParent);
           const names = myStudents.map(function(s) { return App.Utils.esc(s.firstName); }).join(', ');
           statusEl.innerHTML = '<span class="text-emerald-400 font-semibold">Parent</span>: ' + App.Utils.esc(App.clientParent || '—')
             + '<br>Children: <span class="text-white">' + (names || 'none') + '</span>';
