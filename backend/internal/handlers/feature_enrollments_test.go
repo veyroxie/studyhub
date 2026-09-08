@@ -183,6 +183,30 @@ func TestEnrollments_StartDateIsChosenNotAssumed(t *testing.T) {
 		return got
 	}
 
+	// Creating a student with a backdated start records it too. Add Student and
+	// Edit Student embed the same enrolment field as the Classes tab, so all
+	// three must carry the date -- the original bug was one surface having it.
+	w = authedJSON(t, r, "POST", "/api/students", tok, map[string]any{
+		"firstName": "Created", "lastName": "Backdated",
+		"contact": "created-backdated@example.com", "parentName": "CB Parent",
+		"phone": "60123450003", "branch": "The Study Hub",
+		"enrolledClasses": []string{classes["Backdate B"]},
+		"enrolledFrom":    "2026-08-01",
+	})
+	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+		t.Fatalf("create with a backdate failed: %d %s", w.Code, w.Body.String())
+	}
+	var madeBackdated struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &madeBackdated)
+	var createdStart string
+	db.QueryRow(`SELECT started_on FROM enrollments WHERE student_id=? AND class_id=?`,
+		madeBackdated.ID, classes["Backdate B"]).Scan(&createdStart)
+	if createdStart != "2026-08-01" {
+		t.Fatalf("create path must record the chosen start: want 2026-08-01, got %s", createdStart)
+	}
+
 	const backdate = "2026-08-05"
 	w = authedJSON(t, r, "PUT", "/api/students/"+created.ID, tok, map[string]any{
 		"firstName": "Backdate", "lastName": "Joiner",

@@ -336,9 +336,6 @@
       + '<p class="text-sm text-slate-500 mb-4">' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</p>'
       + '<form id="enroll-classes-form" class="space-y-4">'
       + _multiClassField(s.enrolledClasses || [], state.classes || [], state.staff || [])
-      + _field('Starting from',
-          '<input name="enrolledFrom" type="date" class="form-input" value="' + App.Utils.today() + '" required>'
-          + '<p class="text-xs text-slate-400 mt-1">When newly ticked classes begin. Backdate it if the student has already been attending, or their earlier attendance will not show.</p>')
       + '<div class="flex justify-end gap-3 pt-1">'
       + '<button type="button" onclick="App.Students._viewModal(\'' + studentId + '\')" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>'
@@ -715,6 +712,7 @@
         inactiveReason: fd.get('inactiveReason') || '',
         inactiveOn: fd.get('inactiveOn') || '',
         enrolledClasses: newClasses,
+        enrolledFrom: fd.get('enrolledFrom') || '',
         notes: fd.get('notes'),
         emergency2Name: fd.get('emergency2Name') || '',
         emergency2Phone: fd.get('emergency2Phone') || '',
@@ -816,6 +814,7 @@
         status: 'New',
         registeredOn: App.Utils.today(),
         enrolledClasses: selectedClasses,
+        enrolledFrom: fd.get('enrolledFrom') || '',
         siblings: [],
         notes: '',
         emergency2Name: fd.get('emergency2Name') || '',
@@ -867,7 +866,17 @@
         : App.Utils.filterFor('enr-list', 'Filter by class, day or teacher...')
           + '<div id="enr-list" style="max-height:15rem;overflow-y:auto;display:flex;flex-direction:column;gap:0.2rem">' + rows + '</div>'
           + '<p style="margin-top:0.5rem;font-size:0.72rem;color:#94a3b8">Tick a class to enrol, untick to remove.</p>')
-      + '</div></div>';
+      + '</div>'
+      // The start date lives HERE, not on one of the three forms that embed
+      // this field, so every surface that can enrol also records WHEN. It was
+      // on the Classes tab alone, and Add/Edit Student silently stamped today
+      // -- which is the bug migration 0055 had to repair.
+      + '<div style="margin-top:0.6rem">'
+      +   '<label class="block text-sm font-medium text-slate-700 mb-1">Starting from</label>'
+      +   '<input name="enrolledFrom" type="date" class="form-input" value="' + App.Utils.today() + '" required>'
+      +   '<p style="margin-top:0.3rem;font-size:0.72rem;color:#94a3b8">When newly ticked classes begin. Backdate it if the student has already been attending, or their earlier attendance will not show.</p>'
+      + '</div>'
+      + '</div>';
   }
 
   // One tickable row per class. The checkbox is the value itself, so the
