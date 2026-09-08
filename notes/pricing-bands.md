@@ -741,13 +741,19 @@ both visible.
 
 Seven of the nine private students resolve cleanly.
 
-### Level 0 has no tier and no price
+### Level 0 has no tier -- but it does have a price
 
-The catalogue holds `Level 1-2`, `Level 3-4`, `Level 5-6` (0051). There is no
-Level 0, so Aria and Aleena remain unpriceable -- the same state they were in
-before the question was asked. This needs a price from Nadine, not a mapping
-decision: extending `Level 1-2` downward would invent a rate for a level she
-has told us is distinct.
+The catalogue holds `Level 1-2`, `Level 3-4`, `Level 5-6` (0051), so Level 0
+still needs a tier adding. **The price is not an open question**: Skooly lists
+"Singapore Math (Lvl 0) - Private" at RM320/month, RM80/week, which is the
+`session_rate` of 80 already sitting on `Teacher Chiying (Aria)` and which
+Nadine confirmed 09-08. See `skooly-catalogue.md`.
+
+Aleena needs no new tier at all. Her RM90 is a 1.5-hour Saturday block --
+Phonics 10:30-11:30 plus a 30-minute maths slot at 11:30 -- and her stored
+`package_amount` of 360 is exactly 4 x 90. The RM30 that section 9 flagged as
+a stray rate is a THIRTY-MINUTE session at the same RM60/hour, so it is
+correct and that question is closed.
 
 Aria is the harder of the two, because she also holds two live Private
 enrolments with `session_rate` 80 on one of them. She is simultaneously a
@@ -760,10 +766,12 @@ Confirmed 09-08: these subjects have NO level, and Ely confirmed the model
 supports a level-less subject. That settles the SHAPE -- a category whose
 single tier carries a price, no level dimension.
 
-It does not settle the PRICE, and nobody has asked for one. Mandarin has three
-live students (Chase, Zayden, Luther) and no price of any kind. Phonics prices
-by a `monthly_fee_override` of 239.96, which is an odd enough number to be
-worth confirming rather than inheriting.
+**The price came from Skooly, not from asking again**: "Mandarin - Group" is
+RM240/month (RM60/week). All three current Mandarin students are in the
+Thursday group class, so that is the number.
 
-**Luther's retroactive September invoice is still blocked on the Mandarin
-price.** That is the only remaining blocker on step 4.
+**This unblocks Luther's retroactive September invoice**, which was the last
+thing step 4 was waiting on.
+
+Phonics still prices by a `monthly_fee_override` of 239.96, four sen short of
+240. Cosmetic while Aleena is on a package, wrong the moment she is not.
