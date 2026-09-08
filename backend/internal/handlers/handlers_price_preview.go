@@ -31,6 +31,7 @@ type PriceComparison struct {
 	Computed    float64           `json:"computed"`
 	Difference  float64           `json:"difference"`
 	Unpriceable bool              `json:"unpriceable"`
+	InvoiceIDs  []string          `json:"invoiceIds"`
 	Lines       []store.PriceLine `json:"lines"`
 }
 
@@ -60,10 +61,14 @@ func HandlePricePreview(db *store.DB) http.HandlerFunc {
 		// period, not created_on: an invoice raised in September for August is
 		// an August invoice (cron.go:649-655).
 		invoiced := map[string]float64{}
+		invIDs := map[string][]string{}
 		tw, twArgs := store.ScopeTenant(c, "")
 		args := append([]any{month}, twArgs...)
-		rows, err := db.Query(`SELECT student_id, COALESCE(SUM(amount),0) FROM invoices
-			WHERE deleted_at IS NULL AND type='Monthly' AND period=?`+tw+` GROUP BY student_id`, args...)
+		// Ids as well as totals: a row on this screen has to be able to open
+		// the actual invoice, otherwise a difference is a number with nothing
+		// behind it.
+		rows, err := db.Query(`SELECT student_id, id, COALESCE(amount,0) FROM invoices
+			WHERE deleted_at IS NULL AND type='Monthly' AND period=?`+tw+` ORDER BY created_on`, args...)
 		if err != nil {
 			core.RespondError(w, "server error", 500)
 			return
@@ -71,10 +76,11 @@ func HandlePricePreview(db *store.DB) http.HandlerFunc {
 		func(rs *sql.Rows) {
 			defer rs.Close()
 			for rs.Next() {
-				var id string
+				var sid, invID string
 				var amt float64
-				if rs.Scan(&id, &amt) == nil {
-					invoiced[id] = amt
+				if rs.Scan(&sid, &invID, &amt) == nil {
+					invoiced[sid] += amt
+					invIDs[sid] = append(invIDs[sid], invID)
 				}
 			}
 		}(rows)
@@ -96,7 +102,7 @@ func HandlePricePreview(db *store.DB) http.HandlerFunc {
 				StudentID: sp.StudentID, StudentName: sp.StudentName,
 				Invoiced: amt, HasInvoice: has, Computed: sp.Total,
 				Difference: round2cmp(sp.Total - amt), Unpriceable: sp.Unpriceable,
-				Lines: sp.Lines,
+				InvoiceIDs: invIDs[sp.StudentID], Lines: sp.Lines,
 			}
 			out.Students = append(out.Students, cmp)
 			switch {

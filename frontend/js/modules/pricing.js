@@ -108,11 +108,15 @@
     };
 
     var rows = (p.students || []).map(function(st) {
+      // The question this screen answers is "what happens to this parent's
+      // bill if we switch over", so the column says that rather than printing
+      // a signed delta the reader has to work out the direction of.
       var flag, colour;
-      if (st.unpriceable)      { flag = 'Cannot price'; colour = '#92400e'; }
-      else if (!st.hasInvoice) { flag = 'No invoice';   colour = '#64748b'; }
-      else if (st.difference === 0) { flag = 'Matches'; colour = '#15803d'; }
-      else { flag = (st.difference > 0 ? '+' : '') + _money(st.difference); colour = '#9c3b23'; }
+      if (st.unpriceable)      { flag = 'No price yet';        colour = '#92400e'; }
+      else if (!st.hasInvoice) { flag = 'Not billed';          colour = '#64748b'; }
+      else if (st.difference === 0) { flag = 'No change';      colour = '#15803d'; }
+      else if (st.difference > 0)   { flag = 'Goes UP ' + _money(st.difference);       colour = '#9c3b23'; }
+      else                          { flag = 'Goes DOWN ' + _money(-st.difference);    colour = '#9c3b23'; }
 
       var why = (st.lines || []).map(function(l) {
         var bits = [l.className || l.categoryName];
@@ -124,10 +128,20 @@
         return '<div style="color:#64748b">' + txt + ' — ' + _money(l.amount) + ' (' + App.Utils.esc(l.source) + ')</div>';
       }).join('');
 
+      // The invoiced figure opens the actual invoice. A difference with
+      // nothing behind it is a number to argue with; the invoice is the thing
+      // that settles it. Same modal the Billing page uses (ADR-001).
+      var ids = st.invoiceIds || [];
+      var invCell = st.hasInvoice
+        ? '<button onclick="App.Pricing._openInvoice(\'' + (ids[0] || '') + '\')" title="Open this invoice"'
+          + ' style="background:none;border:none;padding:0;font:inherit;color:#1d4ed8;text-decoration:underline;cursor:pointer;font-variant-numeric:tabular-nums">'
+          + _money(st.invoiced) + '</button>'
+          + (ids.length > 1 ? '<div style="font-size:0.66rem;color:#94a3b8">' + ids.length + ' invoices</div>' : '')
+        : '—';
       return '<tr style="border-bottom:1px solid #f1f5f9">'
         + '<td style="padding:0.55rem 0.5rem 0.55rem 0"><div style="font-weight:600;color:#111">' + App.Utils.esc(st.studentName) + '</div>'
         +   '<div style="font-size:0.72rem;margin-top:0.15rem">' + why + '</div></td>'
-        + '<td style="padding:0.55rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums">' + (st.hasInvoice ? _money(st.invoiced) : '—') + '</td>'
+        + '<td style="padding:0.55rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums">' + invCell + '</td>'
         + '<td style="padding:0.55rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums">' + (st.unpriceable ? '—' : _money(st.computed)) + '</td>'
         + '<td style="padding:0.55rem 0 0.55rem 0.5rem;text-align:right;font-weight:700;color:' + colour + ';white-space:nowrap">' + flag + '</td>'
         + '</tr>';
@@ -135,12 +149,12 @@
 
     return head
       + '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:1rem">'
-      +   tile('Matches', p.matching, '#15803d')
-      +   tile('Different', p.differing, '#9c3b23')
-      +   tile('Cannot price', p.unpriceable, '#92400e')
-      +   tile('No invoice', p.notInvoiced, '#64748b')
+      +   tile('No change', p.matching, '#15803d')
+      +   tile('Bill changes', p.differing, '#9c3b23')
+      +   tile('No price yet', p.unpriceable, '#92400e')
+      +   tile('Not billed', p.notInvoiced, '#64748b')
       + '</div>'
-      + '<p style="font-size:0.76rem;color:#94a3b8;margin:0 0 0.6rem">Nothing here changes an invoice. It shows what the catalogue would charge beside what was actually billed.</p>'
+      + '<p style="font-size:0.76rem;color:#94a3b8;margin:0 0 0.6rem">Nothing here changes an invoice. It shows what would happen to each bill if invoicing switched to the catalogue. Click an invoiced amount to open the invoice.</p>'
       + (rows
         ? '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.85rem">'
           + '<thead><tr style="border-bottom:1px solid #d6cdb9">'
@@ -221,6 +235,15 @@
         : '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:0.8rem 1rem;font-size:0.82rem;color:#166534;font-weight:600">Every class can be priced.</div>')
         + '<div style="display:flex;flex-direction:column;gap:0.6rem">' + (rows || '<p style="font-size:0.85rem;color:#94a3b8">No categories yet.</p>') + '</div>')
       + '</div>';
+  }
+
+  function _openInvoice(invoiceId) {
+    if (!invoiceId) return;
+    if (!App.Billing || !App.Billing._viewInvoiceModal) {
+      App.Utils.showToast('Open Bills & Payments to view this invoice', 'info');
+      return;
+    }
+    App.Billing._viewInvoiceModal(invoiceId);
   }
 
   function _toggle(catId) {
@@ -359,6 +382,7 @@
   App.Pricing = {
     render: render,
     _setTab: _setTab,
+    _openInvoice: _openInvoice,
     _loadPreview: _loadPreview,
     _toggle: _toggle,
     _addCategory: _addCategory,
