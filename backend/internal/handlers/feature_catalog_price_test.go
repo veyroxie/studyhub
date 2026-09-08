@@ -104,6 +104,48 @@ func TestCatalogPrices(t *testing.T) {
 		t.Fatalf("no tier must be flagged at 0, got %v unpriceable=%v", p.Total, p.Unpriceable)
 	}
 
+	// The standing discount is a LINE, not a smaller total. Five students were
+	// invoiced below the catalogue with every discount column at zero, so the
+	// switchover would have raised their bills with nothing to explain it.
+	if _, err := db.Exec(`UPDATE students SET standing_discount=10, standing_discount_reason='Goodwill' WHERE id=?`, once); err != nil {
+		t.Fatalf("set discount: %v", err)
+	}
+	p2 := priceOf(store.CatalogPrices(db, claims, ""), once)
+	if p2.Total != 250 {
+		t.Fatalf("260 less a 10 discount is 250, got %v", p2.Total)
+	}
+	var found bool
+	for _, l := range p2.Lines {
+		if l.Source == store.SourceDiscount {
+			found = true
+			if l.Amount != -10 {
+				t.Fatalf("the discount line must be negative 10, got %v", l.Amount)
+			}
+			if l.ClassName != "Goodwill" {
+				t.Fatalf("the line must carry the reason, got %q", l.ClassName)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("a discount must appear as its own line, not vanish into the total")
+	}
+
+	// A student who cannot be priced gets no discount line: subtracting from a
+	// total that does not exist would invent a negative bill and imply the
+	// pricing resolved when it did not.
+	if _, err := db.Exec(`UPDATE students SET standing_discount=10, standing_discount_reason='Goodwill' WHERE id=?`, untiered); err != nil {
+		t.Fatalf("set discount on untiered: %v", err)
+	}
+	if p3 := priceOf(store.CatalogPrices(db, claims, ""), untiered); p3.Total != 0 || !p3.Unpriceable {
+		t.Fatalf("unpriceable student must stay 0 and flagged, got %v flagged=%v", p3.Total, p3.Unpriceable)
+	}
+
+	// Clear it again: the as-of assertions below reuse this student and expect
+	// the undiscounted 260.
+	if _, err := db.Exec(`UPDATE students SET standing_discount=0, standing_discount_reason='' WHERE id=?`, once); err != nil {
+		t.Fatalf("clear discount: %v", err)
+	}
+
 	// As-of matters for the differ, which compares PAST months. Using today's
 	// enrolments to price August priced two students who had since left at 0
 	// against a real August invoice, reading as a mispricing rather than as

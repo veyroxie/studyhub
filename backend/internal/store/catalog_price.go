@@ -39,6 +39,7 @@ const (
 	SourceOverride      = "class rate"
 	SourceCreditCovered = "credit-covered"
 	SourcePlan          = "tier"
+	SourceDiscount      = "standing discount"
 	SourceUnpriceable   = "unpriceable"
 )
 
@@ -118,12 +119,15 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 	prows.Close()
 
 	type stu struct {
-		name string
-		pkg  float64
+		name       string
+		pkg        float64
+		discount   float64
+		discReason string
 	}
 	students := map[string]stu{}
 	order := []string{}
-	srows, err := db.Query(`SELECT id, first_name || ' ' || last_name, COALESCE(package_amount,0)
+	srows, err := db.Query(`SELECT id, first_name || ' ' || last_name, COALESCE(package_amount,0),
+		COALESCE(standing_discount,0), COALESCE(standing_discount_reason,'')
 		FROM students WHERE deleted_at IS NULL`+tw+` ORDER BY first_name, last_name`, twArgs...)
 	if err != nil {
 		core.Logger.Error("catalog price: student load failed", "err", err)
@@ -132,7 +136,7 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 	for srows.Next() {
 		var id string
 		var s stu
-		if srows.Scan(&id, &s.name, &s.pkg) == nil {
+		if srows.Scan(&id, &s.name, &s.pkg, &s.discount, &s.discReason) == nil {
 			students[id] = s
 			order = append(order, id)
 		}
@@ -165,7 +169,8 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 
 	out := []StudentPrice{}
 	for _, sid := range order {
-		out = append(out, priceOne(sid, students[sid].name, students[sid].pkg, enrol[sid], tier, classes, plans))
+		st := students[sid]
+		out = append(out, priceOne(sid, st.name, st.pkg, st.discount, st.discReason, enrol[sid], tier, classes, plans))
 	}
 	return out
 }
@@ -181,16 +186,16 @@ func itoaSmall(n int) string {
 	return string(rune('0' + n))
 }
 
-func priceOne(studentID, name string, pkg float64, classIDs []string, tier map[string]string,
-	classes map[string]catClass, plans map[string]float64) StudentPrice {
+func priceOne(studentID, name string, pkg, discount float64, discReason string, classIDs []string,
+	tier map[string]string, classes map[string]catClass, plans map[string]float64) StudentPrice {
 
 	sp := StudentPrice{StudentID: studentID, StudentName: name, Lines: []PriceLine{}}
 
 	// A package is the whole price. AI_DOCS/billing.md: it short-circuits
 	// per-class pricing entirely, and that rule does not change here.
 	if pkg > 0 {
-		sp.Total = round2(pkg)
-		sp.Lines = append(sp.Lines, PriceLine{Amount: sp.Total, Source: SourcePackage, ClassName: "Package"})
+		sp.Lines = append(sp.Lines, PriceLine{Amount: round2(pkg), Source: SourcePackage, ClassName: "Package"})
+		sp.Total = round2(pkg + applyDiscount(&sp, discount, discReason))
 		return sp
 	}
 
@@ -289,8 +294,30 @@ func priceOne(studentID, name string, pkg float64, classIDs []string, tier map[s
 	for _, l := range sp.Lines {
 		total += l.Amount
 	}
+	// A student who cannot be priced gets no discount line either. Subtracting
+	// from a total we do not have would produce a negative bill and imply the
+	// pricing was resolved when it was not.
+	if !sp.Unpriceable && total > 0 {
+		total += applyDiscount(&sp, discount, discReason)
+	}
 	sp.Total = round2(total)
 	return sp
+}
+
+// applyDiscount appends the standing discount as its own NEGATIVE line and
+// returns what it takes off. A line rather than a smaller total is the whole
+// point: five students were invoiced below the catalogue with no discount
+// recorded anywhere, so nobody could say why (ADR-013).
+func applyDiscount(sp *StudentPrice, amount float64, reason string) float64 {
+	if amount <= 0 {
+		return 0
+	}
+	name := reason
+	if name == "" {
+		name = "Standing discount"
+	}
+	sp.Lines = append(sp.Lines, PriceLine{ClassName: name, Amount: round2(-amount), Source: SourceDiscount})
+	return -round2(amount)
 }
 
 func round2(v float64) float64 { return math.Round(v*100) / 100 }

@@ -145,9 +145,15 @@ type Student struct {
 	// classes straddling the boundary. '' = use the class's band (0045).
 	LevelBand string `json:"levelBand"`
 
-	PackageAmount         float64 `json:"packageAmount"`
-	PackageSelfStudyHours int     `json:"packageSelfStudyHours"`
-	SubscriptionStatus    string  `json:"subscriptionStatus"`
+	PackageAmount float64 `json:"packageAmount"`
+	// StandingDiscount is a monthly reduction agreed with one family, applied
+	// as its own invoice line so it is visible rather than typed into a
+	// smaller total (migration 0059). The reason is what makes it explainable
+	// to a parent, which is the whole point of recording it.
+	StandingDiscount       float64 `json:"standingDiscount"`
+	StandingDiscountReason string  `json:"standingDiscountReason"`
+	PackageSelfStudyHours  int     `json:"packageSelfStudyHours"`
+	SubscriptionStatus     string  `json:"subscriptionStatus"`
 	// DropinSelfStudy marks a casual pay-per-session student (not on the monthly
 	// package). Only these appear in the manual self-study invoice picker, so a
 	// package student — already auto-billed for overflow by the cron — can't be

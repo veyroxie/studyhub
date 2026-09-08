@@ -683,6 +683,11 @@
       + _multiClassField(s.enrolledClasses, state.classes, state.staff)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="' + (s.packageAmount || 0) + '">')
+      + _field('Standing discount (RM/month)',
+          '<input name="standingDiscount" type="number" step="0.01" min="0" class="form-input" value="' + (s.standingDiscount || 0) + '">'
+          + '<input name="standingDiscountReason" class="form-input" style="margin-top:0.35rem" placeholder="Why, e.g. Long-standing family" value="' + App.Utils.esc(s.standingDiscountReason || '') + '" maxlength="80">',
+          'Comes off every monthly invoice as its own line, so a parent can see it. Leave at 0 for none.')
+
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="' + (s.packageSelfStudyHours == null ? 4 : s.packageSelfStudyHours) + '">')
       + '</div>'
       + _field('Pricing level band', '<select name="levelBand" class="form-input">'
@@ -730,6 +735,8 @@
         medicalInfo: fd.get('medicalInfo') || '',
         allergies: fd.get('allergies') || '',
         packageAmount: parseFloat(fd.get('packageAmount')) || 0,
+        standingDiscount: parseFloat(fd.get('standingDiscount')) || 0,
+        standingDiscountReason: fd.get('standingDiscountReason') || '',
         levelBand: fd.get('levelBand') || '',
         packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4,
         dropinSelfStudy: !!fd.get('dropinSelfStudy')
@@ -773,6 +780,11 @@
       + _multiClassField([], classes, staff)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Monthly Package (RM)', '<input name="packageAmount" type="number" step="0.01" min="0" class="form-input" value="0" placeholder="e.g. 380">')
+      + _field('Standing discount (RM/month)',
+          '<input name="standingDiscount" type="number" step="0.01" min="0" class="form-input" value="0">'
+          + '<input name="standingDiscountReason" class="form-input" style="margin-top:0.35rem" placeholder="Why, e.g. Long-standing family" value="" maxlength="80">',
+          'Comes off every monthly invoice as its own line, so a parent can see it. Leave at 0 for none.')
+
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="4">')
       + '</div>'
       + _field('Pricing level band', '<select name="levelBand" class="form-input">'
@@ -833,6 +845,8 @@
         medicalInfo: fd.get('medicalInfo') || '',
         allergies: fd.get('allergies') || '',
         packageAmount: parseFloat(fd.get('packageAmount')) || 0,
+        standingDiscount: parseFloat(fd.get('standingDiscount')) || 0,
+        standingDiscountReason: fd.get('standingDiscountReason') || '',
         levelBand: fd.get('levelBand') || '',
         packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4,
         dropinSelfStudy: !!fd.get('dropinSelfStudy'),
@@ -1112,8 +1126,9 @@
   function _infoRow(label, value) {
     return '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-0.5">' + label + '</div><div class="font-medium text-slate-700">' + value + '</div></div>';
   }
-  function _field(label, inputHtml) {
-    return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml + '</div>';
+  function _field(label, inputHtml, hint) {
+    return '<div><label class="block text-sm font-medium text-slate-700 mb-1">' + label + '</label>' + inputHtml
+      + (hint ? '<p class="text-xs text-slate-400 mt-1">' + hint + '</p>' : '') + '</div>';
   }
 
   // ── Inline edit (view modal) ───────────────────────────────────────────────
