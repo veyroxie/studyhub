@@ -810,3 +810,67 @@ thing step 4 was waiting on.
 
 Phonics still prices by a `monthly_fee_override` of 239.96, four sen short of
 240. Cosmetic while Aleena is on a package, wrong the moment she is not.
+
+## 15. First real differ run, 09-08 -- what it found
+
+`make migration-dryrun` now runs `cmd/pricecheck` against the restored copy of
+production: the same resolver the cron will use, on real data, writing nothing.
+This is the step-3 comparison, and it can be run today without deploying.
+
+September 2026, current enrolments:
+
+```
+  9 match exactly    6 differ    9 cannot be priced    9 not invoiced
+```
+
+### The nine matches are the good news
+
+Aleena 360, Ari 260, Hao Yun 260, Jiho Yoo 520, Koki 480, Lucy 490, Riku 260,
+Stephanie 260, Zayden 480. The catalogue reproduces what Nadine typed by hand,
+including Lucy's twice-weekly 490 as ONE charge rather than two.
+
+### The differences are two separate causes, and neither is a pricing bug
+
+**A RM10 hand discount that the system cannot see.** Rui Xiang, Sukie Ren and
+Jiho Choi are each invoiced exactly 10 below the catalogue. Every discount
+column on those invoices is 0.00 -- `early_bird_discount`, `sibling_discount`,
+`referral_credit` and `discount_pct` alike. The reduction exists only as a
+smaller number typed into the amount.
+
+That matters more than the ten ringgit: **when auto-billing takes over, those
+parents' bills go UP by 10** unless the discount is recorded as a discount.
+Nobody would be able to explain why from the data.
+
+Utaha differs by 30 for two reasons at once: the same RM10, plus the Level 3
+band question in ADR-007 (Nadine prices Level 3 at 240, the catalogue puts it
+in Level 3-4 at 260).
+
+**Two students are invoiced with no enrolment at all.** Blake Liu (230) and
+Valerie Liu (250) hold zero enrolment rows, so the catalogue correctly computes
+0 and the difference is the whole invoice. They are being billed for classes
+the system does not know they attend. Elijah Shi and Lee Ya Shan are the same
+shape in August.
+
+### Two bugs the run found in the differ itself
+
+**Past months were priced with today's enrolments.** Pricing August against
+current enrolments charged nothing for students who had since left, and read as
+a mispricing rather than as "they were still here then". `CatalogPrices` now
+takes an as-of date and reads the enrolment window half-open, the same rule
+`enrolledOn` uses.
+
+**Past months are not trustworthy anyway, and the run proves it.** Migration
+0055 could backdate a start date only where attendance proved one, so students
+with no attendance still carry the day their row was created (2026-08-30). An
+August comparison therefore reads half the roster as not yet enrolled. The
+default month is now the current one, which uses live enrolments and is the
+month the switchover actually affects.
+
+### What has to happen before the switchover
+
+1. **Record the RM10 discounts as discounts**, or accept that three parents'
+   invoices rise. This is the only finding that changes what a parent pays.
+2. **Blake and Valerie need enrolments**, or an explanation of what they are
+   being billed for.
+3. The nine unpriceable are the known backlog: the private classes and
+   Mandarin, waiting on tiers Nadine can now create herself.

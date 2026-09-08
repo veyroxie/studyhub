@@ -69,7 +69,14 @@ type catClass struct {
 
 // CatalogPrices computes the catalogue price for every non-deleted student in
 // the tenant, in a fixed number of queries rather than one per student.
-func CatalogPrices(db *DB, c *core.Claims) []StudentPrice {
+//
+// asOf is the date the enrolments are read AT, in YYYY-MM-DD. Pass "" for
+// "live right now". It matters because the differ compares PAST months: using
+// today's enrolments to price August charged nothing for two students who had
+// left since, and would have shown a clean 0 against a real invoice. The
+// window is half-open [started_on, ended_on), the same rule enrolledOn and
+// EnrollmentWindowsIn already use, so the day a student leaves is not counted.
+func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 	tw, twArgs := ScopeTenant(c, "")
 
 	classes := map[string]catClass{}
@@ -132,11 +139,17 @@ func CatalogPrices(db *DB, c *core.Claims) []StudentPrice {
 	}
 	srows.Close()
 
-	// Live enrolments only. An ended one belongs to a month already invoiced.
 	enrol := map[string][]string{} // studentID -> classIDs
 	tier := map[string]string{}    // studentID|classID -> tier chosen at enrolment
-	erows, err := db.Query(`SELECT student_id, class_id, COALESCE(tier_name,'')
-		FROM enrollments WHERE ended_on IS NULL`+tw, twArgs...)
+	enrolSQL := `SELECT student_id, class_id, COALESCE(tier_name,'')
+		FROM enrollments WHERE ended_on IS NULL` + tw
+	enrolArgs := twArgs
+	if asOf != "" {
+		enrolSQL = `SELECT student_id, class_id, COALESCE(tier_name,'')
+			FROM enrollments WHERE started_on <= ? AND (ended_on IS NULL OR ended_on > ?)` + tw
+		enrolArgs = append([]any{asOf, asOf}, twArgs...)
+	}
+	erows, err := db.Query(enrolSQL, enrolArgs...)
 	if err != nil {
 		core.Logger.Error("catalog price: enrolment load failed", "err", err)
 		return nil

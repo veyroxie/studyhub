@@ -80,7 +80,11 @@ func HandlePricePreview(db *store.DB) http.HandlerFunc {
 		}(rows)
 
 		out := PricePreview{Month: month, Students: []PriceComparison{}}
-		for _, sp := range store.CatalogPrices(db, c) {
+		// Price the month being compared, not today. Two students who left
+		// since August priced at 0 against a real August invoice, which read
+		// as a mispricing rather than as "they were still here then".
+		asOf := month + "-15"
+		for _, sp := range store.CatalogPrices(db, c, asOf) {
 			amt, has := invoiced[sp.StudentID]
 			// A student with no enrolments and no package is not part of this
 			// question; listing them would pad the report with rows nobody has

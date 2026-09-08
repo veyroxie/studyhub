@@ -69,7 +69,7 @@ func TestCatalogPrices(t *testing.T) {
 	overridden := mkStudent("Overridden", 0, phonics)
 	untiered := mkStudent("Untiered", 0, noTier)
 
-	all := store.CatalogPrices(db, claims)
+	all := store.CatalogPrices(db, claims, "")
 
 	if p := priceOf(all, once); p.Total != 260 || p.Unpriceable {
 		t.Fatalf("once weekly: want 260 priceable, got %v unpriceable=%v", p.Total, p.Unpriceable)
@@ -102,5 +102,22 @@ func TestCatalogPrices(t *testing.T) {
 	}
 	if p := priceOf(all, untiered); !p.Unpriceable || p.Total != 0 {
 		t.Fatalf("no tier must be flagged at 0, got %v unpriceable=%v", p.Total, p.Unpriceable)
+	}
+
+	// As-of matters for the differ, which compares PAST months. Using today's
+	// enrolments to price August priced two students who had since left at 0
+	// against a real August invoice, reading as a mispricing rather than as
+	// "they were still enrolled then". Half-open, so the leaving day is out.
+	if _, err := db.Exec(`UPDATE enrollments SET ended_on='2026-08-20' WHERE student_id=?`, once); err != nil {
+		t.Fatalf("end enrolment: %v", err)
+	}
+	if p := priceOf(store.CatalogPrices(db, claims, "2026-08-15"), once); p.Total != 260 {
+		t.Fatalf("as-of before the end date must still price: want 260, got %v", p.Total)
+	}
+	if p := priceOf(store.CatalogPrices(db, claims, "2026-08-20"), once); p.Total != 0 || len(p.Lines) != 0 {
+		t.Fatalf("the day they leave is not counted: want 0 with no lines, got %v", p.Total)
+	}
+	if p := priceOf(store.CatalogPrices(db, claims, ""), once); p.Total != 0 {
+		t.Fatalf("live-now must not see an ended enrolment, got %v", p.Total)
 	}
 }

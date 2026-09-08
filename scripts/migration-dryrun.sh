@@ -99,6 +99,21 @@ DATABASE_URL="$DSN" go run ./cmd/migrate 2>&1 | sed 's/^/    /'
 cd ..
 
 echo
+echo "==> What the catalogue WOULD charge, against real data ..."
+# The switchover differ, run against the copy. This is the whole point of the
+# dry run for step 3: the same resolver the cron will use, on real production
+# numbers, with nothing written and production untouched.
+#
+# MONTH defaults to the CURRENT month, not last month, because enrolment
+# history is only trustworthy from 2026-08-30 onwards: migration 0055 could
+# backdate a start date only where attendance proved one, so students with no
+# attendance still carry the day the row was created. Pricing August therefore
+# reads half the roster as not yet enrolled. The current month uses live
+# enrolments, which are correct, and it is the month the switchover affects.
+CHECK_MONTH="${MONTH:-$(date +%Y-%m)}"
+(cd backend && DATABASE_URL="$DSN" go run ./cmd/pricecheck -month="$CHECK_MONTH" 2>&1) | sed 's/^/  /'
+
+echo
 echo "==> Hidden attendance after migration (0055, real data) ..."
 # 0055 backdates an enrolment start to the student's first attendance record,
 # because 35 rows recorded when the ROW was made and hid 85 real August
