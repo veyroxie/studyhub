@@ -216,7 +216,7 @@
         App.Theme.init();
         applyRole();
         App.Dev.init();
-        App.Router.navigate('dashboard');
+        App.Router.navigate(App.Router.fromHash() || 'dashboard');
         var snapshotPromise = App.Api.loadSnapshot().then(function() {
           // Data arrived — re-render the current page so empty placeholders
           // are replaced with real rows.
@@ -576,7 +576,7 @@
         App.Theme.init();
         App.Dev.init();
         applyRole();
-        App.Router.navigate('dashboard');
+        App.Router.navigate(App.Router.fromHash() || 'dashboard');
         return App.Api.loadSnapshot().then(function() {
           App.Router.refresh();
           App.Notifs.updateBadge();
