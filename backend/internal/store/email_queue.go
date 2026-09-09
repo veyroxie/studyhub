@@ -28,6 +28,9 @@ var emailRetryDelays = []time.Duration{
 	5 * time.Minute,
 	30 * time.Minute,
 	2 * time.Hour,
+	// Unreachable at emailMaxAttempts=5: the give-up guard fires at
+	// nextAttempts >= 5 before this index is ever used, so the real schedule is
+	// 1m, 5m, 30m, 2h. Kept because raising the cap makes it live again.
 	12 * time.Hour,
 }
 

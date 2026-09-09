@@ -80,7 +80,7 @@ The worker claims rows by flipping them to `status='sending'` with a **10-minute
 `'sending'` is a lease, not a terminal state -- a worker crash mid-send means the row is
 reclaimed after 10 minutes and may send twice. Delivery is at-least-once past the claim.
 
-Retry is max 5 attempts with backoff 1m, 5m, 30m, 2h, 12h; hitting the cap sets
+Retry is max 5 send attempts with backoff 1m, 5m, 30m, 2h; hitting the cap sets
 `status='failed'` permanently with `last_error` (`email_queue.go:19, 26-32, 105-107`). **Nothing
 retries a failed row** -- recovery is a manual status flip.
 
