@@ -278,6 +278,15 @@ Then the handler's own last two statements re-introduce the address it just eras
 **Failure:** the panic aborts the request mid-import. Parent accounts created before it survive, so the operator fixes nothing, retries the same file, and panics on the same row again — accumulating orphaned parents on each attempt. With T2 unfixed, a panic on a background path is not contained at all.
 **Fix:** guard `len(parts) == 0` before indexing, and wrap the import in a transaction so a mid-file failure rolls back cleanly.
 **Accept:** importing a row with a blank name returns a validation error naming the row, and creates nothing.
+**Implemented differently, deliberately:** validate every row before the first write
+rather than wrapping the import in a transaction. The three passes issue writes through
+`db.Exec` and `store.SyncEnrollments`, which takes a `*store.DB` rather than a `*store.Tx`,
+so threading a transaction through touches every one of them. Rejecting a bad file up
+front gives the same "nothing partial" outcome for this failure and names the offending
+rows, which a rollback would not.
+**Residual:** a mid-import *database* error (not a malformed file) still leaves the rows
+written before it. Making the import genuinely atomic needs SyncEnrollments to accept a
+transaction; separate ticket if wanted.
 
 ### T20. Optimistic rollback replaces the whole array, discarding concurrent updates
 **Files:** `frontend/js/modules/attendance.js:734`, and the same shape at `:501`, `:858`, `:893`, `:975`, `:1009`; `frontend/js/store.js:126-131`; `frontend/js/api.js:306`.

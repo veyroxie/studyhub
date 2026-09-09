@@ -50,6 +50,24 @@ func HandleImport(db *store.DB) http.HandlerFunc {
 			return
 		}
 
+		// Validate the whole file before writing anything. The student loop
+		// below indexes strings.Fields(s.Name)[0], which panics on a blank or
+		// whitespace-only name -- and the import is not transactional, so the
+		// parent accounts created before the panic survived it. The operator
+		// would fix nothing, retry the same file, panic on the same row, and
+		// orphan another set. Rejecting up front means a bad file creates
+		// nothing at all, which is what the retry was expecting.
+		badRows := []string{}
+		for i, s := range students {
+			if len(strings.Fields(s.Name)) == 0 {
+				badRows = append(badRows, fmt.Sprintf("row %d", i+1))
+			}
+		}
+		if len(badRows) > 0 {
+			core.RespondError(w, "student name is blank in "+strings.Join(badRows, ", ")+" — fix the file and re-upload; nothing was imported", http.StatusBadRequest)
+			return
+		}
+
 		tid, tOK := writeTenant(w, c)
 		if !tOK {
 			return
@@ -139,7 +157,8 @@ func HandleImport(db *store.DB) http.HandlerFunc {
 		studentsSkipped := 0
 
 		for _, s := range students {
-			// Split name into first + last
+			// Split name into first + last. parts[0] is safe: the validation
+			// pass above rejected every blank name before any write happened.
 			parts := strings.Fields(s.Name)
 			firstName := parts[0]
 			lastName := ""
