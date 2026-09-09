@@ -91,20 +91,24 @@ func isTrustedProxy(remote string) bool {
 }
 
 func RealIP(r *http.Request) string {
-	if isTrustedProxy(r.RemoteAddr) {
-		if ip := r.Header.Get("X-Real-IP"); ip != "" {
-			return strings.TrimSpace(ip)
-		}
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			// X-Forwarded-For is a comma-separated chain — the
-			// left-most entry is the original client.
-			if i := strings.IndexByte(fwd, ','); i >= 0 {
-				return strings.TrimSpace(fwd[:i])
-			}
-			return strings.TrimSpace(fwd)
-		}
+	if !isTrustedProxy(r.RemoteAddr) {
+		return r.RemoteAddr
 	}
-	return r.RemoteAddr
+	// X-Real-IP is deliberately NOT consulted: Caddy overwrites X-Forwarded-For
+	// with the peer it saw but passes a client's X-Real-IP straight through
+	// (verified against caddy 2.11 with the production Caddyfile), so trusting
+	// it let any caller choose its own rate-limit bucket by sending the header.
+	// Right-most entry, because that is the one the nearest proxy wrote whether
+	// it replaced the header or appended to it; the left-most is whatever the
+	// client supplied.
+	fwd := r.Header.Get("X-Forwarded-For")
+	if fwd == "" {
+		return r.RemoteAddr
+	}
+	if i := strings.LastIndexByte(fwd, ','); i >= 0 {
+		return strings.TrimSpace(fwd[i+1:])
+	}
+	return strings.TrimSpace(fwd)
 }
 
 // rateLimitMiddleware wraps a handler with per-IP rate limiting

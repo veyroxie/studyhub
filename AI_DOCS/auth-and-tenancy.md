@@ -126,16 +126,24 @@ Legacy bcrypt hashes still verify and are transparently rehashed on next success
 Lockout is 5 failures then 15 minutes, incremented with an atomic `UPDATE ... RETURNING`
 under the row lock so concurrent failures cannot all read the same pre-increment value
 (`auth.go:146-160`). Login additionally rate-limits 5/minute per IP
-(`core/middleware.go:49`), and `X-Real-IP` / `X-Forwarded-For` are trusted only from
-loopback/private peers (`middleware.go:52-57, 93-95`).
+(`core/middleware.go:49`), keyed on `core.RealIP`.
 
-That last check is weaker than it reads, and the protection actually lives in the proxy.
-The API binds `127.0.0.1:8080` only, so the peer is **always** loopback and the trust test
-**always** passes -- the app believes whatever header arrives. What makes it safe is that
-Caddy overwrites both headers with the real remote address before proxying
-(`infra/Caddyfile.recommended`, `header_up`). Remove those two lines, or deploy a
-Caddyfile without them, and a client picks its own rate-limit bucket: rotate `X-Real-IP`
-per request and neither limiter ever fires.
+The trusted-peer test in `RealIP` is weaker than it reads: the API binds `127.0.0.1:8080`
+only, so the peer is **always** loopback and the test **always** passes. Which header is
+read is therefore the whole of the protection. Measured against caddy 2.11 with the
+production Caddyfile on 2026-09-09:
+
+| inbound header | what the Go side receives |
+| --- | --- |
+| `X-Forwarded-For: 1.2.3.4` | the real peer -- Caddy **replaces** it |
+| `X-Real-IP: 9.9.9.9` | `9.9.9.9` -- Caddy neither sets nor strips it |
+
+So `RealIP` does **not** read `X-Real-IP`; it takes the **right-most** `X-Forwarded-For`
+entry, which is the one the nearest proxy wrote whether that proxy replaced the header or
+appended to it (`middleware.go:93-111`). Reading `X-Real-IP`, or the left-most XFF entry,
+lets a client pick its own rate-limit bucket: rotate the value per request and neither
+limiter ever fires. The `header_up` lines in `infra/Caddyfile.recommended` restate the
+same guarantee at the proxy and should be kept, but the app no longer depends on them.
 
 Two deliberate anti-enumeration measures, both easy to destroy by "simplifying":
 

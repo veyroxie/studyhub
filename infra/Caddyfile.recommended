@@ -36,19 +36,22 @@ studyhub.fit {
 
     # API + WebSocket — proxy to the Go API container.
     #
-    # header_up is load-bearing, not tidiness. The app binds 127.0.0.1 only, so
-    # RemoteAddr at the Go end is ALWAYS loopback, which makes core.RealIP's
-    # "is this a trusted proxy" test always true — it then believes whatever
-    # X-Real-IP arrives. Caddy does not set that header on its own and appends
-    # to any incoming X-Forwarded-For, so without these two lines a client
-    # supplies its own rate-limit bucket: rotate the header per request and
-    # neither the 5/min login limiter nor RateLimitAPI ever fires. That buys
-    # unmetered account enumeration, lockout-DoS across the whole roster (five
-    # requests locks any known account for 15 minutes) and unmetered
-    # /api/forgot-password, which is both mail-bombing and Resend quota burn.
+    # header_up here is defence in depth, not the fix. Measured against
+    # caddy 2.11 with this file's own directive shape (2026-09-09):
     #
-    # Overwrite, never append: RealIP reads the LEFT-most X-Forwarded-For entry,
-    # which is the attacker-controlled one if the incoming chain is kept.
+    #   inbound X-Forwarded-For: 1.2.3.4  ->  upstream sees the peer  (REPLACED)
+    #   inbound X-Real-IP: 9.9.9.9        ->  upstream sees 9.9.9.9   (PASSED THROUGH)
+    #
+    # So Caddy overwrites X-Forwarded-For on its own, and the header that was
+    # actually spoofable was X-Real-IP, which Caddy neither sets nor strips.
+    # core.RealIP no longer reads X-Real-IP at all, and takes the RIGHT-most
+    # X-Forwarded-For entry — the one the nearest proxy wrote, correct whether
+    # that proxy replaced the header or appended to it. The app binds 127.0.0.1
+    # only, so RemoteAddr at the Go end is always loopback and the trusted-proxy
+    # test is always true; the header choice is what carries the security.
+    #
+    # Keep these lines anyway: they make the guarantee explicit at the proxy
+    # rather than resting on one measured Caddy behaviour, and they cost nothing.
     @backend path /api/* /ws/*
     handle @backend {
         reverse_proxy localhost:8080 {

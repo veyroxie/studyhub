@@ -41,7 +41,7 @@ func IssueRefreshToken(db *DB, w http.ResponseWriter, r *http.Request, userID, t
 	if _, err := db.Exec(
 		`INSERT INTO refresh_tokens(token_hash, token_family, user_id, tenant_id, expires_at, user_agent, ip) VALUES(?,?,?,?,?,?,?)`,
 		hash, family, userID, tenantID, time.Now().Add(refreshTokenTTL),
-		r.UserAgent(), clientIP(r),
+		r.UserAgent(), core.RealIP(r),
 	); err != nil {
 		return err
 	}
@@ -56,13 +56,6 @@ func IssueRefreshToken(db *DB, w http.ResponseWriter, r *http.Request, userID, t
 		Expires:  time.Now().Add(refreshTokenTTL),
 	})
 	return nil
-}
-
-func clientIP(r *http.Request) string {
-	if v := r.Header.Get("X-Forwarded-For"); v != "" {
-		return v
-	}
-	return r.RemoteAddr
 }
 
 // handleRefresh exchanges a valid refresh token for a new access JWT + a
