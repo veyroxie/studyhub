@@ -70,6 +70,19 @@ services:
       OUTBOUND_ENABLED: ${OUTBOUND_ENABLED:-}
       ENABLE_JOBS: ${ENABLE_JOBS:-}
       ALLOW_REMOTE_DB: ${ALLOW_REMOTE_DB:-}
+      # Payment gateway. payments.go reads all eight; none was forwarded, so
+      # the checkout route was live and permanently unconfigurable — an
+      # operator could set BILLPLZ_API_KEY in .env and still get "billplz not
+      # configured" from the container. Blank = online payment stays off, and
+      # both webhooks fail closed without their signature secret.
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-billplz}
+      BILLPLZ_API_KEY: ${BILLPLZ_API_KEY:-}
+      BILLPLZ_COLLECTION_ID: ${BILLPLZ_COLLECTION_ID:-}
+      BILLPLZ_X_SIGNATURE: ${BILLPLZ_X_SIGNATURE:-}
+      BILLPLZ_API_BASE: ${BILLPLZ_API_BASE:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_API_BASE: ${STRIPE_API_BASE:-}
       # Web push (VAPID) — leave blank to disable push (email + in-app still work)
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
