@@ -11,6 +11,36 @@
   // checking in today, and staff.js "Recalculate from check-ins" rebuilds
   // payroll from exactly these rows. toISOString would give the UTC date, which
   // is still yesterday locally until 08:00 -- hence today()/localDate.
+  // Build an undo for exactly the rows an optimistic edit touched, applied
+  // against CURRENT state at the moment it runs.
+  //
+  // The previous rollback did App.Store.set({ attendance: prevAtt }), and
+  // App.Store.set is a whole-key replace, not a merge -- so it restored the
+  // array as it looked BEFORE the request and discarded anything that arrived
+  // while the POST was in flight. api.js reloads the snapshot on every
+  // WebSocket check-in, so in a centre running a kiosk that window is hit
+  // constantly: one failed staff mark wiped three real scans off the screen
+  // until the next snapshot.
+  //
+  // Rows the edit added are dropped; rows it modified are restored to their
+  // prior value; everything else is left exactly as it is now. Untouched rows
+  // are identified by reference -- .slice() copies references, so an unchanged
+  // row is the same object in both arrays.
+  function _attRollback(prevAtt, newAtt) {
+    var before = {};
+    (prevAtt || []).forEach(function(a) { before[a.id] = a; });
+    var touched = (newAtt || []).filter(function(a) { return before[a.id] !== a; })
+                                .map(function(a) { return a.id; });
+    return function() {
+      var next = [];
+      (App.Store.get().attendance || []).forEach(function(a) {
+        if (touched.indexOf(a.id) === -1) { next.push(a); return; }
+        if (before[a.id]) { next.push(before[a.id]); }
+      });
+      App.Store.set({ attendance: next });
+    };
+  }
+
   function _eventDate() {
     try { return App.Utils.today(); } catch (e) { return App.Utils.localDate(new Date()); }
   }
@@ -491,6 +521,7 @@
 
     var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
+    var rollbackAtt = _attRollback(prevAtt, newAtt);
     // Persist to backend so the parent's device gets the WebSocket
     // notification. Optimistic UI above keeps the kiosk feedback instant.
     const apiBody = {
@@ -509,7 +540,7 @@
     App.Api.post('/api/attendance', apiBody, { silent: true }).catch(function(err) {
       // Roll the optimistic row back — leaving it showed the person as
       // present even though the server rejected the write.
-      App.Store.set({ attendance: prevAtt });
+      rollbackAtt();
       App.Utils.showToast('Scan failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
       App.Router.refresh();
     });
@@ -727,6 +758,7 @@
       newAtt.push(rec);
     }
     App.Store.set({ attendance: newAtt });
+    var rollbackAtt = _attRollback(prevAtt, newAtt);
 
     // Persist — without the POST the mark lives only in this tab: gone on
     // the next snapshot, never counted in payroll, and Undo 404s.
@@ -742,7 +774,7 @@
       App.Store.set({ attendance: att });
       App.Router.refresh();
     }).catch(function(err) {
-      App.Store.set({ attendance: prevAtt });
+      rollbackAtt();
       App.Utils.showToast('Attendance failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
       App.Router.refresh();
     });
@@ -852,6 +884,7 @@
     }
     var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
+    var rollbackAtt = _attRollback(prevAtt, newAtt);
     const stu = state.students.find(function(s) { return s.id === studentId; });
     const stuName = stu ? stu.firstName + ' ' + stu.lastName : studentId;
     App.Utils.showToast(stuName + ' checked in at ' + App.Utils.formatTime(now), 'info');
@@ -866,7 +899,7 @@
     }, { silent: true }).catch(function(err) {
       // Roll the optimistic row back — leaving it showed the person as
       // present even though the server rejected the write.
-      App.Store.set({ attendance: prevAtt });
+      rollbackAtt();
       App.Utils.showToast('Check-in failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
       App.Router.refresh();
     });
@@ -886,6 +919,7 @@
     });
     var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
+    var rollbackAtt = _attRollback(prevAtt, newAtt);
     const stu = state.students.find(function(s) { return s.id === studentId; });
     const stuName = stu ? stu.firstName + ' ' + stu.lastName : studentId;
     App.Utils.showToast(stuName + ' checked out at ' + App.Utils.formatTime(now), 'success');
@@ -901,7 +935,7 @@
     }, { silent: true }).catch(function(err) {
       // Roll the optimistic row back — leaving it showed the person as
       // present even though the server rejected the write.
-      App.Store.set({ attendance: prevAtt });
+      rollbackAtt();
       App.Utils.showToast('Check-out failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
       App.Router.refresh();
     });
@@ -972,6 +1006,7 @@
     });
     var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
+    var rollbackAtt = _attRollback(prevAtt, newAtt);
     App.Utils.showToast('Checked in at ' + App.Utils.formatTime(now), 'success');
     App.Router.refresh();
     App.Api.post('/api/attendance', {
@@ -983,7 +1018,7 @@
     }, { silent: true }).catch(function(err) {
       // Roll the optimistic row back — leaving it showed the person as
       // present even though the server rejected the write.
-      App.Store.set({ attendance: prevAtt });
+      rollbackAtt();
       App.Utils.showToast('Check-in failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
       App.Router.refresh();
     });
@@ -1005,6 +1040,7 @@
     });
     var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
+    var rollbackAtt = _attRollback(prevAtt, newAtt);
     App.Utils.showToast('Checked out at ' + App.Utils.formatTime(now), 'info');
     App.Router.refresh();
     App.Api.post('/api/attendance', {
@@ -1017,7 +1053,7 @@
     }, { silent: true }).catch(function(err) {
       // Roll the optimistic row back — leaving it showed the person as
       // present even though the server rejected the write.
-      App.Store.set({ attendance: prevAtt });
+      rollbackAtt();
       App.Utils.showToast('Check-out failed to save: ' + (err && err.message ? err.message : 'server error'), 'error');
       App.Router.refresh();
     });
