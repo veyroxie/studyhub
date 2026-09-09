@@ -55,7 +55,7 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 	r.Use(cors.Handler(cors.Options{AllowedOrigins: []string{"*"}, AllowedMethods: []string{"GET", "POST", "PUT", "DELETE"}, AllowedHeaders: []string{"Authorization", "Content-Type"}}))
 
 	r.Post("/api/auth/login", auth.HandleLogin(db))
-	r.Get("/ws", hub.HandleWS())
+	r.Get("/ws", hub.HandleWS(db))
 	r.Group(func(r chi.Router) {
 		r.Use(auth.JWTMiddleware(db))
 		r.Get("/api/snapshot", HandleSnapshot(db))

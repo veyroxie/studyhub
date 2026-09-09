@@ -131,7 +131,7 @@ func Build(db *store.DB) http.Handler {
 	r.With(core.RateLimitLogin).Post("/api/set-password", handlers.HandleSetPassword(db))
 	r.Get("/api/verify-email", handlers.HandleVerifyEmail(db))
 	r.With(core.RateLimitLogin).Post("/api/resend-verification", handlers.HandleResendVerification(db))
-	r.Get("/ws", hub.HandleWS())
+	r.Get("/ws", hub.HandleWS(db))
 
 	// Payment webhooks — public, signature-verified internally. No CSRF
 	// origin check needed (Stripe/Billplz are not browsers).

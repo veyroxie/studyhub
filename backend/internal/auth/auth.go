@@ -545,28 +545,16 @@ func JWTMiddleware(db *store.DB) func(http.Handler) http.Handler {
 				return
 			}
 
-			if claims.UserID > 0 {
-				gate := lookupUserGate(db, claims.UserID)
-				if gate.status != "active" {
-					core.RespondError(w, "account is "+gate.status, http.StatusForbidden)
-					return
-				}
-				// Tokens minted before a password reset/change are dead even
-				// though cryptographically valid — this is what actually
-				// evicts an intruder when the victim resets their password.
-				if !gate.invalidBefore.IsZero() && claims.IssuedAt != nil && claims.IssuedAt.Time.Before(gate.invalidBefore) {
+			// Status, sessions_invalid_before and jti revocation. Shared with
+			// the WebSocket upgrade via SessionStillValid so the two cannot
+			// drift apart again.
+			if ok, reason, code := SessionStillValid(db, claims); !ok {
+				// A dead session clears the cookie; a suspended account does
+				// not, because the person is still legitimately signed in.
+				if code == http.StatusUnauthorized {
 					http.SetCookie(w, &http.Cookie{Name: "sh_token", Value: "", Path: "/", Expires: time.Unix(0, 0), HttpOnly: true})
-					core.RespondError(w, "session ended — please sign in again", http.StatusUnauthorized)
-					return
 				}
-			}
-			// Revocation check — logout / password change / admin force-out
-			// records the JWT id here. Cached for 30s to keep this off the
-			// hot path; a logged-out token is rejected within that window
-			// even though the JWT itself remains cryptographically valid.
-			if claims.ID != "" && isTokenRevoked(db, claims.ID) {
-				http.SetCookie(w, &http.Cookie{Name: "sh_token", Value: "", Path: "/", Expires: time.Unix(0, 0), HttpOnly: true})
-				core.RespondError(w, "session ended — please sign in again", http.StatusUnauthorized)
+				core.RespondError(w, reason, code)
 				return
 			}
 
@@ -590,3 +578,36 @@ func RequireAdmin(next http.Handler) http.Handler {
 // auth package that must validate or derive from the same key (the WS upgrade
 // path and the iCal feed HMAC).
 func JWTSecret() []byte { return jwtSecret }
+
+// SessionStillValid applies the post-signature checks that decide whether a
+// cryptographically valid JWT still represents a live session: account status,
+// sessions_invalid_before, and jti revocation. It returns a message safe to
+// show the caller.
+//
+// JWTMiddleware and the WebSocket upgrade both go through this. They used to
+// each implement it, and the socket's copy stopped after the signature check --
+// so logout, a password reset and a suspension all closed the REST surface and
+// none of them closed an open socket.
+func SessionStillValid(db *store.DB, claims *core.Claims) (bool, string, int) {
+	if claims == nil {
+		return false, "session ended — please sign in again", http.StatusUnauthorized
+	}
+	if claims.UserID > 0 {
+		gate := lookupUserGate(db, claims.UserID)
+		if gate.status != "active" {
+			return false, "account is " + gate.status, http.StatusForbidden
+		}
+		// Tokens minted before a password reset/change are dead even though
+		// cryptographically valid — this is what actually evicts an intruder
+		// when the victim resets their password.
+		if !gate.invalidBefore.IsZero() && claims.IssuedAt != nil && claims.IssuedAt.Time.Before(gate.invalidBefore) {
+			return false, "session ended — please sign in again", http.StatusUnauthorized
+		}
+	}
+	// Revocation — logout / password change / admin force-out records the JWT
+	// id. Cached for 30s to keep this off the hot path.
+	if claims.ID != "" && isTokenRevoked(db, claims.ID) {
+		return false, "session ended — please sign in again", http.StatusUnauthorized
+	}
+	return true, "", 0
+}

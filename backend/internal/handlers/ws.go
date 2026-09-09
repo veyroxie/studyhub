@@ -8,6 +8,7 @@ import (
 	"strings"
 	"studyhub/internal/auth"
 	"studyhub/internal/core"
+	"studyhub/internal/store"
 	"sync"
 	"time"
 
@@ -120,7 +121,13 @@ func (h *WSHub) deliver(tid int, v any, keep func(*wsClient) bool) {
 	}
 }
 
-func (h *WSHub) HandleWS() http.HandlerFunc {
+// wsSessionRecheck is how often an open socket re-tests its session. A JWT
+// lives up to 30 days, so without this a socket opened with a stolen cookie
+// outlives the logout, password reset or suspension that closed every REST
+// route for the same token.
+const wsSessionRecheck = 60 * time.Second
+
+func (h *WSHub) HandleWS(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Authenticate before upgrading — extract JWT from cookie or Authorization header
 		tokenStr := ""
@@ -147,6 +154,14 @@ func (h *WSHub) HandleWS() http.HandlerFunc {
 			http.Error(w, "invalid or expired token", http.StatusUnauthorized)
 			return
 		}
+		// A valid signature is not a live session. This is the same gate
+		// JWTMiddleware applies -- account status, sessions_invalid_before and
+		// jti revocation -- which this handler skipped entirely, because it is
+		// mounted outside the authenticated group and re-implements auth.
+		if ok, reason, code := auth.SessionStillValid(db, claims); !ok {
+			http.Error(w, reason, code)
+			return
+		}
 
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -163,6 +178,29 @@ func (h *WSHub) HandleWS() http.HandlerFunc {
 			delete(h.clients, conn)
 			h.mu.Unlock()
 			conn.Close()
+		}()
+
+		// Re-test the session for the life of the connection. Closing the conn
+		// unblocks ReadMessage below, so the deferred cleanup above still runs.
+		// Without this only NEW connections were covered, and an intruder's
+		// existing socket kept streaming until the JWT's natural expiry.
+		stopRecheck := make(chan struct{})
+		defer close(stopRecheck)
+		go func() {
+			t := time.NewTicker(wsSessionRecheck)
+			defer t.Stop()
+			for {
+				select {
+				case <-stopRecheck:
+					return
+				case <-t.C:
+					if ok, reason, _ := auth.SessionStillValid(db, claims); !ok {
+						core.Logger.Info("ws session ended mid-connection", "email", claims.Email, "reason", reason)
+						conn.Close()
+						return
+					}
+				}
+			}
 		}()
 
 		// Keep alive — read until disconnect
