@@ -629,8 +629,18 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		}
 		// No row means a concurrent run already invoiced this student. Skip the
 		// email and the count, or the parent is told about an invoice this run
-		// did not create.
-		if n, raErr := res.RowsAffected(); raErr == nil && n == 0 {
+		// did not create. An unreadable count is treated the same way rather
+		// than assumed to be a row: the rollback undoes the insert either way,
+		// so the student is left unbilled and visibly so, instead of emailed
+		// about an invoice this run cannot confirm it created.
+		n, raErr := res.RowsAffected()
+		if raErr != nil {
+			core.Logger.Error("monthly invoice rows-affected unreadable — skipping student",
+				"err", raErr, "student_id", s.id, "period", monthPrefix)
+			tx.Rollback()
+			continue
+		}
+		if n == 0 {
 			core.Logger.Info("monthly invoice already existed — concurrent run",
 				"student_id", s.id, "period", monthPrefix)
 			tx.Rollback()
