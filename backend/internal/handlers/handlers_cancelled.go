@@ -168,6 +168,34 @@ func applyCancelledClassSideEffects(db *store.DB, c *core.Claims, cc models.Canc
 		core.Logger.Error("cancellation enrolled-student lookup failed", "err", err, "class_id", cc.ClassID)
 		return
 	}
+	// No enrollment rows at all means no dated history to read, not "nobody was
+	// enrolled" -- a class predating 0043's backfill, or one whose roster was
+	// written by a path that skipped SyncEnrollments. Fall back to the current
+	// roster, which is the answer this used to give unconditionally. Same shape
+	// as store.ScheduleOn falling back for a class with no schedule versions:
+	// degrade to the best available answer rather than silently crediting
+	// nobody, because these credits are money owed to a parent.
+	if len(studentIDs) == 0 {
+		rows, ferr := db.Query(
+			`SELECT id FROM students WHERE tenant_id=? AND deleted_at IS NULL AND enrolled_classes LIKE '%"'||?||'"%'`,
+			tid, cc.ClassID,
+		)
+		if ferr != nil {
+			core.Logger.Error("cancellation roster fallback failed", "err", ferr, "class_id", cc.ClassID)
+			return
+		}
+		for rows.Next() {
+			var sid string
+			if rows.Scan(&sid) == nil {
+				studentIDs = append(studentIDs, sid)
+			}
+		}
+		rows.Close()
+		if len(studentIDs) > 0 {
+			core.Logger.Warn("cancellation credits fell back to the current roster — class has no enrollment rows",
+				"class_id", cc.ClassID, "date", cc.Date, "students", len(studentIDs))
+		}
+	}
 	note := "Class cancelled on " + cc.Date
 	for _, sid := range studentIDs {
 		rcID := core.GenerateID("RC")

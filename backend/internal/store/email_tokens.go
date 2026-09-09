@@ -49,7 +49,7 @@ func GenerateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// hashEmailToken is what actually goes in the `token` column. The raw value
+// HashEmailToken is what actually goes in the `token` column. The raw value
 // only ever exists in the email we send: anyone able to read this table -- a
 // leaked nightly backup, a read-only grant, an injection elsewhere -- otherwise
 // holds a working account-takeover link for every outstanding reset. Lookup was
@@ -57,7 +57,10 @@ func GenerateToken() (string, error) {
 //
 // Plain SHA-256, not bcrypt: the input is 256 bits of crypto/rand, so there is
 // no dictionary to attack and nothing for a work factor to buy.
-func hashEmailToken(token string) string {
+//
+// Exported so tests can address a handler-created row by the token a user would
+// have clicked, which is otherwise unreadable from the column.
+func HashEmailToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
@@ -81,7 +84,7 @@ func CreateEmailToken(db *DB, email, purpose string, userID *int64, registration
 	expires := time.Now().Add(ttl)
 	_, err = db.Exec(
 		`INSERT INTO email_tokens(token,email,purpose,user_id,registration_id,expires_at) VALUES(?,?,?,?,?,?)`,
-		hashEmailToken(token), email, purpose, uid, rid, expires,
+		HashEmailToken(token), email, purpose, uid, rid, expires,
 	)
 	if err != nil {
 		return "", err
@@ -103,7 +106,7 @@ func ConsumeEmailToken(db *DB, token, expectedPurpose string) (*EmailToken, erro
 		`UPDATE email_tokens SET used_at=NOW()
 		 WHERE token=? AND purpose=? AND used_at IS NULL AND expires_at > NOW()
 		 RETURNING token,email,purpose,user_id,registration_id,expires_at,used_at`,
-		hashEmailToken(token), expectedPurpose,
+		HashEmailToken(token), expectedPurpose,
 	).Scan(&t.Token, &t.Email, &t.Purpose, &t.UserID, &t.RegistrationID, &t.ExpiresAt, &t.UsedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -126,7 +129,7 @@ func ConsumeEmailTokenAny(db *DB, token string, purposes ...string) (*EmailToken
 	// individually since pgx doesn't expand slices.
 	placeholders := make([]string, len(purposes))
 	args := make([]any, 0, len(purposes)+1)
-	args = append(args, hashEmailToken(token))
+	args = append(args, HashEmailToken(token))
 	for i, p := range purposes {
 		placeholders[i] = "?"
 		args = append(args, p)

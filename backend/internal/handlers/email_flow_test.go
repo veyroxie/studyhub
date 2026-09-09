@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"studyhub/internal/auth"
 	"studyhub/internal/core"
@@ -11,6 +12,7 @@ import (
 	"studyhub/internal/mailer"
 	"studyhub/internal/store"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
@@ -208,15 +210,8 @@ func TestVerifyEmail_Parent_ActivatesAndLogsIn(t *testing.T) {
 		t.Fatalf("register failed: %d %s", w.Code, w.Body.String())
 	}
 
-	// Pull the verification token from the DB. In real life the user gets
-	// it via email, but for tests we read it directly.
-	var token string
-	if err := db.QueryRow(
-		`SELECT token FROM email_tokens WHERE email=? AND purpose=? AND used_at IS NULL`,
-		"verify@example.com", store.TokenPurposeVerifyParent,
-	).Scan(&token); err != nil {
-		t.Fatalf("token not created: %v", err)
-	}
+	token := claimToken(t, db, `email=? AND purpose=? AND used_at IS NULL`,
+		"verify@example.com", store.TokenPurposeVerifyParent)
 
 	w = get(t, r, "/api/verify-email?token="+token)
 	if w.Code != http.StatusOK {
@@ -274,8 +269,7 @@ func TestVerifyEmail_Token_CannotBeReused(t *testing.T) {
 		"studentLastName":  "Three",
 	})
 
-	var token string
-	db.QueryRow(`SELECT token FROM email_tokens WHERE email=?`, "reuse@example.com").Scan(&token)
+	token := claimToken(t, db, `email=?`, "reuse@example.com")
 
 	if w := get(t, r, "/api/verify-email?token="+token); w.Code != http.StatusOK {
 		t.Fatalf("first verify should succeed: %d %s", w.Code, w.Body.String())
@@ -334,8 +328,7 @@ func TestVerifyEmail_Teacher_MarksRegistrationVerified_NoLogin(t *testing.T) {
 		"specialty": "Mathematics",
 	})
 
-	var token string
-	db.QueryRow(`SELECT token FROM email_tokens WHERE email=? AND purpose=?`, "vteacher@example.com", store.TokenPurposeVerifyTeacher).Scan(&token)
+	token := claimToken(t, db, `email=? AND purpose=?`, "vteacher@example.com", store.TokenPurposeVerifyTeacher)
 
 	w := get(t, r, "/api/verify-email?token="+token)
 	if w.Code != http.StatusOK {
@@ -391,11 +384,7 @@ func TestResetPassword_HappyPath(t *testing.T) {
 	// Trigger forgot-password against the seeded admin so a token is created.
 	post(t, r, "/api/forgot-password", map[string]string{"email": "admin@studyhub.com"})
 
-	var token string
-	db.QueryRow(`SELECT token FROM email_tokens WHERE email=? AND purpose=?`, "admin@studyhub.com", store.TokenPurposeResetPassword).Scan(&token)
-	if token == "" {
-		t.Fatal("expected reset token to be created")
-	}
+	token := claimToken(t, db, `email=? AND purpose=?`, "admin@studyhub.com", store.TokenPurposeResetPassword)
 
 	w := post(t, r, "/api/reset-password", map[string]string{
 		"token":       token,
@@ -542,4 +531,26 @@ func TestResendVerification_UnknownEmail_GenericResponse(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected generic 200, got %d", w.Code)
 	}
+}
+
+// claimToken makes a handler-created token usable from a test.
+//
+// email_tokens.token stores sha256(token), so the value a user would click
+// exists only in the email and cannot be read back out of the column. Rather
+// than minting a fresh token -- which would lose the row's user_id /
+// registration_id linkage, and that linkage is what these tests are about --
+// this overwrites the stored hash with the hash of a value we choose and
+// returns that value.
+func claimToken(t *testing.T, db *store.DB, where string, args ...any) string {
+	t.Helper()
+	raw := "test-token-" + strconv.FormatInt(time.Now().UnixNano(), 16)
+	execArgs := append([]any{store.HashEmailToken(raw)}, args...)
+	res, err := db.Exec(`UPDATE email_tokens SET token=? WHERE `+where, execArgs...)
+	if err != nil {
+		t.Fatalf("claim token: %v", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		t.Fatalf("claim token: expected exactly 1 matching row, got %d", n)
+	}
+	return raw
 }
