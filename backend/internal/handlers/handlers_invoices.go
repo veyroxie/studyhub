@@ -239,23 +239,50 @@ func HandleInvoiceUpdate(db *store.DB) http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		tw, twArgs := store.ScopeTenant(c, "")
+
+		var curStatus, curType, curDueDate, curCreatedOn, curPeriod string
+		var curAmount float64
+		selArgs := append([]any{id}, twArgs...)
+		if err := db.QueryRow(`SELECT status, amount, type, COALESCE(due_date,''), COALESCE(created_on,''), COALESCE(period,'') FROM invoices WHERE id=?`+tw+` AND deleted_at IS NULL`, selArgs...).
+			Scan(&curStatus, &curAmount, &curType, &curDueDate, &curCreatedOn, &curPeriod); err != nil {
+			core.RespondError(w, "invoice not found", http.StatusNotFound)
+			return
+		}
+		// A paid invoice's receipt is already in the parent's hands, and receipt
+		// assignment is idempotent -- repricing one would serve the same receipt
+		// number against a figure that was never collected. What is frozen is the
+		// money and the dates, not the wording: the edit modal resubmits the
+		// existing line items on every save, so rejecting on `editingItems` would
+		// block correcting a typo on any invoice that has a breakdown, which is
+		// most of them. A breakdown edit that leaves the total unchanged passes.
+		if curStatus == "Paid" && (round2cmp(inv.Amount) != round2cmp(curAmount) ||
+			inv.Type != curType || inv.DueDate != curDueDate || inv.CreatedOn != curCreatedOn) {
+			core.RespondError(w, "this invoice is paid — only its description can be changed", http.StatusConflict)
+			return
+		}
+		// period is the monthly run's dedup key. It still has to follow a TYPE
+		// change, or an invoice reclassified as Monthly would be invisible to the
+		// duplicate check -- but once set it must not move, because a back-dated
+		// created_on vacates the month and the next run inside the 1-7 window
+		// bills that student again. Hand-made, back-dated invoices are routine.
+		newPeriod := monthlyPeriod(inv.Type, inv.CreatedOn)
+		if newPeriod != "" && curPeriod != "" {
+			newPeriod = curPeriod
+		}
 		// Only clear line items when the amount actually changed: a manual amount
 		// override makes the itemisation inconsistent, but a description/due-date
 		// edit must preserve the breakdown the PDF and detail view rely on. The
 		// CASE compares the pre-update amount (SET RHS sees old row values).
-		// period is recomputed rather than carried: this endpoint can change both
-		// type and created_on, and a stale period would hide the invoice from the
-		// monthly run's duplicate check.
 		var res sql.Result
 		var err error
 		if editingItems {
 			// Lines were sent, so they ARE the new breakdown and the total came
 			// from them. No CASE: there is nothing inconsistent to clear.
 			itemArgs := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn,
-				monthlyPeriod(inv.Type, inv.CreatedOn), models.MarshalLineItems(inv.LineItems), id}, twArgs...)
+				newPeriod, models.MarshalLineItems(inv.LineItems), id}, twArgs...)
 			res, err = db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, period=?, line_items=? WHERE id=?`+tw+` AND deleted_at IS NULL`, itemArgs...)
 		} else {
-			args := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn, monthlyPeriod(inv.Type, inv.CreatedOn), inv.Amount, id}, twArgs...)
+			args := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn, newPeriod, inv.Amount, id}, twArgs...)
 			res, err = db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, period=?, line_items=CASE WHEN ROUND(amount::numeric,2)<>ROUND(?::numeric,2) THEN '[]' ELSE line_items END WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 		}
 		if err != nil {
