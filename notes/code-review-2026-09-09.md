@@ -6,6 +6,25 @@ read at its stated location. Nothing in the repo was changed by the review.
 Companion to [code-review-2026-07-04.md](./code-review-2026-07-04.md); see
 *Continuity with the July review* for what recurred and why.
 
+## Implementation status
+
+All 28 tickets implemented on `main`, one Conventional Commit each, in ticket
+order (`24db9b8`..`b12026e`). Three migrations were added: `0063` (overflow period
+dedup + backfill), `0064` (`users.tenant_id > 0`, `NOT VALID`), `0065` (purge
+plaintext email tokens).
+
+Five tickets were implemented differently from the fix written below. Each says so
+in its own entry and in its commit message: **T4** ships the dedup and leaves the
+unique index as an open decision, **T10** refuses a tenant-less write rather than
+deriving one per site, **T19** validates before writing rather than wrapping the
+import in a transaction, **T25** resolves the author name in both consumers rather
+than storing a staff id, **T27** derives what to delete rather than listing what to
+keep. One ticket, **T1**, grew a third site that the review missed.
+
+Open decisions left for the owner, none of them blocking: the overflow unique index
+(T4), whether to widen the `tenant_id > 0` CHECK beyond `users` (T10), and whether
+the front desk runs as `admin` (T7 changes what a `teacher`-role kiosk can scan).
+
 ## Rules for the implementer (read first)
 
 - Work ticket by ticket, in order. One Conventional Commit per ticket, e.g. `fix(cron): ...` — do NOT batch unrelated tickets into one commit.
