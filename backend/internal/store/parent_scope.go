@@ -19,7 +19,11 @@ func ParentClassIDs(db *DB, c *core.Claims) map[string]bool {
 	args := append([]any{c.Email}, twArgs...)
 	rows, err := db.Query(`SELECT enrolled_classes FROM students WHERE contact=? AND deleted_at IS NULL`+tw, args...)
 	if err != nil {
-		return nil
+		// Empty, never nil. Callers filter with `ids[classID]`, and a nil map
+		// reads false there, but a caller that gives nil its own meaning turns
+		// a transient query error into "show everything" — see visibleClassIDs.
+		core.Logger.Error("parent class scope lookup failed", "err", err, "email", c.Email)
+		return map[string]bool{}
 	}
 	defer rows.Close()
 	ids := map[string]bool{}

@@ -29,8 +29,8 @@ func listSessionMoves(db *store.DB, c *core.Claims) []models.SessionMove {
 		err := r.Scan(&m.ID, &m.ClassID, &m.FromDate, &m.ToDate, &m.Reason, &m.MovedBy, &m.CreatedOn)
 		return m, err
 	})
-	visible := visibleClassIDs(db, c)
-	if visible == nil {
+	visible, unrestricted := visibleClassIDs(db, c)
+	if unrestricted {
 		return out
 	}
 	scoped := []models.SessionMove{}

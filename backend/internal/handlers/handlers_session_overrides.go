@@ -28,8 +28,8 @@ func listSessionOverrides(db *store.DB, c *core.Claims) []models.SessionOverride
 		so.TeacherIDs = models.ParseArr(tids)
 		return so, err
 	})
-	visible := visibleClassIDs(db, c)
-	if visible == nil {
+	visible, unrestricted := visibleClassIDs(db, c)
+	if unrestricted {
 		return out
 	}
 	scoped := []models.SessionOverride{}

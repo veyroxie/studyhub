@@ -24,8 +24,8 @@ func listCancelledClasses(db *store.DB, c *core.Claims) []models.CancelledClass 
 		err := r.Scan(&cc.ID, &cc.ClassID, &cc.Date, &cc.Reason, &cc.CancelledBy, &cc.CreatedOn)
 		return cc, err
 	})
-	visible := visibleClassIDs(db, c)
-	if visible == nil {
+	visible, unrestricted := visibleClassIDs(db, c)
+	if unrestricted {
 		return out
 	}
 	scoped := []models.CancelledClass{}
