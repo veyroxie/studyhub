@@ -196,6 +196,14 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 // issue date. Only Monthly invoices carry one: a registration fee or a
 // self-study overflow line is not "for" a month, and giving it a period would
 // put it in the way of the monthly run's one-per-student-per-month rule.
+// Invoice statuses whose transitions carry side effects: becoming Paid draws a
+// receipt number, and leaving Paid has to give it back. "Pending" and
+// "Pending Verification" are also valid statuses but change nothing on their own.
+const (
+	invoiceStatusPaid   = "Paid"
+	invoiceStatusUnpaid = "Unpaid"
+)
+
 func monthlyPeriod(invoiceType, createdOn string) string {
 	if invoiceType != "Monthly" || len(createdOn) < 7 {
 		return ""
@@ -258,7 +266,7 @@ func HandleInvoiceUpdate(db *store.DB) http.HandlerFunc {
 		// existing line items on every save, so rejecting on `editingItems` would
 		// block correcting a typo on any invoice that has a breakdown, which is
 		// most of them. A breakdown edit that leaves the total unchanged passes.
-		if curStatus == "Paid" && (round2cmp(inv.Amount) != round2cmp(curAmount) ||
+		if curStatus == invoiceStatusPaid && (round2cmp(inv.Amount) != round2cmp(curAmount) ||
 			inv.Type != curType || inv.DueDate != curDueDate || inv.CreatedOn != curCreatedOn) {
 			core.RespondError(w, "this invoice is paid — only its description can be changed", http.StatusConflict)
 			return
@@ -451,11 +459,18 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 			// Parents may only submit "Pending Verification" — admins can
 			// set any whitelisted status. This prevents a parent from
 			// self-marking an invoice as Paid.
+			// "Unpaid" is the schema default and the status two buttons in
+			// billing.js already send ("Reject (Mark Unpaid)" and "Mark
+			// Unpaid"). Leaving it out meant an invoice marked Paid in error,
+			// or a bogus parent payment claim, could never be reversed: this
+			// endpoint was the only route to status, and HandleInvoiceUpdate
+			// deliberately never touches it.
 			allowed := map[string]bool{
-				"Paid":                 true,
+				invoiceStatusPaid:      true,
 				"Pending Verification": true,
 				"Pending":              true,
 				"Overdue":              true,
+				invoiceStatusUnpaid:    true,
 			}
 			if !allowed[body.Status] {
 				core.RespondError(w, "invalid status", http.StatusBadRequest)
@@ -511,8 +526,18 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 		if c.Role == "parent" {
 			submitClause = ", submitted_by_parent=TRUE"
 		}
-		args := append([]any{newStatus, newStatus, t, body.PaymentMethod, body.ReferenceNo, id}, twArgs...)
-		res, err := db.Exec(`UPDATE invoices SET status=?, paid_on=CASE WHEN ?='Paid' THEN ? ELSE paid_on END, payment_method=COALESCE(NULLIF(?,''),payment_method), reference_no=COALESCE(NULLIF(?,''),reference_no)`+submitClause+` WHERE id=?`+tw+paidGuard, args...)
+		// Reversing out of Paid has to undo what becoming Paid did. Widening
+		// the whitelist alone would have left an "Unpaid" invoice still
+		// carrying its paid date, its receipt number and the payment method --
+		// and the receipt PDF renders off those. The number is surrendered, not
+		// reused: the next Paid transition draws a fresh one from the sequence,
+		// so a receipt number is never issued twice for different money.
+		args := append([]any{newStatus, newStatus, t, newStatus, newStatus, newStatus, body.PaymentMethod, newStatus, body.ReferenceNo, id}, twArgs...)
+		res, err := db.Exec(`UPDATE invoices SET status=?,
+			paid_on=CASE WHEN ?='Paid' THEN ? WHEN ?='Unpaid' THEN NULL ELSE paid_on END,
+			receipt_no=CASE WHEN ?='Unpaid' THEN '' ELSE receipt_no END,
+			payment_method=CASE WHEN ?='Unpaid' THEN '' ELSE COALESCE(NULLIF(?,''),payment_method) END,
+			reference_no=CASE WHEN ?='Unpaid' THEN '' ELSE COALESCE(NULLIF(?,''),reference_no) END`+submitClause+` WHERE id=?`+tw+paidGuard, args...)
 		if err != nil {
 			core.RespondError(w, "could not update invoice", 500)
 			return
