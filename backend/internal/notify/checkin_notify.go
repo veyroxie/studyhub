@@ -105,7 +105,8 @@ func hasUnpaidMonthly(db *store.DB, tenantID int, parentEmail string) bool {
 	err := db.QueryRow(`SELECT EXISTS(
 		SELECT 1 FROM invoices i JOIN students s ON s.id=i.student_id
 		WHERE s.contact=? AND i.tenant_id=? AND i.type='Monthly'
-		  AND (i.status='Unpaid' OR i.status='Overdue') AND i.deleted_at IS NULL
+		  AND (i.status='Unpaid' OR i.status='Overdue')
+		  AND i.deleted_at IS NULL AND s.deleted_at IS NULL
 	)`, parentEmail, tenantID).Scan(&exists)
 	if err != nil {
 		core.Logger.Error("check-in billing gate query failed; allowing alert", "err", err, "email", parentEmail)
