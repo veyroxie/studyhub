@@ -1008,7 +1008,10 @@
     // Staff checked in today
     var staffCheckedIn = attendance.filter(function(a) { return a.personType==='staff' && a.date===today && a.checkIn; }).length;
 
-    return '<div style="max-width:1100px">'
+    // No width cap. Every other page fills the container, and a 1100px column
+    // on a wide screen reads as the page being broken rather than as a
+    // considered measure.
+    return '<div>'
       // Header
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">'
       +   '<div>'

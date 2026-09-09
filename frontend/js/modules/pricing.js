@@ -251,7 +251,7 @@
           + '<p style="font-size:0.72rem;color:#b45309;margin:0.55rem 0 0">Each needs a tier in its category, or its own fixed price on the class.</p>'
           + '</div>'
         : '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:0;padding:0.8rem 1rem;font-size:0.82rem;color:#166534;font-weight:600">Every class can be priced.</div>')
-        + '<div style="display:flex;flex-direction:column;gap:0.6rem;max-width:900px">' + (rows || '<p style="font-size:0.85rem;color:#94a3b8">No categories yet.</p>') + '</div>')
+        + '<div style="display:flex;flex-direction:column;gap:0.6rem">' + (rows || '<p style="font-size:0.85rem;color:#94a3b8">No categories yet.</p>') + '</div>')
       + '</div>';
   }
 
