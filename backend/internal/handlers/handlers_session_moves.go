@@ -24,11 +24,22 @@ var isoDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 func listSessionMoves(db *store.DB, c *core.Claims) []models.SessionMove {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,class_id,from_date,to_date,reason,moved_by,created_on FROM class_session_moves WHERE deleted_at IS NULL`+tw+` ORDER BY from_date DESC LIMIT 5000`, twArgs...)
-	return store.CollectRows(rows, err, "SessionMove", func(r *sql.Rows) (models.SessionMove, error) {
+	out := store.CollectRows(rows, err, "SessionMove", func(r *sql.Rows) (models.SessionMove, error) {
 		var m models.SessionMove
 		err := r.Scan(&m.ID, &m.ClassID, &m.FromDate, &m.ToDate, &m.Reason, &m.MovedBy, &m.CreatedOn)
 		return m, err
 	})
+	visible := visibleClassIDs(db, c)
+	if visible == nil {
+		return out
+	}
+	scoped := []models.SessionMove{}
+	for _, m := range out {
+		if visible[m.ClassID] {
+			scoped = append(scoped, m)
+		}
+	}
+	return scoped
 }
 
 func HandleListSessionMoves(db *store.DB) http.HandlerFunc {

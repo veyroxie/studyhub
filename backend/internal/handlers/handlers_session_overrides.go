@@ -21,13 +21,24 @@ import (
 func listSessionOverrides(db *store.DB, c *core.Claims) []models.SessionOverride {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,class_id,date,teacher_ids,note,created_by,created_on FROM class_session_overrides WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC LIMIT 5000`, twArgs...)
-	return store.CollectRows(rows, err, "SessionOverride", func(r *sql.Rows) (models.SessionOverride, error) {
+	out := store.CollectRows(rows, err, "SessionOverride", func(r *sql.Rows) (models.SessionOverride, error) {
 		var so models.SessionOverride
 		var tids string
 		err := r.Scan(&so.ID, &so.ClassID, &so.Date, &tids, &so.Note, &so.CreatedBy, &so.CreatedOn)
 		so.TeacherIDs = models.ParseArr(tids)
 		return so, err
 	})
+	visible := visibleClassIDs(db, c)
+	if visible == nil {
+		return out
+	}
+	scoped := []models.SessionOverride{}
+	for _, so := range out {
+		if visible[so.ClassID] {
+			scoped = append(scoped, so)
+		}
+	}
+	return scoped
 }
 
 func HandleListSessionOverrides(db *store.DB) http.HandlerFunc {

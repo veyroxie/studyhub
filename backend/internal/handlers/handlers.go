@@ -352,3 +352,21 @@ func writeTenant(w http.ResponseWriter, c *core.Claims) (int, bool) {
 	}
 	return tid, true
 }
+
+// visibleClassIDs is the set of classes this caller may see session records
+// for, or nil meaning "all of them". Admins get nil; a teacher is limited to
+// their own classes; everyone else to the classes their children are in.
+//
+// The three session lists -- overrides, moves and cancellations -- were the
+// only lists in this area with no role scoping at all, so a parent reading
+// /api/session-overrides received every teacher swap in the centre, including
+// the free-text note and the admin who wrote it.
+func visibleClassIDs(db *store.DB, c *core.Claims) map[string]bool {
+	if core.IsAdminRole(c) {
+		return nil
+	}
+	if c != nil && c.Role == "teacher" {
+		return teacherClassIDSet(db, c)
+	}
+	return store.ParentClassIDs(db, c)
+}

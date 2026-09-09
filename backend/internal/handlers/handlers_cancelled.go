@@ -19,11 +19,22 @@ import (
 func listCancelledClasses(db *store.DB, c *core.Claims) []models.CancelledClass {
 	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`SELECT id,class_id,date,reason,cancelled_by,created_on FROM cancelled_classes WHERE deleted_at IS NULL`+tw+` ORDER BY date DESC LIMIT 5000`, twArgs...)
-	return store.CollectRows(rows, err, "CancelledClass", func(r *sql.Rows) (models.CancelledClass, error) {
+	out := store.CollectRows(rows, err, "CancelledClass", func(r *sql.Rows) (models.CancelledClass, error) {
 		var cc models.CancelledClass
 		err := r.Scan(&cc.ID, &cc.ClassID, &cc.Date, &cc.Reason, &cc.CancelledBy, &cc.CreatedOn)
 		return cc, err
 	})
+	visible := visibleClassIDs(db, c)
+	if visible == nil {
+		return out
+	}
+	scoped := []models.CancelledClass{}
+	for _, cc := range out {
+		if visible[cc.ClassID] {
+			scoped = append(scoped, cc)
+		}
+	}
+	return scoped
 }
 
 func HandleListCancelledClasses(db *store.DB) http.HandlerFunc {
