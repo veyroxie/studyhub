@@ -265,9 +265,14 @@ func HandleInvoiceUpdate(db *store.DB) http.HandlerFunc {
 		// duplicate check -- but once set it must not move, because a back-dated
 		// created_on vacates the month and the next run inside the 1-7 window
 		// bills that student again. Hand-made, back-dated invoices are routine.
-		newPeriod := monthlyPeriod(inv.Type, inv.CreatedOn)
-		if newPeriod != "" && curPeriod != "" {
-			newPeriod = curPeriod
+		// An existing period is never moved and never cleared -- not by a
+		// back-dated created_on, and not by a type whose monthlyPeriod is empty
+		// (Self-study Overflow carries a period too, set by the cron). An empty
+		// one is still filled, so reclassifying an invoice as Monthly gives the
+		// duplicate check something to see.
+		newPeriod := curPeriod
+		if newPeriod == "" {
+			newPeriod = monthlyPeriod(inv.Type, inv.CreatedOn)
 		}
 		// Only clear line items when the amount actually changed: a manual amount
 		// override makes the itemisation inconsistent, but a description/due-date

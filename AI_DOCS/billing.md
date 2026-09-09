@@ -223,7 +223,9 @@ unexplained positive leftover is labelled "Early bird discount" only when `disco
   Generating per-child invoices here would double-bill.
 - The edit modal appends the invoice's existing type to the Monthly/Adhoc picker, because
   reclassifying a system type (`Self-study`, `Self-study Overflow`) to Monthly "would corrupt
-  billing reports + the overflow dedup" (`billing.js:1112-1117`).
+  billing reports + the overflow dedup" (`billing.js:1112-1117`). The dedup half of that
+  reasoning no longer applies: the overflow dedup keys on `period`, not on the description
+  it used to match (migration `0063`). The type guard still stands for the reports.
 - `_checkReferralMilestoneClient` is an explicitly redundant safety net for the server-side
   hook, not the primary mechanism (`billing.js:738-743`). Do not delete either half on the
   assumption the other covers it.

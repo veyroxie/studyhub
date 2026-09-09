@@ -196,6 +196,10 @@ func runMonthlyInvoiceCycle(db *store.DB) {
 func generateSelfStudyOverflowInvoices(db *store.DB, now time.Time) int {
 	prev := previousMonth(now)
 	monthHuman := prev.Format("Jan 2006")
+	// The dedup key. Not derived from created_on anywhere: overflow bills the
+	// PREVIOUS month but is issued in the current one, which is why this used to
+	// key off the human month in the description -- a field admins can retype.
+	monthPeriod := prev.Format("2006-01")
 	monthStart := prev.Format("2006-01-02")
 	monthEnd := time.Date(prev.Year(), prev.Month()+1, 1, 0, 0, 0, 0, prev.Location()).AddDate(0, 0, -1).Format("2006-01-02")
 
@@ -210,7 +214,7 @@ func generateSelfStudyOverflowInvoices(db *store.DB, now time.Time) int {
 	// Fail closed: an empty map on error would re-bill every over-quota student
 	// on each of the 1–7 daily runs, so abort the run if the preload fails.
 	existingOverflow := map[string]bool{}
-	existRows, err := db.Query(`SELECT tenant_id, student_id FROM invoices WHERE type='Self-study Overflow' AND description LIKE ? AND deleted_at IS NULL`, "%"+monthHuman+"%")
+	existRows, err := db.Query(`SELECT tenant_id, student_id FROM invoices WHERE type='Self-study Overflow' AND period=? AND deleted_at IS NULL`, monthPeriod)
 	if err != nil {
 		core.Logger.Error("self-study overflow dedup preload failed", "err", err)
 		return 0
@@ -298,8 +302,8 @@ func generateSelfStudyOverflowInvoices(db *store.DB, now time.Time) int {
 				Qty: float64(billHours), UnitPrice: SelfStudyOverflowRatePerHour, Amount: amount,
 			}}
 			invID := core.GenerateID("INV")
-			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,line_items) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				invID, tid, stuID, desc, "Self-study Overflow", amount, dueDate, "Unpaid", createdOn, nil, "", 0.0, false, "[]", 0.0, 0.0, "", models.MarshalLineItems(overflowItems)); err != nil {
+			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,line_items,period) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				invID, tid, stuID, desc, "Self-study Overflow", amount, dueDate, "Unpaid", createdOn, nil, "", 0.0, false, "[]", 0.0, 0.0, "", models.MarshalLineItems(overflowItems), monthPeriod); err != nil {
 				core.Logger.Error("self-study overflow insert failed", "err", err, "student_id", stuID)
 				continue
 			}
