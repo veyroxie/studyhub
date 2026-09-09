@@ -1599,7 +1599,7 @@
 
   function _updateSiblingChildren(email) {
     const { students } = App.Store.get();
-    const children = students.filter(function(s) { return s.contact === email; });
+    const children = App.Utils.childrenOf(students, email);
     const list = document.getElementById('sibling-children-list');
     const checksDiv = document.getElementById('sibling-children-checks');
     if (!list || !checksDiv) return;
