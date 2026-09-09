@@ -33,6 +33,25 @@ func JSONArr(v []string) string {
 }
 
 // parseArr unmarshals a JSON string into a string slice
+// DedupStrings returns the input with duplicates removed, order preserved.
+//
+// enrolled_classes is stored as the client sent it, while SyncEnrollments
+// reconciles the same list into a map -- so a repeated class id billed that
+// class twice on the monthly invoice while the enrollments table recorded it
+// once, and nothing anywhere reported a disagreement.
+func DedupStrings(in []string) []string {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		if seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
+}
+
 func ParseArr(s string) []string {
 	var out []string
 	if s == "" {

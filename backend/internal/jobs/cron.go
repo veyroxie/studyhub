@@ -510,7 +510,7 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 				Qty: 1, UnitPrice: base, Amount: base,
 			})
 		} else {
-			for _, cid := range models.ParseArr(s.enrolledClasses) {
+			for _, cid := range models.DedupStrings(models.ParseArr(s.enrolledClasses)) {
 				m := classByID[cid]
 				if m.fee <= 0 {
 					// A class with no level band (or a zeroed pricing tier)

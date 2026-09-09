@@ -346,7 +346,7 @@ func HandleStudents(db *store.DB) http.HandlerFunc {
 			// client-supplied value, persist an empty placeholder, then
 			// recompute the JSON for every member of this family in one pass.
 			_, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,medical_info,allergies,family_id,referred_by_family_id,package_amount,package_self_study_hours,subscription_status,dropin_self_study,student_no,level_band,standing_discount,standing_discount_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, models.JSONArr(s.EnrolledClasses), "[]", s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.ReferredByFamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.SubscriptionStatus, s.DropinSelfStudy, strings.TrimSpace(s.StudentNo), s.LevelBand, discountAmount(s), strings.TrimSpace(s.StandingDiscountReason))
+				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, models.JSONArr(models.DedupStrings(s.EnrolledClasses)), "[]", s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.ReferredByFamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.SubscriptionStatus, s.DropinSelfStudy, strings.TrimSpace(s.StudentNo), s.LevelBand, discountAmount(s), strings.TrimSpace(s.StandingDiscountReason))
 			if err != nil {
 				if strings.Contains(err.Error(), "ux_students_tenant_student_no") {
 					core.RespondError(w, "that student number is already used by another student", http.StatusConflict)
@@ -445,7 +445,7 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 					inactiveOn = core.Today()
 				}
 			}
-			args := append([]any{s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, models.JSONArr(s.EnrolledClasses), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.DropinSelfStudy, strings.TrimSpace(s.StudentNo), inactiveReason, inactiveOn, s.LevelBand, discountAmount(s), strings.TrimSpace(s.StandingDiscountReason), id}, twArgs...)
+			args := append([]any{s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, models.JSONArr(models.DedupStrings(s.EnrolledClasses)), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.DropinSelfStudy, strings.TrimSpace(s.StudentNo), inactiveReason, inactiveOn, s.LevelBand, discountAmount(s), strings.TrimSpace(s.StandingDiscountReason), id}, twArgs...)
 			res, err := tx.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=?,dropin_self_study=?,student_no=?,inactive_reason=?,inactive_on=?,level_band=?,standing_discount=?,standing_discount_reason=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 			if err != nil {
 				if strings.Contains(err.Error(), "ux_students_tenant_student_no") {
