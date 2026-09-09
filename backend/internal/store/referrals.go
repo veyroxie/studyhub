@@ -23,6 +23,9 @@ const (
 // make a correction of one mistake into a second one. Those are logged for an
 // admin to settle by hand instead.
 //
+// paid_invoice_count is the honest count and is no longer frozen at the
+// milestone once earned; students.js only renders it while the row is pending.
+//
 // Tenant-scoped so a paid invoice in tenant A cannot settle a referral row
 // owned by tenant B. Errors are swallowed -- referral logic must never break
 // payment processing.
