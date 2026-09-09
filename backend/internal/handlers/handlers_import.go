@@ -419,15 +419,29 @@ func HandleClearSeedData(db *store.DB) http.HandlerFunc {
 		deleteByIDs("classes", seedClassIDs)
 
 		// Delete seed parent users + families (but not admin/teacher users).
-		// users.email is globally unique so tenant scope is irrelevant there,
-		// but families.contact can collide across tenants — must be scoped.
+		// Both are tenant-scoped. The previous reasoning here -- that users.email
+		// is globally unique so the scope is irrelevant -- has it backwards:
+		// seedParentEmails is a hardcoded list, not a list read back from this
+		// tenant, so global uniqueness is exactly what makes the email ambiguous.
+		// The single row it matches may belong to a DIFFERENT tenant, and an
+		// unscoped delete removes it. Tenant isolation is enforced at the query
+		// layer here; RLS is a documented passthrough and catches nothing.
 		for _, email := range seedParentEmails {
-			res, _ := db.Exec(`DELETE FROM users WHERE email=? AND role='parent'`, email)
+			userArgs := append([]any{email}, twArgs...)
+			res, err := db.Exec(`DELETE FROM users WHERE email=? AND role='parent'`+tw, userArgs...)
+			if err != nil {
+				l.Error("clear-seed: user delete failed", "email", email, "err", err)
+				continue
+			}
 			if n, _ := res.RowsAffected(); n > 0 {
 				deleted["users"] += int(n)
 			}
 			famArgs := append([]any{email}, twArgs...)
-			res, _ = db.Exec(`DELETE FROM families WHERE contact=?`+tw, famArgs...)
+			res, err = db.Exec(`DELETE FROM families WHERE contact=?`+tw, famArgs...)
+			if err != nil {
+				l.Error("clear-seed: family delete failed", "email", email, "err", err)
+				continue
+			}
 			if n, _ := res.RowsAffected(); n > 0 {
 				deleted["families"] += int(n)
 			}
