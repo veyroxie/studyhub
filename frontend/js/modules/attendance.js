@@ -195,7 +195,7 @@
   function _renderClientView() {
     const { attendance, students } = App.Store.get();
     const myStudentIds = App.clientParent
-      ? students.filter(function(s) { return s.contact === App.clientParent; }).map(function(s) { return s.id; })
+      ? App.Utils.childrenOf(students, App.clientParent).map(function(s) { return s.id; })
       : [];
     const myRecords = attendance.filter(function(a) {
       return a.personType === 'student' && myStudentIds.indexOf(a.personId) > -1;

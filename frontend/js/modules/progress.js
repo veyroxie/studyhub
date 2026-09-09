@@ -61,8 +61,8 @@
   // ── Parent view ──────────────────────────────────────────────────────────
   function _renderParent(container) {
     var s = App.Store.get();
-    var students = (s.students || []).filter(function(st) {
-      return !!App.clientParent && st.contact === App.clientParent && st.status !== 'Inactive';
+    var students = App.Utils.childrenOf(s.students, App.clientParent).filter(function(st) {
+      return st.status !== 'Inactive';
     });
     var invoices = s.invoices || [];
     var reports  = (s.progressReports || []);

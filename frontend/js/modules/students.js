@@ -45,7 +45,7 @@
 
     let displayStudents = students;
     if (isClient && App.clientParent) {
-      displayStudents = students.filter(function(s) { return s.contact === App.clientParent; })
+      displayStudents = App.Utils.childrenOf(students, App.clientParent)
         .filter(function(s) { return s.status !== 'Inactive'; });
     }
     if (isTeacher && App.currentTeacher) {

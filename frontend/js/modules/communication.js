@@ -20,7 +20,7 @@
     if (isClient && App.clientParent) {
       var { students } = App.Store.get();
       parentClassIds = {};
-      students.filter(function(s) { return s.contact === App.clientParent; }).forEach(function(s) {
+      App.Utils.childrenOf(students, App.clientParent).forEach(function(s) {
         (s.enrolledClasses || []).forEach(function(cid) { parentClassIds[cid] = true; });
       });
     }

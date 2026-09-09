@@ -1,0 +1,15 @@
+# One line ending, so a diff shows what changed rather than every line.
+# Two files flipped in opposite directions during the September UI work --
+# theme.js to LF, router.js to CRLF -- which buried about twenty real lines
+# under fourteen hundred. Normalising here stops it recurring on whichever
+# editor touches a file next.
+* text=auto eol=lf
+
+# Binary, never normalised.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
+*.pdf  binary

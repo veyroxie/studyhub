@@ -188,8 +188,7 @@
 
     } else {
       // Parent / client view
-      var myIds = students
-        .filter(function(s) { return !!App.clientParent && s.contact === App.clientParent; })
+      var myIds = App.Utils.childrenOf(students, App.clientParent)
         .map(function(s) { return s.id; });
 
       // Overdue invoices for their children

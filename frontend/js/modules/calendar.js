@@ -61,7 +61,7 @@
     // Parent filter: only show classes the parent's children are enrolled in
     let enrolledClassIds = null;
     if (isClient && App.clientParent) {
-      const myKids = students.filter(function(s) { return s.contact === App.clientParent; });
+      const myKids = App.Utils.childrenOf(students, App.clientParent);
       enrolledClassIds = {};
       myKids.forEach(function(s) {
         s.enrolledClasses.forEach(function(cid) { enrolledClassIds[cid] = true; });
@@ -293,7 +293,7 @@
               var enrolled = allStudents.filter(function(st) { return (st.enrolledClasses || []).indexOf(c.id) > -1; });
               var monthChildTags = '';
               if (App.currentRole === 'client' && App.clientParent) {
-                var monthKids = enrolled.filter(function(st) { return st.contact === App.clientParent; });
+                var monthKids = App.Utils.childrenOf(enrolled, App.clientParent);
                 if (monthKids.length > 0) monthChildTags = ' <span style="font-size:0.55rem;font-weight:700;color:#92400e">(' + monthKids.map(function(st){return App.Utils.esc(st.firstName);}).join(', ') + ')</span>';
               }
               var tipNames = enrolled.map(function(st) { return st.firstName + ' ' + (st.lastName || '').charAt(0); }).join(', ');
@@ -362,7 +362,7 @@
       var isCancelled = !!ccRow;
       var childTags = '';
       if (isClient && App.clientParent) {
-        var kids = students.filter(function(st) { return st.contact === App.clientParent && (st.enrolledClasses || []).indexOf(c.id) > -1; });
+        var kids = App.Utils.childrenOf(students, App.clientParent).filter(function(st) { return (st.enrolledClasses || []).indexOf(c.id) > -1; });
         if (kids.length > 0) childTags = '<span style="font-size:0.62rem;font-weight:700;color:#92400e;margin-left:0.35rem">(' + kids.map(function(st) { return App.Utils.esc(st.firstName); }).join(', ') + ')</span>';
       }
       var meta = isClient ? App.Utils.esc(teachers) : App.Utils.esc(teachers) + ' · ' + c.enrolled + '/' + c.capacity + ' enrolled';
@@ -481,8 +481,8 @@
     // Child name badges for parent view
     var childBadges = '';
     if (App.currentRole === 'client' && App.clientParent && allStudents) {
-      var myKidsInClass = allStudents.filter(function(st) {
-        return st.contact === App.clientParent && (st.enrolledClasses || []).indexOf(c.id) > -1;
+      var myKidsInClass = App.Utils.childrenOf(allStudents, App.clientParent).filter(function(st) {
+        return (st.enrolledClasses || []).indexOf(c.id) > -1;
       });
       if (myKidsInClass.length > 0) {
         childBadges = '<div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:3px">' + myKidsInClass.map(function(st) {
@@ -580,7 +580,7 @@
 
     var canLeaveFeedback = isClient; // parents can rate
     var parentStudentIds = isClient && App.clientParent
-      ? state.students.filter(function(s){ return s.contact===App.clientParent; }).map(function(s){ return s.id; })
+      ? App.Utils.childrenOf(state.students, App.clientParent).map(function(s){ return s.id; })
       : [];
     var alreadyReviewed = isClient && feedbackList.some(function(f) {
       return parentStudentIds.indexOf(f.studentId) > -1;
