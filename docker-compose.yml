@@ -86,6 +86,15 @@ services:
       # Web push (VAPID) — leave blank to disable push (email + in-app still work)
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      # Uploads. InitUploads gates on UPLOAD_STORE and reads S3_ENDPOINT;
+      # neither was forwarded, so the S3 path never opened and payment proofs
+      # stayed on the droplet-local ./uploads mount — which the nightly
+      # Postgres dump does not cover, so they had no offsite copy at all.
+      # S3_ENDPOINT and S3_HOST name the same endpoint under two names: the Go
+      # code reads the first, backup.sh's s3cmd the second, so one defaults
+      # from the other rather than making the operator set both.
+      UPLOAD_STORE: ${UPLOAD_STORE:-local}
+      S3_ENDPOINT: ${S3_ENDPOINT:-${S3_HOST:-}}
       # DO Spaces backup (optional — set in .env)
       S3_BUCKET: ${S3_BUCKET:-}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
