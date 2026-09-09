@@ -591,6 +591,6 @@ func recheckReferralMilestones(db *store.DB) {
 		// Synthesise a tenant-scoped claim so the helper's scopeTenant
 		// query targets the row's actual tenant rather than running
 		// cross-tenant.
-		store.ReferralCheckMilestoneOnPay(db, p.studentID, &core.Claims{TenantID: p.tenantID, Role: "system"})
+		store.ReferralReconcile(db, p.studentID, &core.Claims{TenantID: p.tenantID, Role: "system"})
 	}
 }

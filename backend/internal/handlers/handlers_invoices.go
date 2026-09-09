@@ -204,6 +204,18 @@ const (
 	invoiceStatusUnpaid = "Unpaid"
 )
 
+// invoiceAuditAction names the audit row after the transition it records, so
+// the trail distinguishes a payment from its reversal.
+func invoiceAuditAction(newStatus string) string {
+	switch newStatus {
+	case invoiceStatusPaid:
+		return "invoice_paid"
+	case invoiceStatusUnpaid:
+		return "invoice_payment_reversed"
+	}
+	return "invoice_status_changed"
+}
+
 func monthlyPeriod(invoiceType, createdOn string) string {
 	if invoiceType != "Monthly" || len(createdOn) < 7 {
 		return ""
@@ -554,19 +566,29 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 				core.LogFromReq(r).Error("failed to assign receipt number", "err", err, "invoice_id", id)
 			}
 		}
-		detailBytes, _ := json.Marshal(map[string]any{
-			"studentId": studentID,
-			"amount":    amount,
-			"paidOn":    t,
-			"method":    body.PaymentMethod,
-		})
-		core.LogAudit(db, store.TenantID(c), c.Email, "invoice_paid", "invoice", id, string(detailBytes))
+		// The audit row has to say what happened, not that the endpoint ran.
+		// This logged "invoice_paid" with today as paidOn for every status,
+		// so reversing a payment recorded a payment, and a no-op re-pay
+		// recorded a second one.
+		if rowsChanged > 0 {
+			detail := map[string]any{
+				"studentId": studentID,
+				"amount":    amount,
+				"status":    newStatus,
+			}
+			if newStatus == invoiceStatusPaid {
+				detail["paidOn"] = t
+				detail["method"] = body.PaymentMethod
+			}
+			detailBytes, _ := json.Marshal(detail)
+			core.LogAudit(db, store.TenantID(c), c.Email, invoiceAuditAction(newStatus), "invoice", id, string(detailBytes))
+		}
 
-		// Referral milestone: re-evaluate the referred student's progress.
-		// Only relevant for Monthly invoices, but the helper checks itself.
-		// Gated on rowsChanged so a re-pay no-op can't double-count the milestone.
-		if newStatus == "Paid" && rowsChanged > 0 {
-			store.ReferralCheckMilestoneOnPay(db, studentID, c)
+		// Referral milestone: re-derive the referred student's progress. Both
+		// directions, because reversing the invoice that completed a milestone
+		// has to re-open it. Gated on rowsChanged so a no-op cannot move it.
+		if rowsChanged > 0 && (newStatus == invoiceStatusPaid || newStatus == invoiceStatusUnpaid) {
+			store.ReferralReconcile(db, studentID, c)
 		}
 
 		// Send the "payment received" confirmation only when CONFIRMING a payment

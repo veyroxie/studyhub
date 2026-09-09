@@ -225,7 +225,7 @@ func HandleBillplzWebhook(db *store.DB) http.HandlerFunc {
 			var studentID string
 			db.QueryRow(`SELECT student_id FROM invoices WHERE id=?`, invoiceID).Scan(&studentID)
 			if studentID != "" {
-				store.ReferralCheckMilestoneOnPay(db, studentID, nil)
+				store.ReferralReconcile(db, studentID, nil)
 			}
 		}
 		w.WriteHeader(http.StatusOK)
@@ -391,7 +391,7 @@ func HandleStripeWebhook(db *store.DB) http.HandlerFunc {
 			var studentID string
 			db.QueryRow(`SELECT student_id FROM invoices WHERE id=?`, invoiceID).Scan(&studentID)
 			if studentID != "" {
-				store.ReferralCheckMilestoneOnPay(db, studentID, nil)
+				store.ReferralReconcile(db, studentID, nil)
 			}
 		}
 		w.WriteHeader(http.StatusOK)
