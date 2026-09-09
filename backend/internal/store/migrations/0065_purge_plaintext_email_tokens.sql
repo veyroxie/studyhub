@@ -1,0 +1,21 @@
+-- 0065_purge_plaintext_email_tokens.sql
+--
+-- email_tokens.token held the raw 256-bit value. Anyone able to read the table
+-- -- a leaked nightly backup to Spaces, a read-only grant, an injection
+-- elsewhere -- held a working account-takeover link for every user with an
+-- outstanding token: /reset.html?token=<the stored value>.
+--
+-- CreateEmailToken now stores sha256(token) and both consume paths hash before
+-- matching, so the raw value exists only in the email we send.
+--
+-- This removes the plaintext already sitting in the table, and in every backup
+-- taken from here on. Only unused rows are deleted: those are the live secrets,
+-- and they are also the rows that could never match again now that lookups
+-- hash. Used rows are inert -- ConsumeEmailToken requires used_at IS NULL -- so
+-- they stay for whatever audit value they carry.
+--
+-- Consequence, accepted: any reset or set-password link already in someone's
+-- inbox stops working, and they request a new one. Reset links live 1 hour and
+-- set-password links 24, so the window is small.
+
+DELETE FROM email_tokens WHERE used_at IS NULL;
