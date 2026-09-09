@@ -341,17 +341,23 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	// class carries its own monthly_fee_override — Phonics and the 30-minute
 	// group have no matching tier and would otherwise price at 0.  Class IDs are
 	// unique, so a flat map keyed by class id is enough (cron spans all tenants).
+	// Fail closed like the dedup preloads above: an empty map prices every class
+	// at 0, so every student trips the `base <= 0` skip and the run bills nobody
+	// while logging nothing.
 	classByID := map[string]classMeta{}
-	if frows, ferr := db.Query(`SELECT c.id, COALESCE(NULLIF(c.monthly_fee_override,0), pt.monthly_fee, 0), COALESCE(c.name,''), COALESCE(c.class_type,''), COALESCE(c.level_band,''), COALESCE(c.subject,'') FROM classes c LEFT JOIN pricing_tiers pt ON pt.class_type = c.class_type AND pt.level_band = c.level_band AND pt.tenant_id = c.tenant_id AND pt.deleted_at IS NULL WHERE c.deleted_at IS NULL`); ferr == nil {
-		for frows.Next() {
-			var cid string
-			var m classMeta
-			if err := frows.Scan(&cid, &m.fee, &m.name, &m.classType, &m.band, &m.subject); err == nil {
-				classByID[cid] = m
-			}
-		}
-		frows.Close()
+	frows, ferr := db.Query(`SELECT c.id, COALESCE(NULLIF(c.monthly_fee_override,0), pt.monthly_fee, 0), COALESCE(c.name,''), COALESCE(c.class_type,''), COALESCE(c.level_band,''), COALESCE(c.subject,'') FROM classes c LEFT JOIN pricing_tiers pt ON pt.class_type = c.class_type AND pt.level_band = c.level_band AND pt.tenant_id = c.tenant_id AND pt.deleted_at IS NULL WHERE c.deleted_at IS NULL`)
+	if ferr != nil {
+		core.Logger.Error("monthly cron: class fee preload failed", "err", ferr)
+		return 0
 	}
+	for frows.Next() {
+		var cid string
+		var m classMeta
+		if err := frows.Scan(&cid, &m.fee, &m.name, &m.classType, &m.band, &m.subject); err == nil {
+			classByID[cid] = m
+		}
+	}
+	frows.Close()
 
 	rows, err := db.Query(`
 		SELECT s.id, s.tenant_id, s.first_name, s.last_name, s.family_id, s.package_amount,
@@ -403,7 +409,11 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		pairSet[k] = true
 		pairs = append(pairs, familyTenantPair{tenantID: s.tenantID, familyID: s.familyID})
 	}
-	familyCredits := loadFamilyReferralCredits(db, pairs)
+	familyCredits, err := loadFamilyReferralCredits(db, pairs)
+	if err != nil {
+		core.Logger.Error("monthly cron: referral credit preload failed", "err", err)
+		return 0
+	}
 
 	// Build family → [sibling student IDs] map. The 2+-kids threshold is
 	// based on the WHOLE family (any billable student counts: active
@@ -422,15 +432,17 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 			fargs[i] = id
 		}
 		rows, err := db.Query(`SELECT id, family_id FROM students WHERE deleted_at IS NULL AND COALESCE(subscription_status,'active')='active' AND COALESCE(status,'Active') NOT IN ('Inactive','Waitlisted') AND family_id IN (`+strings.Join(fph, ",")+`)`, fargs...)
-		if err == nil {
-			for rows.Next() {
-				var sid, fid string
-				if err := rows.Scan(&sid, &fid); err == nil && fid != "" {
-					siblingsByFamily[fid] = append(siblingsByFamily[fid], sid)
-				}
-			}
-			rows.Close()
+		if err != nil {
+			core.Logger.Error("monthly cron: sibling roster preload failed", "err", err)
+			return 0
 		}
+		for rows.Next() {
+			var sid, fid string
+			if err := rows.Scan(&sid, &fid); err == nil && fid != "" {
+				siblingsByFamily[fid] = append(siblingsByFamily[fid], sid)
+			}
+		}
+		rows.Close()
 	}
 
 	tx, err := db.BeginTx(context.Background())
@@ -676,10 +688,13 @@ func loadExistingMonthlyInvoiceStudentIDs(db *store.DB, monthPrefix string) (map
 // The result is keyed by "tenantID|familyID" so a cross-tenant id collision
 // (millisecond timestamp clash on FAM_ ids) cannot bleed credits between
 // tenants. Callers compose the lookup key with the student's tenant.
-func loadFamilyReferralCredits(db *store.DB, pairs []familyTenantPair) map[string]int {
+// A query error is returned rather than skipped: silently dropping one tenant's
+// credits bills those families RM10 per child too high AND leaves the credits
+// unconsumed, so the balance and the invoice disagree from then on.
+func loadFamilyReferralCredits(db *store.DB, pairs []familyTenantPair) (map[string]int, error) {
 	out := map[string]int{}
 	if len(pairs) == 0 {
-		return out
+		return out, nil
 	}
 	// Group by tenant so we can issue one IN-list per tenant.
 	byTenant := map[string][]string{}
@@ -700,7 +715,7 @@ func loadFamilyReferralCredits(db *store.DB, pairs []familyTenantPair) map[strin
 		      GROUP BY referrer_family_id`
 		rows, err := db.Query(q, args...)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		for rows.Next() {
 			var fid string
@@ -711,7 +726,7 @@ func loadFamilyReferralCredits(db *store.DB, pairs []familyTenantPair) map[strin
 		}
 		rows.Close()
 	}
-	return out
+	return out, nil
 }
 
 type familyTenantPair struct {

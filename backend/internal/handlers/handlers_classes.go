@@ -262,7 +262,7 @@ func HandleClasses(db *store.DB) http.HandlerFunc {
 			ctw, ctwArgs := store.ScopeTenant(cl, "")
 			for _, tid2 := range c.TeacherIDs {
 				var cnt int
-				clashArgs := append([]any{c.Day, c.ID, c.Time, c.EndTime, tid2}, ctwArgs...)
+				clashArgs := append([]any{c.Day, c.ID, c.EndTime, c.Time, tid2}, ctwArgs...)
 				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`+ctw,
 					clashArgs...).Scan(&cnt); err != nil {
 					core.RespondError(w, "server error checking class conflicts", 500)
@@ -275,7 +275,7 @@ func HandleClasses(db *store.DB) http.HandlerFunc {
 			}
 			if c.Classroom != "" {
 				var cnt int
-				roomArgs := append([]any{c.Day, c.Classroom, c.ID, c.Time, c.EndTime}, ctwArgs...)
+				roomArgs := append([]any{c.Day, c.Classroom, c.ID, c.EndTime, c.Time}, ctwArgs...)
 				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`+ctw,
 					roomArgs...).Scan(&cnt); err != nil {
 					core.RespondError(w, "server error checking class conflicts", 500)
@@ -346,6 +346,10 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "class not found", http.StatusNotFound)
 				return
 			}
+			// The slot as stored, captured BEFORE the body is decoded over it,
+			// so the clash check can tell an edit that moves a class from one
+			// that only renames it.
+			wasDay, wasTime, wasEnd, wasRoom := cl.Day, cl.Time, cl.EndTime, cl.Classroom
 			// Decoded OVER the stored row: fields the client omits keep their
 			// saved values rather than being zeroed.
 			if err := json.NewDecoder(r.Body).Decode(&cl); err != nil {
@@ -363,7 +367,7 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 			tw, twArgs := store.ScopeTenant(c, "")
 			for _, tid2 := range cl.TeacherIDs {
 				var cnt int
-				clashArgs := append([]any{cl.Day, cl.ID, cl.Time, cl.EndTime, tid2}, twArgs...)
+				clashArgs := append([]any{cl.Day, cl.ID, cl.EndTime, cl.Time, tid2}, twArgs...)
 				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`+tw,
 					clashArgs...).Scan(&cnt); err != nil {
 					core.RespondError(w, "server error checking class conflicts", 500)
@@ -374,9 +378,17 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 					return
 				}
 			}
-			if cl.Classroom != "" {
+			// Only when the edit MOVES the class. Twelve rooms overlap in
+			// production today, several of them Self-Study sessions that share
+			// a room on purpose, and 0062 makes them visible to this check by
+			// normalising the spellings. Re-checking on every edit would then
+			// refuse a rename or a tier change over a conflict the edit did
+			// not create and cannot fix -- blocking the person trying to
+			// resolve it. A move is still refused.
+			slotMoved := cl.Day != wasDay || cl.Time != wasTime || cl.EndTime != wasEnd || cl.Classroom != wasRoom
+			if cl.Classroom != "" && slotMoved {
 				var cnt int
-				roomArgs := append([]any{cl.Day, cl.Classroom, cl.ID, cl.Time, cl.EndTime}, twArgs...)
+				roomArgs := append([]any{cl.Day, cl.Classroom, cl.ID, cl.EndTime, cl.Time}, twArgs...)
 				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`+tw,
 					roomArgs...).Scan(&cnt); err != nil {
 					core.RespondError(w, "server error checking class conflicts", 500)

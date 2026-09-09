@@ -99,6 +99,24 @@ DATABASE_URL="$DSN" go run ./cmd/migrate 2>&1 | sed 's/^/    /'
 cd ..
 
 echo
+echo "==> Room double-bookings after migration (0062, real data) ..."
+# checkClassClash matches the classroom STRING, so four rooms stored as six
+# spellings meant a class in "2" and one in "Classroom 2" never collided. 0062
+# normalises the spellings; this reports what that makes visible. The guard
+# only runs on create and update, so anything listed here is an existing
+# conflict someone has to resolve by moving a class -- the migration cannot.
+docker exec "$CONTAINER" psql -U stratum -d studyhub_dryrun -q -c "
+SELECT a.day, a.time || '-' || a.end_time AS slot, a.classroom,
+       a.name AS class_a, b.name AS class_b
+  FROM classes a
+  JOIN classes b ON a.id < b.id AND a.day = b.day
+                AND a.time < b.end_time AND a.end_time > b.time
+                AND a.classroom = b.classroom
+ WHERE a.deleted_at IS NULL AND b.deleted_at IS NULL
+   AND COALESCE(a.classroom,'') <> ''
+ ORDER BY a.day, a.time;"
+
+echo
 echo "==> What the catalogue WOULD charge, against real data ..."
 # The switchover differ, run against the copy. This is the whole point of the
 # dry run for step 3: the same resolver the cron will use, on real production

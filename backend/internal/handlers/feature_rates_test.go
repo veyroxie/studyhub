@@ -510,3 +510,52 @@ func TestInvoiceUpdate_LineItemsAreAuthoritative(t *testing.T) {
 		t.Fatalf("a bare amount edit must still work: want 275, got %v", amount)
 	}
 }
+
+// TestClassUpdate_ClashOnlyBlocksAMove locks the rule that makes 0062 safe to
+// ship. Twelve rooms overlap in production today; normalising the spellings
+// makes them visible to the clash check, and re-checking on every edit would
+// then refuse a rename or a tier change over a conflict the edit did not
+// create -- blocking the person trying to fix it. A real move is still refused.
+func TestClassUpdate_ClashOnlyBlocksAMove(t *testing.T) {
+	r, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	tok := getToken(t, r, "admin@studyhub.com", "admin123")
+
+	var tenantID int
+	db.QueryRow(`SELECT tenant_id FROM users WHERE email=?`, "admin@studyhub.com").Scan(&tenantID)
+
+	// Two classes already sharing a room and an hour, as production has.
+	a, b := core.GenerateID("CLS"), core.GenerateID("CLS")
+	for _, id := range []string{a, b} {
+		if _, err := db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,classroom,capacity)
+			VALUES(?,?,?,?,?,?,?,?)`, id, tenantID, "Overlap "+id[len(id)-3:], "Tuesday", "16:30", "17:30", "Clash Room", 8); err != nil {
+			t.Fatalf("seed class: %v", err)
+		}
+	}
+
+	// Renaming one, slot untouched, must succeed despite the standing overlap.
+	w := authedJSON(t, r, "PUT", "/api/classes/"+a, tok, map[string]any{
+		"name": "Renamed", "day": "Tuesday", "time": "16:30", "endTime": "17:30",
+		"classroom": "Clash Room", "capacity": 8,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("a rename must not be refused over a pre-existing overlap: %d %s", w.Code, w.Body.String())
+	}
+	var gotName string
+	db.QueryRow(`SELECT name FROM classes WHERE id=?`, a).Scan(&gotName)
+	if gotName != "Renamed" {
+		t.Fatalf("the rename must have been saved, got %q", gotName)
+	}
+
+	// Moving it INTO a fresh conflict is still refused.
+	c := core.GenerateID("CLS")
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,classroom,capacity)
+		VALUES(?,?,?,?,?,?,?,?)`, c, tenantID, "Elsewhere", "Wednesday", "09:00", "10:00", "Other Room", 8)
+	w = authedJSON(t, r, "PUT", "/api/classes/"+c, tok, map[string]any{
+		"name": "Elsewhere", "day": "Tuesday", "time": "16:30", "endTime": "17:30",
+		"classroom": "Clash Room", "capacity": 8,
+	})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("moving a class into an occupied room must still be refused, got %d %s", w.Code, w.Body.String())
+	}
+}

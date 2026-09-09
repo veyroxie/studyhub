@@ -25,7 +25,7 @@ func checkWorkshopClash(db *store.DB, c *core.Claims, ws models.Workshop) error 
 	if ws.Classroom != "" {
 		// Classroom clash against other workshops on the same date.
 		var cnt int
-		wsArgs := append([]any{ws.Date, ws.Classroom, ws.ID, ws.Time, ws.EndTime}, twArgs...)
+		wsArgs := append([]any{ws.Date, ws.Classroom, ws.ID, ws.EndTime, ws.Time}, twArgs...)
 		if err := db.QueryRow(`SELECT COUNT(*) FROM workshops WHERE date=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`+tw, wsArgs...).Scan(&cnt); err != nil {
 			return errors.New("server error checking workshop conflicts")
 		}
@@ -35,7 +35,7 @@ func checkWorkshopClash(db *store.DB, c *core.Claims, ws models.Workshop) error 
 		// Classroom clash against regular classes on the same weekday.
 		weekday := dateWeekday(ws.Date)
 		if weekday != "" {
-			clsArgs := append([]any{weekday, ws.Classroom, ws.Time, ws.EndTime}, twArgs...)
+			clsArgs := append([]any{weekday, ws.Classroom, ws.EndTime, ws.Time}, twArgs...)
 			if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND time<? AND end_time>? AND deleted_at IS NULL`+tw, clsArgs...).Scan(&cnt); err != nil {
 				return errors.New("server error checking class conflicts")
 			}
@@ -47,7 +47,7 @@ func checkWorkshopClash(db *store.DB, c *core.Claims, ws models.Workshop) error 
 
 	for _, tid2 := range ws.TeacherIDs {
 		var cnt int
-		teacherArgs := append([]any{ws.Date, ws.ID, ws.Time, ws.EndTime, tid2}, twArgs...)
+		teacherArgs := append([]any{ws.Date, ws.ID, ws.EndTime, ws.Time, tid2}, twArgs...)
 		if err := db.QueryRow(`SELECT COUNT(*) FROM workshops WHERE date=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`+tw, teacherArgs...).Scan(&cnt); err != nil {
 			return errors.New("server error checking teacher conflicts")
 		}
