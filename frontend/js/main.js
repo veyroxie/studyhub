@@ -481,6 +481,9 @@
     document.getElementById('reset-btn') && document.getElementById('reset-btn').addEventListener('click', resetData);
     document.getElementById('logout-btn') && document.getElementById('logout-btn').addEventListener('click', function() {
       App.IdleTimeout.stop();
+      // The page is not reloaded here, so the socket has to be closed
+      // explicitly or it reconnects forever and the next login stacks another.
+      App.Api.disconnectWS();
       App.Api.logout().then(function() { App.Login.show(); });
     });
 
@@ -763,6 +766,7 @@
         }
         if (idle >= IDLE_LIMIT) {
           _stopIdleWatch();
+          App.Api.disconnectWS();
           App.Api.logout().then(function() {
             App.Login.show('Signed out after a period of inactivity — please sign in again. Nothing has been lost; your data is safe on the server.');
           });

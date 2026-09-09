@@ -264,15 +264,35 @@
     _handle401() {
       this._user = null;
       this._clearLocalData();
+      this.disconnectWS();
       App.Login.show('Your session timed out — please sign in again. Nothing has been lost; your data is safe on the server.');
+    },
+
+    // Close the socket and stop it reconnecting. Logout and _handle401 both
+    // show the login screen WITHOUT reloading the page, so without this the
+    // old socket's onclose kept firing a 5s reconnect that nothing could
+    // cancel -- and the next login opened another one alongside it. On a
+    // shared front-desk browser the count grew by one per login cycle, so
+    // every check-in produced N toasts and N snapshot reloads.
+    disconnectWS() {
+      this._wsWanted = false;
+      if (this._ws) {
+        try { this._ws.close(); } catch (e) { /* already closing */ }
+        this._ws = null;
+      }
     },
 
     // WebSocket for real-time attendance notifications
     connectWS() {
+      // One socket per session. Re-entry used to open a second one, because
+      // nothing held a handle to the first.
+      if (this._ws && (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING)) return;
+      this._wsWanted = true;
       const host = BASE.replace('http://','').replace('https://','') || window.location.host;
       const wsProto = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
       try {
         const ws = new WebSocket(wsProto + host + '/ws');
+        this._ws = ws;
         ws.onmessage = function(e) {
           try {
             const data = JSON.parse(e.data);
@@ -316,6 +336,11 @@
           console.error('WS error — will reconnect on close');
         };
         ws.onclose = function() {
+          if (App.Api._ws === ws) App.Api._ws = null;
+          // Only reconnect while a session still wants one. After logout the
+          // server rejects the upgrade anyway, so the old loop was retrying
+          // every 5s for the life of the tab.
+          if (!App.Api._wsWanted) return;
           setTimeout(function() { App.Api.connectWS(); }, 5000);
         };
       } catch(e) { console.error('WebSocket connect failed', e); }
