@@ -78,15 +78,21 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 	// classes_pricing_category_id_fkey, the error is unseen, and the leftover
 	// category makes the NEXT run fail on a duplicate name for a reason that
 	// has nothing to do with the code under test.
-	db.Exec(`UPDATE classes SET pricing_category_id=NULL
-		WHERE pricing_category_id NOT IN ('PC_group','PC_private','PC_selfstudy','PC_mandarin')`)
-	db.Exec(`DELETE FROM pricing_plans WHERE id NOT IN (
-		'PP_grp_12_1','PP_grp_12_2','PP_grp_34_1','PP_grp_34_2','PP_grp_56_1','PP_grp_56_2',
-		'PP_prv_12_1','PP_prv_12_2','PP_prv_34_1','PP_prv_34_2','PP_prv_56_1','PP_prv_56_2',
-		'PP_self_overflow','PP_prv_L0_1','PP_prv_L0_2','PP_mandarin_grp_1')`)
-	db.Exec(`DELETE FROM pricing_categories WHERE id NOT IN ('PC_group','PC_private','PC_selfstudy','PC_mandarin')`)
-	db.Exec(`UPDATE pricing_categories SET deleted_at=NULL WHERE deleted_at IS NOT NULL`)
-	db.Exec(`UPDATE pricing_plans SET deleted_at=NULL WHERE deleted_at IS NOT NULL`)
+	//
+	// What to delete is DERIVED, not listed. The previous allowlist enumerated
+	// the seeded ids and so had to be hand-extended for 0057, 0058 and 0060 --
+	// and any seeded row someone forgot to add was silently deleted by test
+	// setup. Seeded ids are alphabetic after the prefix ('PC_group',
+	// 'PP_grp_12_1'); core.GenerateID always emits a timestamp, so a
+	// handler-created row is exactly one whose id has a digit there. That rule
+	// keeps working for seeds that do not exist yet.
+	const generatedCategory = `id ~ '^PC_[0-9]'`
+	const generatedPlan = `id ~ '^PP_[0-9]'`
+	mustExec(t, db, `UPDATE classes SET pricing_category_id=NULL WHERE pricing_category_id ~ '^PC_[0-9]'`)
+	mustExec(t, db, `DELETE FROM pricing_plans WHERE `+generatedPlan)
+	mustExec(t, db, `DELETE FROM pricing_categories WHERE `+generatedCategory)
+	mustExec(t, db, `UPDATE pricing_categories SET deleted_at=NULL WHERE deleted_at IS NOT NULL`)
+	mustExec(t, db, `UPDATE pricing_plans SET deleted_at=NULL WHERE deleted_at IS NOT NULL`)
 
 	t.Setenv("RESEND_API_KEY", "")
 	core.InitLogger()
@@ -1231,5 +1237,15 @@ func TestEnrollmentTier_BackfilledFromNameNotGuessed(t *testing.T) {
 	db.QueryRow(`SELECT COUNT(*) FROM enrollments WHERE ended_on IS NOT NULL AND tier_name <> ''`).Scan(&ended)
 	if ended != 0 {
 		t.Errorf("%d ended enrolments were given a tier — that changes what a past invoice recomputes to", ended)
+	}
+}
+
+// mustExec fails the test when a setup statement errors. These used to discard
+// their result, so a cleanup blocked by a foreign key failed silently and the
+// NEXT run failed somewhere unrelated.
+func mustExec(t *testing.T, db *store.DB, query string, args ...any) {
+	t.Helper()
+	if _, err := db.Exec(query, args...); err != nil {
+		t.Fatalf("test setup: %s: %v", query, err)
 	}
 }
