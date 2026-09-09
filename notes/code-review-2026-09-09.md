@@ -151,6 +151,15 @@ Tenant isolation is enforced at the query layer only — `store.RLSScope` is a d
 **Failure:** teacher T, who teaches only Class A, POSTs `{personId: "STU_x", personType: "student", date: today, checkIn: "15:00"}` for a child in Class B. The row is created, and because `a.PersonType == "student" && a.CheckIn != nil` the handler fires `hub.broadcastCheckIn` and `notify.NotifyParentOnCheck` — an unrelated family receives a real-time toast, a web push and an email saying their child checked in at 3pm. The same call with `{status: "absent"}` hits the upsert branch and **overwrites** the row authored by the child's real teacher, changing payroll hours and the absence record.
 **Fix:** add the `teacherMayActOnStudent` guard on the POST path, matching the four sibling call sites.
 **Accept:** a teacher writing attendance for a student outside their classes receives 403; an admin is unaffected.
+**Operational consequence, deliberate:** the kiosk writes `personType: 'student'`
+(`attendance.js:468`, `:487`), so a teacher operating a general front-desk kiosk can now
+only scan students from their own classes. Admins are unrestricted. If the front desk is
+staffed by someone holding the `teacher` role, they need `admin` instead.
+**Residual, not fixed here:** the same handler still lets one teacher write a *staff*
+attendance row for another teacher, which also moves payroll. Left alone because
+restricting staff rows to the caller's own would break any legitimate
+teacher-checks-in-colleague flow, and who operates that screen is not established.
+Separate ticket if wanted.
 
 ### T8. Teacher check-in files the shift under whatever date the page was last left on
 **Files:** `frontend/js/modules/attendance.js:5` (declaration), `:103-104` (init), write paths `:950` (`_teacherCheckIn`) and `:983` (`_teacherCheckOut`), kiosk path `:444`; render order `:1032` vs `:1058`. Consumer: `frontend/js/modules/staff.js:277`.

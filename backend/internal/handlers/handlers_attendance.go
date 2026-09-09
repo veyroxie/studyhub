@@ -184,6 +184,19 @@ func HandleAttendance(db *store.DB, hub *WSHub) http.HandlerFunc {
 				core.RespondError(w, "person not found in tenant", http.StatusBadRequest)
 				return
 			}
+			// Being in the tenant is not the same as being this teacher's to
+			// write. Every sibling write path checks ownership -- self-study
+			// (:175, :217) and replacement credits (:104, :230) -- and this one
+			// did not, so any teacher could mark any child in the centre absent,
+			// which overwrites the row the child's real teacher wrote and moves
+			// payroll hours, or check them in, which fires a genuine push and
+			// email to a family they do not teach. Keyed off personTable so an
+			// empty personType, which already falls through to students, is
+			// covered too. Admins are unrestricted.
+			if personTable == "students" && !teacherMayActOnStudent(db, c, a.PersonID) {
+				core.RespondError(w, "that student is not in your classes", http.StatusForbidden)
+				return
+			}
 			if a.ClassID != nil && *a.ClassID != "" {
 				var classExists int
 				classArgs := append([]any{*a.ClassID}, twArgs...)
