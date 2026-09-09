@@ -73,11 +73,18 @@ func setupFeatureTestApp(t *testing.T) (*chi.Mux, *store.DB, func()) {
 	// anything a test added is dropped, and anything a test soft-deleted is
 	// revived. Without this, TestPricingCatalogue_CRUD passes once and then
 	// conflicts with its own leftovers on every later run.
+	// Break the FK from classes first. A test that fails partway leaves a class
+	// pointing at its category, the DELETE below then fails on
+	// classes_pricing_category_id_fkey, the error is unseen, and the leftover
+	// category makes the NEXT run fail on a duplicate name for a reason that
+	// has nothing to do with the code under test.
+	db.Exec(`UPDATE classes SET pricing_category_id=NULL
+		WHERE pricing_category_id NOT IN ('PC_group','PC_private','PC_selfstudy','PC_mandarin')`)
 	db.Exec(`DELETE FROM pricing_plans WHERE id NOT IN (
 		'PP_grp_12_1','PP_grp_12_2','PP_grp_34_1','PP_grp_34_2','PP_grp_56_1','PP_grp_56_2',
 		'PP_prv_12_1','PP_prv_12_2','PP_prv_34_1','PP_prv_34_2','PP_prv_56_1','PP_prv_56_2',
-		'PP_self_overflow')`)
-	db.Exec(`DELETE FROM pricing_categories WHERE id NOT IN ('PC_group','PC_private','PC_selfstudy')`)
+		'PP_self_overflow','PP_prv_L0_1','PP_prv_L0_2','PP_mandarin_grp_1')`)
+	db.Exec(`DELETE FROM pricing_categories WHERE id NOT IN ('PC_group','PC_private','PC_selfstudy','PC_mandarin')`)
 	db.Exec(`UPDATE pricing_categories SET deleted_at=NULL WHERE deleted_at IS NOT NULL`)
 	db.Exec(`UPDATE pricing_plans SET deleted_at=NULL WHERE deleted_at IS NOT NULL`)
 

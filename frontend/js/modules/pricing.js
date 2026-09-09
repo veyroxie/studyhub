@@ -17,6 +17,7 @@
   var _openCat = null;   // category id whose tiers are expanded
   var _tab = 'catalogue';
   var _preview = null;   // last price-preview response
+  var _pvError = '';     // why the last request failed, '' if it did not
   var _pvMonth = '';
 
   function _money(n) { return 'RM' + (Number(n) || 0).toFixed(2); }
@@ -83,10 +84,15 @@
   // so an existence check would look clean while verifying nothing.
   async function _loadPreview(month) {
     _pvMonth = month;
+    _pvError = '';
     try {
       _preview = await App.Api.get('/api/billing/price-preview?month=' + encodeURIComponent(month));
     } catch (err) {
+      // "Failed" and "not asked yet" both used to render as Loading, so a bad
+      // month or a dropped connection left the tab claiming to still be
+      // working, forever, with nothing to retry.
       _preview = null;
+      _pvError = (err && err.message) || 'Could not load the comparison.';
     }
     App.Router.refresh();
   }
@@ -98,6 +104,14 @@
       + '<input type="month" value="' + month + '" onchange="App.Pricing._loadPreview(this.value)" style="padding:0.4rem 0.6rem;font-size:0.85rem;border:1px solid #e2e8f0;border-radius:4px">'
       + '</div>';
 
+    if (_pvError) {
+      return head
+        + '<div style="background:#fdf2ef;border:1px solid #f5cfc4;padding:0.9rem 1rem">'
+        +   '<div style="font-size:0.85rem;font-weight:600;color:#8c3a20;margin-bottom:0.3rem">Could not load the comparison</div>'
+        +   '<div style="font-size:0.8rem;color:#8c3a20;margin-bottom:0.6rem">' + App.Utils.esc(_pvError) + '</div>'
+        +   '<button onclick="App.Pricing._loadPreview(\'' + month + '\')" style="padding:0.35rem 0.8rem;font-size:0.78rem;font-weight:600;background:#fff;border:1px solid #f5cfc4;color:#8c3a20;border-radius:4px;cursor:pointer">Try again</button>'
+        + '</div>';
+    }
     if (!_preview) return head + '<p style="font-size:0.85rem;color:#94a3b8">Loading…</p>';
 
     var p = _preview;

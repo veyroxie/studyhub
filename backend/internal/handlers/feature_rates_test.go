@@ -370,10 +370,49 @@ func TestPricingCatalogue_CRUD(t *testing.T) {
 		t.Fatalf("hourly-only tier must be allowed: %d %s", w.Code, w.Body.String())
 	}
 
-	// RULE 2: a category still used by a class cannot be deleted, because
-	// those classes would resolve to no price and be skipped in silence.
+	// A deleted tier's name must be reusable. The UNIQUE constraints 0051
+	// declared spanned soft-deleted rows, so deleting a tier reserved its name
+	// forever and re-adding it answered "already exists" about a row invisible
+	// in the UI, with no recovery. 0061 makes them partial. The old test never
+	// caught this because the harness hard-deletes between runs.
+	w = post("/api/pricing-plans", map[string]any{
+		"categoryId": cat.ID, "tierName": "Recycled", "sessionsPerWeek": 1, "monthlyFee": 100,
+	})
+	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+		t.Fatalf("create recyclable tier: %d %s", w.Code, w.Body.String())
+	}
+	var recycled struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &recycled)
+	if w = authedJSON(t, r, "DELETE", "/api/pricing-plans/"+recycled.ID, tok, nil); w.Code != http.StatusOK {
+		t.Fatalf("delete recyclable tier: %d %s", w.Code, w.Body.String())
+	}
+	w = post("/api/pricing-plans", map[string]any{
+		"categoryId": cat.ID, "tierName": "Recycled", "sessionsPerWeek": 1, "monthlyFee": 120,
+	})
+	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
+		t.Fatalf("a deleted tier's name must be reusable, got %d %s", w.Code, w.Body.String())
+	}
+
+	// Turning a category credit-covered while classes use it prices every one
+	// of them at zero AND reads as legitimate rather than flagged, which is
+	// the same harm DELETE is guarded against reached through a checkbox.
+	clsGuard := core.GenerateID("CLS")
 	var tenantID int
 	db.QueryRow(`SELECT tenant_id FROM users WHERE email=?`, "admin@studyhub.com").Scan(&tenantID)
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,classroom,pricing_category_id) VALUES(?,?,?,?,?,?,?,?)`,
+		clsGuard, tenantID, "Guarded", "Monday", "16:00", "17:00", "Room G", cat.ID)
+	w = authedJSON(t, r, "PUT", "/api/pricing-categories/"+cat.ID, tok, map[string]any{
+		"name": "Mandarin", "creditCovered": true,
+	})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("flipping credit-covered under live classes must be refused, got %d %s", w.Code, w.Body.String())
+	}
+	db.Exec(`UPDATE classes SET pricing_category_id=NULL WHERE id=?`, clsGuard)
+
+	// RULE 2: a category still used by a class cannot be deleted, because
+	// those classes would resolve to no price and be skipped in silence.
 	clsID := core.GenerateID("CLS")
 	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,classroom,pricing_category_id) VALUES(?,?,?,?,?,?,?,?)`,
 		clsID, tenantID, "Mandarin", "Thursday", "16:00", "17:00", "Room M", cat.ID)

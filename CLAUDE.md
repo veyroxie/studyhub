@@ -69,7 +69,7 @@ is a data-integrity or security bug, not a style problem.
   which is still "yesterday" locally until 08:00 — use the `localDate`/`today`
   helpers in `js/utils.js`. In Go, rely on the container `TZ`, not `time.UTC`.
 - **Migrations are append-only.** Add `backend/internal/store/migrations/NNNN_*.sql`
-  with the next number (latest is `0060`). Never edit one that has shipped: the
+  with the next number (latest is `0061`). Never edit one that has shipped: the
   applier stores a checksum and a mismatch is a FATAL boot error, not a warning.
 - **Tailwind classes are compiled from a source allowlist.** `tailwind.in.css`
   lists `@source` globs covering the 5 HTML files and `js/**/*.js`. A class used in

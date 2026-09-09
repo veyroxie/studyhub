@@ -4,6 +4,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"studyhub/internal/core"
 )
@@ -145,14 +146,17 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 
 	enrol := map[string][]string{} // studentID -> classIDs
 	tier := map[string]string{}    // studentID|classID -> tier chosen at enrolment
-	enrolSQL := `SELECT student_id, class_id, COALESCE(tier_name,'')
-		FROM enrollments WHERE ended_on IS NULL` + tw
-	enrolArgs := twArgs
-	if asOf != "" {
-		enrolSQL = `SELECT student_id, class_id, COALESCE(tier_name,'')
-			FROM enrollments WHERE started_on <= ? AND (ended_on IS NULL OR ended_on > ?)` + tw
-		enrolArgs = append([]any{asOf, asOf}, twArgs...)
+	// One window, always. The live branch used to be `ended_on IS NULL` with no
+	// lower bound, so an enrolment starting next month was priced this month --
+	// two answers to "what does this student cost" inside the resolver whose
+	// whole point is that there is only one. Empty asOf means today.
+	when := asOf
+	if when == "" {
+		when = time.Now().Format("2006-01-02")
 	}
+	enrolSQL := `SELECT student_id, class_id, COALESCE(tier_name,'')
+		FROM enrollments WHERE started_on <= ? AND (ended_on IS NULL OR ended_on > ?)` + tw
+	enrolArgs := append([]any{when, when}, twArgs...)
 	erows, err := db.Query(enrolSQL, enrolArgs...)
 	if err != nil {
 		core.Logger.Error("catalog price: enrolment load failed", "err", err)

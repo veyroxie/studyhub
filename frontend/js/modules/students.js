@@ -898,7 +898,7 @@
       // -- which is the bug migration 0055 had to repair.
       + '<div style="margin-top:0.6rem">'
       +   '<label class="block text-sm font-medium text-slate-700 mb-1">Starting from</label>'
-      +   '<input name="enrolledFrom" type="date" class="form-input" value="' + App.Utils.today() + '" required>'
+      +   '<input name="enrolledFrom" type="date" class="form-input" max="' + App.Utils.today() + '" value="' + App.Utils.today() + '" required>'
       +   '<p style="margin-top:0.3rem;font-size:0.72rem;color:#94a3b8">When newly ticked classes begin. Backdate it if the student has already been attending, or their earlier attendance will not show.</p>'
       + '</div>'
       + '</div>';

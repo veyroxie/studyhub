@@ -11,6 +11,7 @@ import (
 	"studyhub/internal/store"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // The pricing catalogue (migrations 0051, 0054): categories own named tiers,
@@ -30,6 +31,18 @@ import (
 //   - A category in use cannot be deleted. Soft-deleting one out from under
 //     live classes would make them unpriceable in silence, which is the bug
 //     the catalogue was built to close.
+
+// isDuplicate distinguishes a UNIQUE violation from every other database
+// failure. Reporting them all as "already exists" told an operator to go
+// looking through their data for a row that was never the problem, and logged
+// nothing, so the real cause was unrecoverable afterwards.
+func isDuplicate(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	return false
+}
 
 func listPricingCategories(db *store.DB, c *core.Claims) []models.PricingCategory {
 	tw, twArgs := store.ScopeTenant(c, "")
@@ -81,9 +94,12 @@ func HandlePricingCategories(db *store.DB) http.HandlerFunc {
 		id := core.GenerateID("PC")
 		if _, err := db.Exec(`INSERT INTO pricing_categories(id,tenant_id,name,credit_covered,sort_order) VALUES(?,?,?,?,?)`,
 			id, tid, body.Name, body.CreditCovered, body.SortOrder); err != nil {
-			// UNIQUE (tenant_id, name) -- a duplicate is the operator's most
-			// likely mistake, so name it rather than returning a 500.
-			core.RespondError(w, "a category called "+body.Name+" already exists", http.StatusConflict)
+			if isDuplicate(err) {
+				core.RespondError(w, "a category called "+body.Name+" already exists", http.StatusConflict)
+				return
+			}
+			core.LogFromReq(r).Error("catalogue: create category failed", "err", err, "name", body.Name)
+			core.RespondError(w, "could not create the category", 500)
 			return
 		}
 		core.LogAudit(db, tid, c.Email, "pricing_category_created", "pricing_category", id, body.Name)
@@ -126,8 +142,17 @@ func HandlePricingCategoryByID(db *store.DB) http.HandlerFunc {
 				return
 			}
 			// Its plans go with it, so a later category of the same name does
-			// not inherit prices nobody set.
-			db.Exec(`UPDATE pricing_plans SET deleted_at=NOW() WHERE category_id=? AND deleted_at IS NULL`, id)
+			// not inherit prices nobody set. Tenant-scoped like every other
+			// query -- RLS is a documented passthrough, so the query layer is
+			// the only thing enforcing isolation -- and the error is logged
+			// rather than discarded: a failure here leaves live plans under a
+			// deleted category.
+			planArgs := append([]any{id}, twArgs...)
+			if _, perr := db.Exec(`UPDATE pricing_plans SET deleted_at=NOW() WHERE category_id=?`+tw+` AND deleted_at IS NULL`, planArgs...); perr != nil {
+				core.LogFromReq(r).Error("catalogue: retiring plans under a deleted category failed", "err", perr, "category", id)
+				core.RespondError(w, "the category was deleted but its tiers were not -- please check", 500)
+				return
+			}
 			core.LogAudit(db, store.TenantID(c), c.Email, "pricing_category_deleted", "pricing_category", id, "")
 			core.Respond(w, map[string]string{"status": "deleted"})
 			return
@@ -143,10 +168,39 @@ func HandlePricingCategoryByID(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "a category needs a name", http.StatusBadRequest)
 			return
 		}
+		// Flipping credit_covered on a category in use is the same harm DELETE
+		// is guarded against, reached through a checkbox. A credit-covered
+		// category contributes 0 and reads as legitimate rather than flagged,
+		// so turning one on under live tuition classes prices them all at zero
+		// in silence -- the exact bug this catalogue exists to close.
+		var wasCovered bool
+		curArgs := append([]any{id}, twArgs...)
+		if err := db.QueryRow(`SELECT COALESCE(credit_covered,FALSE) FROM pricing_categories WHERE id=?`+tw+` AND deleted_at IS NULL`, curArgs...).Scan(&wasCovered); err != nil {
+			core.RespondError(w, "category not found", 404)
+			return
+		}
+		if wasCovered != body.CreditCovered {
+			var inUse int
+			useArgs := append([]any{id}, twArgs...)
+			if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE pricing_category_id=? AND deleted_at IS NULL`+tw, useArgs...).Scan(&inUse); err != nil {
+				core.LogFromReq(r).Error("catalogue: in-use check failed", "err", err, "category", id)
+				core.RespondError(w, "server error", 500)
+				return
+			}
+			if inUse > 0 {
+				core.RespondError(w, "cannot change how this category bills while "+itoa(inUse)+" class(es) use it -- move them first", http.StatusConflict)
+				return
+			}
+		}
 		args := append([]any{body.Name, body.CreditCovered, body.SortOrder, id}, twArgs...)
 		res, err := db.Exec(`UPDATE pricing_categories SET name=?,credit_covered=?,sort_order=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 		if err != nil {
-			core.RespondError(w, "a category called "+body.Name+" already exists", http.StatusConflict)
+			if isDuplicate(err) {
+				core.RespondError(w, "a category called "+body.Name+" already exists", http.StatusConflict)
+				return
+			}
+			core.LogFromReq(r).Error("catalogue: update category failed", "err", err, "category", id)
+			core.RespondError(w, "could not update the category", 500)
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
@@ -217,7 +271,12 @@ func HandlePricingPlans(db *store.DB) http.HandlerFunc {
 		id := core.GenerateID("PP")
 		if _, err := db.Exec(`INSERT INTO pricing_plans(id,tenant_id,category_id,tier_name,sessions_per_week,monthly_fee,hourly_rate,sort_order) VALUES(?,?,?,?,?,?,?,?)`,
 			id, tid, body.CategoryID, body.TierName, body.SessionsPerWeek, body.MonthlyFee, body.HourlyRate, body.SortOrder); err != nil {
-			core.RespondError(w, body.TierName+" already exists in this category at "+itoa(body.SessionsPerWeek)+"x a week", http.StatusConflict)
+			if isDuplicate(err) {
+				core.RespondError(w, body.TierName+" already exists in this category at "+itoa(body.SessionsPerWeek)+"x a week", http.StatusConflict)
+				return
+			}
+			core.LogFromReq(r).Error("catalogue: write tier failed", "err", err, "tier", body.TierName)
+			core.RespondError(w, "could not save the tier", 500)
 			return
 		}
 		core.LogAudit(db, tid, c.Email, "pricing_plan_created", "pricing_plan", id, body.TierName)
@@ -277,7 +336,12 @@ func HandlePricingPlanByID(db *store.DB) http.HandlerFunc {
 		args := append([]any{body.TierName, body.SessionsPerWeek, body.MonthlyFee, body.HourlyRate, body.SortOrder, id}, twArgs...)
 		res, err := db.Exec(`UPDATE pricing_plans SET tier_name=?,sessions_per_week=?,monthly_fee=?,hourly_rate=?,sort_order=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 		if err != nil {
-			core.RespondError(w, body.TierName+" already exists in this category at "+itoa(body.SessionsPerWeek)+"x a week", http.StatusConflict)
+			if isDuplicate(err) {
+				core.RespondError(w, body.TierName+" already exists in this category at "+itoa(body.SessionsPerWeek)+"x a week", http.StatusConflict)
+				return
+			}
+			core.LogFromReq(r).Error("catalogue: write tier failed", "err", err, "tier", body.TierName)
+			core.RespondError(w, "could not save the tier", 500)
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
