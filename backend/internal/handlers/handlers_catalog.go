@@ -134,8 +134,18 @@ func HandlePricingCategoryByID(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "still used by "+itoa(inUse)+" class(es) -- move them to another category first", http.StatusConflict)
 				return
 			}
+			// The category and its plans retire together or not at all. As two
+			// separate statements, a failure between them left live plans under
+			// a deleted category -- and the endpoint had already answered 200.
+			tx, err := db.BeginTx(r.Context())
+			if err != nil {
+				core.RespondError(w, "server error", 500)
+				return
+			}
+			defer tx.Rollback()
+
 			args := append([]any{id}, twArgs...)
-			res, err := db.Exec(`UPDATE pricing_categories SET deleted_at=NOW() WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+			res, err := tx.Exec(`UPDATE pricing_categories SET deleted_at=NOW() WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 			if err != nil {
 				core.RespondError(w, "server error", 500)
 				return
@@ -147,13 +157,16 @@ func HandlePricingCategoryByID(db *store.DB) http.HandlerFunc {
 			// Its plans go with it, so a later category of the same name does
 			// not inherit prices nobody set. Tenant-scoped like every other
 			// query -- RLS is a documented passthrough, so the query layer is
-			// the only thing enforcing isolation -- and the error is logged
-			// rather than discarded: a failure here leaves live plans under a
-			// deleted category.
+			// the only thing enforcing isolation.
 			planArgs := append([]any{id}, twArgs...)
-			if _, perr := db.Exec(`UPDATE pricing_plans SET deleted_at=NOW() WHERE category_id=?`+tw+` AND deleted_at IS NULL`, planArgs...); perr != nil {
+			if _, perr := tx.Exec(`UPDATE pricing_plans SET deleted_at=NOW() WHERE category_id=?`+tw+` AND deleted_at IS NULL`, planArgs...); perr != nil {
 				core.LogFromReq(r).Error("catalogue: retiring plans under a deleted category failed", "err", perr, "category", id)
-				core.RespondError(w, "the category was deleted but its tiers were not -- please check", 500)
+				core.RespondError(w, "could not delete the category", 500)
+				return
+			}
+			if err := tx.Commit(); err != nil {
+				core.LogFromReq(r).Error("catalogue: category delete commit failed", "err", err, "category", id)
+				core.RespondError(w, "could not delete the category", 500)
 				return
 			}
 			core.LogAudit(db, store.TenantID(c), c.Email, "pricing_category_deleted", "pricing_category", id, "")
