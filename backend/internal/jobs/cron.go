@@ -93,11 +93,6 @@ func monthlyClassDescriptor(m classMeta) string {
 	return strings.Join(parts, ", ")
 }
 
-// startCron launches the background scheduler. It wakes up daily at 00:05
-// local time and, on days 1–7 of the month, ensures every active student
-// has a Monthly invoice for the current month. Idempotent: skips students
-// that already have one. The 7-day window gives the cron room to catch up
-// if a deploy or outage caused the 1st to be missed.
 // MonthlyCronJob names the billing scheduler in the heartbeat and alert paths.
 const MonthlyCronJob = "monthly-cron"
 
@@ -116,6 +111,11 @@ func runMonthlyCronTick(db *store.DB) {
 	})
 }
 
+// StartCron launches the background scheduler. It wakes up daily at 00:05
+// local time and, on days 1–7 of the month, ensures every active student
+// has a Monthly invoice for the current month. Idempotent: skips students
+// that already have one. The 7-day window gives the cron room to catch up
+// if a deploy or outage caused the 1st to be missed.
 func StartCron(ctx context.Context, wg *sync.WaitGroup, db *store.DB) {
 	wg.Add(1)
 	go func() {
@@ -467,12 +467,6 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		rows.Close()
 	}
 
-	tx, err := db.BeginTx(context.Background())
-	if err != nil {
-		core.Logger.Error("monthly invoice cron tx begin failed", "err", err)
-		return 0
-	}
-
 	// Issued on the 1st (catch-up window to the 7th), due the 7th. The
 	// early-bird discount is kept only if paid by the cutoff (= due date);
 	// applyEarlyBirdExpiry restores full price on unpaid invoices afterwards.
@@ -607,6 +601,19 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		// write: two overlapping runs can both see "not yet invoiced". The unique
 		// index (migration 0039) makes the loser a no-op instead of a second
 		// invoice to the same parent.
+		// One transaction per student. A single run-wide transaction meant the
+		// first failed statement aborted the whole block in Postgres, while the
+		// loop's `continue` kept iterating inside it -- every later insert
+		// failed, the commit failed, and nobody was billed. An admin editing an
+		// invoice mid-run is enough to deadlock one student and lose the month.
+		// The invoice and its referral decrement share this transaction because
+		// they have to agree: a credit spent with no invoice, or an invoice
+		// discounted by a credit that was never spent, is money either way.
+		tx, err := db.BeginTx(context.Background())
+		if err != nil {
+			core.Logger.Error("monthly invoice tx begin failed", "err", err, "student_id", s.id)
+			continue
+		}
 		res, err := tx.Exec(`
 			INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,early_bird_cutoff,early_bird_discount,line_items,period)
 			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -617,6 +624,7 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		)
 		if err != nil {
 			core.Logger.Error("could not insert monthly invoice", "err", err, "student_id", s.id)
+			tx.Rollback()
 			continue
 		}
 		// No row means a concurrent run already invoiced this student. Skip the
@@ -625,7 +633,42 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		if n, raErr := res.RowsAffected(); raErr == nil && n == 0 {
 			core.Logger.Info("monthly invoice already existed — concurrent run",
 				"student_id", s.id, "period", monthPrefix)
+			tx.Rollback()
 			continue
+		}
+		if referralCredit > 0 && s.familyID != "" {
+			// Decrement the oldest earned referral_rewards row that still has
+			// credits remaining. The CASE flips status to 'exhausted' when
+			// the row hits zero so future cron runs skip it. Tenant-scoped
+			// to keep an id collision across tenants from settling the wrong row.
+			if _, err := tx.Exec(`
+				UPDATE referral_rewards
+				   SET credits_remaining = credits_remaining - 1,
+				       status = CASE WHEN credits_remaining - 1 <= 0 THEN 'exhausted' ELSE 'earned' END
+				 WHERE id = (
+				   SELECT id FROM referral_rewards
+				    WHERE referrer_family_id=? AND tenant_id=? AND status='earned' AND credits_remaining > 0
+				    ORDER BY created_at ASC LIMIT 1
+				 )`, s.familyID, s.tenantID); err != nil {
+				// Roll the invoice back with it. Falling through, as this did,
+				// bills the student at the discounted price without ever
+				// spending the credit -- so the same discount is handed out
+				// again next month.
+				core.Logger.Error("could not decrement referral credit", "err", err, "family_id", s.familyID)
+				tx.Rollback()
+				continue
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			core.Logger.Error("monthly invoice commit failed", "err", err, "student_id", s.id)
+			continue
+		}
+
+		// Past the commit, so everything below describes a row that exists. The
+		// count, the credit bookkeeping and the parent's email all used to run
+		// on the optimistic path and could describe an invoice that rolled back.
+		if referralCredit > 0 && s.familyID != "" {
+			familyCredits[creditKey]--
 		}
 		if s.contact != "" {
 			note := ""
@@ -642,30 +685,7 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 				amount:      fmt.Sprintf("%.2f", discounted), dueDate: dueDate, earlyBirdNote: note,
 			})
 		}
-		if referralCredit > 0 && s.familyID != "" {
-			// Decrement the oldest earned referral_rewards row that still has
-			// credits remaining. The CASE flips status to 'exhausted' when
-			// the row hits zero so future cron runs skip it. Tenant-scoped
-			// to keep an id collision across tenants from settling the wrong row.
-			if _, err := tx.Exec(`
-				UPDATE referral_rewards
-				   SET credits_remaining = credits_remaining - 1,
-				       status = CASE WHEN credits_remaining - 1 <= 0 THEN 'exhausted' ELSE 'earned' END
-				 WHERE id = (
-				   SELECT id FROM referral_rewards
-				    WHERE referrer_family_id=? AND tenant_id=? AND status='earned' AND credits_remaining > 0
-				    ORDER BY created_at ASC LIMIT 1
-				 )`, s.familyID, s.tenantID); err != nil {
-				core.Logger.Error("could not decrement referral credit", "err", err, "family_id", s.familyID)
-			}
-			familyCredits[creditKey]--
-		}
 		created++
-	}
-
-	if err := tx.Commit(); err != nil {
-		core.Logger.Error("monthly invoice cron tx commit failed", "err", err)
-		return 0
 	}
 	for _, e := range emails {
 		body := mailer.RenderInvoiceIssuedEmail(e.parentName, e.studentName, "Monthly tuition — "+monthLabel, e.amount, e.dueDate, e.earlyBirdNote)
