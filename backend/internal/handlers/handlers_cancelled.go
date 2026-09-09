@@ -102,12 +102,23 @@ func HandleCreateCancelledClass(db *store.DB) http.HandlerFunc {
 // the cancellation row is already committed and the admin will see the
 // outcome in the next snapshot.
 func applyCancelledClassSideEffects(db *store.DB, c *core.Claims, cc models.CancelledClass, tid int) {
-	var className, classStart, classEnd string
-	db.QueryRow(`SELECT name, COALESCE(time,''), COALESCE(end_time,'') FROM classes WHERE id=? AND tenant_id=?`, cc.ClassID, tid).Scan(&className, &classStart, &classEnd)
+	var className, classDay, classStart, classEnd string
+	db.QueryRow(`SELECT name, COALESCE(day,''), COALESCE(time,''), COALESCE(end_time,'') FROM classes WHERE id=? AND tenant_id=?`, cc.ClassID, tid).Scan(&className, &classDay, &classStart, &classEnd)
 	if className == "" {
 		className = cc.ClassID
 	}
-	credits := creditsForDuration(classStart, classEnd)
+	// The credit is the length of the lesson that was actually missed, so the
+	// schedule has to be read as it stood on cc.Date, not as it stands now.
+	// Cancellations are routinely recorded after the fact, and a class whose
+	// hours changed since would otherwise credit the current duration -- 4
+	// credits for a lesson that ran two hours. 1 credit = 15 minutes.
+	current := store.ScheduleVersion{Day: classDay, Time: classStart, EndTime: classEnd}
+	versions, verr := store.ClassScheduleVersions(db, tid, cc.ClassID)
+	if verr != nil {
+		core.Logger.Error("cancellation schedule version lookup failed", "err", verr, "class_id", cc.ClassID)
+	}
+	onDate := store.ScheduleOn(versions, current, cc.Date)
+	credits := creditsForDuration(onDate.Time, onDate.EndTime)
 
 	// Announcement — created as published, audience scoped to the class so
 	// only enrolled parents get the notification.
@@ -133,24 +144,18 @@ func applyCancelledClassSideEffects(db *store.DB, c *core.Claims, cc models.Canc
 		core.LogAudit(db, store.TenantID(c), c.Email, "announcement_created", "announcement", annID, "auto: class cancellation "+cc.ClassID)
 	}
 
-	// Replacement credits — the class's duration in 15-min credits, per
-	// enrolled student. We rely on the JSON-string LIKE match used elsewhere
-	// in the codebase; enrolled_classes is TEXT '["<id>",...]'.
-	rows, err := db.Query(
-		`SELECT id FROM students WHERE tenant_id=? AND deleted_at IS NULL AND enrolled_classes LIKE '%"'||?||'"%'`,
-		tid, cc.ClassID,
-	)
+	// Replacement credits — the class's duration in 15-min credits, for the
+	// students enrolled ON THE CANCELLED DATE. The current enrolled_classes JSON
+	// answers "who is enrolled now", which is the wrong question for a
+	// back-dated cancellation: it credits a student who joined afterwards and
+	// skips the one who actually missed the lesson and has since left.
+	studentIDs, err := store.StudentsEnrolledOn(db, tid, cc.ClassID, cc.Date)
 	if err != nil {
 		core.Logger.Error("cancellation enrolled-student lookup failed", "err", err, "class_id", cc.ClassID)
 		return
 	}
-	defer rows.Close()
 	note := "Class cancelled on " + cc.Date
-	for rows.Next() {
-		var sid string
-		if err := rows.Scan(&sid); err != nil {
-			continue
-		}
+	for _, sid := range studentIDs {
 		rcID := core.GenerateID("RC")
 		if _, err := db.Exec(
 			`INSERT INTO replacement_credits(id,tenant_id,student_id,type,minutes,note,class_id,date,created_by,category) VALUES(?,?,?,?,?,?,?,?,?,?)`,

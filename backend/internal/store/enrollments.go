@@ -99,6 +99,37 @@ type EnrollmentWindow struct {
 //
 // Replaces reading students.enrolled_classes, which is a bare id list with no
 // dates and therefore cannot answer this at all.
+// StudentsEnrolledOn answers the inverse of EnrollmentWindowsIn: given a class
+// and a single date, who was enrolled in it that day. Same half-open
+// [started_on, ended_on) rule, collapsed to one date -- a student whose
+// ended_on IS the date had already left and is excluded.
+//
+// It lives here rather than inline at its caller so the half-open rule stays
+// defined once. Reading the current enrolled_classes JSON instead answers "who
+// is enrolled now", which is a different question whenever the date is not
+// today -- and back-dated cancellations are routine.
+func StudentsEnrolledOn(db *DB, tenantID int, classID, date string) ([]string, error) {
+	rows, err := db.Query(`SELECT DISTINCT e.student_id
+		FROM enrollments e
+		JOIN students s ON s.id = e.student_id AND s.tenant_id = e.tenant_id
+		WHERE e.tenant_id=? AND e.class_id=?
+		  AND e.started_on <= ?
+		  AND (e.ended_on IS NULL OR e.ended_on > ?)
+		  AND s.deleted_at IS NULL`, tenantID, classID, date, date)
+	if err != nil {
+		return nil, fmt.Errorf("students enrolled on %s: %w", date, err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var sid string
+		if rows.Scan(&sid) == nil {
+			out = append(out, sid)
+		}
+	}
+	return out, rows.Err()
+}
+
 func EnrollmentWindowsIn(db *DB, tenantID int, studentID, from, to string) ([]EnrollmentWindow, error) {
 	rows, err := db.Query(`SELECT class_id, started_on, COALESCE(ended_on,'')
 		FROM enrollments
