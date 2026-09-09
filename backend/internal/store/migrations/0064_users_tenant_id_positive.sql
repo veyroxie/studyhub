@@ -1,0 +1,32 @@
+-- 0064_users_tenant_id_positive.sql
+--
+-- tenant_id = 0 is the cross-tenant marker: store.ScopeTenant reads it as
+-- "apply no filter". store.TenantID returns it for a superadmin, which is
+-- correct for a read and wrong for a write, because the value gets stored.
+--
+-- On `users` that is a privilege bug rather than a visibility bug. A user row
+-- written with tenant_id = 0 mints an account whose JWT then carries
+-- TenantID: 0, so every scoped query in the application stops filtering for
+-- that person -- they read and write every tenant's students, invoices,
+-- families and audit logs. The role allowlist on that endpoint guards the
+-- `role` column and looks like the protection; the privilege was in the
+-- tenant column beside it.
+--
+-- store.WriteTenantID now refuses 0 at every write path. This is the backstop
+-- behind it, on the one table where the consequence is standing privilege.
+--
+-- NOT VALID on purpose. It enforces every INSERT and UPDATE from here on, but
+-- does not scan existing rows, so the migration cannot fail on a database that
+-- already contains one. To find any:
+--
+--   SELECT id, email, role FROM users WHERE tenant_id = 0;
+--
+-- Reassign those to their real tenant, then promote the constraint with:
+--
+--   ALTER TABLE users VALIDATE CONSTRAINT users_tenant_id_positive;
+--
+-- Widening this to the other ~20 tenant-scoped tables is a separate decision:
+-- there the symptom is an invisible row rather than an escalated account.
+
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_tenant_id_positive;
+ALTER TABLE users ADD CONSTRAINT users_tenant_id_positive CHECK (tenant_id > 0) NOT VALID;

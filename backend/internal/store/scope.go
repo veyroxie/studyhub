@@ -1,6 +1,33 @@
 package store
 
-import "studyhub/internal/core"
+import (
+	"errors"
+
+	"studyhub/internal/core"
+)
+
+// ErrNoWriteTenant means the caller has no single tenant to write into.
+var ErrNoWriteTenant = errors.New("no tenant selected for this write")
+
+// WriteTenantID resolves the tenant a NEW row belongs to, and refuses 0.
+//
+// TenantID returns 0 for a superadmin, which ScopeTenant reads as "no filter".
+// That is right for a read and wrong for a write, because the 0 gets stored:
+// on `users` it mints an account whose JWT then carries TenantID 0, so every
+// scoped query in the app stops filtering for that person; everywhere else it
+// writes a row the owning tenant can never see, which is how a superadmin's
+// class cancellation granted make-up credits to nobody.
+//
+// A superadmin is a cross-tenant READER. To create rows they act inside a
+// tenant, so callers surface this as a 400 rather than inventing a default --
+// guessing tenant 1 would put the row in someone's data.
+func WriteTenantID(c *core.Claims) (int, error) {
+	tid := TenantID(c)
+	if tid == 0 {
+		return 0, ErrNoWriteTenant
+	}
+	return tid, nil
+}
 
 // TenantID resolves the tenant id used for scoping queries. Superadmin
 // (TenantID==0) maps to 0 (cross-tenant); a nil caller defaults to tenant 1.

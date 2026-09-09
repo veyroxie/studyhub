@@ -126,7 +126,10 @@ func HandleProgressReports(db *store.DB) http.HandlerFunc {
 				pr.ID = core.GenerateID("PR")
 			}
 			now := time.Now().UTC().Format(time.RFC3339)
-			tid := store.TenantID(c)
+			tid, tOK := writeTenant(w, c)
+			if !tOK {
+				return
+			}
 			_, err := db.Exec(`
 				INSERT INTO progress_reports
 				(id,tenant_id,student_id,term,teacher_id,subject,grade,strengths,areas_to_improve,teacher_comment,next_term_focus,published,created_at,updated_at)

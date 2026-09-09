@@ -225,7 +225,10 @@ func HandleAttendance(db *store.DB, hub *WSHub) http.HandlerFunc {
 			// duplicate attendance rows double-count part-time payroll hours.
 			// Scoped to the caller's tenant so a teacher in tenant A cannot
 			// overwrite an attendance row for a colliding person_id in tenant B.
-			tid := store.TenantID(c)
+			tid, tOK := writeTenant(w, c)
+			if !tOK {
+				return
+			}
 			tx, err := db.BeginTx(r.Context())
 			if err != nil {
 				core.RespondError(w, "server error", 500)

@@ -80,7 +80,10 @@ func HandleUsers(db *store.DB) http.HandlerFunc {
 				return
 			}
 			c := core.ClaimsFrom(r)
-			tid := store.TenantID(c)
+			tid, tOK := writeTenant(w, c)
+			if !tOK {
+				return
+			}
 			_, err = db.Exec(`INSERT INTO users(tenant_id,email,password_hash,role,name) VALUES(?,?,?,?,?)`, tid, req.Email, hash, req.Role, req.Name)
 			if err != nil {
 				if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "duplicate key") {

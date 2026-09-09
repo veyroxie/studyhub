@@ -58,7 +58,10 @@ func HandleCreateCancelledClass(db *store.DB) http.HandlerFunc {
 		if cc.CancelledBy == "" && c != nil {
 			cc.CancelledBy = c.Email
 		}
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		moved, err := store.CountRow(db, `SELECT COUNT(*) FROM class_session_moves WHERE tenant_id=? AND class_id=? AND from_date=? AND deleted_at IS NULL`, tid, cc.ClassID, cc.Date)
 		if err != nil {
 			core.Logger.Error("move check failed", "err", err, "class_id", cc.ClassID)

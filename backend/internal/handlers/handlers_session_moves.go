@@ -61,7 +61,10 @@ func HandleCreateSessionMove(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "the new date must differ from the original", http.StatusBadRequest)
 			return
 		}
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		var className string
 		if err := db.QueryRow(`SELECT name FROM classes WHERE id=? AND tenant_id=? AND deleted_at IS NULL`, m.ClassID, tid).Scan(&className); err != nil {
 			core.RespondError(w, "class not found", http.StatusNotFound)
@@ -128,7 +131,10 @@ func HandleDeleteSessionMove(db *store.DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		var classID, fromDate, toDate string
 		if err := db.QueryRow(`SELECT class_id, from_date, to_date FROM class_session_moves WHERE id=? AND tenant_id=? AND deleted_at IS NULL`, id, tid).Scan(&classID, &fromDate, &toDate); err != nil {
 			core.RespondError(w, "not found", http.StatusNotFound)

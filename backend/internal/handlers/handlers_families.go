@@ -82,7 +82,10 @@ func HandleFamilies(db *store.DB) http.HandlerFunc {
 			if f.ReferralCode == "" {
 				f.ReferralCode = core.NewReferralCode()
 			}
-			tid := store.TenantID(c)
+			tid, tOK := writeTenant(w, c)
+			if !tOK {
+				return
+			}
 			_, err := db.Exec(`INSERT INTO families(id,tenant_id,name,contact,phone,parent_name,address,notes,referral_code) VALUES(?,?,?,?,?,?,?,?,?)`,
 				f.ID, tid, f.Name, f.Contact, f.Phone, f.ParentName, f.Address, f.Notes, f.ReferralCode)
 			if err != nil {

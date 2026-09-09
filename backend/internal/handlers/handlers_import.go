@@ -50,7 +50,10 @@ func HandleImport(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 
 		// ── Pass 1: deduplicate parents by email, create families + users ──
 		type parentInfo struct {

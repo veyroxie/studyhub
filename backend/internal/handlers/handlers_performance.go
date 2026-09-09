@@ -142,7 +142,10 @@ func HandleCreatePerformanceReview(db *store.DB) http.HandlerFunc {
 		if p.ReviewerEmail == "" && c != nil {
 			p.ReviewerEmail = c.Email
 		}
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		_, err := db.Exec(`INSERT INTO performance_reviews(id,tenant_id,staff_id,reviewer_email,date,rating,parent_rating,notes) VALUES(?,?,?,?,?,?,?,?)`,
 			p.ID, tid, p.StaffID, p.ReviewerEmail, p.Date, p.Rating, p.ParentRating, p.Notes)
 		if err != nil {

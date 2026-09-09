@@ -290,7 +290,10 @@ func HandleClasses(db *store.DB) http.HandlerFunc {
 			if c.Category == "" {
 				c.Category = "Academic"
 			}
-			tid := store.TenantID(cl)
+			tid, tOK := writeTenant(w, cl)
+			if !tOK {
+				return
+			}
 			if err := resolvePricingCategory(db, tid, &c); err != nil {
 				core.RespondError(w, err.Error(), http.StatusBadRequest)
 				return

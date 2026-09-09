@@ -90,7 +90,10 @@ func HandlePricingCategories(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "a category needs a name", http.StatusBadRequest)
 			return
 		}
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		id := core.GenerateID("PC")
 		if _, err := db.Exec(`INSERT INTO pricing_categories(id,tenant_id,name,credit_covered,sort_order) VALUES(?,?,?,?,?)`,
 			id, tid, body.Name, body.CreditCovered, body.SortOrder); err != nil {
@@ -260,7 +263,10 @@ func HandlePricingPlans(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		tw, twArgs := store.ScopeTenant(c, "")
 		var catExists int
 		catArgs := append([]any{body.CategoryID}, twArgs...)

@@ -219,7 +219,10 @@ func HandleRegistrationApprove(db *store.DB) http.HandlerFunc {
 		}
 
 		// Generate temp password before starting transaction
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		rawBytes := make([]byte, 8)
 		if _, err := rand.Read(rawBytes); err != nil {
 			core.RespondError(w, "could not generate password", 500)
@@ -636,7 +639,10 @@ func HandleEnrollmentRequest(db *store.DB) http.HandlerFunc {
 		}
 
 		id := core.GenerateID("REG")
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		_, err := db.Exec(`INSERT INTO registrations(id,tenant_id,parent_name,email,phone,student_first_name,student_last_name,student_dob,student_gender,school_name,year_grade,class_type_interest,subject_interest,workshop_interest,notes,submitted_on,status,type,referral_code,email_verified_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
 			id, tid, c.Name, c.Email, "", // phone not needed — it's on the family
 			req.StudentFirstName, req.StudentLastName, req.StudentDOB, req.StudentGender,

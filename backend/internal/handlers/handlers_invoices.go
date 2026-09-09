@@ -150,7 +150,10 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 				inv.CreatedOn = core.Today()
 			}
 			inv.Status = "Unpaid"
-			tid := store.TenantID(c)
+			tid, tOK := writeTenant(w, c)
+			if !tOK {
+				return
+			}
 
 			// Server-side referral credit validation: if the client claims a
 			// referral credit, verify the student's family actually has an

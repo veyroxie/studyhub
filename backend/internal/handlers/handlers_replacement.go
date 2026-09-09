@@ -130,7 +130,10 @@ func HandleCreateReplacementCredit(db *store.DB) http.HandlerFunc {
 		if rc.CreatedBy == "" && c != nil {
 			rc.CreatedBy = c.Email
 		}
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		if rc.Type == "used" {
 			tx, err := db.BeginTx(r.Context())
 			if err != nil {

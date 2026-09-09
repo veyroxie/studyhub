@@ -276,7 +276,10 @@ func HandleCreateFeedback(db *store.DB) http.HandlerFunc {
 		if f.StudentNotes == nil {
 			snJSON = []byte("[]")
 		}
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		_, err := db.Exec(`INSERT INTO feedback(id,tenant_id,class_id,date,teacher_id,topic,mood,notes,student_notes) VALUES(?,?,?,?,?,?,?,?,?)`,
 			f.ID, tid, f.ClassID, f.Date, f.TeacherID, f.Topic, f.Mood, f.Notes, string(snJSON))
 		if err != nil {
@@ -460,7 +463,10 @@ func HandleCreateFeedbackReply(db *store.DB) http.HandlerFunc {
 		reply.ID = core.GenerateID("FR")
 		reply.AuthorEmail = c.Email
 		reply.AuthorName = c.Name
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		_, err := db.Exec(`INSERT INTO feedback_replies(id,tenant_id,feedback_id,author_email,author_name,message) VALUES(?,?,?,?,?,?)`,
 			reply.ID, tid, reply.FeedbackID, reply.AuthorEmail, reply.AuthorName, reply.Message)
 		if err != nil {

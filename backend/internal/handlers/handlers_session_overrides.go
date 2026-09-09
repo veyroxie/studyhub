@@ -62,7 +62,10 @@ func HandleUpsertSessionOverride(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "pick at least one teacher, or remove the swap to go back to the usual teacher", http.StatusBadRequest)
 			return
 		}
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		if so.ID == "" {
 			so.ID = core.GenerateID("CSO")
 		}

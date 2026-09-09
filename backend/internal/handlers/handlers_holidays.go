@@ -71,7 +71,10 @@ func HandleCreateHoliday(db *store.DB) http.HandlerFunc {
 		if h.CreatedBy == "" && c != nil {
 			h.CreatedBy = c.Email
 		}
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		_, err := db.Exec(`INSERT INTO holidays(id,tenant_id,name,date,end_date,type,notes,created_by) VALUES(?,?,?,?,?,?,?,?)`,
 			h.ID, tid, h.Name, h.Date, h.EndDate, h.Type, h.Notes, h.CreatedBy)
 		if err != nil {

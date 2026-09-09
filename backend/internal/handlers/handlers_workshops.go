@@ -132,7 +132,10 @@ func HandleCreateWorkshop(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, err.Error(), http.StatusConflict)
 			return
 		}
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		_, err := db.Exec(`INSERT INTO workshops(id,tenant_id,name,description,date,time,end_time,classroom,capacity,enrolled,fee,teacher_ids,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			ws.ID, tid, ws.Name, ws.Description, ws.Date, ws.Time, ws.EndTime, ws.Classroom, ws.Capacity, ws.Enrolled, ws.Fee, models.JSONArr(ws.TeacherIDs), ws.Status)
 		if err != nil {

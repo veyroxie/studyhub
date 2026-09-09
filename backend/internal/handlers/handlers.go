@@ -339,3 +339,16 @@ func HandleSnapshot(db *store.DB) http.HandlerFunc {
 		store.WriteCachedSnapshot(w, r, body)
 	}
 }
+
+// writeTenant resolves the tenant for a row this request is about to create,
+// or writes a 400 and reports false. See store.WriteTenantID: a superadmin
+// reads across tenants but cannot create rows outside one, because the 0 that
+// grants them cross-tenant reads means "every tenant" once it is stored.
+func writeTenant(w http.ResponseWriter, c *core.Claims) (int, bool) {
+	tid, err := store.WriteTenantID(c)
+	if err != nil {
+		core.RespondError(w, "pick a tenant before creating records — superadmin reads across tenants but does not write into them", http.StatusBadRequest)
+		return 0, false
+	}
+	return tid, true
+}

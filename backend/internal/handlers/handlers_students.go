@@ -315,7 +315,10 @@ func HandleStudents(db *store.DB) http.HandlerFunc {
 			if s.RegisteredOn == "" {
 				s.RegisteredOn = core.Today()
 			}
-			tid := store.TenantID(c)
+			tid, tOK := writeTenant(w, c)
+			if !tOK {
+				return
+			}
 			// Auto-find or create family for this student
 			if s.FamilyID == "" && s.Contact != "" {
 				var famID string
@@ -414,7 +417,10 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 			// concurrent adds both pass on the last seat. Run check + update +
 			// recount in one tx, serialised per class by an advisory xact lock,
 			// and re-validate against the recomputed count.
-			tid := store.TenantID(c)
+			tid, tOK := writeTenant(w, c)
+			if !tOK {
+				return
+			}
 			tx, err := db.BeginTx(r.Context())
 			if err != nil {
 				core.RespondError(w, "server error", 500)
@@ -710,7 +716,13 @@ func resolveFamilyForContact(db *store.DB, c *core.Claims, contact, parentName, 
 	if contact == "" {
 		return "", false, nil
 	}
-	tid := store.TenantID(c)
+	// Creates a family row, so it needs a real tenant rather than the 0 a
+	// superadmin resolves to. Returns the error to its caller instead of
+	// writing a response: this is a helper, not a handler.
+	tid, err := store.WriteTenantID(c)
+	if err != nil {
+		return "", false, err
+	}
 	famTw, famTwArgs := store.ScopeTenant(c, "")
 	var famID string
 	args := append([]any{contact}, famTwArgs...)

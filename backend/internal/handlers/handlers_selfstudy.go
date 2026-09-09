@@ -179,7 +179,10 @@ func HandleCreateSelfStudy(db *store.DB) http.HandlerFunc {
 		if s.ID == "" {
 			s.ID = core.GenerateID("SS")
 		}
-		tid := store.TenantID(c)
+		tid, tOK := writeTenant(w, c)
+		if !tOK {
+			return
+		}
 		_, err := db.Exec(`INSERT INTO self_study_sessions(id,tenant_id,student_id,date,start_time,end_time,duration_min,notes) VALUES(?,?,?,?,?,?,?,?)`,
 			s.ID, tid, s.StudentID, s.Date, s.StartTime, s.EndTime, s.DurationMin, s.Notes)
 		if err != nil {

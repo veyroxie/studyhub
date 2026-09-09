@@ -146,7 +146,10 @@ func HandleAnnouncements(db *store.DB) http.HandlerFunc {
 				a.Category = models.AnnouncementCategoryNotice
 			}
 			a.UpdatedOn = a.CreatedOn
-			tid := store.TenantID(c)
+			tid, tOK := writeTenant(w, c)
+			if !tOK {
+				return
+			}
 			if _, err := db.Exec(`INSERT INTO announcements(id,tenant_id,title,message,audience,type,created_on,created_by,status,archive_on,target_class_ids,category,pinned,pin_requested,updated_on) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				a.ID, tid, a.Title, a.Message, a.Audience, a.Type, a.CreatedOn, a.CreatedBy, a.Status, a.ArchiveOn, models.JSONArr(a.TargetClassIDs), a.Category, a.Pinned, a.PinRequested, a.UpdatedOn); err != nil {
 				core.RespondError(w, "could not create announcement", 500)
