@@ -173,7 +173,10 @@
       // Pending announcement approvals submitted by this teacher
       var announcements = state.announcements || [];
       var pendingAnns = announcements.filter(function(a) {
-        return a.status === 'pending_approval' && a.createdBy === App.currentTeacher;
+        // createdBy is a display name, not a staff id — resolve the same way
+        // communication.js does. An unresolvable name matches nothing.
+        var myName = App.Utils.teacherDisplayName((App.Store.get().staff || []), App.currentTeacher);
+        return !!myName && a.status === 'pending_approval' && a.createdBy === myName;
       });
       if (pendingAnns.length > 0) {
         notifs.push({

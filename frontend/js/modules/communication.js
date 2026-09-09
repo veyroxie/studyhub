@@ -79,8 +79,11 @@
       // Teacher: their own pending submissions
       + (isTeacher
           ? (function() {
-              const teacherName = _getTeacherName();
-              const myPending = announcements.filter(function(a) { return a.status === 'pending_approval' && a.createdBy === teacherName; });
+              // Not _getTeacherName(): its 'Teacher' fallback is shared, so an
+              // unresolved teacher would see every other unresolved teacher's
+              // submissions. '' matches nothing.
+              const teacherName = App.Utils.teacherDisplayName(App.Store.get().staff, App.currentTeacher);
+              const myPending = teacherName ? announcements.filter(function(a) { return a.status === 'pending_approval' && a.createdBy === teacherName; }) : [];
               if (myPending.length === 0) return '';
               return '<div class="mb-5 bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">'
                 + '<div class="px-4 py-2.5 border-b border-amber-200">'

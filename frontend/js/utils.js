@@ -384,6 +384,21 @@
     // clientParent -- the admin's parent preview with nothing selected -- then
     // matched the 21 students who have no contact email, rendering seven
     // unrelated children as one family. An empty parent owns nobody.
+    // teacherDisplayName resolves the signed-in teacher's byline, or '' when it
+    // cannot be resolved.
+    //
+    // Announcements record createdBy as this NAME, not a staff id, because it is
+    // rendered straight to users as the byline. So ownership comparisons have to
+    // resolve the name the same way -- notifs.js compared createdBy against a
+    // staff id, which never matched, so a teacher's "pending approval" count
+    // could not fire. Returning '' rather than a generic fallback matters: a
+    // shared placeholder makes every unresolved teacher match every other one.
+    teacherDisplayName(staff, teacherId) {
+      if (!teacherId) return '';
+      const s = (staff || []).find(function(x) { return x.id === teacherId; });
+      return s && s.fullName ? s.fullName : '';
+    },
+
     childrenOf(students, parentEmail) {
       if (!parentEmail) return [];  // guard: blank must not match blank
       return (students || []).filter(function(s) { return s.contact === parentEmail; });

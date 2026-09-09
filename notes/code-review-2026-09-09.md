@@ -333,6 +333,13 @@ transaction; separate ticket if wanted.
 **Failure:** the "N announcements pending approval" notification can never fire, because an id is compared to a name. Two teachers sharing a `fullName` see each other's pending submissions — as does everyone, whenever `_getTeacherName()` falls back to the literal `'Teacher'`.
 **Fix:** write the staff id as `createdBy` and compare on it in both consumers. Keep the display name as a separate presentational field if the byline needs it.
 **Accept:** `node --check` passes; the pending-approval count renders for the submitting teacher.
+**Implemented the other way round, deliberately:** `createdBy` is rendered as the byline
+at `communication.js:66` and `:142`, so storing a staff id there would show `STF_…` to
+users and orphan every announcement already written. Instead both consumers now resolve
+the name through one helper, `App.Utils.teacherDisplayName`, which returns `''` when it
+cannot resolve — so the shared `'Teacher'` fallback no longer makes unresolved teachers
+match each other. Two teachers with the *same* real `fullName` would still collide; that
+needs a `created_by_id` column and a backfill, which is a migration, not a one-line fix.
 
 ### T26. `hasUnpaidMonthly` joins students without the soft-delete filter
 **Files:** `backend/internal/notify/checkin_notify.go:105-109`; student soft-delete at `handlers_students.go:505-517`.
