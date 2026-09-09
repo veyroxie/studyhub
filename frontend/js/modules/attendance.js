@@ -3,6 +3,17 @@
 
   let _attTab = 'staff';
   let _attDate = '';
+
+  // The date a PHYSICAL event is recorded against: always now, never _attDate.
+  // The picker controls what the page is displaying, and it is only ever
+  // initialised when falsy, so it holds whatever date the page was last left
+  // on. A teacher who scrolls back to review absences and then taps Check In is
+  // checking in today, and staff.js "Recalculate from check-ins" rebuilds
+  // payroll from exactly these rows. toISOString would give the UTC date, which
+  // is still yesterday locally until 08:00 -- hence today()/localDate.
+  function _eventDate() {
+    try { return App.Utils.today(); } catch (e) { return App.Utils.localDate(new Date()); }
+  }
   let _attClassId = '';
   let _showAllStaff = false;
   let _showAllClasses = false;
@@ -441,7 +452,7 @@
     const state = App.Store.get();
     const stu = state.students.find(function(s) { return s.id === id; });
     const now = App.Utils.nowTime();
-    const today = _attDate || App.Utils.today();
+    const today = _eventDate();
 
     if (!stu) {
       _kioskLastScan = { ok: false, name: id, msg: 'Student not found', action: null };
@@ -900,7 +911,7 @@
     var state = App.Store.get();
     var staff = state.staff || [];
     var attendance = state.attendance || [];
-    var today = _attDate || App.Utils.today();
+    var today = _eventDate();
     var teacher = staff.find(function(s) { return s.id === App.currentTeacher; });
     var teacherName = teacher ? (teacher.fullName || teacher.name || 'Teacher') : 'Teacher';
     var rec = attendance.find(function(a) {
@@ -947,7 +958,7 @@
 
   function _teacherCheckIn() {
     var state = App.Store.get();
-    var today = _attDate || App.Utils.today();
+    var today = _eventDate();
     var now = App.Utils.nowTime();
     var newAtt = state.attendance.slice();
     newAtt.push({
@@ -980,7 +991,7 @@
 
   function _teacherCheckOut() {
     var state = App.Store.get();
-    var today = _attDate || App.Utils.today();
+    var today = _eventDate();
     var now = App.Utils.nowTime();
     var existing = state.attendance.find(function(a) {
       return a.personId === App.currentTeacher && a.personType === 'staff' && a.date === today && !a.checkOut;
@@ -1084,6 +1095,8 @@
     if (!selectedClass) return;
     var enrolledStudents = App.Utils.rosterFor(state.students, _attClassId, _attDate, state.enrollments, state.attendance);
     var now = App.Utils.nowTime();
+    // Deliberately the picker's date, not _eventDate(): this is a bulk edit of
+    // the day being viewed, which is why the roster above is scoped to it too.
     var today = _attDate || App.Utils.today();
     var newAtt = state.attendance.slice();
     var toCheckIn = [];
@@ -1272,6 +1285,8 @@
     var cls = state.classes.find(function(c) { return c.id === _attClassId; });
     if (!cls) { App.Utils.showToast('Select a class first', 'warning'); return; }
 
+    // Deliberately the picker's date: feedback is filed against the session
+    // being viewed, not against the moment the note is written.
     var today = _attDate || App.Utils.today();
 
     App.Utils.showModal(
