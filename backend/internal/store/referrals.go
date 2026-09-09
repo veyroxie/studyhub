@@ -57,8 +57,15 @@ func ReferralReconcile(db *DB, studentID string, c *core.Claims) {
 
 	if status == "earned" && paid < referralMilestoneInvoices {
 		if creditsRemaining < referralRewardCredits {
+			// The count is written even here, so the row itself shows the
+			// discrepancy the audit line describes: earned, on fewer paid
+			// invoices than the milestone needs.
+			staleArgs := append([]any{paid, rrID}, twArgs...)
+			if _, err := db.Exec(`UPDATE referral_rewards SET paid_invoice_count=? WHERE id=?`+tw, staleArgs...); err != nil {
+				core.Logger.Error("failed to update referral paid_invoice_count", "err", err, "referral_reward_id", rrID)
+			}
 			core.LogAudit(db, rrTenantID, "system", "referral_milestone_stale", "referral", rrID,
-				"student="+studentID+" — an invoice behind this reward was reversed, but its credits are already partly spent; settle by hand")
+				"student="+studentID+" — an invoice behind this reward was reversed or deleted, but its credits are already partly spent; settle by hand")
 			return
 		}
 		reopenArgs := append([]any{paid, rrID}, twArgs...)

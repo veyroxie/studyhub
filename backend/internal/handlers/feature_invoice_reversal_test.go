@@ -143,6 +143,9 @@ func TestReferralMilestoneKeepsPartlySpentCredits(t *testing.T) {
 	if after.creditsRemaining != 1 {
 		t.Errorf("partly spent reward has %d credits, want 1 left alone", after.creditsRemaining)
 	}
+	if after.paidInvoiceCount != 2 {
+		t.Errorf("flagged reward still reads paid_invoice_count %d, want 2 — the row must show the discrepancy the audit line describes", after.paidInvoiceCount)
+	}
 	var flagged int
 	db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE action='referral_milestone_stale' AND entity_id=?`, rewardID).Scan(&flagged)
 	if flagged == 0 {
@@ -188,5 +191,46 @@ func TestRepayNoOpWritesNoAuditRow(t *testing.T) {
 	db.QueryRow(`SELECT COUNT(*) FROM audit_logs WHERE action='invoice_paid' AND entity_id=?`, invID).Scan(&paidRows)
 	if paidRows != 1 {
 		t.Errorf("got %d invoice_paid rows for one payment, want 1", paidRows)
+	}
+}
+
+// Deleting a paid invoice drops the referral count exactly as reversing one
+// does. Closing only the reversal path would leave the reward standing for the
+// admin who removes the invoice instead of un-paying it.
+func TestReferralMilestoneUnwindsWhenAPaidInvoiceIsDeleted(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	db := store.InitDB(testDSN())
+
+	const rewardID = "RR_delete_test"
+	seedReferral(t, db, rewardID, "STU001")
+
+	invoices := []string{
+		createMonthlyInvoice(t, r, token, "STU001", "2026-06-01"),
+		createMonthlyInvoice(t, r, token, "STU001", "2026-07-01"),
+		createMonthlyInvoice(t, r, token, "STU001", "2026-08-01"),
+	}
+	for _, id := range invoices {
+		payInvoice(t, r, token, id, "")
+	}
+	if got := readReferral(t, db, rewardID); got.status != "earned" {
+		t.Fatalf("setup: want earned before the delete, got %s", got.status)
+	}
+
+	w := doRequest(r, "DELETE", "/api/invoices/"+invoices[2], token, nil)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("delete invoice: got %d: %s", w.Code, w.Body.String())
+	}
+
+	after := readReferral(t, db, rewardID)
+	if after.status != "pending" {
+		t.Errorf("deleting a paid invoice left status %q, want pending", after.status)
+	}
+	if after.creditsRemaining != 0 {
+		t.Errorf("deleting a paid invoice left %d credits, want 0", after.creditsRemaining)
+	}
+	if after.paidInvoiceCount != 2 {
+		t.Errorf("deleting a paid invoice left paid_invoice_count %d, want 2", after.paidInvoiceCount)
 	}
 }

@@ -364,6 +364,12 @@ func HandleInvoiceDelete(db *store.DB) http.HandlerFunc {
 			"amount":    amount,
 		})
 		core.LogAudit(db, store.TenantID(c), c.Email, "invoice_deleted", "invoice", id, string(detailBytes))
+		// Deleting a paid invoice drops the referral count exactly as reversing
+		// one does, so it has to re-derive the reward too. Bulk delete refuses
+		// Paid invoices outright and needs no equivalent.
+		if status == invoiceStatusPaid {
+			store.ReferralReconcile(db, studentID, c)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
