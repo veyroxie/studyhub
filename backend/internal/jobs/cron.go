@@ -98,13 +98,31 @@ func monthlyClassDescriptor(m classMeta) string {
 // has a Monthly invoice for the current month. Idempotent: skips students
 // that already have one. The 7-day window gives the cron room to catch up
 // if a deploy or outage caused the 1st to be missed.
+// MonthlyCronJob names the billing scheduler in the heartbeat and alert paths.
+const MonthlyCronJob = "monthly-cron"
+
+// runMonthlyCronTick is the scheduler's unit of work. safeRun contains a panic
+// because chi's Recoverer only wraps request goroutines: an unrecovered panic
+// here kills the process, compose restarts it, the boot-time run below panics
+// on the same row, and the whole API crash-loops -- on the 1st of the month.
+// The heartbeat is recorded on every tick including the no-op days outside the
+// 1-7 window, because what StaleJobs watches is whether the scheduler is alive.
+// The heartbeat sits inside the recovered closure so a panicking cycle records
+// nothing -- otherwise the alert path would read "ran fine" off a run that died.
+func runMonthlyCronTick(db *store.DB) {
+	safeRun(MonthlyCronJob, func() {
+		runMonthlyInvoiceCycle(db)
+		store.RecordJobSuccess(db, MonthlyCronJob, "")
+	})
+}
+
 func StartCron(ctx context.Context, wg *sync.WaitGroup, db *store.DB) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		// Run once shortly after boot in case the server was down at the
 		// scheduled time.
-		runMonthlyInvoiceCycle(db)
+		runMonthlyCronTick(db)
 
 		for {
 			next := nextRunAt(time.Now())
@@ -113,7 +131,7 @@ func StartCron(ctx context.Context, wg *sync.WaitGroup, db *store.DB) {
 				core.Logger.Info("monthly cron stopped")
 				return
 			case <-time.After(time.Until(next)):
-				runMonthlyInvoiceCycle(db)
+				runMonthlyCronTick(db)
 			}
 		}
 	}()
@@ -793,15 +811,17 @@ func HandleRunMonthlyCron(db *store.DB) http.HandlerFunc {
 		go func() {
 			defer conn.Close()
 			defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, lockKey)
-			now := time.Now()
-			invoices := generateMonthlyInvoices(db, now)
-			overflow := generateSelfStudyOverflowInvoices(db, now)
-			payrolls := generateMonthlyPayroll(db, now)
-			if invoices+overflow+payrolls > 0 {
-				store.SnapshotCacheInvalidateAll()
-			}
-			core.Logger.Info("monthly cron manual run finished", "actor", actor, "invoices", invoices, "overflow", overflow, "payrolls", payrolls)
-			core.LogAudit(db, store.TenantID(c), actor, "monthly_cron_manual_run", "system", "", "")
+			safeRun(MonthlyCronJob, func() {
+				now := time.Now()
+				invoices := generateMonthlyInvoices(db, now)
+				overflow := generateSelfStudyOverflowInvoices(db, now)
+				payrolls := generateMonthlyPayroll(db, now)
+				if invoices+overflow+payrolls > 0 {
+					store.SnapshotCacheInvalidateAll()
+				}
+				core.Logger.Info("monthly cron manual run finished", "actor", actor, "invoices", invoices, "overflow", overflow, "payrolls", payrolls)
+				core.LogAudit(db, store.TenantID(c), actor, "monthly_cron_manual_run", "system", "", "")
+			})
 		}()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
@@ -1115,9 +1135,11 @@ func HandleRegeneratePayroll(db *store.DB) http.HandlerFunc {
 		go func() {
 			defer conn.Close()
 			defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, lockKey)
-			count := generateMonthlyPayroll(db, target)
-			core.Logger.Info("payroll regenerated", "actor", actor, "month", monthArg, "created", count)
-			core.LogAudit(db, store.TenantID(c), actor, "payroll_regenerated", "system", monthArg, "")
+			safeRun("payroll-regenerate", func() {
+				count := generateMonthlyPayroll(db, target)
+				core.Logger.Info("payroll regenerated", "actor", actor, "month", monthArg, "created", count)
+				core.LogAudit(db, store.TenantID(c), actor, "payroll_regenerated", "system", monthArg, "")
+			})
 		}()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)

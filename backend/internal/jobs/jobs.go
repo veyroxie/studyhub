@@ -106,6 +106,11 @@ var externalJobLimits = map[string]time.Duration{
 	"email-delivery": 7 * 24 * time.Hour,
 	"backup-upload":  36 * time.Hour,     // nightly at 02:00
 	"backup-verify":  9 * 24 * time.Hour, // weekly on Sunday
+	// Billing. Scheduled daily at 00:05 by StartCron rather than on a fixed
+	// interval, so it records its own heartbeat instead of joining `jobs`
+	// above. 36h tolerates one missed night. Without this the one job that
+	// creates invoices was the only one nothing watched.
+	MonthlyCronJob: 36 * time.Hour,
 }
 
 // alertOnce throttles a given alert category to at most once per 24h so the
