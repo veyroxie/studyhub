@@ -315,9 +315,12 @@ func TestPricingCatalogue_CRUD(t *testing.T) {
 		return authedJSON(t, r, "POST", path, tok, body)
 	}
 
-	// A category Nadine could add herself -- Mandarin, which has no level and
-	// so never fitted the old grid.
-	w := post("/api/pricing-categories", map[string]any{"name": "Mandarin", "sortOrder": 9})
+	// A category Nadine could add herself. Deliberately NOT one the migrations
+	// seed: 0058 now creates "Mandarin", and the harness preserves the seeded
+	// catalogue, so a test that invents that name collides with the seed
+	// rather than testing anything.
+	const newCat = "Drama"
+	w := post("/api/pricing-categories", map[string]any{"name": newCat, "sortOrder": 9})
 	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
 		t.Fatalf("create category: %d %s", w.Code, w.Body.String())
 	}
@@ -331,7 +334,7 @@ func TestPricingCatalogue_CRUD(t *testing.T) {
 
 	// Duplicate names are refused, so two "Mandarin" categories cannot exist
 	// for a class to point at the wrong one.
-	if w = post("/api/pricing-categories", map[string]any{"name": "Mandarin"}); w.Code != http.StatusConflict {
+	if w = post("/api/pricing-categories", map[string]any{"name": newCat}); w.Code != http.StatusConflict {
 		t.Fatalf("duplicate category must conflict, got %d", w.Code)
 	}
 
@@ -404,7 +407,7 @@ func TestPricingCatalogue_CRUD(t *testing.T) {
 	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,classroom,pricing_category_id) VALUES(?,?,?,?,?,?,?,?)`,
 		clsGuard, tenantID, "Guarded", "Monday", "16:00", "17:00", "Room G", cat.ID)
 	w = authedJSON(t, r, "PUT", "/api/pricing-categories/"+cat.ID, tok, map[string]any{
-		"name": "Mandarin", "creditCovered": true,
+		"name": newCat, "creditCovered": true,
 	})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("flipping credit-covered under live classes must be refused, got %d %s", w.Code, w.Body.String())
@@ -415,7 +418,7 @@ func TestPricingCatalogue_CRUD(t *testing.T) {
 	// those classes would resolve to no price and be skipped in silence.
 	clsID := core.GenerateID("CLS")
 	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,classroom,pricing_category_id) VALUES(?,?,?,?,?,?,?,?)`,
-		clsID, tenantID, "Mandarin", "Thursday", "16:00", "17:00", "Room M", cat.ID)
+		clsID, tenantID, "Drama Class", "Thursday", "16:00", "17:00", "Room M", cat.ID)
 
 	w = authedJSON(t, r, "DELETE", "/api/pricing-categories/"+cat.ID, tok, nil)
 	if w.Code != http.StatusConflict {
