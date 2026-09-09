@@ -32,7 +32,6 @@ func JSONArr(v []string) string {
 	return string(b)
 }
 
-// parseArr unmarshals a JSON string into a string slice
 // DedupStrings returns the input with duplicates removed, order preserved.
 //
 // enrolled_classes is stored as the client sent it, while SyncEnrollments
@@ -52,6 +51,7 @@ func DedupStrings(in []string) []string {
 	return out
 }
 
+// ParseArr unmarshals a JSON string into a string slice.
 func ParseArr(s string) []string {
 	var out []string
 	if s == "" {

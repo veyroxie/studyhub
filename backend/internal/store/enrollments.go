@@ -86,19 +86,6 @@ type EnrollmentWindow struct {
 	To      string
 }
 
-// EnrollmentWindowsIn returns the classes a student was enrolled in at any
-// point within [from, to], each clipped to the days they were actually
-// enrolled. Billing counts sessions inside these windows rather than over the
-// whole month, which is what makes a mid-month joiner pay for fewer sessions
-// (Ely, 2026-09-01) instead of a full month.
-//
-// Enrolment is treated as HALF-OPEN, [started_on, ended_on): the day a student
-// is removed is not billed. Removal stamps ended_on with that day, so a
-// student taken off the list on the 15th is billed through the 14th. The
-// alternative (inclusive) would bill a session on a day they had already left.
-//
-// Replaces reading students.enrolled_classes, which is a bare id list with no
-// dates and therefore cannot answer this at all.
 // StudentsEnrolledOn answers the inverse of EnrollmentWindowsIn: given a class
 // and a single date, who was enrolled in it that day. Same half-open
 // [started_on, ended_on) rule, collapsed to one date -- a student whose
@@ -130,6 +117,19 @@ func StudentsEnrolledOn(db *DB, tenantID int, classID, date string) ([]string, e
 	return out, rows.Err()
 }
 
+// EnrollmentWindowsIn returns the classes a student was enrolled in at any
+// point within [from, to], each clipped to the days they were actually
+// enrolled. Billing counts sessions inside these windows rather than over the
+// whole month, which is what makes a mid-month joiner pay for fewer sessions
+// (Ely, 2026-09-01) instead of a full month.
+//
+// Enrolment is treated as HALF-OPEN, [started_on, ended_on): the day a student
+// is removed is not billed. Removal stamps ended_on with that day, so a
+// student taken off the list on the 15th is billed through the 14th. The
+// alternative (inclusive) would bill a session on a day they had already left.
+//
+// Replaces reading students.enrolled_classes, which is a bare id list with no
+// dates and therefore cannot answer this at all.
 func EnrollmentWindowsIn(db *DB, tenantID int, studentID, from, to string) ([]EnrollmentWindow, error) {
 	rows, err := db.Query(`SELECT class_id, started_on, COALESCE(ended_on,'')
 		FROM enrollments
