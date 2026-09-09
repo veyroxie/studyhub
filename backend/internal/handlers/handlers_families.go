@@ -100,9 +100,15 @@ func HandleFamilies(db *store.DB) http.HandlerFunc {
 }
 
 // handleFamilyPDPADelete is the admin-only PDPA account deletion endpoint.
-// Soft-deletes the family, parent user, and all linked students. PII is
-// overwritten with "[deleted]" so invoices / audit logs can be retained
-// without containing personal data.
+// Soft-deletes the family, parent user and all linked students, and clears the
+// subject from everything else keyed on their email: the original registration,
+// push subscriptions, queued and sent mail, outstanding email tokens, and
+// feedback replies. PII is overwritten with "[deleted]" so invoices and audit
+// logs can be retained without containing personal data.
+//
+// Anything added later that stores a parent's email, name or phone belongs in
+// this transaction too. The response tells the centre the person has been
+// erased, so a table missed here is a false compliance claim, not a bug report.
 //
 // DELETE /api/families/{id}/pdpa
 func HandleFamilyPDPADelete(db *store.DB) http.HandlerFunc {
@@ -164,13 +170,70 @@ func HandleFamilyPDPADelete(db *store.DB) http.HandlerFunc {
 			}
 		}
 
+		// Everything else keyed on the parent's email address. Redacting only
+		// families/students/users left the subject fully identifiable: their
+		// name, phone, child's date of birth and school all survived in
+		// registrations, a queued email still reached them, and an outstanding
+		// reset token still worked. Same transaction as the rest, so a failure
+		// here rolls the whole erasure back rather than reporting success.
+		if contact != "" {
+			// The original enrolment record: redact, don't delete. The row is
+			// still needed for intake reporting; the person in it is not.
+			regArgs := append([]any{contact}, twArgs...)
+			if _, err := tx.Exec(`UPDATE registrations SET parent_name='[deleted]', email='deleted-'||id||'@redacted', phone='', emergency_name='', emergency_phone='', student_first_name='[deleted]', student_last_name='[deleted]', student_dob='', school_name='' WHERE email=?`+tw, regArgs...); err != nil {
+				core.Logger.Error("pdpa delete: registrations anonymise failed", "err", err, "family_id", famID)
+				core.RespondError(w, "could not anonymise account", 500)
+				return
+			}
+			// A live delivery channel to the erased person's device.
+			pushArgs := append([]any{contact}, twArgs...)
+			if _, err := tx.Exec(`DELETE FROM push_subscriptions WHERE parent_email=?`+tw, pushArgs...); err != nil {
+				core.Logger.Error("pdpa delete: push subscription removal failed", "err", err, "family_id", famID)
+				core.RespondError(w, "could not anonymise account", 500)
+				return
+			}
+			// Unsent mail goes; the sender dispatches on status alone and would
+			// otherwise still deliver to an address just certified as erased.
+			// Already-sent rows keep the fact of the send, without the address.
+			qDelArgs := append([]any{contact}, twArgs...)
+			if _, err := tx.Exec(`DELETE FROM email_queue WHERE to_email=? AND status IN ('pending','sending')`+tw, qDelArgs...); err != nil {
+				core.Logger.Error("pdpa delete: queued mail removal failed", "err", err, "family_id", famID)
+				core.RespondError(w, "could not anonymise account", 500)
+				return
+			}
+			qRedArgs := append([]any{contact}, twArgs...)
+			if _, err := tx.Exec(`UPDATE email_queue SET to_email='deleted-'||id||'@redacted' WHERE to_email=?`+tw, qRedArgs...); err != nil {
+				core.Logger.Error("pdpa delete: sent mail redaction failed", "err", err, "family_id", famID)
+				core.RespondError(w, "could not anonymise account", 500)
+				return
+			}
+			// Outstanding reset and verification links must die with the account.
+			tokArgs := append([]any{contact}, twArgs...)
+			if _, err := tx.Exec(`DELETE FROM email_tokens WHERE email=?`+tw, tokArgs...); err != nil {
+				core.Logger.Error("pdpa delete: token removal failed", "err", err, "family_id", famID)
+				core.RespondError(w, "could not anonymise account", 500)
+				return
+			}
+			repArgs := append([]any{contact}, twArgs...)
+			if _, err := tx.Exec(`UPDATE feedback_replies SET author_email='deleted-'||id||'@redacted', author_name='[deleted]' WHERE author_email=?`+tw, repArgs...); err != nil {
+				core.Logger.Error("pdpa delete: feedback reply anonymise failed", "err", err, "family_id", famID)
+				core.RespondError(w, "could not anonymise account", 500)
+				return
+			}
+		}
+
 		if err := tx.Commit(); err != nil {
 			core.RespondError(w, "server error", 500)
 			return
 		}
 
-		core.LogAudit(db, store.TenantID(c), c.Email, "pdpa_account_deleted", "family", famID, "contact="+contact)
-		core.Logger.Info("PDPA account deleted", "family_id", famID, "contact", contact, "admin", c.Email)
+		// The erasure needs an audit trail, but the erased identifier must not
+		// BE that trail: this used to write the real email into audit_logs.detail
+		// and the application log, re-introducing the address the transaction
+		// above had just removed. The family id identifies the record; the
+		// admin's own email identifies who acted.
+		core.LogAudit(db, store.TenantID(c), c.Email, "pdpa_account_deleted", "family", famID, "identifiers redacted across 8 tables")
+		core.Logger.Info("PDPA account deleted", "family_id", famID, "admin", c.Email)
 
 		core.Respond(w, map[string]string{"message": "Account and associated data have been anonymised."})
 	}
