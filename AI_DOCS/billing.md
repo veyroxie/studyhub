@@ -116,7 +116,7 @@ discounts clamped `<= 0`, each rounded to 2dp) and **ignores the client's `amoun
 On update, `period` is recomputed rather than carried (the endpoint can change both type and
 `created_on`, and a stale period would hide the invoice from the monthly dedup), and
 `line_items` is cleared **only when the amount actually changed**, via a SQL `CASE`
-comparing old and new at 2dp (`handlers_invoices.go:229-237`).
+comparing old and new at 2dp (`handlers_invoices.go:241-249`).
 
 ## Idempotency
 
@@ -129,16 +129,16 @@ comparing old and new at 2dp (`handlers_invoices.go:229-237`).
 - **Dedup preloads fail closed.** A query error aborts the whole run rather than proceeding
   with an empty set, which would re-bill every active student (`cron.go:330-336`).
 - Dedup keys on `period`, not `created_on`: "an invoice raised in September for August is an
-  August invoice" (`cron.go:649-655`).
+  August invoice" (`cron.go:659-665`).
 - **`period` is set only for `type='Monthly'`** (`createdOn[:7]`); everything else gets `''`.
   Stamping a period on a registration fee would block that student's tuition invoice
   (`handlers_invoices.go:196-201`).
 - **Re-paying an already-Paid invoice is a no-op** -- the UPDATE carries `AND status<>'Paid'`,
   and both the referral milestone and the confirmation email are gated on `rowsChanged > 0`
-  (`handlers_invoices.go:441-443, 485`).
+  (`handlers_invoices.go:459-461, 503`).
 - **Receipt numbers** (`RCPT-000001` from `receipt_no_seq`) are minted only on the first
   transition to Paid, guarded by `status='Paid' AND (receipt_no IS NULL OR receipt_no='')`.
-  The same guard is duplicated in both webhook handlers (`handlers_invoices.go:468-470`,
+  The same guard is duplicated in both webhook handlers (`handlers_invoices.go:486-488`,
   `payments.go:222, 388`).
 
 ### Stale comment warning
@@ -152,22 +152,22 @@ only `0024` leads to the wrong conclusion.
 `Unpaid`, `Paid`, `Pending Verification`, `Pending`, `Overdue`. Creation always forces
 `Unpaid` (`handlers_invoices.go:152`). Parents may transition **only** to
 `Pending Verification` -- never to Paid, even with an empty body
-(`handlers_invoices.go:396-415`).
+(`handlers_invoices.go:414-433`).
 
 A non-cash payment (any method except `Cash` or empty) requires a reference number, validated
 against the **effective post-update state** -- body value falling back to the stored value.
 This closes the bypass where an admin marked Paid with an empty body on an invoice that
-already had `method="Bank Transfer", ref=""` (`handlers_invoices.go:418-434`).
+already had `method="Bank Transfer", ref=""` (`handlers_invoices.go:436-452`).
 
 Bulk delete only removes `Unpaid` and `Overdue`. Paid rows are financial records and
 Pending Verification rows carry parent-submitted proof; both are silently kept even when
 their ids are in the request, and the response reports deleted vs skipped
-(`handlers_invoices.go:293-321`).
+(`handlers_invoices.go:305-333`).
 
 The "payment received" email fires **only** when confirming a payment the parent themselves
 submitted (`submitted_by_parent`, set exclusively by the parent pay path). Admin cash entry
 and bulk mark-paid stay silent so reconciliation does not blast every parent
-(`handlers_invoices.go:452-455, 489-505`).
+(`handlers_invoices.go:470-473, 507-523`).
 
 ## Payment webhooks
 

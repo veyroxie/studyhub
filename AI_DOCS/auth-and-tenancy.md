@@ -69,7 +69,7 @@ superadmins out of routine work and is called out as "a recurring drift across h
 Authorization is enforced in **both** places, so route placement tells you nothing on its
 own. `auth.RequireAdmin` wraps only the user-management / import / registrations / audit
 subgroup (`server.go:311-312`); other admin-only endpoints check inside the handler body
-(e.g. the monthly cron trigger, `jobs/cron.go:747-748`).
+(e.g. the monthly cron trigger, `jobs/cron.go:757-758`).
 
 `HandleUsers` POST accepts only `parent`, `teacher`, `admin` -- rejecting `superadmin`
 explicitly so an admin cannot self-provision a higher-privilege account
@@ -85,7 +85,7 @@ A parent is tied to their children by **email string match**: `students.contact 
   every student in the tenant.
 
 Announcement visibility needs SQL **and** a Go post-filter: `store.ParentAnnouncementFilter`
-(`parent_scope.go:61-87`) drops class-targeted rows whose class is not in the parent's
+(`parent_scope.go:65-91`) drops class-targeted rows whose class is not in the parent's
 enrolment set, "enforced here, not just in the client, so the snapshot never leaks them".
 
 `users.email` is globally UNIQUE across tenants (`database.go:68`), which is why auth flows
@@ -111,8 +111,8 @@ in-memory cache entry or the killed token survives 30 more seconds (`auth.go:415
 TTL, stored server-side only as SHA-256 (`refresh_tokens.go:16-19, 39-40`). Setting or
 clearing it with a different `Path` silently fails to overwrite. Rotated on every use within
 a `token_family`; presenting an already-used or revoked token **burns the entire family** as
-suspected theft (`refresh_tokens.go:111-114`). Refresh always reissues with
-`rememberMe=false` -- a deliberate conservative downgrade, not a bug (`refresh_tokens.go:148-151`).
+suspected theft (`refresh_tokens.go:105-108`). Refresh always reissues with
+`rememberMe=false` -- a deliberate conservative downgrade, not a bug (`refresh_tokens.go:142-145`).
 
 Not every session has a refresh family: email verification and set-password auto-login issue
 only the 24h access cookie (`handlers_verify.go:84-98`, `handlers_password.go:138-152`).
@@ -140,7 +140,7 @@ production Caddyfile on 2026-09-09:
 
 So `RealIP` does **not** read `X-Real-IP`; it takes the **right-most** `X-Forwarded-For`
 entry, which is the one the nearest proxy wrote whether that proxy replaced the header or
-appended to it (`middleware.go:93-111`). Reading `X-Real-IP`, or the left-most XFF entry,
+appended to it (`middleware.go:97-115`). Reading `X-Real-IP`, or the left-most XFF entry,
 lets a client pick its own rate-limit bucket: rotate the value per request and neither
 limiter ever fires. The `header_up` lines in `infra/Caddyfile.recommended` restate the
 same guarantee at the proxy and should be kept, but the app no longer depends on them.

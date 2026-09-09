@@ -65,7 +65,7 @@ onto `db.QueryRow`.
 
 `HandleRunMonthlyCron` responds **202 Accepted immediately** and runs the batch in a goroutine
 holding that connection. Completion is reported only via the audit log; a 202 does not mean
-invoices were created (`cron.go:778-793`).
+invoices were created (`cron.go:788-803`).
 
 Invoice emails are queued **after** the transaction commits, so a rollback never emails a
 parent about an invoice that does not exist, and they go through the durable queue rather than
@@ -112,7 +112,7 @@ selective.
 
 Payroll generation (days 1-7, previous month) refreshes existing Pending non-hand-edited rows
 in place. `Paid` or `manually_edited` rows are frozen, re-asserted in the UPDATE's WHERE
-clause to survive races with admin edits (`cron.go:897, 905`). The insert has no `ON CONFLICT`
+clause to survive races with admin edits (`cron.go:907, 915`). The insert has no `ON CONFLICT`
 despite the `ux_payroll_staff_month` index, so a race errors and is logged rather than
 silently absorbed.
 
