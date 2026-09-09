@@ -127,8 +127,15 @@ Lockout is 5 failures then 15 minutes, incremented with an atomic `UPDATE ... RE
 under the row lock so concurrent failures cannot all read the same pre-increment value
 (`auth.go:146-160`). Login additionally rate-limits 5/minute per IP
 (`core/middleware.go:49`), and `X-Real-IP` / `X-Forwarded-For` are trusted only from
-loopback/private peers -- otherwise an attacker reaching the app directly could spoof past
-the limiter (`middleware.go:52-57, 93-95`).
+loopback/private peers (`middleware.go:52-57, 93-95`).
+
+That last check is weaker than it reads, and the protection actually lives in the proxy.
+The API binds `127.0.0.1:8080` only, so the peer is **always** loopback and the trust test
+**always** passes -- the app believes whatever header arrives. What makes it safe is that
+Caddy overwrites both headers with the real remote address before proxying
+(`infra/Caddyfile.recommended`, `header_up`). Remove those two lines, or deploy a
+Caddyfile without them, and a client picks its own rate-limit bucket: rotate `X-Real-IP`
+per request and neither limiter ever fires.
 
 Two deliberate anti-enumeration measures, both easy to destroy by "simplifying":
 

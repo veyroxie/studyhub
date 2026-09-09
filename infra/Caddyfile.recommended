@@ -35,14 +35,34 @@ studyhub.fit {
     }
 
     # API + WebSocket — proxy to the Go API container.
+    #
+    # header_up is load-bearing, not tidiness. The app binds 127.0.0.1 only, so
+    # RemoteAddr at the Go end is ALWAYS loopback, which makes core.RealIP's
+    # "is this a trusted proxy" test always true — it then believes whatever
+    # X-Real-IP arrives. Caddy does not set that header on its own and appends
+    # to any incoming X-Forwarded-For, so without these two lines a client
+    # supplies its own rate-limit bucket: rotate the header per request and
+    # neither the 5/min login limiter nor RateLimitAPI ever fires. That buys
+    # unmetered account enumeration, lockout-DoS across the whole roster (five
+    # requests locks any known account for 15 minutes) and unmetered
+    # /api/forgot-password, which is both mail-bombing and Resend quota burn.
+    #
+    # Overwrite, never append: RealIP reads the LEFT-most X-Forwarded-For entry,
+    # which is the attacker-controlled one if the incoming chain is kept.
     @backend path /api/* /ws/*
     handle @backend {
-        reverse_proxy localhost:8080
+        reverse_proxy localhost:8080 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+        }
     }
 
     # HTML / SPA shell — proxy to Go so it can attach security headers and
     # the no-store policy that keeps the shell fresh after every deploy.
     handle {
-        reverse_proxy localhost:8080
+        reverse_proxy localhost:8080 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+        }
     }
 }
