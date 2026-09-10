@@ -14,6 +14,10 @@ import (
 	"studyhub/internal/store"
 )
 
+// The status a check-in writes. Named because the front-desk exemption below
+// tests against it: "Absent" on the same payload must not ride along.
+const attendanceStatusPresent = "Present"
+
 // ── Attendance ────────────────────────────────────────────────────────────────
 
 func listAttendance(db *store.DB, c *core.Claims) []models.Attendance {
@@ -185,16 +189,23 @@ func HandleAttendance(db *store.DB, hub *WSHub) http.HandlerFunc {
 				return
 			}
 			// Being in the tenant is not the same as being this teacher's to
-			// write. Every sibling write path checks ownership -- self-study
-			// (:175, :217) and replacement credits (:104, :230) -- and this one
-			// did not, so any teacher could mark any child in the centre absent,
-			// which overwrites the row the child's real teacher wrote and moves
-			// payroll hours, or check them in, which fires a genuine push and
-			// email to a family they do not teach. Keyed off personTable so an
-			// empty personType, which already falls through to students, is
-			// covered too. Admins are unrestricted.
-			if personTable == "students" && !teacherMayActOnStudent(db, c, a.PersonID) {
-				core.RespondError(w, "that student is not in your classes", http.StatusForbidden)
+			// write: any teacher could mark any child in the centre absent,
+			// overwriting the row their real teacher wrote. Every sibling write
+			// path checks ownership -- self-study (:175, :217) and replacement
+			// credits (:104, :230) -- and this one did not.
+			//
+			// Manning the front desk is the exception (Ely, 2026-09-10): a
+			// teacher may check ANY student in or out, because that is the
+			// desk's job and the parent notification is the point of it, not a
+			// side effect. What stays owner-only is the absence record. Status
+			// rides the same statement as the times, so it is part of the test:
+			// without it a payload carrying a check-in time and status "Absent"
+			// would walk straight through. Keyed off personTable so an empty
+			// personType, which already falls through to students, is covered.
+			// Admins are unrestricted.
+			isFrontDeskCheck := (a.CheckIn != nil || a.CheckOut != nil) && a.Status == attendanceStatusPresent
+			if personTable == "students" && !isFrontDeskCheck && !teacherMayActOnStudent(db, c, a.PersonID) {
+				core.RespondError(w, "that student is not in your classes — you can check them in or out, but only their own teacher or an admin can change their attendance", http.StatusForbidden)
 				return
 			}
 			if a.ClassID != nil && *a.ClassID != "" {

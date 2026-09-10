@@ -75,6 +75,23 @@ subgroup (`server.go:311-312`); other admin-only endpoints check inside the hand
 explicitly so an admin cannot self-provision a higher-privilege account
 (`handlers_users.go:70-76`).
 
+### Teacher scoping
+
+A teacher's reach is their own classes, not their tenant: `teacherMayActOnStudent`
+(`handlers_students.go:62`) gates self-study, replacement credits and attendance writes.
+Being in the tenant is not the same as being this teacher's to write -- without it any
+teacher can mark any child absent, overwriting the row that child's real teacher wrote.
+
+One deliberate exemption, because teachers staff the front desk (Ely, 2026-09-10): a
+teacher may check **any** student in or out. The absence record stays owner-only. `status`
+travels on the same UPDATE as the check times, so the exemption tests it as well as the
+times -- a payload carrying a check-in time and `status: "Absent"` is refused
+(`handlers_attendance.go:191-210`). Widening the exemption without keeping that condition
+re-opens the hole.
+
+Staff attendance rows are NOT covered: one teacher can still write another's, which moves
+payroll. Left open deliberately -- who operates that screen is not established.
+
 ### Parent scoping
 
 A parent is tied to their children by **email string match**: `students.contact = claims.Email`

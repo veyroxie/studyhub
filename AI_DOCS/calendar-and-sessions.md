@@ -243,7 +243,7 @@ enrolments table.
 
 Rows upsert on `(person_id, date, class_id)` within tenant, serialized by
 `pg_advisory_xact_lock` on that composite -- explicitly because duplicate rows double-count
-part-time payroll hours (`handlers_attendance.go:205-237`). **There is no DB unique constraint
+part-time payroll hours (`handlers_attendance.go:216-248`). **There is no DB unique constraint
 backing this**; the advisory lock is the only guard, so any write path bypassing this handler
 can corrupt payroll.
 
@@ -271,7 +271,7 @@ pass the threshold; earned credits skip the transaction (`handlers_replacement.g
 The kiosk flow is optimistic-first with rollback; the POST is what triggers the parent
 WebSocket and push notification server-side. Status-only updates (marking absent) carry no
 time and are deliberately skipped so a parent toast never reads "checked in at " with no time
-(`attendance.js:463-486`, `handlers_attendance.go:262-289`).
+(`attendance.js:463-486`, `handlers_attendance.go:273-300`).
 
 ## Classes
 

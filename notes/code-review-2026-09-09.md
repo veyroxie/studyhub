@@ -174,6 +174,11 @@ Tenant isolation is enforced at the query layer only — `store.RLSScope` is a d
 (`attendance.js:468`, `:487`), so a teacher operating a general front-desk kiosk can now
 only scan students from their own classes. Admins are unrestricted. If the front desk is
 staffed by someone holding the `teacher` role, they need `admin` instead.
+
+**SUPERSEDED 2026-09-10 (Ely):** teachers help at the desk, so an admin account there was
+the wrong answer. A teacher may now check ANY student in or out; only the absence record
+stays owner-only. Because `status` travels on the same UPDATE as the times, the exemption
+tests it too -- a check-in payload carrying `status: "Absent"` is still refused.
 **Residual, not fixed here:** the same handler still lets one teacher write a *staff*
 attendance row for another teacher, which also moves payroll. Left alone because
 restricting staff rows to the caller's own would break any legitimate
