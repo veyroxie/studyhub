@@ -305,6 +305,11 @@ func HandleProgressReportPDF(db *store.DB) http.HandlerFunc {
 // parent's children have any outstanding Monthly invoices. A single hit
 // blocks PDF access; matches the dashboard banner shown on the parent
 // portal so the experience is consistent.
+//
+// s.deleted_at is load-bearing: soft-deleting a student does not cascade to
+// their invoices, so a child who left owing a Monthly invoice would block
+// their siblings' reports forever. notify.hasUnpaidMonthly is the same gate on
+// the check-in alert path and carries the same filter -- change one, change both.
 func hasUnpaidMonthlyInvoice(db *store.DB, parentEmail string, c *core.Claims) bool {
 	itw, itwArgs := store.ScopeTenant(c, "i")
 	stw, stwArgs := store.ScopeTenant(c, "s")
@@ -316,7 +321,8 @@ func hasUnpaidMonthlyInvoice(db *store.DB, parentEmail string, c *core.Claims) b
 		WHERE s.contact = ?`+stw+itw+`
 		  AND i.type = 'Monthly'
 		  AND (i.status = 'Unpaid' OR i.status = 'Overdue')
-		  AND i.deleted_at IS NULL`,
+		  AND i.deleted_at IS NULL
+		  AND s.deleted_at IS NULL`,
 		args...).Scan(&count)
 	return count > 0
 }

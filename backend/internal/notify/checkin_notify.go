@@ -102,6 +102,8 @@ func classNameByID(db *store.DB, tenantID int, classID *string) string {
 // worse than the rare case of one alert slipping past the billing gate.
 func hasUnpaidMonthly(db *store.DB, tenantID int, parentEmail string) bool {
 	var exists bool
+	// Twin of handlers.hasUnpaidMonthlyInvoice, which gates progress-report
+	// PDFs on the same question -- change one, change both.
 	err := db.QueryRow(`SELECT EXISTS(
 		SELECT 1 FROM invoices i JOIN students s ON s.id=i.student_id
 		WHERE s.contact=? AND i.tenant_id=? AND i.type='Monthly'
