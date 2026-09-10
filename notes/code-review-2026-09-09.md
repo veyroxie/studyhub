@@ -21,6 +21,24 @@ import in a transaction, **T25** resolves the author name in both consumers rath
 than storing a staff id, **T27** derives what to delete rather than listing what to
 keep. One ticket, **T1**, grew a third site that the review missed.
 
+**Re-verified 2026-09-10, ticket by ticket, against the code rather than this
+list.** Twenty-six of the twenty-eight are genuinely closed. Two were not:
+
+- **T8** was fixed in the kiosk and the two teacher paths, but `_checkInStudent`
+  and `_checkOutStudent` still filed a live check-in under the picker's date.
+  The Check In button is not gated on the date, so reviewing a past roster and
+  tapping it wrote the current clock time under that past day. Fixed now, same
+  `_eventDate()` pattern as the paths this ticket did reach.
+- **T26** fixed `notify.hasUnpaidMonthly` and left its twin,
+  `handlers.hasUnpaidMonthlyInvoice`, with the identical missing
+  `s.deleted_at IS NULL`. A departed child owing a Monthly invoice went on
+  blocking their siblings' progress-report PDFs. Fixed, and each now names the
+  other so the next change catches both.
+
+Still open, and a judgement call rather than a defect: `_markStaff` stamps the
+current clock time against the picker's date. Marking a past day's roster is
+legitimate; stamping it "now" is not obviously either way.
+
 Open decisions left for the owner, none of them blocking: the overflow unique index
 (T4), whether to widen the `tenant_id > 0` CHECK beyond `users` (T10), and whether
 the front desk runs as `admin` (T7 changes what a `teacher`-role kiosk can scan).

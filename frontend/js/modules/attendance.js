@@ -874,13 +874,17 @@
   function _checkInStudent(studentId) {
     const state = App.Store.get();
     const now = App.Utils.nowTime();
-    const existing = state.attendance.find(function(a) { return a.personId === studentId && a.classId === _attClassId && a.date === _attDate; });
+    // _eventDate(), not _attDate: the button is not gated on the picker, so on
+    // a past date's roster this stamped the current clock time under that past
+    // date. Same rule as the kiosk and the teacher check-in.
+    const today = _eventDate();
+    const existing = state.attendance.find(function(a) { return a.personId === studentId && a.classId === _attClassId && a.date === today; });
     // Optimistic UI update so the table flips immediately. The POST below
     // is what actually persists the row and triggers the WebSocket
     // broadcast that notifies the parent's device.
     let newAtt = state.attendance.slice();
     if (!existing) {
-      newAtt.push({ id: App.Utils.generateId('ATT'), personId: studentId, personType: 'student', date: _attDate, classId: _attClassId, checkIn: now, checkOut: null, status: 'Present' });
+      newAtt.push({ id: App.Utils.generateId('ATT'), personId: studentId, personType: 'student', date: today, classId: _attClassId, checkIn: now, checkOut: null, status: 'Present' });
     }
     var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
@@ -892,7 +896,7 @@
     App.Api.post('/api/attendance', {
       personId: studentId,
       personType: 'student',
-      date: _attDate,
+      date: today,
       classId: _attClassId,
       checkIn: now,
       status: 'Present'
@@ -908,14 +912,16 @@
   function _checkOutStudent(studentId) {
     const state = App.Store.get();
     const now = App.Utils.nowTime();
+    // Pairs with _checkInStudent: the row this closes is today's.
+    const today = _eventDate();
     const existing = state.attendance.find(function(a) {
-      return a.personId === studentId && a.classId === _attClassId && a.date === _attDate;
+      return a.personId === studentId && a.classId === _attClassId && a.date === today;
     });
     // Backend upsert overwrites check_in to whatever we send — pass the
     // existing check-in time through so check-out doesn't blank it.
     const existingCheckIn = existing && existing.checkIn ? existing.checkIn : null;
     const newAtt = state.attendance.map(function(a) {
-      return (a.personId === studentId && a.classId === _attClassId && a.date === _attDate) ? Object.assign({}, a, { checkOut: now }) : a;
+      return (a.personId === studentId && a.classId === _attClassId && a.date === today) ? Object.assign({}, a, { checkOut: now }) : a;
     });
     var prevAtt = state.attendance;
     App.Store.set({ attendance: newAtt });
@@ -927,7 +933,7 @@
     App.Api.post('/api/attendance', {
       personId: studentId,
       personType: 'student',
-      date: _attDate,
+      date: today,
       classId: _attClassId,
       checkIn: existingCheckIn,
       checkOut: now,
