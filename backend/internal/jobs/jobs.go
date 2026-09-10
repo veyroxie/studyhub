@@ -276,7 +276,7 @@ func applyEarlyBirdExpiry(db *store.DB) {
 		items := models.ParseLineItems(raw)
 		kept := items[:0]
 		for _, it := range items {
-			if it.Kind == models.LineItemKindDiscount && strings.HasPrefix(it.Name, "Early bird") {
+			if it.Kind == models.LineItemKindDiscount && strings.HasPrefix(it.Name, models.EarlyBirdLinePrefix) {
 				continue
 			}
 			kept = append(kept, it)

@@ -592,7 +592,7 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		}
 		items = appendDiscount(items, "Referral discount", referralCredit)
 		items = appendDiscount(items, "Sibling discount", siblingDiscount)
-		items = appendDiscount(items, "Early bird discount", earlyBirdApplied)
+		items = appendDiscount(items, models.EarlyBirdLineName, earlyBirdApplied)
 
 		invID := core.GenerateID("INV")
 		desc := "Monthly tuition — " + monthLabel + " — " + s.firstName + " " + s.lastName

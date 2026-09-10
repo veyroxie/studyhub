@@ -13,6 +13,14 @@ import (
 const (
 	LineItemKindItem     = "item"
 	LineItemKindDiscount = "discount"
+
+	// EarlyBirdLineName is the discount line the monthly run writes, and
+	// EarlyBirdLinePrefix is what the hourly expiry job matches on. The LINE is
+	// what marks an invoice as carrying the early bird -- the amount cannot be,
+	// because EarlyBirdRM and ReferralMonthlyRM are both 10.00 and a price gap
+	// cannot tell one from the other.
+	EarlyBirdLineName   = "Early bird discount"
+	EarlyBirdLinePrefix = "Early bird"
 )
 
 // nullStr safely scans a nullable SQL string

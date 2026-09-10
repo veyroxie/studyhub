@@ -8,6 +8,13 @@
   let _billingPage = 0;
   var _PAGE_SIZE = 15;
   var REGISTRATION_FEE = 250;       // RM, matches the seeded Registration product
+  // Mirrors jobs.EarlyBirdRM. The NAME on the line is what arms the clawback,
+  // not this number: the backend and the hourly expiry job both match on
+  // "Early bird", because the referral discount is also RM10 and an amount
+  // alone cannot tell the two apart.
+  var EARLY_BIRD_RM = 10;
+  var EARLY_BIRD_LINE_NAME = 'Early bird discount';
+
   var SELF_STUDY_SESSION_RATE = 10; // RM per self-study session (manual drop-in billing)
   var SELF_STUDY_HOUR_RATE = 10;    // RM per self-study hour (member included value / add-on)
   // Keep in sync with maxProofBytes in backend handlers_uploads.go. Oversized
@@ -99,6 +106,22 @@
       _lineItems.push({ id: _lineSeq, kind: 'discount', name: 'Special pass FOC (self-study included)',
         descriptor: '', qty: 1, unitPrice: c.unitPrice, editableQty: false });
     }
+    _renderLineItems();
+  }
+
+  // The early bird as one click rather than a renamed blank discount. Typing
+  // the name by hand is the failure mode this exists to remove: a typo still
+  // looks like a discount on the invoice but arms no clawback, which is how
+  // every September invoice ended up keeping its RM10 whether or not the
+  // parent paid by the 7th.
+  function _addEarlyBirdLine() {
+    if (_lineItems.some(function(li) { return li.name === EARLY_BIRD_LINE_NAME; })) {
+      App.Utils.showToast('This invoice already has the early bird discount', 'info');
+      return;
+    }
+    _lineSeq++;
+    _lineItems.push({ id: _lineSeq, kind: 'discount', name: EARLY_BIRD_LINE_NAME,
+      descriptor: '', qty: 1, unitPrice: EARLY_BIRD_RM, editableQty: false });
     _renderLineItems();
   }
 
@@ -1198,6 +1221,7 @@
       +     '<select id="pkg-catalog" class="form-input" style="flex:1;min-width:180px" onchange="App.Billing._addLineItem(this.value); this.selectedIndex=0;">' + _packageCatalogOptions() + '</select>'
       +     '<button type="button" onclick="App.Billing._addBlankLine(\'item\')" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer;white-space:nowrap">+ Own wording</button>'
       +     '<button type="button" onclick="App.Billing._addBlankLine(\'discount\')" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:4px;cursor:pointer;white-space:nowrap">+ Discount</button>'
+      +     '<button type="button" onclick="App.Billing._addEarlyBirdLine()" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#fefce8;color:#854d0e;border:1px solid #fde68a;border-radius:4px;cursor:pointer;white-space:nowrap" title="Adds the RM10 early bird line. Unpaid after the 7th and the system puts the RM10 back automatically.">+ Early bird</button>'
       +   '</div>'
       +   '<div id="line-items-list"></div>'
       +   '<div id="line-items-total" style="text-align:right;font-size:0.9rem;color:#111;margin-top:0.35rem"></div>'
@@ -1309,6 +1333,7 @@
       +   _packageCatalogOptions()
       +   '</select>'
       +   '<p class="text-xs text-slate-400 mt-1">Pick Group/Private by level, or self-study. Self-study within the free hours is added as an FOC line; use the add-on for extra hours.</p>'
+      +   '<button type="button" onclick="App.Billing._addEarlyBirdLine()" style="margin-top:0.4rem;padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#fefce8;color:#854d0e;border:1px solid #fde68a;border-radius:4px;cursor:pointer" title="Adds the RM10 early bird line. Unpaid after the 7th and the system puts the RM10 back automatically.">+ Early bird (RM10)</button>'
       + '</div>'
       + '<div id="line-items-list" style="margin-top:0.25rem"></div>'
       + '<div id="line-items-total" style="text-align:right;font-size:0.9rem;color:#111;margin-top:0.35rem"></div>'
@@ -1420,7 +1445,7 @@
         // to the subtotal so a discount larger than the bill can't invert it.
         var eb = Math.min(discountRM, netSubtotal);
         if (eb > 0) {
-          lineItems.push({ kind: 'discount', name: 'Early bird discount', descriptor: '', qty: 1, unitPrice: eb, amount: -eb });
+          lineItems.push({ kind: 'discount', name: EARLY_BIRD_LINE_NAME, descriptor: '', qty: 1, unitPrice: eb, amount: -eb });
         }
       }
       var newInvoice = {
@@ -1677,7 +1702,7 @@
     if (ebRM > 0) {
       var ebBase = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
       var eb = Math.min(ebRM, ebBase);
-      if (eb > 0) lineItems.push({ kind: 'discount', name: 'Early bird discount', qty: 1, unitPrice: eb, amount: -eb });
+      if (eb > 0) lineItems.push({ kind: 'discount', name: EARLY_BIRD_LINE_NAME, qty: 1, unitPrice: eb, amount: -eb });
     }
     const finalTotal = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
 
@@ -1796,6 +1821,7 @@
     _toggleEarlyBird: _toggleEarlyBird,
     _updateNetAmount: _updateNetAmount,
     _addLineItem: _addLineItem,
+    _addEarlyBirdLine: _addEarlyBirdLine,
     _removeLineItem: _removeLineItem,
     _addBlankLine: _addBlankLine,
     _editLineItem: _editLineItem,

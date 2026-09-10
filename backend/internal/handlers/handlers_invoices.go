@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 
@@ -174,8 +175,10 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 				}
 			}
 
-			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,line_items,period) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount, inv.ReferralCredit, inv.ReferenceNo, models.MarshalLineItems(inv.LineItems), monthlyPeriod(inv.Type, inv.CreatedOn)); err != nil {
+			newPeriod := monthlyPeriod(inv.Type, inv.CreatedOn)
+			ebCutoff, ebDiscount := earlyBirdFromLines(inv.Type, newPeriod, inv.LineItems)
+			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,line_items,period,early_bird_cutoff,early_bird_discount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount, inv.ReferralCredit, inv.ReferenceNo, models.MarshalLineItems(inv.LineItems), newPeriod, ebCutoff, ebDiscount); err != nil {
 				// One monthly invoice per student per month (migration 0039).
 				// Without this the admin gets an opaque 500 for a situation that
 				// has an obvious explanation and an obvious fix.
@@ -214,6 +217,35 @@ func invoiceAuditAction(newStatus string) string {
 		return "invoice_payment_reversed"
 	}
 	return "invoice_status_changed"
+}
+
+// earlyBirdFromLines reads the clawback terms off an invoice's own line items.
+//
+// The monthly run records early_bird_cutoff and early_bird_discount directly. A
+// hand-made invoice carried the discount only as a line -- or, before the
+// editor offered one, only as a smaller number typed into the amount -- so the
+// hourly expiry job matched nothing and the RM10 stood whether or not the
+// parent paid by the 7th. Every September invoice in production was in that
+// state.
+//
+// The line is the signal, never the amount: EarlyBirdRM and ReferralMonthlyRM
+// are both 10.00, so an invoice sitting RM10 under the catalogue price could
+// equally be a referral, and clawing that back would be wrong.
+//
+// The cutoff is the 7th of the invoice's own period, not of today, so editing
+// an old invoice cannot move a deadline that has already passed. Arming a
+// cutoff already in the past is deliberate: the early bird IS "paid by the
+// 7th", so an unpaid invoice past it should lose the discount on the next run.
+func earlyBirdFromLines(invoiceType, period string, items []models.InvoiceLineItem) (string, float64) {
+	if invoiceType != "Monthly" || len(period) < 7 {
+		return "", 0
+	}
+	for _, it := range items {
+		if it.Kind == models.LineItemKindDiscount && strings.HasPrefix(it.Name, models.EarlyBirdLinePrefix) {
+			return period + "-07", math.Abs(it.Amount)
+		}
+	}
+	return "", 0
 }
 
 func monthlyPeriod(invoiceType, createdOn string) string {
@@ -306,12 +338,16 @@ func HandleInvoiceUpdate(db *store.DB) http.HandlerFunc {
 		if editingItems {
 			// Lines were sent, so they ARE the new breakdown and the total came
 			// from them. No CASE: there is nothing inconsistent to clear.
+			ebCutoff, ebDiscount := earlyBirdFromLines(inv.Type, newPeriod, inv.LineItems)
 			itemArgs := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn,
-				newPeriod, models.MarshalLineItems(inv.LineItems), id}, twArgs...)
-			res, err = db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, period=?, line_items=? WHERE id=?`+tw+` AND deleted_at IS NULL`, itemArgs...)
+				newPeriod, models.MarshalLineItems(inv.LineItems), ebCutoff, ebDiscount, id}, twArgs...)
+			res, err = db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, period=?, line_items=?, early_bird_cutoff=?, early_bird_discount=? WHERE id=?`+tw+` AND deleted_at IS NULL`, itemArgs...)
 		} else {
-			args := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn, newPeriod, inv.Amount, id}, twArgs...)
-			res, err = db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, period=?, line_items=CASE WHEN ROUND(amount::numeric,2)<>ROUND(?::numeric,2) THEN '[]' ELSE line_items END WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+			// The early-bird fields follow line_items exactly: an amount override
+			// wipes the breakdown, which takes the early-bird line with it, so
+			// the clawback terms must go too or they would outlive their evidence.
+			args := append([]any{inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.CreatedOn, newPeriod, inv.Amount, inv.Amount, inv.Amount, id}, twArgs...)
+			res, err = db.Exec(`UPDATE invoices SET description=?, type=?, amount=?, due_date=?, created_on=?, period=?, line_items=CASE WHEN ROUND(amount::numeric,2)<>ROUND(?::numeric,2) THEN '[]' ELSE line_items END, early_bird_cutoff=CASE WHEN ROUND(amount::numeric,2)<>ROUND(?::numeric,2) THEN '' ELSE early_bird_cutoff END, early_bird_discount=CASE WHEN ROUND(amount::numeric,2)<>ROUND(?::numeric,2) THEN 0 ELSE early_bird_discount END WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 		}
 		if err != nil {
 			core.RespondError(w, "could not update invoice", http.StatusInternalServerError)

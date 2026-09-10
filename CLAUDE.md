@@ -50,6 +50,11 @@ relying on one; drift here has already caused wrong advice.
   Use the glob, not the directory: on Node 22 the directory form treats the
   `_load.mjs` helper as a test file and reports `fail 1` with MODULE_NOT_FOUND,
   which reads like a real test failure rather than a bad invocation.
+- **Never end a Go filename with a GOOS/GOARCH word.** `foo_arm_test.go`,
+  `foo_windows.go`, `foo_linux_test.go` and friends are build-constrained by
+  NAME: on any other platform the file is excluded and `go test` prints `ok`
+  having compiled none of it. Silent, and it looks exactly like a pass.
+  `go list -f '{{.IgnoredGoFiles}}' ./...` names anything being skipped.
 - release-please: automated versioning on `prod`
 
 ## Invariants
