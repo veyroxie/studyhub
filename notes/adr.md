@@ -476,3 +476,46 @@ for the system opening to parents.
 **Revisit when** the centre actually wants parents contacted by the system.
 Until then, treat any feature whose value depends on a parent receiving mail as
 not yet delivering that value, and say so rather than reporting it as done.
+
+## ADR-016 -- The four Stage 0 decisions for the invoice engine
+
+Decided by Ely, 2026-09-11, before Stage 2 work began.
+
+**e-Invoice and SST scope.** Revenue under RM3m with no corporate parent at or
+above it, so the centre sits outside the LHDN MyInvois mandate (threshold raised
+from RM1m to RM3m effective 1 September 2026) and outside SST on education
+(RM60,000 per student per year, Malaysian citizens exempt). We build the SEAM
+and not the submission: customer TIN, our MSIC code, a per-line tax
+classification and an SST amount defaulting to zero, so opting in later is
+configuration rather than a migration. Re-check before each academic year and
+immediately if revenue approaches RM3m.
+
+**Corrections: void-and-reissue only.** No credit notes, no debit notes. This
+covers every case where money has not yet been received, which includes the one
+that prompted the question: an early-bird invoice unpaid past the 7th is voided
+and reissued at full price, so the parent sees a fresh correct invoice instead
+of an amount that silently changed underneath them.
+
+Consequence, accepted: correcting an invoice that has ALREADY been paid stays a
+manual job. Voiding it would strand the payment and the parent's receipt against
+a cancelled document. Credit notes are a small addition if that case turns out
+to be common; we are not building a document type for a case that may not arise.
+
+Consequence, structural: `idx_invoices_monthly_unique` is
+`(tenant_id, student_id, period) WHERE type='Monthly' AND deleted_at IS NULL`.
+A voided invoice still fills that slot, so the reissue would be refused by the
+index that exists to prevent double-billing. Stage 3 must widen the predicate to
+exclude voided rows, or a routine clawback returns a 409 nobody can explain.
+
+**Numbering: gapless, resetting each year.** INV-2026-0001 upward with no
+missing numbers. Gaplessness normally costs write throughput because it
+serialises number assignment; at one operator issuing once a month that cost is
+nil, and it is the safer answer against any future auditor. The number is
+assigned at finalization only, so an abandoned draft burns nothing.
+
+**Rounding: half-up.** RM0.125 becomes RM0.13. Chosen over banker's rounding
+because Nadine checks figures by hand and the system must agree with her
+calculator; the cumulative upward bias is immaterial at this volume. Round ONCE
+per line after all stacked discounts are applied in their recorded order, then
+sum the rounded lines to get the invoice total, so lines always add up to what
+is charged.

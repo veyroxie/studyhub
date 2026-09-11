@@ -42,7 +42,7 @@ Each stage is independently shippable and independently verifiable. Nothing in
 a later stage is needed to make an earlier one correct. Stage 5 is the only one
 that changes what a parent receives.
 
-### Stage 0 -- decisions, no code
+### Stage 0 -- decisions, no code -- SETTLED 2026-09-11, see ADR-016
 
 Blocking, and not mine to make:
 
