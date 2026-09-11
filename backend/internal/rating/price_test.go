@@ -56,7 +56,7 @@ func TestTwiceWeeklyInOneCategoryIsPricedOnce(t *testing.T) {
 		Class{ID: "a", Name: "Tue", CategoryID: "grp", Category: "Group", DefaultTier: "L3"},
 		Class{ID: "b", Name: "Thu", CategoryID: "grp", Category: "Group", DefaultTier: "L3"},
 	)
-	r := Price(Student{ID: "s1", Enrolments: enrolIn("a", "b")}, c)
+	r := Price(Student{ID: "s1", Enrolments: enrolIn("a", "b")}, c, nil)
 	if r.Total != 49000 {
 		t.Errorf("total %d sen, want 49000 — two slots must take the 2x tier, not two 1x charges", r.Total)
 	}
@@ -71,7 +71,7 @@ func TestTwiceWeeklyInOneCategoryIsPricedOnce(t *testing.T) {
 func TestPackageIsTheWholePrice(t *testing.T) {
 	c := cat(map[PlanKey]Money{{CategoryID: "grp", Tier: "L3", SessionsPerWeek: 1}: 26000},
 		Class{ID: "a", CategoryID: "grp", DefaultTier: "L3"})
-	r := Price(Student{ID: "s1", Package: 80000, Enrolments: enrolIn("a")}, c)
+	r := Price(Student{ID: "s1", Package: 80000, Enrolments: enrolIn("a")}, c, nil)
 	if r.Total != 80000 {
 		t.Errorf("total %d sen, want the package's 80000 — enrolments must not be read", r.Total)
 	}
@@ -88,7 +88,7 @@ func TestTwoTiersInOneCategoryRefusesToInventAPrice(t *testing.T) {
 		Class{ID: "a", CategoryID: "grp", DefaultTier: "L3"},
 		Class{ID: "b", CategoryID: "grp", DefaultTier: "L4"},
 	)
-	r := Price(Student{ID: "s1", Enrolments: enrolIn("a", "b")}, c)
+	r := Price(Student{ID: "s1", Enrolments: enrolIn("a", "b")}, c, nil)
 	if !r.Unpriceable {
 		t.Error("two levels in one category produced a price — summing tiers invents one nobody agreed")
 	}
@@ -99,7 +99,7 @@ func TestTwoTiersInOneCategoryRefusesToInventAPrice(t *testing.T) {
 
 func TestMissingPlanIsFlaggedNotZero(t *testing.T) {
 	c := cat(map[PlanKey]Money{}, Class{ID: "a", Name: "Mandarin", CategoryID: "man", DefaultTier: "L1"})
-	r := Price(Student{ID: "s1", Enrolments: enrolIn("a")}, c)
+	r := Price(Student{ID: "s1", Enrolments: enrolIn("a")}, c, nil)
 	if !r.Unpriceable {
 		t.Fatal("a class with no agreed price was priced silently")
 	}
@@ -110,7 +110,7 @@ func TestMissingPlanIsFlaggedNotZero(t *testing.T) {
 
 func TestCreditCoveredIsFreeOnPurpose(t *testing.T) {
 	c := cat(map[PlanKey]Money{}, Class{ID: "a", Name: "Self-study", CategoryID: "ss", CreditCovered: true, DefaultTier: "x"})
-	r := Price(Student{ID: "s1", Enrolments: enrolIn("a")}, c)
+	r := Price(Student{ID: "s1", Enrolments: enrolIn("a")}, c, nil)
 	if r.Unpriceable {
 		t.Error("credit-covered was treated as unpriceable; it is deliberately free")
 	}
@@ -126,7 +126,7 @@ func TestOverrideBillsOnItsOwn(t *testing.T) {
 		Class{ID: "a", CategoryID: "grp", DefaultTier: "L3"},
 		Class{ID: "b", Name: "One-off", CategoryID: "grp", DefaultTier: "L3", Override: 8000},
 	)
-	r := Price(Student{ID: "s1", Enrolments: enrolIn("a", "b")}, c)
+	r := Price(Student{ID: "s1", Enrolments: enrolIn("a", "b")}, c, nil)
 	if r.Total != 34000 {
 		t.Errorf("total %d sen, want 34000 (260 tier + 80 override)", r.Total)
 	}
@@ -135,7 +135,8 @@ func TestOverrideBillsOnItsOwn(t *testing.T) {
 func TestStandingDiscountIsItsOwnLine(t *testing.T) {
 	c := cat(map[PlanKey]Money{{CategoryID: "grp", Tier: "L3", SessionsPerWeek: 1}: 26000},
 		Class{ID: "a", CategoryID: "grp", DefaultTier: "L3"})
-	r := Price(Student{ID: "s1", StandingDiscount: 4000, DiscountReason: "Level 3 rate", Enrolments: enrolIn("a")}, c)
+	st := Student{ID: "s1", StandingDiscount: 4000, DiscountReason: "Level 3 rate", Enrolments: enrolIn("a")}
+	r := Price(st, c, StandingDiscount(st))
 	if r.Total != 22000 {
 		t.Errorf("total %d sen, want 22000", r.Total)
 	}
@@ -160,7 +161,8 @@ func TestStandingDiscountIsItsOwnLine(t *testing.T) {
 // imply the pricing resolved when it did not.
 func TestUnpriceableStudentGetsNoDiscountLine(t *testing.T) {
 	c := cat(map[PlanKey]Money{}, Class{ID: "a", CategoryID: "man", DefaultTier: "L1"})
-	r := Price(Student{ID: "s1", StandingDiscount: 4000, Enrolments: enrolIn("a")}, c)
+	st := Student{ID: "s1", StandingDiscount: 4000, Enrolments: enrolIn("a")}
+	r := Price(st, c, StandingDiscount(st))
 	for _, l := range r.Lines {
 		if l.Source == SourceDiscount {
 			t.Error("an unpriceable student was given a discount line, producing a negative bill")
@@ -168,5 +170,80 @@ func TestUnpriceableStudentGetsNoDiscountLine(t *testing.T) {
 	}
 	if r.Total != 0 {
 		t.Errorf("total %d sen, want 0", r.Total)
+	}
+}
+
+// Two of our discounts are both a flat RM10. An invoice total cannot tell them
+// apart, which is exactly why the type travels with the applied discount.
+func TestTwoTenRinggitDiscountsStayDistinguishable(t *testing.T) {
+	c := cat(map[PlanKey]Money{{CategoryID: "grp", Tier: "L3", SessionsPerWeek: 1}: 26000},
+		Class{ID: "a", CategoryID: "grp", DefaultTier: "L3"})
+	ds := []Discount{
+		{TypeID: TypeReferral, Name: "Referral discount", Kind: KindFixed, Amount: 1000, Sequence: SeqReferral, Source: "RR_001"},
+		{TypeID: TypeEarlyBird, Name: "Early bird discount", Kind: KindFixed, Amount: 1000, Sequence: SeqEarlyBird, Conditional: true},
+	}
+	r := Price(Student{ID: "s1", Enrolments: enrolIn("a")}, c, ds)
+
+	if r.Total != 24000 {
+		t.Errorf("total %d sen, want 24000", r.Total)
+	}
+	if len(r.Discounts) != 2 {
+		t.Fatalf("got %d applied discounts, want 2", len(r.Discounts))
+	}
+	byType := map[string]AppliedDiscount{}
+	for _, d := range r.Discounts {
+		byType[d.TypeID] = d
+	}
+	if byType[TypeReferral].Source != "RR_001" {
+		t.Errorf("referral lost its source, so nobody can say which reward paid for it")
+	}
+	if byType[TypeReferral].State != StateApplied {
+		t.Errorf("referral state %q, want applied — it is not conditional", byType[TypeReferral].State)
+	}
+	if byType[TypeEarlyBird].State != StatePending {
+		t.Errorf("early bird state %q, want pending — it is not earned until payment lands", byType[TypeEarlyBird].State)
+	}
+}
+
+// Order is data, not the order of statements: a percentage taken before a fixed
+// amount gives a different bill from the other way round.
+func TestStackingFollowsTheRecordedOrder(t *testing.T) {
+	c := cat(map[PlanKey]Money{{CategoryID: "grp", Tier: "L3", SessionsPerWeek: 1}: 20000},
+		Class{ID: "a", CategoryID: "grp", DefaultTier: "L3"})
+
+	// Sibling 10% at 20, early bird RM10 at 30: 200 -> 20 off -> 180 -> 10 off.
+	r := Price(Student{ID: "s1", Enrolments: enrolIn("a")}, c, []Discount{
+		{TypeID: TypeEarlyBird, Kind: KindFixed, Amount: 1000, Sequence: SeqEarlyBird},
+		{TypeID: TypeSibling, Kind: KindPercent, Percent: 10, Sequence: SeqSibling},
+	})
+	if r.Total != 17000 {
+		t.Errorf("total %d sen, want 17000 (10%% of 200 first, then RM10)", r.Total)
+	}
+
+	// Reverse the sequence and the same two discounts give a different total:
+	// 200 -> 10 off -> 190 -> 19 off.
+	r2 := Price(Student{ID: "s1", Enrolments: enrolIn("a")}, c, []Discount{
+		{TypeID: TypeEarlyBird, Kind: KindFixed, Amount: 1000, Sequence: 1},
+		{TypeID: TypeSibling, Kind: KindPercent, Percent: 10, Sequence: 2},
+	})
+	if r2.Total != 17100 {
+		t.Errorf("reversed order gave %d sen, want 17100 — if this matches the other total the order is not being honoured", r2.Total)
+	}
+}
+
+// A discount larger than the bill must not invert it, and what actually came
+// off has to be recorded, not what was asked for: the early-bird clawback
+// restores the recorded figure.
+func TestDiscountIsClampedAndTheExactAmountRecorded(t *testing.T) {
+	c := cat(map[PlanKey]Money{{CategoryID: "grp", Tier: "L3", SessionsPerWeek: 1}: 600},
+		Class{ID: "a", CategoryID: "grp", DefaultTier: "L3"})
+	r := Price(Student{ID: "s1", Enrolments: enrolIn("a")}, c, []Discount{
+		{TypeID: TypeEarlyBird, Kind: KindFixed, Amount: 1000, Sequence: SeqEarlyBird, Conditional: true},
+	})
+	if r.Total != 0 {
+		t.Errorf("total %d sen, want 0 — a discount must never invert a bill", r.Total)
+	}
+	if len(r.Discounts) != 1 || r.Discounts[0].Amount != 600 {
+		t.Fatalf("recorded %+v, want a single applied discount of 600 sen — clawing back 1000 would overcharge", r.Discounts)
 	}
 }

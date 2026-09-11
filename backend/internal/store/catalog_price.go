@@ -182,7 +182,7 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 	out := []StudentPrice{}
 	for _, sid := range order {
 		st := students[sid]
-		out = append(out, toStudentPrice(*st, rating.Price(*st, cat)))
+		out = append(out, toStudentPrice(*st, rating.Price(*st, cat, rating.StandingDiscount(*st))))
 	}
 	return out
 }

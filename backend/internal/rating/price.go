@@ -71,7 +71,11 @@ type Line struct {
 }
 
 type Result struct {
-	Lines       []Line
+	Lines []Line
+	// Discounts is the provenance of every negative line: which type, why this
+	// student qualified, in what order, and how much actually came off after
+	// clamping. The Lines carry what prints; this carries what it means.
+	Discounts   []AppliedDiscount
 	Total       Money
 	Unpriceable bool
 }
@@ -85,10 +89,10 @@ type Result struct {
 //	      -> category credit-covered -> 0, deliberately
 //	        -> plan for (category, tier, slots in that category) -> its fee
 //	          -> UNPRICEABLE, named and surfaced, never silently 0
-func Price(s Student, cat Catalogue) Result {
+func Price(s Student, cat Catalogue, ds []Discount) Result {
 	if s.Package > 0 {
 		r := Result{Lines: []Line{{Amount: s.Package, Source: SourcePackage, ClassName: "Package"}}}
-		r.Total = s.Package + appendStandingDiscount(&r, s)
+		r.Total = applyDiscounts(&r, s.Package, ds)
 		return r
 	}
 	r := Result{Lines: []Line{}}
@@ -104,7 +108,7 @@ func Price(s Student, cat Catalogue) Result {
 	// from a total we do not have would produce a negative bill and imply the
 	// pricing was resolved when it was not.
 	if !r.Unpriceable && total > 0 {
-		total += appendStandingDiscount(&r, s)
+		total = applyDiscounts(&r, total, ds)
 	}
 	r.Total = total
 	return r
@@ -199,18 +203,17 @@ func priceGroup(catID string, g *categoryGroup, cat Catalogue, r *Result) Line {
 	return line
 }
 
-// appendStandingDiscount adds the standing discount as its own NEGATIVE line
-// and returns what it takes off. A line rather than a smaller total is the
-// whole point: five students were invoiced below the catalogue with no discount
-// recorded anywhere, so nobody could say why (ADR-013).
-func appendStandingDiscount(r *Result, s Student) Money {
+// StandingDiscount turns a student's own recorded discount into the same
+// shape as every other one. It was special-cased before, which is why it was
+// the only discount with provenance at all.
+func StandingDiscount(s Student) []Discount {
 	if s.StandingDiscount <= 0 {
-		return 0
+		return nil
 	}
 	name := s.DiscountReason
 	if name == "" {
 		name = "Standing discount"
 	}
-	r.Lines = append(r.Lines, Line{ClassName: name, Amount: -s.StandingDiscount, Source: SourceDiscount})
-	return -s.StandingDiscount
+	return []Discount{{TypeID: TypeStanding, Name: name, Kind: KindFixed,
+		Amount: s.StandingDiscount, Sequence: SeqStanding, Source: "students.standing_discount"}}
 }
