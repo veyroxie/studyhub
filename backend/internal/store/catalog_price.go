@@ -1,12 +1,11 @@
 package store
 
 import (
-	"math"
-	"sort"
 	"strings"
 	"time"
 
 	"studyhub/internal/core"
+	"studyhub/internal/rating"
 )
 
 // CatalogPrice resolves what a student SHOULD be billed each month under the
@@ -34,14 +33,15 @@ import (
 // rows are two real slots rather than a duplicate.
 
 // PriceSource says WHY a line costs what it does, so a difference can be
-// explained rather than just displayed.
+// explained rather than just displayed. Defined once, in the engine: two copies
+// of these strings is how a renamed source silently stops matching.
 const (
-	SourcePackage       = "package"
-	SourceOverride      = "class rate"
-	SourceCreditCovered = "credit-covered"
-	SourcePlan          = "tier"
-	SourceDiscount      = "standing discount"
-	SourceUnpriceable   = "unpriceable"
+	SourcePackage       = rating.SourcePackage
+	SourceOverride      = rating.SourceOverride
+	SourceCreditCovered = rating.SourceCreditCovered
+	SourcePlan          = rating.SourcePlan
+	SourceDiscount      = rating.SourceDiscount
+	SourceUnpriceable   = rating.SourceUnpriceable
 )
 
 type PriceLine struct {
@@ -102,7 +102,7 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 	rows.Close()
 
 	// (category, tier, slots) -> monthly fee.
-	plans := map[string]float64{}
+	plans := map[rating.PlanKey]rating.Money{}
 	// The plan version in force on asOf, not the one in force today. 0066 gave
 	// pricing_plans half-open [effective_from, effective_to) versions, so
 	// re-rating an earlier month now reads the price that month was billed at
@@ -126,18 +126,12 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 		var slots int
 		var fee float64
 		if prows.Scan(&cat, &tier, &slots, &fee) == nil {
-			plans[planKey(cat, tier, slots)] = fee
+			plans[rating.PlanKey{CategoryID: cat, Tier: tier, SessionsPerWeek: slots}] = rating.FromRM(fee)
 		}
 	}
 	prows.Close()
 
-	type stu struct {
-		name       string
-		pkg        float64
-		discount   float64
-		discReason string
-	}
-	students := map[string]stu{}
+	students := map[string]*rating.Student{}
 	order := []string{}
 	srows, err := db.Query(`SELECT id, first_name || ' ' || last_name, COALESCE(package_amount,0),
 		COALESCE(standing_discount,0), COALESCE(standing_discount_reason,'')
@@ -147,17 +141,16 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 		return nil
 	}
 	for srows.Next() {
-		var id string
-		var s stu
-		if srows.Scan(&id, &s.name, &s.pkg, &s.discount, &s.discReason) == nil {
-			students[id] = s
+		var id, name, reason string
+		var pkg, discount float64
+		if srows.Scan(&id, &name, &pkg, &discount, &reason) == nil {
+			students[id] = &rating.Student{ID: id, Name: name, Package: rating.FromRM(pkg),
+				StandingDiscount: rating.FromRM(discount), DiscountReason: reason}
 			order = append(order, id)
 		}
 	}
 	srows.Close()
 
-	enrol := map[string][]string{} // studentID -> classIDs
-	tier := map[string]string{}    // studentID|classID -> tier chosen at enrolment
 	// One window, always. The live branch used to be `ended_on IS NULL` with no
 	// lower bound, so an enrolment starting next month was priced this month --
 	// two answers to "what does this student cost" inside the resolver whose
@@ -176,164 +169,44 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 	}
 	for erows.Next() {
 		var sid, cid, tn string
-		if erows.Scan(&sid, &cid, &tn) == nil {
-			enrol[sid] = append(enrol[sid], cid)
-			tier[sid+"|"+cid] = tn
+		if erows.Scan(&sid, &cid, &tn) != nil {
+			continue
+		}
+		if st, ok := students[sid]; ok {
+			st.Enrolments = append(st.Enrolments, rating.Enrolment{ClassID: cid, Tier: tn})
 		}
 	}
 	erows.Close()
 
+	cat := rating.Catalogue{Classes: ratingClasses(classes), Plans: plans}
 	out := []StudentPrice{}
 	for _, sid := range order {
 		st := students[sid]
-		out = append(out, priceOne(sid, st.name, st.pkg, st.discount, st.discReason, enrol[sid], tier, classes, plans))
+		out = append(out, toStudentPrice(*st, rating.Price(*st, cat)))
 	}
 	return out
 }
 
-func planKey(cat, tierName string, slots int) string {
-	return cat + "|" + tierName + "|" + itoaSmall(slots)
+// ratingClasses maps the loaded rows into the engine's shape. Kept here rather
+// than in rating so the engine stays free of anything that knows about SQL.
+func ratingClasses(in map[string]catClass) map[string]rating.Class {
+	out := make(map[string]rating.Class, len(in))
+	for id, c := range in {
+		out[id] = rating.Class{ID: id, Name: c.name, CategoryID: c.categoryID, Category: c.categoryName,
+			DefaultTier: c.defaultTier, CreditCovered: c.creditCovered, Override: rating.FromRM(c.override)}
+	}
+	return out
 }
 
-func itoaSmall(n int) string {
-	if n < 0 || n > 9 {
-		return "?"
+// toStudentPrice converts back to ringgit for the wire. The engine works in
+// sen; the API, the frontend and the PDF are unchanged.
+func toStudentPrice(s rating.Student, r rating.Result) StudentPrice {
+	sp := StudentPrice{StudentID: s.ID, StudentName: s.Name, Total: r.Total.RM(),
+		Unpriceable: r.Unpriceable, Lines: make([]PriceLine, 0, len(r.Lines))}
+	for _, l := range r.Lines {
+		sp.Lines = append(sp.Lines, PriceLine{ClassID: l.ClassID, ClassName: l.ClassName,
+			CategoryName: l.CategoryName, TierName: l.TierName, SessionsPerWeek: l.SessionsPerWeek,
+			Amount: l.Amount.RM(), Source: l.Source, Problem: l.Problem})
 	}
-	return string(rune('0' + n))
-}
-
-func priceOne(studentID, name string, pkg, discount float64, discReason string, classIDs []string,
-	tier map[string]string, classes map[string]catClass, plans map[string]float64) StudentPrice {
-
-	sp := StudentPrice{StudentID: studentID, StudentName: name, Lines: []PriceLine{}}
-
-	// A package is the whole price. AI_DOCS/billing.md: it short-circuits
-	// per-class pricing entirely, and that rule does not change here.
-	if pkg > 0 {
-		sp.Lines = append(sp.Lines, PriceLine{Amount: round2(pkg), Source: SourcePackage, ClassName: "Package"})
-		sp.Total = round2(pkg + applyDiscount(&sp, discount, discReason))
-		return sp
-	}
-
-	// Group the live enrolments by category. A category is priced ONCE for the
-	// whole group, because the frequency tier already covers every slot in it
-	// -- pricing per class would double a twice-weekly student's bill, which is
-	// the most expensive mistake available in this file.
-	type group struct {
-		categoryName string
-		creditCover  bool
-		classNames   []string
-		tiers        map[string]bool
-	}
-	groups := map[string]*group{}
-	catOrder := []string{}
-
-	for _, cid := range classIDs {
-		m, ok := classes[cid]
-		if !ok {
-			continue
-		}
-		// A per-class rate is a price for THAT class, not a frequency tier, so
-		// it bills on its own and never joins a group.
-		if m.override > 0 {
-			sp.Lines = append(sp.Lines, PriceLine{ClassID: cid, ClassName: m.name,
-				CategoryName: m.categoryName, Amount: round2(m.override), Source: SourceOverride})
-			continue
-		}
-		if m.categoryID == "" {
-			sp.Lines = append(sp.Lines, PriceLine{ClassID: cid, ClassName: m.name,
-				Source: SourceUnpriceable, Problem: "no pricing category"})
-			sp.Unpriceable = true
-			continue
-		}
-		g, seen := groups[m.categoryID]
-		if !seen {
-			g = &group{categoryName: m.categoryName, creditCover: m.creditCovered, tiers: map[string]bool{}}
-			groups[m.categoryID] = g
-			catOrder = append(catOrder, m.categoryID)
-		}
-		g.classNames = append(g.classNames, m.name)
-		tn := tier[studentID+"|"+cid]
-		if tn == "" {
-			tn = m.defaultTier
-		}
-		g.tiers[tn] = true
-	}
-
-	for _, catID := range catOrder {
-		g := groups[catID]
-		line := PriceLine{CategoryName: g.categoryName, ClassName: strings.Join(g.classNames, ", "),
-			SessionsPerWeek: len(g.classNames)}
-
-		if g.creditCover {
-			line.Source = SourceCreditCovered
-			sp.Lines = append(sp.Lines, line)
-			continue
-		}
-		if g.tiers[""] {
-			line.Source, line.Problem = SourceUnpriceable, "no tier on the enrolment or the class"
-			sp.Lines, sp.Unpriceable = append(sp.Lines, line), true
-			continue
-		}
-		// Section 11 of notes/pricing-bands.md: a student taking two levels in
-		// one category has no defined price. Summing both frequency tiers
-		// would invent one -- and be confidently wrong, which is worse than
-		// refusing. Flagged for Nadine, exactly as an unpriced class is.
-		if len(g.tiers) > 1 {
-			names := []string{}
-			for t := range g.tiers {
-				names = append(names, t)
-			}
-			sort.Strings(names)
-			line.TierName = strings.Join(names, " + ")
-			line.Source = SourceUnpriceable
-			line.Problem = "two levels in one category, which has no agreed price"
-			sp.Lines, sp.Unpriceable = append(sp.Lines, line), true
-			continue
-		}
-		for t := range g.tiers {
-			line.TierName = t
-		}
-
-		fee, found := plans[planKey(catID, line.TierName, line.SessionsPerWeek)]
-		if !found {
-			line.Source = SourceUnpriceable
-			line.Problem = "no price for " + line.TierName + " at " + itoaSmall(line.SessionsPerWeek) + "x a week"
-			sp.Lines, sp.Unpriceable = append(sp.Lines, line), true
-			continue
-		}
-		line.Amount, line.Source = round2(fee), SourcePlan
-		sp.Lines = append(sp.Lines, line)
-	}
-
-	total := 0.0
-	for _, l := range sp.Lines {
-		total += l.Amount
-	}
-	// A student who cannot be priced gets no discount line either. Subtracting
-	// from a total we do not have would produce a negative bill and imply the
-	// pricing was resolved when it was not.
-	if !sp.Unpriceable && total > 0 {
-		total += applyDiscount(&sp, discount, discReason)
-	}
-	sp.Total = round2(total)
 	return sp
 }
-
-// applyDiscount appends the standing discount as its own NEGATIVE line and
-// returns what it takes off. A line rather than a smaller total is the whole
-// point: five students were invoiced below the catalogue with no discount
-// recorded anywhere, so nobody could say why (ADR-013).
-func applyDiscount(sp *StudentPrice, amount float64, reason string) float64 {
-	if amount <= 0 {
-		return 0
-	}
-	name := reason
-	if name == "" {
-		name = "Standing discount"
-	}
-	sp.Lines = append(sp.Lines, PriceLine{ClassName: name, Amount: round2(-amount), Source: SourceDiscount})
-	return -round2(amount)
-}
-
-func round2(v float64) float64 { return math.Round(v*100) / 100 }
