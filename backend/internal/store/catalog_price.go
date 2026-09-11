@@ -103,8 +103,20 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 
 	// (category, tier, slots) -> monthly fee.
 	plans := map[string]float64{}
+	// The plan version in force on asOf, not the one in force today. 0066 gave
+	// pricing_plans half-open [effective_from, effective_to) versions, so
+	// re-rating an earlier month now reads the price that month was billed at
+	// instead of silently applying a later rise. Empty asOf means today, which
+	// is what every live caller wants.
+	priceOn := asOf
+	if priceOn == "" {
+		priceOn = core.Today()
+	}
+	planArgs := append([]any{priceOn}, twArgs...)
 	prows, err := db.Query(`SELECT category_id, tier_name, COALESCE(sessions_per_week,1), COALESCE(monthly_fee,0)
-		FROM pricing_plans WHERE deleted_at IS NULL`+tw, twArgs...)
+		FROM pricing_plans
+		 WHERE deleted_at IS NULL
+		   AND daterange(effective_from, effective_to, '[)') @> ?::date`+tw, planArgs...)
 	if err != nil {
 		core.Logger.Error("catalog price: plan load failed", "err", err)
 		return nil

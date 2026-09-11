@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -36,10 +37,15 @@ import (
 // failure. Reporting them all as "already exists" told an operator to go
 // looking through their data for a row that was never the problem, and logged
 // nothing, so the real cause was unrecoverable afterwards.
+//
+// 23P01 is an exclusion violation, which is how a clashing plan now presents:
+// 0066 replaced the one-live-row-per-plan unique index with a
+// no-overlapping-versions exclusion constraint. Without this the same
+// collision would have started returning 500 instead of 409.
 func isDuplicate(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		return pgErr.Code == "23505"
+		return pgErr.Code == "23505" || pgErr.Code == "23P01"
 	}
 	return false
 }
@@ -57,12 +63,21 @@ func listPricingCategories(db *store.DB, c *core.Claims) []models.PricingCategor
 
 func listPricingPlans(db *store.DB, c *core.Claims) []models.PricingPlan {
 	tw, twArgs := store.ScopeTenant(c, "")
+	// The version in force TODAY, not every version ever priced. Superseded
+	// rows stay readable through CatalogPrices when it rates an earlier month;
+	// the catalogue screen is about what a class costs now.
+	listArgs := append([]any{core.Today()}, twArgs...)
 	rows, err := db.Query(`SELECT id,category_id,tier_name,COALESCE(sessions_per_week,1),
-		COALESCE(monthly_fee,0),COALESCE(hourly_rate,0),COALESCE(sort_order,0)
-		FROM pricing_plans WHERE deleted_at IS NULL`+tw+` ORDER BY category_id, sort_order, tier_name`, twArgs...)
+		COALESCE(monthly_fee,0),COALESCE(hourly_rate,0),COALESCE(sort_order,0),
+		effective_from::text, COALESCE(effective_to::text,'')
+		FROM pricing_plans
+		 WHERE deleted_at IS NULL
+		   AND daterange(effective_from, effective_to, '[)') @> ?::date`+tw+`
+		 ORDER BY category_id, sort_order, tier_name`, listArgs...)
 	return store.CollectRows(rows, err, "PricingPlan", func(r *sql.Rows) (models.PricingPlan, error) {
 		var p models.PricingPlan
-		err := r.Scan(&p.ID, &p.CategoryID, &p.TierName, &p.SessionsPerWeek, &p.MonthlyFee, &p.HourlyRate, &p.SortOrder)
+		err := r.Scan(&p.ID, &p.CategoryID, &p.TierName, &p.SessionsPerWeek, &p.MonthlyFee, &p.HourlyRate, &p.SortOrder,
+			&p.EffectiveFrom, &p.EffectiveTo)
 		return p, err
 	})
 }
@@ -341,9 +356,9 @@ func HandlePricingPlanByID(db *store.DB) http.HandlerFunc {
 		}
 		// CategoryID is not editable: moving a tier between categories would
 		// silently reprice every class pointing at it. Delete and recreate.
-		var currentCat string
+		var currentCat, currentFrom string
 		catArgs := append([]any{id}, twArgs...)
-		if err := db.QueryRow(`SELECT category_id FROM pricing_plans WHERE id=?`+tw+` AND deleted_at IS NULL`, catArgs...).Scan(&currentCat); err != nil {
+		if err := db.QueryRow(`SELECT category_id, effective_from::text FROM pricing_plans WHERE id=?`+tw+` AND deleted_at IS NULL`, catArgs...).Scan(&currentCat, &currentFrom); err != nil {
 			core.RespondError(w, "tier not found", 404)
 			return
 		}
@@ -352,6 +367,36 @@ func HandlePricingPlanByID(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		// A price change and a typo correction are different acts and the
+		// catalogue now tells them apart. Sending effectiveFrom means "charge
+		// this from that date": the current version is closed at that date and
+		// a new one opens, so an invoice for an earlier month keeps rating at
+		// the price it was billed at. Omitting it edits this version in place,
+		// which is what correcting a mistyped figure should do.
+		if newFrom := strings.TrimSpace(body.EffectiveFrom); newFrom != "" && newFrom != currentFrom {
+			if newFrom < currentFrom {
+				core.RespondError(w, "a price change cannot start before the version it replaces ("+currentFrom+")", http.StatusBadRequest)
+				return
+			}
+			tid, tOK := writeTenant(w, c)
+			if !tOK {
+				return
+			}
+			if err := versionPricingPlan(r.Context(), db, c, tid, id, newFrom, body); err != nil {
+				if isDuplicate(err) {
+					core.RespondError(w, "another version of this tier already covers "+newFrom, http.StatusConflict)
+					return
+				}
+				core.LogFromReq(r).Error("catalogue: versioning a tier failed", "err", err, "plan", id)
+				core.RespondError(w, "could not save the price change", 500)
+				return
+			}
+			core.LogAudit(db, store.TenantID(c), c.Email, "pricing_plan_versioned", "pricing_plan", id, body.TierName+" from "+newFrom)
+			body.ID = id
+			core.Respond(w, body)
+			return
+		}
+
 		args := append([]any{body.TierName, body.SessionsPerWeek, body.MonthlyFee, body.HourlyRate, body.SortOrder, id}, twArgs...)
 		res, err := db.Exec(`UPDATE pricing_plans SET tier_name=?,sessions_per_week=?,monthly_fee=?,hourly_rate=?,sort_order=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 		if err != nil {
@@ -371,4 +416,28 @@ func HandlePricingPlanByID(db *store.DB) http.HandlerFunc {
 		body.ID = id
 		core.Respond(w, body)
 	}
+}
+
+// versionPricingPlan closes the live version of a plan at newFrom and opens a
+// successor carrying the new figures, in one transaction. The two windows are
+// half-open and adjacent, [currentFrom, newFrom) then [newFrom, infinity), so
+// they tile exactly -- which is what the 0066 exclusion constraint checks, and
+// why a half-written version cannot be left behind.
+func versionPricingPlan(ctx context.Context, db *store.DB, c *core.Claims, tid int, id, newFrom string, body models.PricingPlan) error {
+	tw, twArgs := store.ScopeTenant(c, "")
+	tx, err := db.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	closeArgs := append([]any{newFrom, id}, twArgs...)
+	if _, err := tx.Exec(`UPDATE pricing_plans SET effective_to=?::date WHERE id=?`+tw+` AND deleted_at IS NULL`, closeArgs...); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO pricing_plans(id,tenant_id,category_id,tier_name,sessions_per_week,monthly_fee,hourly_rate,sort_order,effective_from) VALUES(?,?,?,?,?,?,?,?,?::date)`,
+		core.GenerateID("PP"), tid, body.CategoryID, body.TierName, body.SessionsPerWeek, body.MonthlyFee, body.HourlyRate, body.SortOrder, newFrom); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

@@ -17,10 +17,14 @@ Correct, and already the case -- do not redo these:
 
 Wrong or incomplete about us, found by checking:
 
-- **We have float money in the SCHEMA, not just in Go.** `discount_pct REAL`,
-  `sibling_discount REAL`, `referral_credit DOUBLE PRECISION`. `amount` is
-  NUMERIC(12,2), so the total is exact while its own components are binary
-  floats. This is worse than the report assumed and it is cheap to fix.
+- ~~We have float money in the SCHEMA.~~ **WRONG, retracted 2026-09-11.** I read
+  the historical `ALTER ... REAL` lines in `database.go` and assumed they
+  described the live schema. They do not: `0025_money_numeric.sql` converted
+  every money column years ago. Production holds exactly two float columns and
+  both are `performance_reviews` ratings. Measuring the mechanism instead of the
+  result, which is the mistake this whole plan exists to stop making. Stage 1a's
+  schema half was already done; the Go-side `float64` remains real and belongs
+  with the rating engine in Stage 2.
 - **`pricing_plans` has no effective dating at all** (`0051`). `CatalogPrices`
   takes an `asOf`, but it only dates the ENROLMENT windows -- the price rows
   themselves have no history, so re-rating a past month silently uses today's
@@ -54,17 +58,26 @@ Blocking, and not mine to make:
 
 ### Stage 1 -- foundations, no behaviour change
 
-- **1a. Money types.** Migrate `discount_pct`, `sibling_discount`,
-  `referral_credit` and any other REAL/DOUBLE money column to NUMERIC(12,2).
-  On the Go side, decide between `int64` sen and `shopspring/decimal` and apply
-  it in the rating path only. `round2` on float64 stays wrong until this lands.
+- ~~**1a. Money types.**~~ Already done by `0025`; see the retraction above.
+  The Go-side decision (`int64` sen vs `shopspring/decimal`) moves to Stage 2,
+  where the rating engine is the first code that needs exact arithmetic.
 - **1b. Effective-dated catalogue.** Add `effective_from` / `effective_to` to
   `pricing_plans`, backfill existing rows as open-ended from their creation,
   and add a PostgreSQL exclusion constraint so two versions of the same plan
   cannot overlap. Price rows become insert-only.
 
-Verified by: existing tests still green, plus a new test that re-rating a past
-month after a price change returns the OLD price.
+**DONE 2026-09-11** (`0066`). `pricing_plans` carries half-open
+`[effective_from, effective_to)` versions, existing rows backfilled open-ended
+from 2000-01-01 so no price and no invoice moved. `ux_pricing_plans_live` gave
+way to a gist exclusion constraint: many versions, no two overlapping.
+`CatalogPrices` selects the version in force on its `asOf` instead of whatever
+is current. The catalogue screen still lists the version in force today, so it
+is unchanged. `isDuplicate` learned 23P01, or a clashing plan would have started
+returning 500 instead of 409.
+
+Verified by two tests, each seen failing against the old code: without the date
+filter, August re-rates at September's price; without the constraint, two
+versions claim the same day.
 
 ### Stage 2 -- one rating engine
 

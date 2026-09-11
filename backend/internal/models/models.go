@@ -641,6 +641,11 @@ type PricingPlan struct {
 	MonthlyFee      float64 `json:"monthlyFee"`
 	HourlyRate      float64 `json:"hourlyRate"`
 	SortOrder       int     `json:"sortOrder"`
+	// Half-open [EffectiveFrom, EffectiveTo). Sending EffectiveFrom on an
+	// update means "this is a price CHANGE from that date", which versions the
+	// row; omitting it means "correct this version in place".
+	EffectiveFrom string `json:"effectiveFrom,omitempty"`
+	EffectiveTo   string `json:"effectiveTo,omitempty"`
 }
 
 // Snapshot is what GET /api/snapshot returns — identical shape to App.DATA
