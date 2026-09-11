@@ -14,6 +14,16 @@ const (
 	LineItemKindItem     = "item"
 	LineItemKindDiscount = "discount"
 
+	// Invoice statuses. Draft is mutable and unnumbered; everything else has
+	// been issued to a parent. Void is terminal: an issued invoice is corrected
+	// by voiding and reissuing, never by editing (ADR-016).
+	InvoiceStatusDraft               = "Draft"
+	InvoiceStatusUnpaid              = "Unpaid"
+	InvoiceStatusPaid                = "Paid"
+	InvoiceStatusOverdue             = "Overdue"
+	InvoiceStatusPendingVerification = "Pending Verification"
+	InvoiceStatusVoid                = "Void"
+
 	// EarlyBirdLineName is the discount line the monthly run writes, and
 	// EarlyBirdLinePrefix is what the hourly expiry job matches on. The LINE is
 	// what marks an invoice as carrying the early bird -- the amount cannot be,
@@ -292,23 +302,27 @@ type InvoiceLineItem struct {
 }
 
 type Invoice struct {
-	ID                string            `json:"id"`
-	StudentID         string            `json:"studentId"`
-	Description       string            `json:"description"`
-	Type              string            `json:"type"`
-	Amount            float64           `json:"amount"`
-	DueDate           string            `json:"dueDate"`
-	Status            string            `json:"status"`
-	CreatedOn         string            `json:"createdOn"`
-	PaidOn            *string           `json:"paidOn"`
-	PaymentProof      string            `json:"paymentProof"`
-	PaymentMethod     string            `json:"paymentMethod"`
-	DiscountPct       float64           `json:"discountPct"`
-	SubmittedByParent bool              `json:"submittedByParent"`
-	SiblingIds        string            `json:"siblingIds"`
-	SiblingDiscount   float64           `json:"siblingDiscount"`
-	ReferralCredit    float64           `json:"referralCredit"`
-	ReferenceNo       string            `json:"referenceNo"`
+	ID                string  `json:"id"`
+	StudentID         string  `json:"studentId"`
+	Description       string  `json:"description"`
+	Type              string  `json:"type"`
+	Amount            float64 `json:"amount"`
+	DueDate           string  `json:"dueDate"`
+	Status            string  `json:"status"`
+	CreatedOn         string  `json:"createdOn"`
+	PaidOn            *string `json:"paidOn"`
+	PaymentProof      string  `json:"paymentProof"`
+	PaymentMethod     string  `json:"paymentMethod"`
+	DiscountPct       float64 `json:"discountPct"`
+	SubmittedByParent bool    `json:"submittedByParent"`
+	SiblingIds        string  `json:"siblingIds"`
+	SiblingDiscount   float64 `json:"siblingDiscount"`
+	ReferralCredit    float64 `json:"referralCredit"`
+	ReferenceNo       string  `json:"referenceNo"`
+	// InvoiceNo is the gapless per-year number assigned at issue (0067). Blank
+	// on everything issued before that migration; those keep their id.
+	InvoiceNo         string            `json:"invoiceNo,omitempty"`
+	IssuedAt          string            `json:"issuedAt,omitempty"`
 	EarlyBirdCutoff   string            `json:"earlyBirdCutoff"`
 	EarlyBirdDiscount float64           `json:"earlyBirdDiscount"`
 	LineItems         []InvoiceLineItem `json:"lineItems"`

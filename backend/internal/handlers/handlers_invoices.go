@@ -177,8 +177,21 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 
 			newPeriod := monthlyPeriod(inv.Type, inv.CreatedOn)
 			ebCutoff, ebDiscount := earlyBirdFromLines(inv.Type, newPeriod, inv.LineItems)
-			if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,line_items,period,early_bird_cutoff,early_bird_discount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, inv.Status, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount, inv.ReferralCredit, inv.ReferenceNo, models.MarshalLineItems(inv.LineItems), newPeriod, ebCutoff, ebDiscount); err != nil {
+			// Written as a draft and issued in the same transaction, so an
+			// invoice is never half a document: it has a number and an issue
+			// date, or it does not exist. Creating still issues immediately --
+			// nothing about the admin's flow changes here -- but the transition
+			// is the real one, exercised on every create rather than waiting
+			// unused until the review screen needs it.
+			tx, err := db.BeginTx(r.Context())
+			if err != nil {
+				core.RespondError(w, "server error", 500)
+				return
+			}
+			defer tx.Rollback()
+
+			if _, err := tx.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,line_items,period,early_bird_cutoff,early_bird_discount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				inv.ID, tid, inv.StudentID, inv.Description, inv.Type, inv.Amount, inv.DueDate, models.InvoiceStatusDraft, inv.CreatedOn, nil, inv.PaymentMethod, inv.DiscountPct, inv.SubmittedByParent, inv.SiblingIds, inv.SiblingDiscount, inv.ReferralCredit, inv.ReferenceNo, models.MarshalLineItems(inv.LineItems), newPeriod, ebCutoff, ebDiscount); err != nil {
 				// One monthly invoice per student per month (migration 0039).
 				// Without this the admin gets an opaque 500 for a situation that
 				// has an obvious explanation and an obvious fix.
@@ -189,7 +202,19 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "could not create invoice", 500)
 				return
 			}
-			core.LogAudit(db, store.TenantID(c), c.Email, "invoice_created", "invoice", inv.ID, inv.StudentID+" "+inv.Description)
+			number, err := store.IssueInvoice(tx, c, inv.ID, inv.Status)
+			if err != nil {
+				core.LogFromReq(r).Error("could not issue invoice", "err", err, "invoice_id", inv.ID)
+				core.RespondError(w, "could not create invoice", 500)
+				return
+			}
+			if err := tx.Commit(); err != nil {
+				core.RespondError(w, "could not create invoice", 500)
+				return
+			}
+			inv.InvoiceNo = number
+			inv.IssuedAt = core.Today()
+			core.LogAudit(db, store.TenantID(c), c.Email, "invoice_issued", "invoice", inv.ID, number+" "+inv.StudentID+" "+inv.Description)
 			core.Respond(w, inv)
 		}
 	}
