@@ -52,7 +52,7 @@ func HandlePricePreview(db *store.DB) http.HandlerFunc {
 			return
 		}
 		month := r.URL.Query().Get("month")
-		if len(month) != 7 {
+		if !monthPattern.MatchString(month) {
 			core.RespondError(w, "month must be YYYY-MM", http.StatusBadRequest)
 			return
 		}

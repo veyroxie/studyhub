@@ -257,6 +257,7 @@ func Build(db *store.DB) http.Handler {
 		r.Put("/api/pricing-categories/{id}", handlers.HandlePricingCategoryByID(db))
 		r.Delete("/api/pricing-categories/{id}", handlers.HandlePricingCategoryByID(db))
 		r.Get("/api/billing/price-preview", handlers.HandlePricePreview(db))
+		r.Get("/api/billing/proposed-invoice", handlers.HandleProposedInvoice(db))
 		r.Get("/api/pricing-plans", handlers.HandlePricingPlans(db))
 		r.Post("/api/pricing-plans", handlers.HandlePricingPlans(db))
 		r.Put("/api/pricing-plans/{id}", handlers.HandlePricingPlanByID(db))

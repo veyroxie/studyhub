@@ -32,21 +32,13 @@
   // _packageCatalog builds the selectable packages: Group/Private by level
   // (priced from the pricing matrix) plus self-study packages and the hourly
   // add-on. `foc` marks a member package whose included hours are waived.
+  // One-off lines the catalogue does not price: a registration fee, self-study
+  // hours, a deposit. Tuition is NOT here any more -- it came from pricingTiers
+  // bucketed into levels 1-6, which could not express Level 0, Mandarin,
+  // Phonics or a twice-weekly tier, so correct figures had to be typed by hand.
+  // Tuition now comes from the engine via _buildFromCatalogue().
   function _packageCatalog() {
-    var tiers = App.Store.get().pricingTiers || [];
-    var feeFor = function(type, band) {
-      var t = tiers.find(function(x) { return x.classType === type && x.levelBand === band; });
-      return t ? (t.monthlyFee || 0) : 0;
-    };
-    var bandOf = function(level) { return level <= 3 ? '1-3' : '4-6'; };
     var cat = [];
-    ['Group', 'Private'].forEach(function(type) {
-      for (var lvl = 1; lvl <= 6; lvl++) {
-        cat.push({ key: type + '-' + lvl, group: type, label: type + ' — Level ' + lvl,
-          name: type + ' Class — Level ' + lvl, descriptor: type + ' tuition, Level ' + lvl,
-          qty: 1, unitPrice: feeFor(type, bandOf(lvl)), kind: 'item', editableQty: false });
-      }
-    });
     [4, 8].forEach(function(hrs) {
       cat.push({ key: 'ss-' + hrs, group: 'Self-study', label: 'Self-study — ' + hrs + ' hours (member)',
         name: 'TSH Membership', descriptor: hrs + ' self-study hours included',
@@ -55,23 +47,18 @@
     cat.push({ key: 'ss-addon', group: 'Self-study', label: 'Self-study add-on (extra hours)',
       name: 'Self-study add-on', descriptor: 'Extra self-study hours',
       qty: 1, unitPrice: SELF_STUDY_HOUR_RATE, kind: 'item', editableQty: true });
-    // New-student lines. Registration matches the seeded product (RM250).
-    // The deposit is one month's fee, held and applied to the student's last
-    // month (Nadine, 27/08), so it mirrors the tuition price for the band.
     cat.push({ key: 'reg-fee', group: 'New student', label: 'Registration fee',
       name: 'Registration Fee', descriptor: 'One-time registration',
       qty: 1, unitPrice: REGISTRATION_FEE, kind: 'item', editableQty: false });
-    ['Group', 'Private'].forEach(function(type) {
-      ['1-3', '4-6'].forEach(function(band) {
-        cat.push({ key: 'dep-' + type + '-' + band, group: 'New student',
-          label: 'Deposit (1 month) — ' + type + ' Level ' + band,
-          name: 'Deposit (1 month) — ' + type + ' Level ' + band,
-          descriptor: 'Refunded against the final month',
-          qty: 1, unitPrice: feeFor(type, band), kind: 'item', editableQty: false });
-      });
-    });
+    // Priced at 0 deliberately. The deposit is one month's fee, and the only
+    // honest source for that is the built invoice; a figure carried over from
+    // the retired tier table would be quietly wrong for most students now.
+    cat.push({ key: 'deposit', group: 'New student', label: 'Deposit (1 month) — enter amount',
+      name: 'Deposit (1 month)', descriptor: 'Refunded against the final month',
+      qty: 1, unitPrice: 0, kind: 'item', editableQty: false });
     return cat;
   }
+
 
   function _packageCatalogOptions() {
     var cat = _packageCatalog();
@@ -107,6 +94,42 @@
         descriptor: '', qty: 1, unitPrice: c.unitPrice, editableQty: false });
     }
     _renderLineItems();
+  }
+
+  // Ask the engine what this student should be billed, instead of the admin
+  // assembling it from a dropdown. This is the fix for the real problem: the
+  // old list could not produce Level 0, Mandarin, Phonics or a twice-weekly
+  // tier at all, so the right number had to be typed in by hand.
+  //
+  // Problems are shown and the lines are NOT filled: an unpriceable student
+  // must not quietly become an invoice with a class missing from it.
+  async function _buildFromCatalogue(studentId, month) {
+    if (!studentId) {
+      App.Utils.showToast('Pick a student first', 'error');
+      return;
+    }
+    var url = '/api/billing/proposed-invoice?studentId=' + encodeURIComponent(studentId)
+            + '&month=' + encodeURIComponent(month || App.Utils.today().slice(0, 7));
+    var p = await App.Api.get(url);
+    if (!p) return;
+    if (p.problems && p.problems.length) {
+      App.Utils.showToast('Cannot price this student: ' + p.problems.join('; '), 'error');
+      return;
+    }
+    _lineItems = [];
+    (p.lines || []).forEach(function(li) {
+      _lineSeq++;
+      _lineItems.push({ id: _lineSeq, kind: li.kind, name: li.name, descriptor: li.descriptor || '',
+        qty: li.qty || 1, unitPrice: li.unitPrice || 0, editableQty: false });
+    });
+    _renderLineItems();
+    App.Utils.showToast('Built from the catalogue: RM ' + (p.total || 0).toFixed(2), 'success');
+  }
+
+  function _buildFromCatalogueForForm(formID) {
+    var form = document.getElementById(formID);
+    var sel = form ? form.querySelector('[name="studentId"]') : null;
+    _buildFromCatalogue(sel ? sel.value : '', null);
   }
 
   // The early bird as one click rather than a renamed blank discount. Typing
@@ -1221,6 +1244,7 @@
       +     '<select id="pkg-catalog" class="form-input" style="flex:1;min-width:180px" onchange="App.Billing._addLineItem(this.value); this.selectedIndex=0;">' + _packageCatalogOptions() + '</select>'
       +     '<button type="button" onclick="App.Billing._addBlankLine(\'item\')" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer;white-space:nowrap">+ Own wording</button>'
       +     '<button type="button" onclick="App.Billing._addBlankLine(\'discount\')" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:4px;cursor:pointer;white-space:nowrap">+ Discount</button>'
+      +     '<button type="button" onclick="App.Billing._buildFromCatalogue(\'' + inv.studentId + '\', \'' + (inv.period || (inv.createdOn || '').slice(0,7)) + '\')" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:4px;cursor:pointer;white-space:nowrap" title="Replace the lines with what the catalogue says for this student and month">Rebuild</button>'
       +     '<button type="button" onclick="App.Billing._addEarlyBirdLine()" style="padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#fefce8;color:#854d0e;border:1px solid #fde68a;border-radius:4px;cursor:pointer;white-space:nowrap" title="Adds the RM10 early bird line. Unpaid after the 7th and the system puts the RM10 back automatically.">+ Early bird</button>'
       +   '</div>'
       +   '<div id="line-items-list"></div>'
@@ -1332,7 +1356,8 @@
       +   '<select id="pkg-catalog" class="form-input" onchange="App.Billing._addLineItem(this.value); this.selectedIndex=0;">'
       +   _packageCatalogOptions()
       +   '</select>'
-      +   '<p class="text-xs text-slate-400 mt-1">Pick Group/Private by level, or self-study. Self-study within the free hours is added as an FOC line; use the add-on for extra hours.</p>'
+      +   '<p class="text-xs text-slate-400 mt-1">One-off lines only. Tuition comes from the catalogue: pick the student above, then Build from catalogue.</p>'
+      +   '<button type="button" onclick="App.Billing._buildFromCatalogueForForm(\'create-invoice-form\')" style="margin-top:0.4rem;margin-right:0.4rem;padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:4px;cursor:pointer" title="Fills the lines from the pricing catalogue for this student and month">Build from catalogue</button>'
       +   '<button type="button" onclick="App.Billing._addEarlyBirdLine()" style="margin-top:0.4rem;padding:0.4rem 0.8rem;font-size:0.78rem;font-weight:600;background:#fefce8;color:#854d0e;border:1px solid #fde68a;border-radius:4px;cursor:pointer" title="Adds the RM10 early bird line. Unpaid after the 7th and the system puts the RM10 back automatically.">+ Early bird (RM10)</button>'
       + '</div>'
       + '<div id="line-items-list" style="margin-top:0.25rem"></div>'
@@ -1822,6 +1847,8 @@
     _updateNetAmount: _updateNetAmount,
     _addLineItem: _addLineItem,
     _addEarlyBirdLine: _addEarlyBirdLine,
+    _buildFromCatalogue: _buildFromCatalogue,
+    _buildFromCatalogueForForm: _buildFromCatalogueForForm,
     _removeLineItem: _removeLineItem,
     _addBlankLine: _addBlankLine,
     _editLineItem: _editLineItem,

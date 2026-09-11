@@ -70,6 +70,29 @@ skipped, nothing-to-bill student skipped (no invoice -> no referral credit consu
 pricing hole flags the line. Locked by `TestSessionBillingPreview`. The switchover must
 reuse this compute path, not reimplement it.
 
+## One rating engine, and where it lives
+
+`internal/rating` computes what a student costs. It is pure -- no database, no
+invoice numbers, no writes -- and works in `int64` sen, converting to ringgit
+only at the edges, so the JSON and the PDF are unchanged. `store.CatalogPrices`
+is its loader, not a second implementation.
+
+Two callers must never grow their own copy of this, which is exactly what
+happened before: `billing.js` carried `_packageCatalog()`, built from the
+superseded `pricing_tiers` table and bucketed into levels 1-6, so it could not
+express Level 0, Mandarin, Phonics or a twice-weekly tier. The right figures had
+to be typed by hand, which is why September's invoices were all hand-made.
+
+`GET /api/billing/proposed-invoice?studentId=&month=YYYY-MM` returns the lines
+the catalogue says a student should be billed, in the invoice editor's own
+shape. `month` is validated against a real pattern, not a length: it becomes an
+`asOf` and then a Postgres `?::date` cast (0066), so a malformed one would
+otherwise surface as an empty result rather than a 400.
+
+Unpriceable classes come back in `problems`, never as lines. A class with no
+agreed price must not reach an invoice as a silent zero -- that is the bug the
+whole catalogue exists to close.
+
 ## Discount stacking order
 
 Fixed, and the order is load-bearing for the clawback (`cron.go:537-545`):
