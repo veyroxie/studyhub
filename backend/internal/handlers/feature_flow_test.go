@@ -601,8 +601,16 @@ func TestSessionMove_FullLifecycle(t *testing.T) {
 	classID := core.GenerateID("CLS")
 	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time) VALUES(?,?,?,?,?,?)`,
 		classID, 1, "Move Test Class", "Monday", "10:00", "11:00")
-	from := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
-	to := time.Now().AddDate(0, 0, 9).Format("2006-01-02")
+	// Anchored to the class's own weekday, not to today. "today + N" gave the
+	// target a different weekday each day of the year, so one day in seven it
+	// landed on a Monday and the handler correctly refused a move onto a date
+	// the class already meets -- a test that failed on the calendar, not the code.
+	fromDay := time.Now().AddDate(0, 0, 1)
+	for fromDay.Weekday() != time.Monday {
+		fromDay = fromDay.AddDate(0, 0, 1)
+	}
+	from := fromDay.Format("2006-01-02")
+	to := fromDay.AddDate(0, 0, 2).Format("2006-01-02")
 
 	var creditsBefore int
 	db.QueryRow(`SELECT COUNT(*) FROM replacement_credits`).Scan(&creditsBefore)
@@ -631,7 +639,7 @@ func TestSessionMove_FullLifecycle(t *testing.T) {
 	}
 
 	// Re-moving the same session replaces the target, no duplicate row.
-	to2 := time.Now().AddDate(0, 0, 10).Format("2006-01-02")
+	to2 := fromDay.AddDate(0, 0, 3).Format("2006-01-02")
 	if w := authedJSON(t, r, "POST", "/api/session-moves", tok, map[string]any{
 		"classId": classID, "fromDate": from, "toDate": to2,
 	}); w.Code != http.StatusCreated {

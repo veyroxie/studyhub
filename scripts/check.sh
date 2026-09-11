@@ -55,7 +55,9 @@ if [[ $FULL -eq 1 ]]; then
   trap 'docker stop "$name" >/dev/null 2>&1 || true' EXIT
   for _ in $(seq 1 30); do docker exec "$name" pg_isready -U studyhub >/dev/null 2>&1 && break; sleep 1; done
   (cd backend && TEST_DATABASE_URL="postgres://studyhub:test@127.0.0.1:55440/studyhub_test?sslmode=disable" \
-    GOTOOLCHAIN=auto go test ./... )
+    # -p 1: one shared Postgres, and the handlers suite truncates tables
+    # between tests -- parallel packages clobber each other's fixtures.
+    GOTOOLCHAIN=auto go test -p 1 ./... )
   pass "go test (fresh schema + migrations)"
 else
   printf '\n  (skipped DB-backed Go tests — re-run with --full)\n'
