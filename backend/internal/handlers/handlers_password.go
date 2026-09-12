@@ -126,7 +126,7 @@ func HandleSetPassword(db *store.DB) http.HandlerFunc {
 			tenantID int
 		)
 		if err := db.QueryRow(
-			`UPDATE users SET password_hash=?, status='active', email_verified_at=NOW() WHERE id=? RETURNING role, name, email, tenant_id`,
+			`UPDATE users SET password_hash=?, status='active', email_verified_at=NOW(), must_change_credentials=FALSE WHERE id=? RETURNING role, name, email, tenant_id`,
 			string(hash), t.UserID.Int64,
 		).Scan(&role, &name, &email, &tenantID); err != nil {
 			core.RespondError(w, "could not activate account", 500)

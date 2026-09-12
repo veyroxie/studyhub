@@ -55,6 +55,9 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 	r.Use(cors.Handler(cors.Options{AllowedOrigins: []string{"*"}, AllowedMethods: []string{"GET", "POST", "PUT", "DELETE"}, AllowedHeaders: []string{"Authorization", "Content-Type"}}))
 
 	r.Post("/api/auth/login", auth.HandleLogin(db))
+	// Public, like production: the invite link is followed by someone who is
+	// not signed in yet.
+	r.Post("/api/set-password", HandleSetPassword(db))
 	r.Get("/ws", hub.HandleWS(db))
 	r.Group(func(r chi.Router) {
 		r.Use(auth.JWTMiddleware(db))
@@ -78,6 +81,7 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		r.Post("/api/invoices/{id}/reissue", HandleInvoiceReissue(db))
 		r.Post("/api/invoices/{id}/issue", HandleInvoiceIssue(db))
 		r.Put("/api/users/{id}/credentials", HandleUserCredentials(db))
+		r.Post("/api/users/{id}/invite-link", HandleUserInviteLink(db))
 		r.Post("/api/auth/complete-setup", HandleCompleteSetup(db))
 		r.Get("/api/announcements", HandleAnnouncements(db))
 		r.Post("/api/announcements", HandleAnnouncements(db))

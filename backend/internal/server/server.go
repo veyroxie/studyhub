@@ -348,6 +348,7 @@ func Build(db *store.DB) http.Handler {
 			r.Post("/api/users/{id}/verify", handlers.HandleUserVerify(db))
 			r.Post("/api/users/{id}/unlock", handlers.HandleAdminUnlockUser(db))
 			r.Put("/api/users/{id}/credentials", handlers.HandleUserCredentials(db))
+			r.Post("/api/users/{id}/invite-link", handlers.HandleUserInviteLink(db))
 			r.Get("/api/admin/settings", store.HandleAdminSettings(db))
 			r.Put("/api/admin/settings", store.HandleAdminSettings(db))
 			r.Post("/api/users/{id}/resend-verification", handlers.HandleUserResendVerification(db))
