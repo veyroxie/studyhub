@@ -86,5 +86,11 @@ echo "==> Your own admin account ..."
 create_admin "etee3001@gmail.com" "Elyesa" "sh-EqPr7TuWnz4Jm2Vd"
 
 echo
-echo "Each of them signs in once with the password above and is then forced to"
-echo "choose their own email and password before anything else will work."
+echo "Temporary passwords -- hand each person THEIR OWN, then it is spent:"
+echo "  etee3001@gmail.com     sh-EqPr7TuWnz4Jm2Vd"
+echo "  chiying@studyhub.com   sh-AH4iERlclvWCMxxQ"
+echo "  nadine@studyhub.com    sh-wtE6KCx4JqCwAI8s"
+echo "  rose@studyhub.com      sh-ZBB6DngO7gZZ5BaL"
+echo
+echo "Each signs in once with theirs and is then forced to choose their own"
+echo "email and password before anything else will work."
