@@ -38,14 +38,22 @@ func HandleUserCredentials(db *store.DB) http.HandlerFunc {
 		var body struct {
 			Email    string `json:"email"`
 			Password string `json:"password"`
+			Role     string `json:"role"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			core.RespondError(w, "bad request body", http.StatusBadRequest)
 			return
 		}
 		body.Email = strings.ToLower(strings.TrimSpace(body.Email))
-		if body.Email == "" && body.Password == "" {
-			core.RespondError(w, "give an email, a password, or both", http.StatusBadRequest)
+		body.Role = strings.ToLower(strings.TrimSpace(body.Role))
+		if body.Email == "" && body.Password == "" && body.Role == "" {
+			core.RespondError(w, "give an email, a password, a role, or any combination", http.StatusBadRequest)
+			return
+		}
+		// Same allowlist HandleUsers enforces on creation: superadmin is not
+		// grantable from here, so an admin cannot mint an account above their own.
+		if body.Role != "" && body.Role != "admin" && body.Role != "teacher" && body.Role != "parent" {
+			core.RespondError(w, "role must be admin, teacher or parent", http.StatusBadRequest)
 			return
 		}
 		if body.Email != "" && !auth.ValidateEmail(body.Email) {
@@ -105,6 +113,15 @@ func HandleUserCredentials(db *store.DB) http.HandlerFunc {
 			}
 		}
 
+		if body.Role != "" {
+			roleArgs := append([]any{body.Role, id}, twArgs...)
+			if _, err := tx.Exec(`UPDATE users SET role=? WHERE id=?`+tw, roleArgs...); err != nil {
+				core.LogFromReq(r).Error("credentials: role update failed", "err", err, "user_id", id)
+				core.RespondError(w, "could not update the account", 500)
+				return
+			}
+		}
+
 		if body.Password != "" {
 			hash, err := auth.HashPassword(body.Password)
 			if err != nil {
@@ -112,7 +129,12 @@ func HandleUserCredentials(db *store.DB) http.HandlerFunc {
 				return
 			}
 			pwArgs := append([]any{hash, id}, twArgs...)
-			if _, err := tx.Exec(`UPDATE users SET password_hash=?, failed_login_count=0, locked_until=NULL WHERE id=?`+tw, pwArgs...); err != nil {
+			// must_change_credentials: a password someone else chose is
+			// temporary by construction. The holder can reach the setup
+			// endpoint and nothing else until they replace it, so "we will
+			// change it later" stops being the security model.
+			if _, err := tx.Exec(`UPDATE users SET password_hash=?, must_change_credentials=TRUE,
+				failed_login_count=0, locked_until=NULL WHERE id=?`+tw, pwArgs...); err != nil {
 				core.LogFromReq(r).Error("credentials: password update failed", "err", err, "user_id", id)
 				core.RespondError(w, "could not update the account", 500)
 				return
@@ -125,14 +147,16 @@ func HandleUserCredentials(db *store.DB) http.HandlerFunc {
 
 		// Every existing session dies. A password change that leaves old
 		// sessions alive does not lock anyone out of anything.
-		if body.Password != "" {
+		if body.Password != "" || body.Role != "" {
 			var uid int
 			db.QueryRow(`SELECT id FROM users WHERE id=?`+tw, selArgs...).Scan(&uid)
 			store.RevokeRefreshFamilyByUser(db, uid, "credentials changed by admin")
+			auth.InvalidateUserStatusCache(uid)
 		}
 		// The detail records WHAT changed, never the password itself.
 		core.LogAudit(db, store.TenantID(c), c.Email, "user_credentials_changed", "user", id,
-			"email="+boolWord(body.Email != "" && newEmail != currentEmail)+" password="+boolWord(body.Password != ""))
+			"email="+boolWord(body.Email != "" && newEmail != currentEmail)+
+				" password="+boolWord(body.Password != "")+" role="+boolWord(body.Role != ""))
 		core.Respond(w, map[string]string{"id": id, "email": newEmail})
 	}
 }

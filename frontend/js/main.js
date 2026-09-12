@@ -32,6 +32,43 @@
   // caller is responsible for handling the false path (logout + reload).
   // Modal cannot be dismissed by clicking outside or pressing Esc — those
   // affordances would let a user slip past the gate.
+  // _showFirstSignInGate: choose your own email and password before the app
+  // opens. Shown when the server says this password was issued by an admin.
+  function _showFirstSignInGate(currentEmail) {
+    return new Promise(function(resolve) {
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.75);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem';
+      wrap.innerHTML =
+          '<div style="background:#fff;border-radius:12px;max-width:420px;width:100%;padding:1.75rem">'
+        +   '<h2 style="font-size:1.2rem;font-weight:700;margin:0 0 0.35rem">Set up your sign in</h2>'
+        +   '<p style="font-size:0.86rem;color:#475569;margin:0 0 1.1rem">This password was set for you. Choose your own before continuing.</p>'
+        +   '<label style="display:block;font-size:0.8rem;font-weight:600;margin-bottom:0.25rem">Email</label>'
+        +   '<input id="fs-email" type="email" value="' + App.Utils.esc(currentEmail || '') + '" style="width:100%;padding:0.55rem 0.7rem;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:0.8rem">'
+        +   '<label style="display:block;font-size:0.8rem;font-weight:600;margin-bottom:0.25rem">New password</label>'
+        +   '<input id="fs-pw" type="password" autocomplete="new-password" style="width:100%;padding:0.55rem 0.7rem;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:0.35rem">'
+        +   '<div id="fs-err" style="font-size:0.8rem;color:#dc2626;min-height:1.1rem;margin-bottom:0.6rem"></div>'
+        +   '<div style="display:flex;gap:0.5rem;justify-content:flex-end">'
+        +     '<button id="fs-cancel" style="padding:0.5rem 0.9rem;font-size:0.85rem;background:none;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer">Sign out</button>'
+        +     '<button id="fs-save" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:600;background:#0f172a;color:#fff;border:none;border-radius:6px;cursor:pointer">Save and continue</button>'
+        +   '</div>'
+        + '</div>';
+      document.body.appendChild(wrap);
+      var err = wrap.querySelector('#fs-err');
+      wrap.querySelector('#fs-cancel').onclick = function() { wrap.remove(); resolve(false); };
+      wrap.querySelector('#fs-save').onclick = async function() {
+        err.textContent = '';
+        var email = wrap.querySelector('#fs-email').value.trim();
+        var pw = wrap.querySelector('#fs-pw').value;
+        if (pw.length < 8) { err.textContent = 'Password must be at least 8 characters'; return; }
+        var res = await App.Api.post('/api/auth/complete-setup', { email: email, password: pw }, { silent: true })
+          .catch(function(e) { err.textContent = (e && e.message) || 'Could not save'; return null; });
+        if (!res) return;
+        wrap.remove();
+        resolve(true);
+      };
+    });
+  }
+
   // _showMFAGate collects the 6-digit TOTP (or a recovery code) after a login
   // that returned mfaRequired, and exchanges it via App.Api.mfaVerify.
   // Resolves with the login user object, or null if the user cancels.
@@ -201,6 +238,26 @@
           App.currentTeacher = data.staffId || '';
           sessionStorage.setItem('sh_teacher', App.currentTeacher);
         }
+        // A password an admin chose is temporary: the account cannot do
+        // anything until its owner picks their own. This mirrors the ToS gate
+        // below, and like it the real enforcement is server-side -- every other
+        // endpoint answers 428 until setup is done, so skipping this screen
+        // gets you a broken app rather than an open one.
+        if (data.mustCompleteSetup) {
+          _hideLoading();
+          const done = await _showFirstSignInGate(data.email);
+          if (!done) {
+            await App.Api.post('/api/auth/logout', {}, { silent: true }).catch(function(){});
+            window.location.reload();
+            return;
+          }
+          // The setup stamps sessions_invalid_before, so this token is dead by
+          // design. Signing in again with the chosen password is the proof it
+          // works, and is friendlier than a silent failure two screens later.
+          window.location.reload();
+          return;
+        }
+
         // Block entry until the user accepts the current ToS version. The
         // server sets data.mustAcceptTos when the user's stored version is
         // below currentToSVersion. We resolve only when the modal is

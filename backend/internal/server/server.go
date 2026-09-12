@@ -141,6 +141,13 @@ func Build(db *store.DB) http.Handler {
 	// ── Authenticated routes ──────────────────────────────────────────────────
 	r.Group(func(r chi.Router) {
 		r.Use(auth.JWTMiddleware(db))
+		// A session holding an admin-issued temporary password may reach the
+		// setup endpoint and nothing else, enforced here rather than in the UI.
+		r.Use(auth.RequireSetupComplete(db))
+		// Authenticated on purpose: the caller proves they hold the temporary
+		// password before they may replace it. RequireSetupComplete lets this
+		// one path through.
+		r.Post("/api/auth/complete-setup", handlers.HandleCompleteSetup(db))
 		// NOTE: RLSScope is currently a no-op passthrough (the app connects as a
 		// Postgres superuser and a per-request GUC is unsafe on a shared pool),
 		// so there is NO database-level backstop: every handler MUST apply

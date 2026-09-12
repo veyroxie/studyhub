@@ -58,6 +58,9 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 	r.Get("/ws", hub.HandleWS(db))
 	r.Group(func(r chi.Router) {
 		r.Use(auth.JWTMiddleware(db))
+		// Mirrors server.go: a forced-setup session must be blocked HERE, not by
+		// the UI, or the tests prove nothing about the gate.
+		r.Use(auth.RequireSetupComplete(db))
 		r.Get("/api/snapshot", HandleSnapshot(db))
 		r.Get("/api/students", HandleStudents(db))
 		r.Post("/api/students", HandleStudents(db))
@@ -75,6 +78,7 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		r.Post("/api/invoices/{id}/reissue", HandleInvoiceReissue(db))
 		r.Post("/api/invoices/{id}/issue", HandleInvoiceIssue(db))
 		r.Put("/api/users/{id}/credentials", HandleUserCredentials(db))
+		r.Post("/api/auth/complete-setup", HandleCompleteSetup(db))
 		r.Get("/api/announcements", HandleAnnouncements(db))
 		r.Post("/api/announcements", HandleAnnouncements(db))
 		r.Delete("/api/announcements/{id}", HandleAnnouncementDelete(db))

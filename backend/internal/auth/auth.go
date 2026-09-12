@@ -72,6 +72,11 @@ type LoginResponse struct {
 	Name    string `json:"name"`
 	Email   string `json:"email"`
 	StaffID string `json:"staffId,omitempty"`
+	// MustCompleteSetup is true while the password was set by an admin. The
+	// client shows the choose-your-own screen; the server is what enforces it
+	// (auth.RequireSetupComplete), so a client that ignores this gets 428 on
+	// everything except the setup endpoint.
+	MustCompleteSetup bool `json:"mustCompleteSetup,omitempty"`
 }
 
 // dummyPasswordHash is a valid argon2id hash verified against on the
@@ -229,6 +234,7 @@ func HandleLogin(db *store.DB) http.HandlerFunc {
 		// For teachers, also look up their staff ID so the frontend can
 		// populate App.currentTeacher and render the teacher dashboard.
 		base := LoginResponse{Role: role, Name: name, Email: req.Email}
+		db.QueryRow(`SELECT COALESCE(must_change_credentials,FALSE) FROM users WHERE id=?`, id).Scan(&base.MustCompleteSetup)
 		if role == "teacher" {
 			// Look up the staff row in the same tenant as the user we
 			// authenticated — staff.email is not globally unique, so a
@@ -444,7 +450,10 @@ type userStatusEntry struct {
 	// refresh-token revocation alone left stolen access tokens alive for up
 	// to 30 days after the victim reset their password.
 	invalidBefore time.Time
-	expiry        time.Time
+	// mustSetup is true while the account's password was set by someone else.
+	// Such a session may reach the setup endpoint and nothing else.
+	mustSetup bool
+	expiry    time.Time
 }
 
 const userStatusTTL = 30 * time.Second
@@ -458,11 +467,13 @@ func lookupUserGate(db *store.DB, userID int) userStatusEntry {
 	}
 	var status string
 	var invalidBefore sql.NullTime
-	db.QueryRow(`SELECT COALESCE(status,'active'), sessions_invalid_before FROM users WHERE id=?`, userID).Scan(&status, &invalidBefore)
+	var mustSetup bool
+	db.QueryRow(`SELECT COALESCE(status,'active'), sessions_invalid_before, COALESCE(must_change_credentials,FALSE) FROM users WHERE id=?`, userID).
+		Scan(&status, &invalidBefore, &mustSetup)
 	if status == "" {
 		status = "unknown"
 	}
-	e := userStatusEntry{status: status, invalidBefore: invalidBefore.Time, expiry: time.Now().Add(userStatusTTL)}
+	e := userStatusEntry{status: status, invalidBefore: invalidBefore.Time, mustSetup: mustSetup, expiry: time.Now().Add(userStatusTTL)}
 	userStatusCache.Store(userID, e)
 	return e
 }
@@ -588,6 +599,46 @@ func JWTSecret() []byte { return jwtSecret }
 // each implement it, and the socket's copy stopped after the signature check --
 // so logout, a password reset and a suspension all closed the REST surface and
 // none of them closed an open socket.
+// MustCompleteSetup reports whether this session is holding a password someone
+// else chose, and so may do nothing but replace it.
+func MustCompleteSetup(db *store.DB, claims *core.Claims) bool {
+	if claims == nil || claims.UserID <= 0 {
+		return false
+	}
+	return lookupUserGate(db, claims.UserID).mustSetup
+}
+
+// setupAllowedPaths are the only routes a not-yet-set-up session may reach:
+// completing the setup, and leaving.
+var setupAllowedPaths = map[string]bool{
+	"/api/auth/complete-setup": true,
+	"/api/auth/logout":         true,
+	"/api/health":              true,
+}
+
+// RequireSetupComplete blocks a session whose credentials were issued by an
+// admin from doing anything except replacing them.
+//
+// Enforced here rather than in the frontend because a forced-setup screen the
+// client draws is a suggestion: the temporary password is a real credential and
+// would otherwise open the whole API. The client uses the 428 to know which
+// screen to show; the server is what makes it true.
+func RequireSetupComplete(db *store.DB) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if setupAllowedPaths[r.URL.Path] {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if MustCompleteSetup(db, core.ClaimsFrom(r)) {
+				core.RespondError(w, "choose your own email and password before continuing", http.StatusPreconditionRequired)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func SessionStillValid(db *store.DB, claims *core.Claims) (bool, string, int) {
 	if claims == nil {
 		return false, "session ended — please sign in again", http.StatusUnauthorized
