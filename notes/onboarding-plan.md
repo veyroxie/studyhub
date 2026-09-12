@@ -78,9 +78,26 @@ It is better than a temporary password for parents specifically:
 **So: two flows, deliberately.** Not because parents are lesser, but because
 staff you hand a password to in person and parents you message.
 
-**Then:** a sign-up page becomes worth building once email verification works,
-as the self-service path for a parent who was never invited. Until then it is a
-hole with a form in front of it.
+**SUPERSEDED 2026-09-12 (Ely), and by a better idea than mine.** There is no
+sign-up page, ever. Registration closes; the only way to get an account is to be
+invited by Nadine after the child is enrolled.
+
+That dissolves the problem rather than working around it. I had been treating
+"is this person really that child's parent" as something email verification has
+to answer. If nobody can self-register, the question never arises: Nadine
+enrolled the child, so she knows who the parent is, and the invite goes to the
+number she already has. The admin IS the verification, and a stronger one than
+an email round-trip.
+
+Evidence it costs nothing: production has had **two registrations, ever** -- one
+approved, one rejected -- against 42 families. The public form is not how anyone
+joins this centre. It is, meanwhile, the reason 13 parent accounts sit in
+`pending_verification` waiting for a mail that cannot arrive.
+
+**What closes:** `POST /api/register` for parents, and the sign-up half of
+`register.html`. Return something that points at the enquiry form rather than a
+bare 404, so an old link explains itself. Open question: `register-teacher` is a
+job-application flow rather than an account flow, and may want to stay.
 
 ## 3. Birthday wishes
 
@@ -103,6 +120,11 @@ delivery problem as everywhere else.
 **What does not exist:** anything to look at before signing in. `index.html` IS
 the app; signed out, you get a login box and nothing else. Someone who lands on
 studyhub.fit having heard about the centre has no idea what it is.
+
+**The signed-out page offers exactly two things: enquire, or sign in.** No
+sign-up. Enquiring starts a conversation; an account only ever arrives by
+invitation, after a child is enrolled. That is the whole access model in one
+sentence, and it is worth keeping it that simple.
 
 **An enquiry is not a registration.** Registration asks for a password, a full
 name, emergency contacts. An enquiry is "I have a seven year old, do you have
@@ -136,5 +158,8 @@ to.
 1. Teacher onboarding screen. Nadine needs it and it has no dependencies.
 2. Parent invite link endpoint plus a copy button. Unblocks 51 dead accounts.
 3. Read-only role, if Nadine wants Rose to be view-only.
-4. Landing page with an enquiry form, replacing the bare signed-out login box.
-5. Public sign-up page, only after outbound mail is on.
+4. Landing page: enquiry form plus sign in, replacing the bare login box.
+5. Close public registration, once the enquiry form gives people somewhere to go.
+
+Note the order of 4 and 5: closing registration first would leave an interested
+parent with no route in at all.
