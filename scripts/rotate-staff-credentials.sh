@@ -47,10 +47,43 @@ set_creds() {
   rm -f "$out"
 }
 
+# Ely's own admin account. Created with a temporary password and then pushed
+# through the SAME first-sign-in flow as everyone else -- an owner account with
+# a password someone else typed is the thing this whole change exists to stop.
+create_admin() {
+  local email="$1" name="$2" temp="$3"
+  local out code id
+  out=$(mktemp)
+  code=$(curl -s -o "$out" -w '%{http_code}' -X POST "$BASE/api/users" \
+    -b "$JAR" -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+    -d "$(printf '{"email":"%s","name":"%s","role":"admin","password":"%s"}' "$email" "$name" "$temp")")
+  case "$code" in
+    201|200) echo "    ok   created $email" ;;
+    409)     echo "    ..   $email already exists, setting its password instead" ;;
+    *)       echo "    FAIL create $email ($code): $(cat "$out")" >&2; rm -f "$out"; return ;;
+  esac
+  rm -f "$out"
+  # Look up the id and force the first-sign-in flow on it.
+  id=$(curl -s -b "$JAR" "$BASE/api/users" | python3 -c "
+import json,sys
+for u in json.load(sys.stdin):
+    if u.get('email','').lower() == '$email':
+        print(u['id']); break
+")
+  if [ -n "$id" ]; then
+    set_creds "$id" "$email -> admin, must set own password" "$(printf '{"role":"admin","password":"%s"}' "$temp")"
+  else
+    echo "    FAIL could not find $email to force setup" >&2
+  fi
+}
+
 echo "==> Rotating ..."
 set_creds 2 "chiying -> admin" '{"role":"admin","password":"sh-AH4iERlclvWCMxxQ"}'
 set_creds 3 "nadine  -> admin" '{"role":"admin","password":"sh-wtE6KCx4JqCwAI8s"}'
 set_creds 4 "rose    (teacher)" '{"password":"sh-ZBB6DngO7gZZ5BaL"}'
+
+echo "==> Your own admin account ..."
+create_admin "etee3001@gmail.com" "Elyesa" "sh-EqPr7TuWnz4Jm2Vd"
 
 echo
 echo "Each of them signs in once with the password above and is then forced to"
