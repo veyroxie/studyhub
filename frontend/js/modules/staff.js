@@ -392,8 +392,20 @@
           await App.Api.loadSnapshot();
         });
         App.Utils.hideModal(true);
-        App.Utils.showToast(App.Utils.esc(newStaff.fullName) + ' added!', 'success');
         App.Router.refresh();
+        // Adding staff already creates their login and mints a set-password
+        // token, but the welcome email goes into a restricted allowlist and
+        // never arrives. Hand the link over here, while the admin is still
+        // thinking about this person, rather than leaving them to find it in
+        // the pending-accounts list later.
+        var pending = (App.Store.get().pendingUsers || []).find(function(u) {
+          return (u.email || '').toLowerCase() === (newStaff.email || '').toLowerCase();
+        });
+        if (pending && App.Dashboard && App.Dashboard._copyInviteLink) {
+          App.Dashboard._copyInviteLink(pending.id);
+        } else {
+          App.Utils.showToast(App.Utils.esc(newStaff.fullName) + ' added!', 'success');
+        }
       } catch (err) { /* auto-toasted */ }
     });
   }

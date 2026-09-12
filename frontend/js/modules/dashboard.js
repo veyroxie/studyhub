@@ -1380,15 +1380,46 @@
             +   '<div style="font-size:0.75rem;color:#94a3b8">' + App.Utils.esc(u.email) + ' · ' + App.Utils.esc(u.role) + '</div>'
             + '</div>'
             + '<button onclick="App.Dashboard._verifyUser(' + u.id + ')" style="padding:0.35rem 0.7rem;font-size:0.72rem;font-weight:600;border:1px solid #10b981;border-radius:4px;background:#f0fdf4;color:#059669;cursor:pointer">Verify</button>'
-            + '<button onclick="App.Dashboard._resendVerification(' + u.id + ')" style="padding:0.35rem 0.7rem;font-size:0.72rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;cursor:pointer">Resend</button>'
+            + '<button onclick="App.Dashboard._copyInviteLink(' + u.id + ')" style="padding:0.35rem 0.7rem;font-size:0.72rem;font-weight:600;border:1px solid #fde68a;border-radius:4px;background:#fefce8;color:#854d0e;cursor:pointer" title="Get a link you can send them yourself">Invite link</button>'
+            + '<button onclick="App.Dashboard._resendVerification(' + u.id + ')" style="padding:0.35rem 0.7rem;font-size:0.72rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;cursor:pointer" title="Emails the link. Outbound mail is currently restricted, so this may not arrive.">Resend</button>'
             + '</div>';
         }).join('');
 
     App.Utils.showModal(
       '<div style="max-width:480px">'
       + '<h2 class="text-lg font-bold mb-1">Pending Verification Accounts</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">These users registered but haven\'t verified their email yet.</p>'
+      + '<p class="text-sm text-slate-500 mb-4">These accounts exist but have never been signed into. Outbound email is switched off, so the welcome message never reached them. Use <strong>Invite link</strong> to get a link you can send yourself, by WhatsApp or however you normally reach them.</p>'
       + rows
+      + '</div>'
+    );
+  }
+
+  // The account already has a set-password token minted for it; it was emailed
+  // into a blocked allowlist and never arrived. This mints a fresh one and
+  // hands it over so the admin can deliver it themselves.
+  //
+  // Shown as well as copied: the clipboard API fails silently in plenty of
+  // situations (permissions, an insecure origin, a browser that has not been
+  // interacted with), and a "copied!" toast covering a copy that did not happen
+  // is worse than no toast at all.
+  async function _copyInviteLink(id) {
+    var res = await App.Api.post('/api/users/' + id + '/invite-link', {});
+    if (!res || !res.link) return;
+    var copied = false;
+    try {
+      await navigator.clipboard.writeText(res.link);
+      copied = true;
+    } catch (e) { /* shown below regardless */ }
+    App.Utils.showModal(
+      '<div style="max-width:520px">'
+      + '<h2 class="text-lg font-bold mb-1">Invite link for ' + App.Utils.esc(res.email) + '</h2>'
+      + '<p class="text-sm text-slate-500 mb-3">' + (copied ? 'Copied to your clipboard. ' : '')
+      +   'Send this to them. It expires in ' + App.Utils.esc(res.expiresIn || '24h')
+      +   ', and issuing another one cancels this.</p>'
+      + '<input readonly value="' + App.Utils.esc(res.link) + '" onclick="this.select()" '
+      +   'style="width:100%;padding:0.6rem 0.7rem;font-family:ui-monospace,monospace;font-size:0.76rem;'
+      +   'border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;color:#0f172a">'
+      + '<p class="text-xs text-slate-400 mt-3">They choose their own password on that page. Nothing you send stays valid afterwards.</p>'
       + '</div>'
     );
   }
@@ -1416,6 +1447,7 @@
     _pendingUsersModal: _pendingUsersModal,
     _verifyUser: _verifyUser,
     _resendVerification: _resendVerification,
+    _copyInviteLink: _copyInviteLink,
     _mfaStart: _mfaStart,
     _mfaDisable: _mfaDisable,
     _mfaCopyCodes: _mfaCopyCodes,
