@@ -32,15 +32,6 @@ func getTokenAllowFail(t *testing.T, r *chi.Mux, email, password string) string 
 	return ""
 }
 
-func userIDByEmail(t *testing.T, db *store.DB, email string) string {
-	t.Helper()
-	var id string
-	if err := db.QueryRow(`SELECT id::text FROM users WHERE email=?`, email).Scan(&id); err != nil {
-		t.Skipf("no %s account in this fixture: %v", email, err)
-	}
-	return id
-}
-
 // A password an admin chose is temporary by construction: the holder can reach
 // the setup endpoint and nothing else until they replace it. Enforced on the
 // server, because a forced-setup screen the client draws is only a suggestion.
@@ -49,7 +40,7 @@ func TestAdminIssuedPasswordCanDoNothingButReplaceItself(t *testing.T) {
 	defer cleanup()
 	adminToken := getAdminToken(t, r)
 	db := store.InitDB(testDSN())
-	id := userIDByEmail(t, db, "rose@studyhub.com")
+	id, email := makeThrowawayStaff(t, db, "forcedsetup")
 
 	const temp = "temporary-password-1"
 	if w := doRequest(r, "PUT", "/api/users/"+id+"/credentials", adminToken,
@@ -57,7 +48,7 @@ func TestAdminIssuedPasswordCanDoNothingButReplaceItself(t *testing.T) {
 		t.Fatalf("admin set password: %d %s", w.Code, w.Body.String())
 	}
 
-	roseToken := getToken(t, r, "rose@studyhub.com", temp)
+	roseToken := getToken(t, r, email, temp)
 	if roseToken == "" {
 		t.Fatal("the temporary password does not sign in")
 	}
@@ -81,7 +72,7 @@ func TestAdminIssuedPasswordCanDoNothingButReplaceItself(t *testing.T) {
 	}
 
 	// The temporary password is dead and the chosen one works.
-	if tok := getTokenAllowFail(t, r, "rose@studyhub.com", temp); tok != "" {
+	if tok := getTokenAllowFail(t, r, email, temp); tok != "" {
 		t.Error("the temporary password still signs in after setup")
 	}
 	newToken := getToken(t, r, personal, chosen)
@@ -110,15 +101,47 @@ func TestCompleteSetupRejectsAWeakPassword(t *testing.T) {
 	defer cleanup()
 	adminToken := getAdminToken(t, r)
 	db := store.InitDB(testDSN())
-	id := userIDByEmail(t, db, "chiying@studyhub.com")
+	id, email := makeThrowawayStaff(t, db, "weakpw")
 
 	const temp = "temporary-password-2"
 	doRequest(r, "PUT", "/api/users/"+id+"/credentials", adminToken, map[string]string{"password": temp})
-	tok := getToken(t, r, "chiying@studyhub.com", temp)
+	tok := getToken(t, r, email, temp)
 	if tok == "" {
 		t.Fatal("temporary password does not sign in")
 	}
 	if w := doRequest(r, "POST", "/api/auth/complete-setup", tok, map[string]string{"password": "short"}); w.Code != http.StatusBadRequest {
 		t.Errorf("a weak password was accepted at setup: %d", w.Code)
+	}
+}
+
+// Onboarding is one step: creating the account forces the first-sign-in setup,
+// rather than needing a second call to set must_change_credentials.
+func TestAdminCreatedAccountMustSetItsOwnCredentials(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	adminToken := getAdminToken(t, r)
+
+	const email = "brand.new.teacher@example.com"
+	const handover = "handover-password-1"
+	w := doRequest(r, "POST", "/api/users", adminToken, map[string]string{
+		"email": email, "password": handover, "role": "teacher", "name": "Brand New",
+	})
+	if w.Code != http.StatusCreated && w.Code != http.StatusOK {
+		t.Fatalf("create user: %d %s", w.Code, w.Body.String())
+	}
+
+	tok := getToken(t, r, email, handover)
+	if tok == "" {
+		t.Fatal("the handover password does not sign in")
+	}
+	if w := doRequest(r, "GET", "/api/students", tok, nil); w.Code != http.StatusPreconditionRequired {
+		t.Errorf("a freshly created account reached /api/students with %d, want 428 — onboarding did not force setup", w.Code)
+	}
+	if w := doRequest(r, "POST", "/api/auth/complete-setup", tok,
+		map[string]string{"password": "the-password-they-chose"}); w.Code != http.StatusOK {
+		t.Fatalf("complete setup: %d %s", w.Code, w.Body.String())
+	}
+	if tok2 := getToken(t, r, email, "the-password-they-chose"); tok2 == "" {
+		t.Error("cannot sign in with the chosen password")
 	}
 }

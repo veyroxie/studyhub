@@ -84,7 +84,12 @@ func HandleUsers(db *store.DB) http.HandlerFunc {
 			if !tOK {
 				return
 			}
-			_, err = db.Exec(`INSERT INTO users(tenant_id,email,password_hash,role,name) VALUES(?,?,?,?,?)`, tid, req.Email, hash, req.Role, req.Name)
+			// must_change_credentials: the password on a new account was typed
+			// by the admin creating it, not chosen by the person who will use
+			// it. Such a session can reach the setup endpoint and nothing else
+			// (auth.RequireSetupComplete), so onboarding is one step and the
+			// handover password is spent the moment it is used.
+			_, err = db.Exec(`INSERT INTO users(tenant_id,email,password_hash,role,name,must_change_credentials) VALUES(?,?,?,?,?,TRUE)`, tid, req.Email, hash, req.Role, req.Name)
 			if err != nil {
 				if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "duplicate key") {
 					core.RespondError(w, "email already exists", 409)
