@@ -57,3 +57,29 @@ Level 1–3/4–6 = 240/260/480/520); class feedback → **4-monthly progress re
 
 ## Suggested order
 A → B → F+G → C+D → E → H → I
+
+## Centre requests, 2026-09-12 (Ying Quah, Nadine)
+
+**Birthday wishes to a parent's WhatsApp (Ying Quah).** Not possible on the
+current stack without a new dependency and a cost: WhatsApp Business API
+messages to a user who has not messaged us first must be pre-approved template
+messages sent through a Meta-approved BSP, billed per conversation. That is a
+vendor, an approval process and a per-message cost, not a feature flag.
+`students.dob` is already stored, so the trigger is trivial; the delivery is the
+whole job. Cheaper alternatives that need no vendor: the existing web-push
+channel, or an in-app notice on the parent portal. Decision needed before any
+work.
+
+**Teacher-only account for Rose (Nadine).** Already supported. Users are created
+with role `teacher` (`HandleUsers` POST accepts parent, teacher, admin and
+explicitly rejects superadmin). A teacher's reach is their own classes, not the
+whole centre -- see "Teacher scoping" in AI_DOCS/auth-and-tenancy.md. Two things
+to confirm before creating it: a teacher sees the timetable for classes they
+teach, so Rose must be on `classes.teacher_ids` for whatever she needs to view;
+and with the 2026-09-10 front-desk change a teacher can check ANY student in or
+out, which is wider than "view the timetable". If Rose is meant to be read-only,
+that gap is real and is not yet closed.
+
+**Are parents receiving email? (Nadine).** No. `OUTBOUND_ALLOWLIST` is
+restricted and no parent address is on it (ADR-015). Nothing has gone to a
+parent and nothing will until that is deliberately changed.
