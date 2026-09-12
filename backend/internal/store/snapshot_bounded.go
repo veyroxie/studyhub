@@ -134,6 +134,7 @@ func ListInvoicesRecent(db *DB, c *core.Claims) []models.Invoice {
 		if err := rows.Scan(&inv.ID, &inv.StudentID, &inv.Description, &inv.Type, &inv.Amount, &inv.DueDate, &inv.Status, &inv.CreatedOn, &paidOn, &inv.PaymentProof, &inv.PaymentMethod, &inv.DiscountPct, &inv.SubmittedByParent, &inv.SiblingIds, &inv.SiblingDiscount, &inv.ReferralCredit, &inv.ReferenceNo, &inv.EarlyBirdCutoff, &inv.EarlyBirdDiscount, &lineItems); err != nil {
 			continue
 		}
+		inv.Status = DisplayStatusLocal(inv.Status, inv.DueDate)
 		if paidOn.Valid {
 			inv.PaidOn = &paidOn.String
 		}

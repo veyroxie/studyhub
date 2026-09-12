@@ -221,3 +221,47 @@ func TestDraftIsEditableThenIssuedOnce(t *testing.T) {
 		t.Errorf("the number changed from %q to %q on a second issue", number, numberAfter)
 	}
 }
+
+// End to end: an unpaid invoice past its due date reads as overdue from the
+// API without anything having rewritten the row. Nothing writes 'Overdue' any
+// more, so before this it stayed Unpaid however late it got.
+func TestOverdueIsDerivedOnRead(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	db := store.InitDB(testDSN())
+
+	inv := models.Invoice{StudentID: "STU001", Description: "Long overdue", Type: "Adhoc",
+		Amount: 100, DueDate: "2020-01-01", CreatedOn: "2019-12-01"}
+	w := doRequest(r, "POST", "/api/invoices", token, inv)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+	var made models.Invoice
+	json.NewDecoder(w.Body).Decode(&made)
+
+	var stored string
+	db.QueryRow(`SELECT status FROM invoices WHERE id=?`, made.ID).Scan(&stored)
+	if stored != models.InvoiceStatusUnpaid {
+		t.Errorf("stored status is %q; the row should still say Unpaid, not be rewritten", stored)
+	}
+
+	lw := doRequest(r, "GET", "/api/invoices", token, nil)
+	if lw.Code != http.StatusOK {
+		t.Fatalf("list: %d", lw.Code)
+	}
+	var list []models.Invoice
+	json.NewDecoder(lw.Body).Decode(&list)
+	var found bool
+	for _, got := range list {
+		if got.ID == made.ID {
+			found = true
+			if got.Status != models.InvoiceStatusOverdue {
+				t.Errorf("the API reports %q for an invoice due in 2020, want Overdue", got.Status)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("the invoice was not in the list at all")
+	}
+}
