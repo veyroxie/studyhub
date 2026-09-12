@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -76,48 +77,18 @@ func HandleInvoiceReissue(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		tid, tOK := writeTenant(w, c)
-		if !tOK {
-			return
-		}
-		newID := core.GenerateID("INV")
-		tx, err := db.BeginTx(r.Context())
-		if err != nil {
-			core.RespondError(w, "server error", 500)
-			return
-		}
-		defer tx.Rollback()
-
-		voidArgs := append([]any{core.Today(), newID, id}, twArgs...)
-		res, err := tx.Exec(`UPDATE invoices SET status='`+models.InvoiceStatusVoid+`', voided_at=?, superseded_by=?
-			WHERE id=?`+tw+` AND deleted_at IS NULL AND status<>'`+models.InvoiceStatusPaid+`'`, voidArgs...)
-		if err != nil {
-			core.LogFromReq(r).Error("reissue: void failed", "err", err, "invoice_id", id)
-			core.RespondError(w, "could not reissue", 500)
-			return
-		}
-		if n, raErr := res.RowsAffected(); raErr != nil || n == 0 {
+		ebCutoff, ebDiscount := earlyBirdFromLines(next.Type, period, next.LineItems)
+		newID, number, err := store.ReissueInvoice(r.Context(), db, c, id, store.Reissue{
+			StudentID: next.StudentID, Description: next.Description, Type: next.Type,
+			Amount: next.Amount, DueDate: next.DueDate, CreatedOn: next.CreatedOn, Period: period,
+			LineItems: next.LineItems, EarlyBirdCutoff: ebCutoff, EarlyBirdDiscount: ebDiscount,
+		})
+		if errors.Is(err, store.ErrInvoiceNotFound) {
 			core.RespondError(w, "invoice not found", http.StatusNotFound)
 			return
 		}
-
-		ebCutoff, ebDiscount := earlyBirdFromLines(next.Type, period, next.LineItems)
-		if _, err := tx.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,period,line_items,early_bird_cutoff,early_bird_discount)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			newID, tid, next.StudentID, next.Description, next.Type, next.Amount, next.DueDate,
-			models.InvoiceStatusDraft, next.CreatedOn, period, models.MarshalLineItems(next.LineItems),
-			ebCutoff, ebDiscount); err != nil {
-			core.LogFromReq(r).Error("reissue: replacement insert failed", "err", err, "invoice_id", id)
-			core.RespondError(w, "could not reissue", 500)
-			return
-		}
-		number, err := store.IssueInvoice(tx, c, newID, models.InvoiceStatusUnpaid)
 		if err != nil {
-			core.LogFromReq(r).Error("reissue: issue failed", "err", err, "invoice_id", newID)
-			core.RespondError(w, "could not reissue", 500)
-			return
-		}
-		if err := tx.Commit(); err != nil {
+			core.LogFromReq(r).Error("reissue failed", "err", err, "invoice_id", id)
 			core.RespondError(w, "could not reissue", 500)
 			return
 		}
@@ -127,7 +98,7 @@ func HandleInvoiceReissue(db *store.DB) http.HandlerFunc {
 			"replacement": newID, "replacementNumber": number,
 			"amountWas": old.Amount, "amountNow": next.Amount,
 		})
-		core.LogAudit(db, tid, c.Email, "invoice_reissued", "invoice", id, string(detail))
+		core.LogAudit(db, store.TenantID(c), c.Email, "invoice_reissued", "invoice", id, string(detail))
 
 		next.ID, next.InvoiceNo, next.Status, next.IssuedAt = newID, number, models.InvoiceStatusUnpaid, core.Today()
 		core.Respond(w, next)

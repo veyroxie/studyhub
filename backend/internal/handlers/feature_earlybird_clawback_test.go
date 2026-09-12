@@ -13,9 +13,12 @@ import (
 
 func createInvoiceWithLines(t *testing.T, r *chi.Mux, token string, items []models.InvoiceLineItem) string {
 	t.Helper()
+	// Created as a draft: line items are what the builder edits, and editing
+	// them moves the total, which an issued invoice will not allow (ADR-016).
 	inv := models.Invoice{
 		StudentID: "STU001", Description: "Sept fees", Type: "Monthly",
 		DueDate: "2026-09-07", CreatedOn: "2026-09-01", LineItems: items,
+		Status: models.InvoiceStatusDraft,
 	}
 	w := doRequest(r, "POST", "/api/invoices", token, inv)
 	if w.Code != http.StatusOK {

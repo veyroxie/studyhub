@@ -162,3 +162,62 @@ func TestNumberingResetsEachYear(t *testing.T) {
 		t.Errorf("first of 2027 is %q, want INV-2027-0001 — the counter did not reset", got)
 	}
 }
+
+// A draft is working material: unnumbered, freely repriced, and issued by an
+// explicit act. Without it the line-item editor would be unusable, because
+// editing lines moves the total and an issued invoice's total is frozen.
+func TestDraftIsEditableThenIssuedOnce(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	db := store.InitDB(testDSN())
+
+	draft := models.Invoice{StudentID: "STU001", Description: "Draft test", Type: "Adhoc",
+		Amount: 100, DueDate: "2026-12-31", CreatedOn: "2026-09-01", Status: models.InvoiceStatusDraft}
+	w := doRequest(r, "POST", "/api/invoices", token, draft)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create draft: %d %s", w.Code, w.Body.String())
+	}
+	var made models.Invoice
+	json.NewDecoder(w.Body).Decode(&made)
+	if made.InvoiceNo != "" {
+		t.Errorf("a draft was given number %q — an abandoned draft would burn it", made.InvoiceNo)
+	}
+
+	// Repricing a draft is allowed; repricing it after issue is not.
+	made.Amount = 175
+	if w := doRequest(r, "PUT", "/api/invoices/"+made.ID, token, made); w.Code != http.StatusOK {
+		t.Fatalf("reprice draft: %d %s", w.Code, w.Body.String())
+	}
+
+	iw := doRequest(r, "POST", "/api/invoices/"+made.ID+"/issue", token, nil)
+	if iw.Code != http.StatusOK {
+		t.Fatalf("issue: %d %s", iw.Code, iw.Body.String())
+	}
+	var issued map[string]string
+	json.NewDecoder(iw.Body).Decode(&issued)
+	if issued["invoiceNo"] == "" {
+		t.Error("issuing produced no number")
+	}
+
+	var status, number string
+	var amount float64
+	db.QueryRow(`SELECT status, COALESCE(invoice_no,''), amount FROM invoices WHERE id=?`, made.ID).Scan(&status, &number, &amount)
+	if status != models.InvoiceStatusUnpaid || number == "" {
+		t.Errorf("after issue: status %q number %q", status, number)
+	}
+	if amount != 175 {
+		t.Errorf("amount %.2f, want the 175 set while it was a draft", amount)
+	}
+
+	// Issuing is one-way: a second attempt must not renumber a document the
+	// parent already holds.
+	if again := doRequest(r, "POST", "/api/invoices/"+made.ID+"/issue", token, nil); again.Code != http.StatusConflict {
+		t.Errorf("issuing twice returned %d, want 409", again.Code)
+	}
+	var numberAfter string
+	db.QueryRow(`SELECT COALESCE(invoice_no,'') FROM invoices WHERE id=?`, made.ID).Scan(&numberAfter)
+	if numberAfter != number {
+		t.Errorf("the number changed from %q to %q on a second issue", number, numberAfter)
+	}
+}

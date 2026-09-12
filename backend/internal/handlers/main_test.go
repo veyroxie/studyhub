@@ -73,6 +73,7 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		r.Delete("/api/invoices/{id}", HandleInvoiceDelete(db))
 		r.Put("/api/invoices/{id}", HandleInvoiceUpdate(db))
 		r.Post("/api/invoices/{id}/reissue", HandleInvoiceReissue(db))
+		r.Post("/api/invoices/{id}/issue", HandleInvoiceIssue(db))
 		r.Get("/api/announcements", HandleAnnouncements(db))
 		r.Post("/api/announcements", HandleAnnouncements(db))
 		r.Delete("/api/announcements/{id}", HandleAnnouncementDelete(db))

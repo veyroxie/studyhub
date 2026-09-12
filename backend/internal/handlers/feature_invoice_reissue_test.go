@@ -122,3 +122,36 @@ func TestReissueOfAMonthlyInvoiceIsNotBlockedByTheMonthlyUniqueIndex(t *testing.
 		t.Errorf("%d live monthly invoices for the period, want 1", live)
 	}
 }
+
+// An issued invoice is frozen, not just a paid one (ADR-016). Repricing an
+// unpaid one changes what a parent was asked for with no record that it moved.
+func TestIssuedInvoiceCannotBeRepriced(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	db := store.InitDB(testDSN())
+
+	inv := createdInvoice(t, r, token, "STU001", "2026-09-01")
+	if inv.Status == models.InvoiceStatusPaid {
+		t.Fatal("setup: this test is about an UNPAID issued invoice")
+	}
+
+	inv.Amount = 999
+	w := doRequest(r, "PUT", "/api/invoices/"+inv.ID, token, inv)
+	if w.Code != http.StatusConflict {
+		t.Errorf("repricing an issued unpaid invoice returned %d, want 409", w.Code)
+	}
+	var amount float64
+	db.QueryRow(`SELECT amount FROM invoices WHERE id=?`, inv.ID).Scan(&amount)
+	if amount == 999 {
+		t.Error("the amount changed anyway")
+	}
+
+	// The wording is still editable: the edit modal resubmits line items on
+	// every save, so freezing that would block fixing a typo.
+	inv.Amount = amount
+	inv.Description = "Corrected wording"
+	if w := doRequest(r, "PUT", "/api/invoices/"+inv.ID, token, inv); w.Code != http.StatusOK {
+		t.Errorf("editing only the description returned %d, want 200: %s", w.Code, w.Body.String())
+	}
+}

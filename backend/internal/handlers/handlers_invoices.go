@@ -150,7 +150,12 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 			if inv.CreatedOn == "" {
 				inv.CreatedOn = core.Today()
 			}
-			inv.Status = "Unpaid"
+			// A client may ask for a draft; everything else is issued as Unpaid.
+			// The status is not otherwise taken from the request: a caller must
+			// not be able to create an invoice that is already Paid.
+			if inv.Status != models.InvoiceStatusDraft {
+				inv.Status = models.InvoiceStatusUnpaid
+			}
 			tid, tOK := writeTenant(w, c)
 			if !tOK {
 				return
@@ -202,19 +207,33 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "could not create invoice", 500)
 				return
 			}
-			number, err := store.IssueInvoice(tx, c, inv.ID, inv.Status)
-			if err != nil {
-				core.LogFromReq(r).Error("could not issue invoice", "err", err, "invoice_id", inv.ID)
-				core.RespondError(w, "could not create invoice", 500)
-				return
+			// Asking for a Draft keeps it one: unnumbered, freely editable, and
+			// issued later by an explicit act. Anything else is issued now, so
+			// the existing flows are unchanged. This is the loop the line-item
+			// editor needs -- an issued invoice is frozen (ADR-016), so without
+			// a draft state the only way to correct a figure would be to reissue
+			// and burn a number over a typo.
+			var number string
+			if inv.Status != models.InvoiceStatusDraft {
+				number, err = store.IssueInvoice(tx, c, inv.ID, inv.Status)
+				if err != nil {
+					core.LogFromReq(r).Error("could not issue invoice", "err", err, "invoice_id", inv.ID)
+					core.RespondError(w, "could not create invoice", 500)
+					return
+				}
 			}
 			if err := tx.Commit(); err != nil {
 				core.RespondError(w, "could not create invoice", 500)
 				return
 			}
 			inv.InvoiceNo = number
-			inv.IssuedAt = core.Today()
-			core.LogAudit(db, store.TenantID(c), c.Email, "invoice_issued", "invoice", inv.ID, number+" "+inv.StudentID+" "+inv.Description)
+			action := "invoice_issued"
+			if number == "" {
+				action = "invoice_drafted"
+			} else {
+				inv.IssuedAt = core.Today()
+			}
+			core.LogAudit(db, store.TenantID(c), c.Email, action, "invoice", inv.ID, number+" "+inv.StudentID+" "+inv.Description)
 			core.Respond(w, inv)
 		}
 	}
@@ -328,16 +347,21 @@ func HandleInvoiceUpdate(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "invoice not found", http.StatusNotFound)
 			return
 		}
-		// A paid invoice's receipt is already in the parent's hands, and receipt
-		// assignment is idempotent -- repricing one would serve the same receipt
-		// number against a figure that was never collected. What is frozen is the
-		// money and the dates, not the wording: the edit modal resubmits the
-		// existing line items on every save, so rejecting on `editingItems` would
-		// block correcting a typo on any invoice that has a breakdown, which is
-		// most of them. A breakdown edit that leaves the total unchanged passes.
-		if curStatus == invoiceStatusPaid && (round2cmp(inv.Amount) != round2cmp(curAmount) ||
+		// An ISSUED invoice is a document the parent already holds, and it is
+		// frozen (ADR-016) -- not just a paid one. Repricing a paid invoice would
+		// serve its receipt number against a figure never collected; repricing an
+		// unpaid one changes what someone was asked for with no record that it
+		// moved. Corrections go through reissue, which voids this one and issues
+		// a replacement carrying its own number.
+		//
+		// What is frozen is the money and the dates, not the wording: the edit
+		// modal resubmits the existing line items on every save, so rejecting on
+		// `editingItems` would block fixing a typo on any invoice with a
+		// breakdown, which is most of them. A breakdown edit that leaves the
+		// total unchanged passes.
+		if curStatus != models.InvoiceStatusDraft && (round2cmp(inv.Amount) != round2cmp(curAmount) ||
 			inv.Type != curType || inv.DueDate != curDueDate || inv.CreatedOn != curCreatedOn) {
-			core.RespondError(w, "this invoice is paid — only its description can be changed", http.StatusConflict)
+			core.RespondError(w, "this invoice has been issued — reissue it to change the money or the dates, or edit only its description", http.StatusConflict)
 			return
 		}
 		// period is the monthly run's dedup key. It still has to follow a TYPE

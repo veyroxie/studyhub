@@ -18,31 +18,40 @@ func testDSN() string {
 
 func seedInvoice(t *testing.T, db *store.DB, id, cutoff string, discount, amount float64, items []models.InvoiceLineItem) {
 	t.Helper()
-	db.Exec(`DELETE FROM invoices WHERE id=?`, id)
+	// Clear the (student, period) SLOT, not just this id: 0039's unique index is
+	// what these rows collide on, and the handlers suite shares this database
+	// and leaves monthly invoices for the same student behind.
+	db.Exec(`DELETE FROM invoices WHERE student_id=? AND period=?`, "STU001", "2026-09")
 	if _, err := db.Exec(`INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,period,early_bird_cutoff,early_bird_discount,line_items)
 		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		id, 1, "STU001", "Monthly test", "Monthly", amount, "2026-09-07", "Unpaid", "2026-09-01", "2026-09",
-		cutoff, discount, models.MarshalLineItems(items)); err != nil {
+		id, 1, "STU001", "Monthly test", "Monthly", amount, "2026-09-07", models.InvoiceStatusUnpaid,
+		"2026-09-01", "2026-09", cutoff, discount, models.MarshalLineItems(items)); err != nil {
 		t.Fatalf("seed invoice: %v", err)
 	}
-	t.Cleanup(func() { db.Exec(`DELETE FROM invoices WHERE id=?`, id) })
+	t.Cleanup(func() { db.Exec(`DELETE FROM invoices WHERE student_id=? AND period=?`, "STU001", "2026-09") })
 }
 
-func readInvoice(t *testing.T, db *store.DB, id string) (float64, string, string) {
+func replacementOf(t *testing.T, db *store.DB, id string) string {
 	t.Helper()
+	var status, supersededBy string
 	var amount float64
-	var status, items string
-	if err := db.QueryRow(`SELECT amount, status, COALESCE(line_items,'[]') FROM invoices WHERE id=?`, id).
-		Scan(&amount, &status, &items); err != nil {
-		t.Fatalf("read invoice: %v", err)
+	if err := db.QueryRow(`SELECT status, COALESCE(superseded_by,''), amount FROM invoices WHERE id=?`, id).
+		Scan(&status, &supersededBy, &amount); err != nil {
+		t.Fatalf("read %s: %v", id, err)
 	}
-	return amount, status, items
+	if status != models.InvoiceStatusVoid {
+		t.Fatalf("original status %q, want Void", status)
+	}
+	if supersededBy == "" {
+		t.Fatal("no replacement linked — the parent is left with a voided invoice and nothing else")
+	}
+	return supersededBy
 }
 
-// The clawback Nadine asked about: unpaid past the 7th, the RM10 goes back on
-// and the invoice becomes Overdue. This path had no test, and in production it
-// had never once fired -- every invoice was hand-made with no cutoff recorded.
-func TestEarlyBirdExpiryRestoresFullPrice(t *testing.T) {
+// The clawback Nadine asked about, done as a correction rather than a silent
+// edit: the RM230 invoice the parent holds is voided and replaced by one at
+// RM240, so what they receive says what they owe.
+func TestEarlyBirdExpiryReissuesAtFullPrice(t *testing.T) {
 	core.InitLogger()
 	db := store.InitDB(testDSN())
 	items := []models.InvoiceLineItem{
@@ -53,22 +62,60 @@ func TestEarlyBirdExpiryRestoresFullPrice(t *testing.T) {
 
 	applyEarlyBirdExpiry(db)
 
-	amount, status, lineItems := readInvoice(t, db, "INV_eb_armed")
+	newID := replacementOf(t, db, "INV_eb_armed")
+	var originalAmount float64
+	db.QueryRow(`SELECT amount FROM invoices WHERE id=?`, "INV_eb_armed").Scan(&originalAmount)
+	if originalAmount != 230 {
+		t.Errorf("the voided original now reads %.2f — an issued invoice keeps its figures", originalAmount)
+	}
+
+	var amount float64
+	var status, cutoff, lines string
+	if err := db.QueryRow(`SELECT amount, status, COALESCE(early_bird_cutoff,''), COALESCE(line_items,'[]') FROM invoices WHERE id=?`, newID).
+		Scan(&amount, &status, &cutoff, &lines); err != nil {
+		t.Fatalf("read replacement: %v", err)
+	}
 	if amount != 240 {
-		t.Errorf("amount %.2f after expiry, want 240 — the RM10 was not put back", amount)
+		t.Errorf("replacement is %.2f, want 240 — the RM10 was not put back", amount)
 	}
-	if status != "Overdue" {
-		t.Errorf("status %q after expiry, want Overdue", status)
+	if status != models.InvoiceStatusUnpaid {
+		t.Errorf("replacement status %q, want Unpaid", status)
 	}
-	for _, li := range models.ParseLineItems(lineItems) {
+	if cutoff != "" {
+		t.Errorf("replacement still carries cutoff %q, so it would lapse a second time", cutoff)
+	}
+	for _, li := range models.ParseLineItems(lines) {
 		if li.Name == models.EarlyBirdLineName {
-			t.Error("the early bird line survived the clawback — the PDF would no longer balance")
+			t.Error("the early-bird line survived onto the replacement — the PDF would not balance")
 		}
 	}
 }
 
-// Running twice must not add the RM10 twice.
-func TestEarlyBirdExpiryIsIdempotent(t *testing.T) {
+// The restored figure comes from what was ACTUALLY taken off. On a bill smaller
+// than the discount the clamp removed less than RM10, and putting RM10 back
+// would overcharge the parent.
+func TestEarlyBirdExpiryRestoresOnlyWhatWasTaken(t *testing.T) {
+	core.InitLogger()
+	db := store.InitDB(testDSN())
+	items := []models.InvoiceLineItem{
+		{Kind: models.LineItemKindItem, Name: "Short month", Qty: 1, UnitPrice: 6, Amount: 6},
+		{Kind: models.LineItemKindDiscount, Name: models.EarlyBirdLineName, Qty: 1, UnitPrice: 6, Amount: -6},
+	}
+	seedInvoice(t, db, "INV_eb_clamped", "2026-09-07", 6, 0.01, items)
+
+	applyEarlyBirdExpiry(db)
+
+	newID := replacementOf(t, db, "INV_eb_clamped")
+	var amount float64
+	db.QueryRow(`SELECT amount FROM invoices WHERE id=?`, newID).Scan(&amount)
+	if amount != 6.01 {
+		t.Errorf("replacement is %.2f, want 6.01 — only the RM6 actually taken off should come back", amount)
+	}
+}
+
+// Running twice must not reissue twice. The replacement carries no cutoff, so
+// the second pass does not see it.
+func TestEarlyBirdExpiryDoesNotReissueTwice(t *testing.T) {
 	core.InitLogger()
 	db := store.InitDB(testDSN())
 	items := []models.InvoiceLineItem{
@@ -80,15 +127,17 @@ func TestEarlyBirdExpiryIsIdempotent(t *testing.T) {
 	applyEarlyBirdExpiry(db)
 	applyEarlyBirdExpiry(db)
 
-	amount, _, _ := readInvoice(t, db, "INV_eb_twice")
-	if amount != 240 {
-		t.Errorf("amount %.2f after two runs, want 240", amount)
+	var live int
+	db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE student_id=? AND period=? AND status<>? AND deleted_at IS NULL`,
+		"STU001", "2026-09", models.InvoiceStatusVoid).Scan(&live)
+	if live != 1 {
+		t.Errorf("%d live invoices for the period after two runs, want 1", live)
 	}
 }
 
-// This is the production state before the fix: a hand-made invoice priced RM10
-// low with nothing recorded. The job cannot see it, which is the whole answer
-// to "will it change back on its own".
+// This is the production state before any of this: a hand-made invoice priced
+// RM10 low with nothing recorded. The job cannot see it, which is the whole
+// answer to "will it change back on its own".
 func TestEarlyBirdExpirySkipsAnInvoiceWithNoCutoff(t *testing.T) {
 	core.InitLogger()
 	db := store.InitDB(testDSN())
@@ -96,8 +145,12 @@ func TestEarlyBirdExpirySkipsAnInvoiceWithNoCutoff(t *testing.T) {
 
 	applyEarlyBirdExpiry(db)
 
-	amount, status, _ := readInvoice(t, db, "INV_eb_unarmed")
-	if amount != 230 || status != "Unpaid" {
+	var amount float64
+	var status string
+	if err := db.QueryRow(`SELECT amount, status FROM invoices WHERE id=?`, "INV_eb_unarmed").Scan(&amount, &status); err != nil {
+		t.Fatalf("read invoice: %v", err)
+	}
+	if amount != 230 || status != models.InvoiceStatusUnpaid {
 		t.Errorf("unarmed invoice became %.2f/%s, want 230/Unpaid — it must not be guessed at", amount, status)
 	}
 }

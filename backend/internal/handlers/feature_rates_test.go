@@ -456,6 +456,7 @@ func TestInvoiceUpdate_LineItemsAreAuthoritative(t *testing.T) {
 	w := authedJSON(t, r, "POST", "/api/invoices", tok, map[string]any{
 		"studentId": stuID, "description": "Monthly tuition", "type": "Monthly",
 		"amount": 240, "dueDate": "2026-10-07", "createdOn": "2026-10-01",
+		"status": models.InvoiceStatusDraft,
 	})
 	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
 		t.Fatalf("create invoice: %d %s", w.Code, w.Body.String())
@@ -468,6 +469,8 @@ func TestInvoiceUpdate_LineItemsAreAuthoritative(t *testing.T) {
 	// Edit with lines, and a deliberately WRONG amount. The server must derive
 	// the total from the lines and ignore what the client claimed -- 260 + 60
 	// minus a 10 discount is 310, not the 999 posted.
+	// Line items are authoritative while the invoice is a DRAFT. Once issued it
+	// is frozen (ADR-016) and a figure changes only by reissuing.
 	w = authedJSON(t, r, "PUT", "/api/invoices/"+made.ID, tok, map[string]any{
 		"description": "Monthly tuition", "type": "Monthly", "amount": 999,
 		"dueDate": "2026-10-07", "createdOn": "2026-10-01",

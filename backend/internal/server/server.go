@@ -196,6 +196,7 @@ func Build(db *store.DB) http.Handler {
 			r.Put("/{id}", handlers.HandleInvoiceUpdate(db))
 			r.Put("/{id}/pay", handlers.HandleInvoicePay(db))
 			r.Post("/{id}/reissue", handlers.HandleInvoiceReissue(db))
+			r.Post("/{id}/issue", handlers.HandleInvoiceIssue(db))
 			r.Post("/{id}/checkout", handlers.HandlePaymentCheckout(db))
 			r.Delete("/{id}", handlers.HandleInvoiceDelete(db))
 			r.Post("/bulk-delete", handlers.HandleInvoicesBulkDelete(db))
