@@ -91,9 +91,50 @@ pre-approved templates through a Meta-approved BSP, billed per conversation --
 a vendor and a cost, not a feature flag. Web push or a parent-portal notice
 costs nothing and needs no vendor. Decision needed before any work.
 
+## 4. Public landing page and enquiries
+
+**What already exists**, and is worth not rebuilding: `register.html` is a
+public page, `POST /api/register` creates a registration row plus a parent user
+with a verify token, and an admin approves or rejects it from the registrations
+queue. Approval creates the student and the account. The whole intake chain is
+there. Every email it sends is swallowed by the allowlist, which is the same
+delivery problem as everywhere else.
+
+**What does not exist:** anything to look at before signing in. `index.html` IS
+the app; signed out, you get a login box and nothing else. Someone who lands on
+studyhub.fit having heard about the centre has no idea what it is.
+
+**An enquiry is not a registration.** Registration asks for a password, a full
+name, emergency contacts. An enquiry is "I have a seven year old, do you have
+Saturday space, here is my number". Forcing the first on someone who wants the
+second loses them. So: a separate, lighter `enquiries` table -- name, contact,
+child's age, message -- with no account and no password, landing in a queue
+Nadine reads and replies to on WhatsApp. If it goes anywhere, she sends them the
+registration link.
+
+**Keep the app at `/`.** The tempting move is to make the landing page the root
+and push the app to `/app`, which breaks every bookmark the centre already has.
+Better: the SIGNED-OUT state of `/` becomes the landing page, with the login
+form as one of the things on it. Signed in, nothing changes. No routing change,
+no bookmark breakage, and the enquiry form is on the page the link already goes
+to.
+
+**Two things a public form drags in:**
+
+- **Spam.** A public, unauthenticated write needs a rate limit at minimum
+  (`core.RateLimitLogin` is already applied to `/api/register` and is the
+  obvious precedent). Assume it will be found by bots.
+- **PDPA.** An enquiry holds a name, a contact and a child's age, so it is
+  personal data the moment it is submitted. `handleFamilyPDPADelete` erases the
+  subject from eight tables; an `enquiries` table has to be the ninth, or the
+  erasure endpoint quietly starts lying again. That handler's own comment says
+  as much: anything added later that stores a parent's email belongs in that
+  transaction.
+
 ## Order
 
 1. Teacher onboarding screen. Nadine needs it and it has no dependencies.
 2. Parent invite link endpoint plus a copy button. Unblocks 51 dead accounts.
 3. Read-only role, if Nadine wants Rose to be view-only.
-4. Public sign-up page, only after outbound mail is on.
+4. Landing page with an enquiry form, replacing the bare signed-out login box.
+5. Public sign-up page, only after outbound mail is on.
