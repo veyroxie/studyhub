@@ -144,10 +144,6 @@ func Build(db *store.DB) http.Handler {
 		// A session holding an admin-issued temporary password may reach the
 		// setup endpoint and nothing else, enforced here rather than in the UI.
 		r.Use(auth.RequireSetupComplete(db))
-		// Authenticated on purpose: the caller proves they hold the temporary
-		// password before they may replace it. RequireSetupComplete lets this
-		// one path through.
-		r.Post("/api/auth/complete-setup", handlers.HandleCompleteSetup(db))
 		// NOTE: RLSScope is currently a no-op passthrough (the app connects as a
 		// Postgres superuser and a per-request GUC is unsafe on a shared pool),
 		// so there is NO database-level backstop: every handler MUST apply
@@ -158,6 +154,12 @@ func Build(db *store.DB) http.Handler {
 		// admins / parents see their changes on the next dashboard load
 		// instead of waiting up to snapshotCacheTTL.
 		r.Use(store.SnapshotCacheInvalidator)
+
+		// Authenticated on purpose: the caller proves they hold the temporary
+		// password before they may replace it, and RequireSetupComplete lets
+		// this one path through. It sits below every r.Use in this group
+		// because chi panics on a middleware registered after a route.
+		r.Post("/api/auth/complete-setup", handlers.HandleCompleteSetup(db))
 
 		r.Get("/api/auth/me", auth.HandleMe(db))
 		r.Get("/api/account/export-my-data", handlers.HandleDSARExport(db))
