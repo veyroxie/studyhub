@@ -1240,6 +1240,44 @@
     }
   }
 
+  // Reissue: void this invoice and issue a replacement carrying whatever is in
+  // the form now. The original keeps its number and its figures -- that is what
+  // being issued means -- and gains a pointer to its replacement, so the pair
+  // reads as one correction rather than two unrelated rows (ADR-016).
+  //
+  // Reads the open edit form, so the flow is: change what is wrong, then
+  // Reissue. A paid invoice is refused by the server, because voiding it would
+  // cancel the document its receipt refers to.
+  async function _reissueInvoice(invoiceId) {
+    var form = document.getElementById('edit-invoice-form');
+    if (!form) return;
+    var fd = new FormData(form);
+    var payload = {
+      description: fd.get('description'),
+      type: fd.get('type'),
+      amount: parseFloat(fd.get('amount')),
+      dueDate: fd.get('dueDate'),
+      createdOn: fd.get('invoiceDate')
+    };
+    if (_lineItems.length > 0) {
+      payload.lineItems = _lineItems.map(function(li) {
+        return { kind: li.kind, name: li.name, descriptor: li.descriptor || '',
+          qty: parseFloat(li.qty) || 0, unitPrice: parseFloat(li.unitPrice) || 0,
+          amount: _lineItemAmount(li) };
+      });
+    }
+    if (!_confirmMissingTuition(payload.type, payload.lineItems)) return;
+    if (!window.confirm('Cancel this invoice and issue a replacement with these figures?\n\n'
+        + 'The original stays on record, marked void, keeping its number. The replacement gets a new one.')) return;
+
+    var res = await App.Api.post('/api/invoices/' + invoiceId + '/reissue', payload);
+    if (!res) return;
+    App.Utils.hideModal(true);
+    await App.Api.loadSnapshot();
+    App.Utils.showToast('Reissued as ' + App.Utils.esc(res.invoiceNo || res.id), 'success');
+    App.Router.refresh();
+  }
+
   function _editModal(invoiceId) {
     const state = App.Store.get();
     const inv = state.invoices.find(function(i) { return i.id === invoiceId; });
@@ -1249,6 +1287,9 @@
     // system types (e.g. "Self-study", "Self-study Overflow") must stay intact —
     // otherwise editing such an invoice's date/amount would silently reclassify
     // it as Monthly and corrupt billing reports + the overflow dedup.
+    // Draft invoices are working material; everything else has been issued to
+    // a parent and is frozen apart from its wording.
+    const isIssued = inv.status !== 'Draft';
     const editTypes = ['Monthly', 'Adhoc'];
     if (inv.type && editTypes.indexOf(inv.type) === -1) editTypes.push(inv.type);
     const typeOptions = editTypes.map(function(t) {
@@ -1284,9 +1325,15 @@
       + _field('Invoice Date', '<input name="invoiceDate" type="date" class="form-input" value="' + (inv.createdOn || '') + '" required>')
       + _field('Due Date', '<input name="dueDate" type="date" class="form-input" value="' + inv.dueDate + '" required>')
       + '</div>'
-      + '<div class="flex justify-end gap-3 pt-2">'
+      + '<div class="flex justify-end gap-3 pt-2" style="flex-wrap:wrap">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
-      + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>'
+      // An issued invoice is frozen: its money and dates cannot be edited
+      // (ADR-016), so Save Changes can only alter the wording. Changing a
+      // figure means replacing the document, which is what Reissue does.
+      + (isIssued
+          ? '<button type="button" onclick="App.Billing._reissueInvoice(\'' + inv.id + '\')" class="px-4 py-2 text-sm border border-amber-300 bg-amber-50 text-amber-800 rounded-lg hover:bg-amber-100" title="Cancels this invoice and issues a replacement with these figures, under a new number">Reissue with changes</button>'
+          : '')
+      + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">' + (isIssued ? 'Save wording' : 'Save Changes') + '</button>'
       + '</div>'
       + '</form>'
       + '</div>'
@@ -1879,6 +1926,7 @@
     _addLineItem: _addLineItem,
     _addEarlyBirdLine: _addEarlyBirdLine,
     _buildFromCatalogue: _buildFromCatalogue,
+    _reissueInvoice: _reissueInvoice,
     // Exported for the unit test: a monthly invoice with no tuition on it is
     // the shape that cost a student their September bill.
     _looksLikeMissingTuition: _looksLikeMissingTuition,
