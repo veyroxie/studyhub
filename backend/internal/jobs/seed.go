@@ -34,6 +34,22 @@ func seedAdminPassword() string {
 	return "admin123"
 }
 
+// seedDemoPassword returns the fixed development password, or in production a
+// one-time random one printed to the log for the operator to capture. Same rule
+// as the bootstrap admin: a credential that ships in source is not a credential.
+func seedDemoPassword(kind, devDefault string) string {
+	if core.AppEnv() != "production" {
+		return devDefault
+	}
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		log.Fatalf("seed %s password: crypto/rand failed: %v", kind, err)
+	}
+	generated := "sh-" + hex.EncodeToString(b)
+	log.Printf("WARNING: generated one-time %s password for seeded demo accounts: %s", kind, generated)
+	return generated
+}
+
 // seedIfEmpty populates the database on first run.
 // It only runs when tables are empty.
 //
@@ -66,8 +82,16 @@ func SeedIfEmpty(db *store.DB) {
 		return
 	}
 
-	parentHash, _ := auth.HashPassword("parent123")
-	teacherHash, _ := auth.HashPassword("Teacher123!")
+	// Demo accounts. In production these get one-time random passwords logged
+	// once, exactly as the bootstrap admin does: "Teacher123!" and "parent123"
+	// were hardcoded here and seeded to LIVE teacher accounts, so anyone with
+	// the repository could sign in as any teacher on the deployed site. In dev
+	// the fixed values stay, because local boot-up and the test suite depend on
+	// knowing them.
+	parentPassword := seedDemoPassword("parent", "parent123")
+	teacherPassword := seedDemoPassword("teacher", "Teacher123!")
+	parentHash, _ := auth.HashPassword(parentPassword)
+	teacherHash, _ := auth.HashPassword(teacherPassword)
 
 	users := []struct{ email, hash, role, name string }{
 		{"chiying@studyhub.com", teacherHash, "teacher", "Teacher Chiying"},

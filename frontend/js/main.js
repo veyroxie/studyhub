@@ -182,6 +182,15 @@
           _showLoading('Signing in...');
         }
         try { localStorage.setItem('sh_remember', remember ? '1' : '0'); } catch (e) {}
+        // actualRole/actualEmail are what the SERVER says this session is. They
+        // are never written by the dev role switcher, which only changes
+        // currentRole (what the UI draws). Keeping them apart is what stops a
+        // teacher who flips to "Admin" from also being treated as one by any
+        // client-side gate.
+        App.actualRole  = data.role || '';
+        App.actualEmail = data.email || '';
+        sessionStorage.setItem('sh_actual_role', App.actualRole);
+        sessionStorage.setItem('sh_actual_email', App.actualEmail);
         App.currentRole = data.role === 'admin' ? 'admin' : (data.role === 'teacher' ? 'teacher' : 'client');
         sessionStorage.setItem('sh_role', App.currentRole);
         if (data.role === 'parent') {
@@ -272,8 +281,12 @@
     }
   };
 
-  // Role state
-  App.currentRole   = sessionStorage.getItem('sh_role')    || 'admin';
+  // Role state. The default is the LEAST privileged view, not the most: this
+  // used to fall back to 'admin', so a session whose role had not resolved yet
+  // rendered the admin surface to whoever was looking.
+  App.currentRole   = sessionStorage.getItem('sh_role')    || 'client';
+  App.actualRole    = sessionStorage.getItem('sh_actual_role')  || '';
+  App.actualEmail   = sessionStorage.getItem('sh_actual_email') || '';
   App.clientParent  = sessionStorage.getItem('sh_parent')  || '';
   App.currentTeacher= sessionStorage.getItem('sh_teacher') || '';
 
@@ -594,10 +607,25 @@
     });
   });
 
-  // Dev mode detection
+  // Who may use the dev toolbar, and therefore the "View as" role switcher.
+  //
+  // This used to be hostname OR ?dev in the query string, which on the live
+  // site meant anyone signed in could append ?dev and get it -- a teacher, a
+  // parent. The switcher only changes what the UI draws (every server check
+  // reads the role from the JWT, never from the client), so it granted no real
+  // access. It did show people surfaces that are not theirs, and invited the
+  // reasonable belief that it did more.
+  //
+  // Gated on the SERVER-asserted email now, never on currentRole, which the
+  // switcher itself writes. Client-side gating is a courtesy, not a control:
+  // anyone can unhide the element with devtools. What actually protects the
+  // data is that the backend ignores the client's claimed role.
+  var DEV_TOOLBAR_EMAILS = ['admin@studyhub.com'];
+
   App.isDevMode = function() {
     var h = window.location.hostname;
-    return h === 'localhost' || h === '127.0.0.1' || new URLSearchParams(window.location.search).has('dev');
+    if (h === 'localhost' || h === '127.0.0.1') return true;
+    return DEV_TOOLBAR_EMAILS.indexOf((App.actualEmail || '').toLowerCase()) > -1;
   };
 
   // ========================
