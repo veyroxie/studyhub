@@ -96,6 +96,35 @@
     _renderLineItems();
   }
 
+  // Lines that are NOT tuition. A monthly invoice made only of these is almost
+  // certainly missing the month it is billing for -- which is exactly what
+  // happened to one September invoice: RM250 registration plus RM260 deposit,
+  // no class line, so the student could not be charged for the month at all.
+  // Its own description named the missing class, because the description is
+  // free text and nothing reconciles it against the contents.
+  var ONE_OFF_LINE_NAMES = ['Registration Fee', 'Deposit (1 month)', 'Self-study add-on', 'TSH Membership'];
+
+  function _looksLikeMissingTuition(type, lineItems) {
+    if (type !== 'Monthly') return false;
+    var charges = (lineItems || []).filter(function(li) { return li.kind !== 'discount'; });
+    if (charges.length === 0) return false;
+    return charges.every(function(li) {
+      var name = li.name || '';
+      return ONE_OFF_LINE_NAMES.some(function(oneOff) { return name.indexOf(oneOff) === 0; });
+    });
+  }
+
+  // Advisory, not a block: there may be a month that genuinely carries only a
+  // fee. The point is that nobody does this by accident twice.
+  function _confirmMissingTuition(type, lineItems) {
+    if (!_looksLikeMissingTuition(type, lineItems)) return true;
+    return window.confirm(
+      'This is a monthly invoice with no tuition on it, only fees or a deposit.\n\n'
+      + 'A monthly invoice usually includes the class for that month. It also takes up the '
+      + 'student\'s slot for the month, so you will not be able to raise their tuition invoice separately.\n\n'
+      + 'Save it anyway?');
+  }
+
   // Ask the engine what this student should be billed, instead of the admin
   // assembling it from a dropdown. This is the fix for the real problem: the
   // old list could not produce Level 0, Mandarin, Phonics or a twice-weekly
@@ -1291,6 +1320,7 @@
             amount: _lineItemAmount(li) };
         });
       }
+      if (!_confirmMissingTuition(payload.type, payload.lineItems)) return;
       App.Utils.hideModal(true);
       App.Api.put('/api/invoices/' + invoiceId, payload).then(function() {
         return App.Api.loadSnapshot();
@@ -1473,6 +1503,7 @@
           lineItems.push({ kind: 'discount', name: EARLY_BIRD_LINE_NAME, descriptor: '', qty: 1, unitPrice: eb, amount: -eb });
         }
       }
+      if (!_confirmMissingTuition(fd.get('type'), lineItems)) return;
       var newInvoice = {
         studentId: fd.get('studentId'),
         type: fd.get('type'),
@@ -1848,6 +1879,9 @@
     _addLineItem: _addLineItem,
     _addEarlyBirdLine: _addEarlyBirdLine,
     _buildFromCatalogue: _buildFromCatalogue,
+    // Exported for the unit test: a monthly invoice with no tuition on it is
+    // the shape that cost a student their September bill.
+    _looksLikeMissingTuition: _looksLikeMissingTuition,
     _buildFromCatalogueForForm: _buildFromCatalogueForForm,
     _removeLineItem: _removeLineItem,
     _addBlankLine: _addBlankLine,
