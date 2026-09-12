@@ -118,7 +118,6 @@ func SeedIfEmpty(db *store.DB) {
 		{"s1", "Chiying", "Teacher Chiying", "Teacher", "chiying@studyhub.com", "60110000014", 3500, "2024-01-15", "Active"},
 		{"s2", "Nadine", "Teacher Nadine", "Teacher", "nadine@studyhub.com", "60110000015", 3200, "2024-03-01", "Active"},
 		{"s3", "Rose", "Teacher Rose", "Senior Teacher", "rose@studyhub.com", "60110000016", 3800, "2023-08-01", "Active"},
-		{"s4", "Yuki", "Admin Yuki", "Admin", "yuki@studyhub.com", "60110000017", 2800, "2024-06-01", "Active"},
 	}
 	for _, s := range staff {
 		db.Exec(`INSERT INTO staff(id,name,full_name,role,email,phone,salary,join_date,status) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, s...)
@@ -210,9 +209,9 @@ func SeedIfEmpty(db *store.DB) {
 
 	// ── Announcements ──────────────────────────────────────────────────────────
 	anns := [][]any{
-		{"ANN001", "March Holiday Schedule", "Classes will be suspended from March 15–17 for public holidays.", "parents", "Notice", "2026-03-05", "Admin Yuki"},
-		{"ANN002", "March Fee Payment Reminder", "Monthly tuition for March 2026 is now due. Please pay by March 31.", "parents", "Reminder", "2026-03-01", "Admin Yuki"},
-		{"ANN004", "Attendance Policy Update", "Parents must notify us at least 2 hours before class if child cannot attend.", "parents", "Urgent", "2026-02-15", "Admin Yuki"},
+		{"ANN001", "March Holiday Schedule", "Classes will be suspended from March 15–17 for public holidays.", "parents", "Notice", "2026-03-05", "Admin"},
+		{"ANN002", "March Fee Payment Reminder", "Monthly tuition for March 2026 is now due. Please pay by March 31.", "parents", "Reminder", "2026-03-01", "Admin"},
+		{"ANN004", "Attendance Policy Update", "Parents must notify us at least 2 hours before class if child cannot attend.", "parents", "Urgent", "2026-02-15", "Admin"},
 	}
 	for _, a := range anns {
 		db.Exec(`INSERT INTO announcements(id,title,message,audience,type,created_on,created_by) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, a...)
@@ -223,11 +222,9 @@ func SeedIfEmpty(db *store.DB) {
 		{"PAY001", "s1", "2026-02", 3500, 0, 0, 3500, "Paid", "2026-02-28"},
 		{"PAY002", "s2", "2026-02", 3200, 0, 0, 3200, "Paid", "2026-02-28"},
 		{"PAY003", "s3", "2026-02", 3800, 300, 0, 4100, "Paid", "2026-02-28"},
-		{"PAY004", "s4", "2026-02", 2800, 0, 0, 2800, "Paid", "2026-02-28"},
 		{"PAY009", "s1", "2026-03", 3500, 0, 0, 3500, "Pending", nil},
 		{"PAY010", "s2", "2026-03", 3200, 0, 0, 3200, "Pending", nil},
 		{"PAY011", "s3", "2026-03", 3800, 0, 0, 3800, "Pending", nil},
-		{"PAY012", "s4", "2026-03", 2800, 0, 0, 2800, "Pending", nil},
 	}
 	for _, p := range payroll {
 		db.Exec(`INSERT INTO payroll(id,staff_id,month,base_salary,bonus,deductions,total,status,paid_on) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`, p...)

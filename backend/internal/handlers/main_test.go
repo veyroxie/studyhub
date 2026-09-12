@@ -624,8 +624,11 @@ func TestStaff_List(t *testing.T) {
 	}
 	var staff []models.Staff
 	json.NewDecoder(w.Body).Decode(&staff)
-	if len(staff) < 4 {
-		t.Errorf("expected at least 4 staff got %d", len(staff))
+	// Three seeded teachers. The count dropped from four when the fictional
+	// "Admin Yuki" was removed from the seed; asserting on a count at all is
+	// brittle, but the point here is that the endpoint returns the roster.
+	if len(staff) < 3 {
+		t.Errorf("expected the seeded staff roster, got %d", len(staff))
 	}
 }
 
