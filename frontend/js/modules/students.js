@@ -690,11 +690,8 @@
 
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="' + (s.packageSelfStudyHours == null ? 4 : s.packageSelfStudyHours) + '">')
       + '</div>'
-      + _field('Pricing level band', '<select name="levelBand" class="form-input">'
-        + '<option value=""' + (s.levelBand ? '' : ' selected') + '>Same as class</option>'
-        + '<option value="1-3"' + (s.levelBand === '1-3' ? ' selected' : '') + '>Level 1-3</option>'
-        + '<option value="4-6"' + (s.levelBand === '4-6' ? ' selected' : '') + '>Level 4-6</option>'
-        + '</select>')
+      + _field('Pricing tier', _tierOptions(s.pricingTier),
+          'Which catalogue tier this student is priced at. Leave as the class default unless they sit at a different level from the class they attend.')
       + _dropinField(s.dropinSelfStudy)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" value="' + App.Utils.esc(s.emergency2Name||'') + '" placeholder="e.g. Uncle David">')
@@ -737,7 +734,7 @@
         packageAmount: parseFloat(fd.get('packageAmount')) || 0,
         standingDiscount: parseFloat(fd.get('standingDiscount')) || 0,
         standingDiscountReason: fd.get('standingDiscountReason') || '',
-        levelBand: fd.get('levelBand') || '',
+        pricingTier: fd.get('pricingTier') || '',
         packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4,
         dropinSelfStudy: !!fd.get('dropinSelfStudy')
       });
@@ -787,11 +784,8 @@
 
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="4">')
       + '</div>'
-      + _field('Pricing level band', '<select name="levelBand" class="form-input">'
-        + '<option value=""' + ('' ? '' : ' selected') + '>Same as class</option>'
-        + '<option value="1-3"' + ('' === '1-3' ? ' selected' : '') + '>Level 1-3</option>'
-        + '<option value="4-6"' + ('' === '4-6' ? ' selected' : '') + '>Level 4-6</option>'
-        + '</select>')
+      + _field('Pricing tier', _tierOptions(''),
+          'Which catalogue tier this student is priced at. Leave as the class default unless they sit at a different level from the class they attend.')
       + _dropinField(false)
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Emergency Contact Name', '<input name="emergency2Name" class="form-input" placeholder="e.g. Uncle David">')
@@ -847,7 +841,7 @@
         packageAmount: parseFloat(fd.get('packageAmount')) || 0,
         standingDiscount: parseFloat(fd.get('standingDiscount')) || 0,
         standingDiscountReason: fd.get('standingDiscountReason') || '',
-        levelBand: fd.get('levelBand') || '',
+        pricingTier: fd.get('pricingTier') || '',
         packageSelfStudyHours: parseInt(fd.get('packageSelfStudyHours'), 10) || 4,
         dropinSelfStudy: !!fd.get('dropinSelfStudy'),
         subscriptionStatus: 'active'
@@ -877,6 +871,26 @@
   // classes removes the whole class of "no match" failures. Each chip carries a
   // hidden classIds input so the surrounding form's FormData.getAll('classIds')
   // keeps working unchanged.
+  // The tiers actually in the catalogue, not a list written here. This used to
+  // be hardcoded to 1-3 and 4-6: the bands of the retired pricing_tiers table.
+  // The rating engine does not read students.level_band at all, so choosing a
+  // band changed nothing while looking like it should, and the difference had
+  // to be made up with a discount typed by hand.
+  function _tierOptions(current) {
+    var plans = App.Store.get().pricingPlans || [];
+    var seen = {}, tiers = [];
+    plans.forEach(function(p) {
+      if (p.tierName && !seen[p.tierName]) { seen[p.tierName] = true; tiers.push(p.tierName); }
+    });
+    tiers.sort();
+    var html = '<select name="pricingTier" class="form-input">'
+      + '<option value=""' + (current ? '' : ' selected') + '>Same as class</option>';
+    tiers.forEach(function(t) {
+      html += '<option value="' + App.Utils.esc(t) + '"' + (current === t ? ' selected' : '') + '>' + App.Utils.esc(t) + '</option>';
+    });
+    return html + '</select>';
+  }
+
   function _multiClassField(selected, classes, staff) {
     var chosen = {};
     (selected || []).forEach(function(cid) { chosen[cid] = true; });

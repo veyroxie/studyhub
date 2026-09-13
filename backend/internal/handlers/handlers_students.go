@@ -130,10 +130,10 @@ func listStudents(db *store.DB, c *core.Claims) []models.Student {
 	if c != nil && c.Role == "parent" {
 		// Parents are always tenant-scoped — drop the OR pattern.
 		tid := store.TenantID(c)
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at,COALESCE(dropin_self_study,false),COALESCE(student_no,''),COALESCE(inactive_reason,''),COALESCE(inactive_on,''),COALESCE(level_band,''),COALESCE(standing_discount,0),COALESCE(standing_discount_reason,'') FROM students WHERE contact=? AND tenant_id=? AND deleted_at IS NULL ORDER BY registered_on`, c.Email, tid)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at,COALESCE(dropin_self_study,false),COALESCE(student_no,''),COALESCE(inactive_reason,''),COALESCE(inactive_on,''),COALESCE(level_band,''),COALESCE(standing_discount,0),COALESCE(standing_discount_reason,''),COALESCE((SELECT e.tier_name FROM enrollments e WHERE e.tenant_id=students.tenant_id AND e.student_id=students.id AND e.ended_on IS NULL AND e.tier_name<>'' ORDER BY e.started_on DESC, e.id LIMIT 1),'') FROM students WHERE contact=? AND tenant_id=? AND deleted_at IS NULL ORDER BY registered_on`, c.Email, tid)
 	} else {
 		tw, twArgs := store.ScopeTenant(c, "")
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at,COALESCE(dropin_self_study,false),COALESCE(student_no,''),COALESCE(inactive_reason,''),COALESCE(inactive_on,''),COALESCE(level_band,''),COALESCE(standing_discount,0),COALESCE(standing_discount_reason,'') FROM students WHERE deleted_at IS NULL`+tw+` ORDER BY registered_on`, twArgs...)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at,COALESCE(dropin_self_study,false),COALESCE(student_no,''),COALESCE(inactive_reason,''),COALESCE(inactive_on,''),COALESCE(level_band,''),COALESCE(standing_discount,0),COALESCE(standing_discount_reason,''),COALESCE((SELECT e.tier_name FROM enrollments e WHERE e.tenant_id=students.tenant_id AND e.student_id=students.id AND e.ended_on IS NULL AND e.tier_name<>'' ORDER BY e.started_on DESC, e.id LIMIT 1),'') FROM students WHERE deleted_at IS NULL`+tw+` ORDER BY registered_on`, twArgs...)
 	}
 	if err != nil {
 		core.Logger.Error("list query failed", "err", err, "type", "Student")
@@ -150,7 +150,7 @@ func listStudents(db *store.DB, c *core.Claims) []models.Student {
 		var s models.Student
 		var ec, sib string
 		var e2name, e2phone, pausedAt, resumedAt sql.NullString
-		if err := rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID, &s.PackageAmount, &s.PackageSelfStudyHours, &s.SubscriptionStatus, &pausedAt, &resumedAt, &s.DropinSelfStudy, &s.StudentNo, &s.InactiveReason, &s.InactiveOn, &s.LevelBand, &s.StandingDiscount, &s.StandingDiscountReason); err != nil {
+		if err := rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID, &s.PackageAmount, &s.PackageSelfStudyHours, &s.SubscriptionStatus, &pausedAt, &resumedAt, &s.DropinSelfStudy, &s.StudentNo, &s.InactiveReason, &s.InactiveOn, &s.LevelBand, &s.StandingDiscount, &s.StandingDiscountReason, &s.PricingTier); err != nil {
 			continue
 		}
 		s.EnrolledClasses = models.ParseArr(ec)
@@ -213,12 +213,12 @@ func listStudentsPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]model
 		// Parents are always tenant-scoped — drop the OR pattern.
 		tid := store.TenantID(c)
 		db.QueryRow(`SELECT COUNT(*) FROM students WHERE contact=? AND tenant_id=? AND deleted_at IS NULL`, c.Email, tid).Scan(&total)
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at,COALESCE(dropin_self_study,false),COALESCE(student_no,''),COALESCE(inactive_reason,''),COALESCE(inactive_on,''),COALESCE(level_band,''),COALESCE(standing_discount,0),COALESCE(standing_discount_reason,'') FROM students WHERE contact=? AND tenant_id=? AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, c.Email, tid, p.Limit, p.Offset)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at,COALESCE(dropin_self_study,false),COALESCE(student_no,''),COALESCE(inactive_reason,''),COALESCE(inactive_on,''),COALESCE(level_band,''),COALESCE(standing_discount,0),COALESCE(standing_discount_reason,''),COALESCE((SELECT e.tier_name FROM enrollments e WHERE e.tenant_id=students.tenant_id AND e.student_id=students.id AND e.ended_on IS NULL AND e.tier_name<>'' ORDER BY e.started_on DESC, e.id LIMIT 1),'') FROM students WHERE contact=? AND tenant_id=? AND deleted_at IS NULL ORDER BY registered_on LIMIT ? OFFSET ?`, c.Email, tid, p.Limit, p.Offset)
 	} else {
 		tw, twArgs := store.ScopeTenant(c, "")
 		db.QueryRow(`SELECT COUNT(*) FROM students WHERE deleted_at IS NULL`+tw, twArgs...).Scan(&total)
 		pageArgs := append(append([]any{}, twArgs...), p.Limit, p.Offset)
-		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at,COALESCE(dropin_self_study,false),COALESCE(student_no,''),COALESCE(inactive_reason,''),COALESCE(inactive_on,''),COALESCE(level_band,''),COALESCE(standing_discount,0),COALESCE(standing_discount_reason,'') FROM students WHERE deleted_at IS NULL`+tw+` ORDER BY registered_on LIMIT ? OFFSET ?`, pageArgs...)
+		rows, err = db.Query(`SELECT id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,COALESCE(medical_info,''),COALESCE(allergies,''),COALESCE(family_id,''),COALESCE(referred_by_family_id,''),COALESCE(package_amount,0),COALESCE(package_self_study_hours,4),COALESCE(subscription_status,'active'),paused_at,resumed_at,COALESCE(dropin_self_study,false),COALESCE(student_no,''),COALESCE(inactive_reason,''),COALESCE(inactive_on,''),COALESCE(level_band,''),COALESCE(standing_discount,0),COALESCE(standing_discount_reason,''),COALESCE((SELECT e.tier_name FROM enrollments e WHERE e.tenant_id=students.tenant_id AND e.student_id=students.id AND e.ended_on IS NULL AND e.tier_name<>'' ORDER BY e.started_on DESC, e.id LIMIT 1),'') FROM students WHERE deleted_at IS NULL`+tw+` ORDER BY registered_on LIMIT ? OFFSET ?`, pageArgs...)
 	}
 	if err != nil {
 		core.Logger.Error("list query failed", "err", err, "type", "Student")
@@ -230,7 +230,7 @@ func listStudentsPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]model
 		var s models.Student
 		var ec, sib string
 		var e2name, e2phone, pausedAt, resumedAt sql.NullString
-		if err := rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID, &s.PackageAmount, &s.PackageSelfStudyHours, &s.SubscriptionStatus, &pausedAt, &resumedAt, &s.DropinSelfStudy, &s.StudentNo, &s.InactiveReason, &s.InactiveOn, &s.LevelBand, &s.StandingDiscount, &s.StandingDiscountReason); err != nil {
+		if err := rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.DOB, &s.Gender, &s.ParentName, &s.Contact, &s.Phone, &s.Branch, &s.Status, &s.RegisteredOn, &ec, &sib, &s.Notes, &e2name, &e2phone, &s.MedicalInfo, &s.Allergies, &s.FamilyID, &s.ReferredByFamilyID, &s.PackageAmount, &s.PackageSelfStudyHours, &s.SubscriptionStatus, &pausedAt, &resumedAt, &s.DropinSelfStudy, &s.StudentNo, &s.InactiveReason, &s.InactiveOn, &s.LevelBand, &s.StandingDiscount, &s.StandingDiscountReason, &s.PricingTier); err != nil {
 			continue
 		}
 		s.EnrolledClasses = models.ParseArr(ec)
@@ -345,8 +345,8 @@ func HandleStudents(db *store.DB) http.HandlerFunc {
 			// Siblings is derived from family membership — ignore any
 			// client-supplied value, persist an empty placeholder, then
 			// recompute the JSON for every member of this family in one pass.
-			_, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,medical_info,allergies,family_id,referred_by_family_id,package_amount,package_self_study_hours,subscription_status,dropin_self_study,student_no,level_band,standing_discount,standing_discount_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, models.JSONArr(models.DedupStrings(s.EnrolledClasses)), "[]", s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.ReferredByFamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.SubscriptionStatus, s.DropinSelfStudy, strings.TrimSpace(s.StudentNo), s.LevelBand, discountAmount(s), strings.TrimSpace(s.StandingDiscountReason))
+			_, err := db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,dob,gender,parent_name,contact,phone,branch,status,registered_on,enrolled_classes,siblings,notes,emergency2_name,emergency2_phone,medical_info,allergies,family_id,referred_by_family_id,package_amount,package_self_study_hours,subscription_status,dropin_self_study,student_no,standing_discount,standing_discount_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				s.ID, tid, s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, s.RegisteredOn, models.JSONArr(models.DedupStrings(s.EnrolledClasses)), "[]", s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.ReferredByFamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.SubscriptionStatus, s.DropinSelfStudy, strings.TrimSpace(s.StudentNo), discountAmount(s), strings.TrimSpace(s.StandingDiscountReason))
 			if err != nil {
 				if strings.Contains(err.Error(), "ux_students_tenant_student_no") {
 					core.RespondError(w, "that student number is already used by another student", http.StatusConflict)
@@ -358,6 +358,8 @@ func HandleStudents(db *store.DB) http.HandlerFunc {
 			recomputeFamilySiblings(db, c, s.FamilyID)
 			recomputeClassEnrollment(db, c, s.EnrolledClasses)
 			store.SyncEnrollments(db, tid, s.ID, s.EnrolledClasses, c.Email, s.EnrolledFrom)
+			// After the enrolments exist, not before: a tier is set ON them.
+			applyTierAfterSync(r, db, tid, s.ID, s.PricingTier)
 			// Ensure the parent (matched by contact email) has a login account.
 			// If not, create one in pending_verification status and email a
 			// set-password link so the parent can claim the account.
@@ -445,8 +447,8 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 					inactiveOn = core.Today()
 				}
 			}
-			args := append([]any{s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, models.JSONArr(models.DedupStrings(s.EnrolledClasses)), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.DropinSelfStudy, strings.TrimSpace(s.StudentNo), inactiveReason, inactiveOn, s.LevelBand, discountAmount(s), strings.TrimSpace(s.StandingDiscountReason), id}, twArgs...)
-			res, err := tx.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=?,dropin_self_study=?,student_no=?,inactive_reason=?,inactive_on=?,level_band=?,standing_discount=?,standing_discount_reason=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+			args := append([]any{s.FirstName, s.LastName, s.DOB, s.Gender, s.ParentName, s.Contact, s.Phone, s.Branch, s.Status, models.JSONArr(models.DedupStrings(s.EnrolledClasses)), s.Notes, s.Emergency2Name, s.Emergency2Phone, s.MedicalInfo, s.Allergies, s.FamilyID, s.PackageAmount, s.PackageSelfStudyHours, s.DropinSelfStudy, strings.TrimSpace(s.StudentNo), inactiveReason, inactiveOn, discountAmount(s), strings.TrimSpace(s.StandingDiscountReason), id}, twArgs...)
+			res, err := tx.Exec(`UPDATE students SET first_name=?,last_name=?,dob=?,gender=?,parent_name=?,contact=?,phone=?,branch=?,status=?,enrolled_classes=?,notes=?,emergency2_name=?,emergency2_phone=?,medical_info=?,allergies=?,family_id=?,package_amount=?,package_self_study_hours=?,dropin_self_study=?,student_no=?,inactive_reason=?,inactive_on=?,standing_discount=?,standing_discount_reason=? WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
 			if err != nil {
 				if strings.Contains(err.Error(), "ux_students_tenant_student_no") {
 					core.RespondError(w, "that student number is already used by another student", http.StatusConflict)
@@ -498,6 +500,7 @@ func HandleStudent(db *store.DB) http.HandlerFunc {
 				recomputeFamilySiblings(db, c, oldFamilyID)
 			}
 			store.SyncEnrollments(db, tid, id, s.EnrolledClasses, c.Email, s.EnrolledFrom)
+			applyTierAfterSync(r, db, tid, id, s.PricingTier)
 			core.LogAudit(db, tid, c.Email, "student_updated", "student", id, s.FirstName+" "+s.LastName)
 			core.Respond(w, s)
 		case http.MethodDelete:
@@ -906,4 +909,24 @@ func teacherOwnsStudent(db *store.DB, c *core.Claims, studentID string) bool {
 		}
 	}
 	return false
+}
+
+// applyTierAfterSync writes the student's chosen catalogue tier onto their live
+// enrolments. Its own transaction: the enrolments were just synced outside one,
+// and a failure here must not undo the student save -- a tier is a pricing
+// refinement and can be chosen again, whereas losing the edit cannot.
+func applyTierAfterSync(r *http.Request, db *store.DB, tid int, studentID, tier string) {
+	tx, err := db.BeginTx(r.Context())
+	if err != nil {
+		core.LogFromReq(r).Error("student tier: begin failed", "err", err, "student_id", studentID)
+		return
+	}
+	defer tx.Rollback()
+	if err := store.ApplyStudentTier(tx, tid, studentID, strings.TrimSpace(tier)); err != nil {
+		core.LogFromReq(r).Error("student tier: apply failed", "err", err, "student_id", studentID)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		core.LogFromReq(r).Error("student tier: commit failed", "err", err, "student_id", studentID)
+	}
 }

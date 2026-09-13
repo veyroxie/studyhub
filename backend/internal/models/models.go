@@ -181,6 +181,10 @@ type Student struct {
 	// LevelBand is the student's OWN pricing band ('1-3' | '4-6'), for mixed
 	// classes straddling the boundary. '' = use the class's band (0045).
 	LevelBand string `json:"levelBand"`
+	// PricingTier is the catalogue tier this student is priced at, written onto
+	// their live enrolments. LevelBand above is the retired pricing_tiers
+	// banding and the rating engine does not read it.
+	PricingTier string `json:"pricingTier"`
 
 	PackageAmount float64 `json:"packageAmount"`
 	// StandingDiscount is a monthly reduction agreed with one family, applied

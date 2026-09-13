@@ -93,6 +93,26 @@ Unpriceable classes come back in `problems`, never as lines. A class with no
 agreed price must not reach an invoice as a silent zero -- that is the bug the
 whole catalogue exists to close.
 
+### Which tier a student is billed at
+
+The catalogue prices `(category, tier, sessions per week)`, so a student's tier
+has to reach the enrolment or the class default is all there is. It lives on
+`enrollments.tier_name` (NOT NULL, `''` meaning "use the class default"), and
+the student form writes it through `store.ApplyStudentTier`
+(`store/student_tier.go`) after every `SyncEnrollments`.
+
+It is only written onto enrolments whose category actually prices that tier, and
+cleared on the rest: a student taking Group and Mandarin has one level but two
+categories, and "Level 3" priced in Group means nothing in Mandarin -- writing
+it there would make that enrolment unpriceable rather than merely untiered.
+
+`students.level_band` is NOT this field. It is the retired `pricing_tiers`
+banding, read by the session-price preview only (see above), and the rating
+engine never looks at it. The student form used to offer it as "Pricing level
+band", which changed no price at all -- the difference then had to be made up
+with a discount typed by hand. Nothing in the app writes it now; the API still
+returns it.
+
 ## Discount stacking order
 
 Fixed, and the order is load-bearing for the clawback (`cron.go:537-545`):
