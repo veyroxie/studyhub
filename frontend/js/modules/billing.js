@@ -32,40 +32,87 @@
   // _packageCatalog builds the selectable packages: Group/Private by level
   // (priced from the pricing matrix) plus self-study packages and the hourly
   // add-on. `foc` marks a member package whose included hours are waived.
-  // One-off lines the catalogue does not price: a registration fee, self-study
-  // hours, a deposit. Tuition is NOT here any more -- it came from pricingTiers
-  // bucketed into levels 1-6, which could not express Level 0, Mandarin,
-  // Phonics or a twice-weekly tier, so correct figures had to be typed by hand.
-  // Tuition now comes from the engine via _buildFromCatalogue().
+  // The invoice builder's package list, built from the LIVE catalogue.
+  //
+  // It used to be a hardcoded list off the retired pricing_tiers table, which
+  // could not express Level 0, Mandarin, Phonics or a twice-weekly tier. That
+  // was removed, and removing it left a hole: with no tuition entries at all,
+  // the only way to get a class onto an invoice was Rebuild, which replaces
+  // every line. That is how a deposit went missing from one invoice.
+  //
+  // Reading pricingPlans means the dropdown says exactly what the engine would
+  // charge, including the sessions-per-week dimension the old list did not have.
   function _packageCatalog() {
+    var state = App.Store.get();
+    var categories = {};
+    (state.pricingCategories || []).forEach(function(c) { categories[c.id] = c; });
+
     var cat = [];
+    (state.pricingPlans || []).slice()
+      .sort(function(a, b) {
+        var an = (categories[a.categoryId] || {}).name || '';
+        var bn = (categories[b.categoryId] || {}).name || '';
+        if (an !== bn) return an < bn ? -1 : 1;
+        if (a.tierName !== b.tierName) return a.tierName < b.tierName ? -1 : 1;
+        return (a.sessionsPerWeek || 1) - (b.sessionsPerWeek || 1);
+      })
+      .forEach(function(p) {
+        var c = categories[p.categoryId];
+        if (!c || c.creditCovered) return; // credit-covered categories are free by design
+        var per = (p.sessionsPerWeek || 1);
+        var freq = per === 1 ? 'once a week' : per + 'x a week';
+        cat.push({
+          key: 'plan-' + p.id,
+          group: c.name,
+          label: p.tierName + ' — ' + freq,
+          // Matches what the engine emits for the same enrolment, so an invoice
+          // built by hand and one built from the catalogue read alike.
+          name: c.name,
+          descriptor: p.tierName + ', ' + freq,
+          qty: 1, unitPrice: p.monthlyFee || 0, kind: 'item', editableQty: false
+        });
+      });
+
+    // One-offs: real charges the catalogue has no opinion on.
     [4, 8].forEach(function(hrs) {
-      cat.push({ key: 'ss-' + hrs, group: 'Self-study', label: 'Self-study — ' + hrs + ' hours (member)',
+      cat.push({ key: 'ss-' + hrs, group: 'One-off', label: 'Self-study — ' + hrs + ' hours (member)',
         name: 'TSH Membership', descriptor: hrs + ' self-study hours included',
         qty: 1, unitPrice: hrs * SELF_STUDY_HOUR_RATE, kind: 'item', editableQty: false, foc: true });
     });
-    cat.push({ key: 'ss-addon', group: 'Self-study', label: 'Self-study add-on (extra hours)',
+    cat.push({ key: 'ss-addon', group: 'One-off', label: 'Self-study add-on (extra hours)',
       name: 'Self-study add-on', descriptor: 'Extra self-study hours',
       qty: 1, unitPrice: SELF_STUDY_HOUR_RATE, kind: 'item', editableQty: true });
-    cat.push({ key: 'reg-fee', group: 'New student', label: 'Registration fee',
+    cat.push({ key: 'reg-fee', group: 'One-off', label: 'Registration fee',
       name: 'Registration Fee', descriptor: 'One-time registration',
       qty: 1, unitPrice: REGISTRATION_FEE, kind: 'item', editableQty: false });
-    // Priced at 0 deliberately. The deposit is one month's fee, and the only
-    // honest source for that is the built invoice; a figure carried over from
-    // the retired tier table would be quietly wrong for most students now.
-    cat.push({ key: 'deposit', group: 'New student', label: 'Deposit (1 month) — enter amount',
+    // Priced at 0 deliberately: a deposit is one month's fee, and the only
+    // honest source for that is the tuition line on this invoice.
+    cat.push({ key: 'deposit', group: 'One-off', label: 'Deposit (1 month) — enter amount',
       name: 'Deposit (1 month)', descriptor: 'Refunded against the final month',
       qty: 1, unitPrice: 0, kind: 'item', editableQty: false });
     return cat;
   }
 
 
+
+  // Groups come from the catalogue, not from a list written here. The previous
+  // version hardcoded ['Group','Private','Self-study','New student'], so a
+  // category Nadine adds -- Mandarin, Phonics -- would be built into the list
+  // above and then silently dropped on the way to the dropdown.
   function _packageCatalogOptions() {
     var cat = _packageCatalog();
-    var groups = ['Group', 'Private', 'Self-study', 'New student'];
+    var groups = [];
+    cat.forEach(function(c) {
+      if (groups.indexOf(c.group) === -1) groups.push(c.group);
+    });
+    // One-offs last: they are the exception, not what you are usually adding.
+    groups.sort(function(a, b) {
+      if ((a === 'One-off') !== (b === 'One-off')) return a === 'One-off' ? 1 : -1;
+      return 0;
+    });
     var html = '<option value="">Select a package…</option>';
     groups.forEach(function(g) {
-      html += '<optgroup label="' + g + '">';
+      html += '<optgroup label="' + App.Utils.esc(g) + '">';
       cat.filter(function(c) { return c.group === g; }).forEach(function(c) {
         html += '<option value="' + c.key + '">' + App.Utils.esc(c.label) + ' — RM ' + (c.unitPrice || 0) + '</option>';
       });
@@ -1930,6 +1977,8 @@
     // Exported for the unit test: a monthly invoice with no tuition on it is
     // the shape that cost a student their September bill.
     _looksLikeMissingTuition: _looksLikeMissingTuition,
+    _packageCatalog: _packageCatalog,
+    _packageCatalogOptions: _packageCatalogOptions,
     _buildFromCatalogueForForm: _buildFromCatalogueForForm,
     _removeLineItem: _removeLineItem,
     _addBlankLine: _addBlankLine,

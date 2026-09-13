@@ -51,6 +51,10 @@ export function loadSandbox(files = ['js/utils.js']) {
     location: { hostname: 'localhost', protocol: 'http:', host: 'localhost' },
     setTimeout, clearTimeout, setInterval, clearInterval, console,
     fetch: () => Promise.reject(new Error('network disabled in unit tests')),
+    // store.js registers a 'pagehide' handler at load time. Without these the
+    // module throws on import, which meant no test could load the store at all
+    // and anything reading App.Store was untestable.
+    addEventListener() {}, removeEventListener() {},
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
