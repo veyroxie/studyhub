@@ -20,8 +20,11 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 
 	"studyhub/internal/core"
+	"studyhub/internal/models"
+	"studyhub/internal/rating"
 	"studyhub/internal/store"
 )
 
@@ -67,13 +70,41 @@ func main() {
 		}
 	}(rows)
 
+	// The catalogue prices tuition. An invoice legitimately carries more (a
+	// registration fee, a deposit) and legitimately carries less (a discount
+	// applied by hand), so a raw difference proves nothing on its own. Load the
+	// lines so each difference can be attributed rather than merely counted.
+	lines := map[string][]rating.InvoiceLine{}
+	lrows, lerr := db.Query(`SELECT student_id, COALESCE(line_items,'[]') FROM invoices
+		WHERE deleted_at IS NULL AND type='Monthly' AND period=?`, month)
+	if lerr != nil {
+		log.Fatalf("read invoice lines: %v", lerr)
+	}
+	func(rs *sql.Rows) {
+		defer rs.Close()
+		for rs.Next() {
+			var sid, raw string
+			if rs.Scan(&sid, &raw) != nil {
+				continue
+			}
+			for _, it := range models.ParseLineItems(raw) {
+				lines[sid] = append(lines[sid], rating.InvoiceLine{
+					Name:       it.Name,
+					IsDiscount: it.Kind == models.LineItemKindDiscount,
+					Amount:     rating.FromRM(it.Amount),
+				})
+			}
+		}
+	}(lrows)
+
 	type row struct {
 		name           string
 		inv, cat, diff float64
 		hasInv, bad    bool
 		why            string
+		attrib         rating.Attribution
 	}
-	var matching, differing, unpriceable, notInvoiced int
+	var matching, differing, unpriceable, notInvoiced, unexplained int
 	var out []row
 
 	for _, sp := range store.CatalogPrices(db, claims, month+"-15") {
@@ -100,6 +131,10 @@ func main() {
 			matching++
 		default:
 			differing++
+			r.attrib = rating.Attribute(rating.FromRM(sp.Total), rating.FromRM(amt), lines[sp.StudentID])
+			if !r.attrib.Explained() {
+				unexplained++
+			}
 		}
 		out = append(out, r)
 	}
@@ -141,13 +176,25 @@ func main() {
 			res = "matches"
 		default:
 			cat = fmt.Sprintf("%.2f", r.cat)
-			res = fmt.Sprintf("DIFFERS by %+.2f", r.diff)
+			if r.attrib.Explained() {
+				res = fmt.Sprintf("explained %+.2f (%s)", r.diff, strings.Join(r.attrib.Reasons, ", "))
+			} else {
+				res = fmt.Sprintf("UNEXPLAINED %+.2f of %+.2f", r.attrib.Residual.RM(), r.diff)
+			}
 		}
 		fmt.Printf("    %-26s %10s %10s   %s\n", trunc(r.name, 26), inv, cat, res)
 	}
-	fmt.Printf("\n    %s: %d match, %d differ, %d cannot be priced, %d not invoiced\n",
-		month, matching, differing, unpriceable, notInvoiced)
+	fmt.Printf("\n    %s: %d match, %d differ (%d unexplained), %d cannot be priced, %d not invoiced\n",
+		month, matching, differing, unexplained, unpriceable, notInvoiced)
 	fmt.Println("    Nothing was written. This is what the catalogue WOULD charge.")
+	// The gate. "Zero differences" is unreachable -- a joining month carries a
+	// registration fee the catalogue has no opinion on. "Zero UNEXPLAINED" is
+	// the thing worth blocking a cutover on.
+	if unexplained == 0 && unpriceable == 0 {
+		fmt.Println("    GATE PASSES: every difference is attributable, and every student can be priced.")
+	} else {
+		fmt.Printf("    GATE BLOCKED: %d unexplained, %d unpriceable.\n", unexplained, unpriceable)
+	}
 }
 
 func trunc(s string, n int) string {
