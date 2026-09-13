@@ -698,17 +698,28 @@
   function _categoryOptions(selected) {
     var cats = (App.Store.get().pricingCategories || []).slice();
     cats.sort(function(a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); });
-    return (selected ? '' : '<option value="" disabled selected>Select a category\u2026</option>')
+    // The placeholder is always emitted: a class whose category was never set,
+    // or was soft-deleted from the catalogue, matches no option, and without it
+    // the browser shows the first real category while the stored value is
+    // something else -- so saving an unrelated field would silently reprice.
+    var matched = cats.some(function(c) { return c.id === selected; });
+    return '<option value="" disabled' + (matched ? '' : ' selected') + '>Select a category\u2026</option>'
       + cats.map(function(c) {
           return '<option value="' + App.Utils.esc(c.id) + '"' + (c.id === selected ? ' selected' : '') + '>' + App.Utils.esc(c.name) + '</option>';
         }).join('');
   }
 
+  // A tier the category no longer prices -- renamed or deleted on the Pricing
+  // page -- is still offered, marked, so an edit round-trips it instead of
+  // writing back "no tier" and unpricing the class behind her.
   function _tierOptionsFor(categoryId, selected) {
     var names = App.Utils.catalogueTiers([categoryId]);
+    var stale = selected && names.indexOf(selected) < 0;
+    if (stale) names = names.concat([selected]).sort();
     return '<option value="">\u2014 none, needs a custom fee below</option>'
       + names.map(function(n) {
-          return '<option value="' + App.Utils.esc(n) + '"' + (n === selected ? ' selected' : '') + '>' + App.Utils.esc(n) + '</option>';
+          var label = n + (stale && n === selected ? ' (no longer in the catalogue)' : '');
+          return '<option value="' + App.Utils.esc(n) + '"' + (n === selected ? ' selected' : '') + '>' + App.Utils.esc(label) + '</option>';
         }).join('');
   }
 

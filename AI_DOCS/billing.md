@@ -106,12 +106,31 @@ cleared on the rest: a student taking Group and Mandarin has one level but two
 categories, and "Level 3" priced in Group means nothing in Mandarin -- writing
 it there would make that enrolment unpriceable rather than merely untiered.
 
-`students.level_band` is NOT this field. It is the retired `pricing_tiers`
-banding, read by the session-price preview only (see above), and the rating
-engine never looks at it. The student form used to offer it as "Pricing level
-band", which changed no price at all -- the difference then had to be made up
-with a discount typed by hand. Nothing in the app writes it now; the API still
-returns it.
+The class side of the same pair is `classes.pricing_category_id` and
+`classes.default_tier_name`, set from the class form in `calendar.js` --
+categories from `pricingCategories`, tiers scoped to the chosen category, so a
+category added on the Pricing page reaches the form with no deploy. Until that
+form offered them they were written only by the 0053 backfill, which meant a
+class created through the UI was unpriceable. `resolvePricingCategory`
+(`handlers_classes.go:30`) still fills an empty category by class type, so the
+column is never stored blank; an empty `default_tier_name` is NOT equally safe --
+`rating/price.go:172` makes the class unpriceable unless `monthly_fee_override`
+covers it.
+
+Neither form may render a select without an option matching the stored value: a
+soft-deleted category or a renamed tier would otherwise display a different one
+and an unrelated save would write that back, silently repricing the class. The
+category select always carries a disabled placeholder and a stale tier is offered
+marked, so both round-trip. Locked by `frontend/tests/unit/catalogue-selectors.test.mjs`.
+
+`students.level_band` is NOT the student's catalogue tier. It is the retired
+`pricing_tiers` banding, read by the session-price preview only (see above), and
+the rating engine never looks at it. The student form used to offer it as
+"Pricing level band", which changed no price at all -- the difference then had to
+be made up with a discount typed by hand. Nothing writes it now; the API still
+returns it. `classes.level_band` is the same story but is still written, by a
+class-form control labelled "session preview only" -- and `analytics.js` groups
+its By Level view on that column, so that view drifts as classes are edited.
 
 ## Discount stacking order
 

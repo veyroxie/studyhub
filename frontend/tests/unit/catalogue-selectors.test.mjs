@@ -71,8 +71,39 @@ describe('class form reads the catalogue', () => {
 
   test('the current category stays selected, so a save round-trips it', () => {
     const App = withCatalogue();
-    assert.match(App.Calendar._categoryOptions('PC_mandarin'), /value="PC_mandarin" selected/);
-    assert.doesNotMatch(App.Calendar._categoryOptions('PC_mandarin'), /Select a category/);
+    const html = App.Calendar._categoryOptions('PC_mandarin');
+    assert.match(html, /value="PC_mandarin" selected/);
+    // The placeholder stays in the list but must not be the selected one.
+    assert.doesNotMatch(html, /disabled selected/);
+  });
+});
+
+describe('a stored value the catalogue no longer has', () => {
+  // Both were silent repricings: no matching option means the browser shows a
+  // DIFFERENT value than the one stored, and saving any unrelated field writes
+  // that one back.
+  test('a category that is gone leaves the placeholder selected, so required blocks the save', () => {
+    const App = withCatalogue();
+    const html = App.Calendar._categoryOptions('PC_deleted');
+    assert.match(html, /<option value="" disabled selected>/);
+    assert.doesNotMatch(html, /value="PC_group" selected/);
+  });
+
+  test('a class with no category never silently adopts the first one', () => {
+    const App = withCatalogue();
+    assert.match(App.Calendar._categoryOptions(''), /<option value="" disabled selected>/);
+  });
+
+  test('a tier that is gone is still offered and marked, so an edit round-trips it', () => {
+    const App = withCatalogue();
+    const html = App.Calendar._tierOptionsFor('PC_group', 'Level 9-10');
+    assert.match(html, /value="Level 9-10" selected/);
+    assert.match(html, /no longer in the catalogue/);
+  });
+
+  test('a live tier is not marked stale', () => {
+    const App = withCatalogue();
+    assert.doesNotMatch(App.Calendar._tierOptionsFor('PC_group', 'Level 3-4'), /no longer in the catalogue/);
   });
 });
 
