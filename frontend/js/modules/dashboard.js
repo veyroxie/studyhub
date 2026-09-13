@@ -322,7 +322,7 @@
         csTitle = 'Set up your centre';
         csSub = 'A few steps to get StudyHub ready for billing';
         checkItems = [
-          { key: 'biz',      label: 'Add business & bank details', page: 'calendar', done: !!visited['biz'] },
+          { key: 'biz',      label: 'Add business & bank details', page: 'settings', done: !!visited['biz'] },
           { key: 'subjects', label: 'Add subjects & classes',      page: 'calendar', done: (_cs.subjects || []).length > 0 || (_cs.classes || []).length > 0 },
           { key: 'students', label: 'Add your students',           page: 'students', done: (_cs.students || []).length > 0 },
           { key: 'billing',  label: 'Generate invoices',           page: 'billing',  done: (_cs.invoices || []).length > 0 }
@@ -1258,7 +1258,8 @@
   }
 
   // _checklistGo marks a setup/explore step visited and navigates to it.
-  // The "biz" step lives inside the Calendar → Settings view, so jump there.
+  // The "biz" step used to live inside Calendar → Settings, which is why this
+  // needed a special case at all. It has its own page now (#24).
   function _checklistGo(key, page) {
     try {
       var v = JSON.parse(localStorage.getItem('sh_checklist_visited') || '{}');
@@ -1266,7 +1267,6 @@
       localStorage.setItem('sh_checklist_visited', JSON.stringify(v));
     } catch (e) { /* private mode — non-fatal, navigation still works */ }
     App.Router.navigate(page);
-    if (key === 'biz' && App.Calendar && App.Calendar._setView) App.Calendar._setView('programs');
   }
 
   // ── MFA enrolment (reused by the Profile page via App.Dashboard) ─────────

@@ -514,6 +514,7 @@
     // analytics is lazy-loaded (see the loader in index.html) and registers
     // itself with the router on load — registering here would store undefined.
     App.Router.register('profile',       App.Profile);
+    App.Router.register('settings',      App.Settings);
 
     // Init router (sets up nav button click handlers)
     App.Router.init();
