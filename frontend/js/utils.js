@@ -340,6 +340,20 @@
       return App.Utils.scheduleOn(cls, state.scheduleVersions, dateStr).day === dayName;
     },
 
+    // catalogueTiers lists the tier names the catalogue prices for any of these
+    // categories. Tier names are NOT unique across categories -- Level 1-2 is
+    // priced by Group, Private and Test -- so a caller must always pass the
+    // categories it means, never ask for "all tiers".
+    catalogueTiers(categoryIds) {
+      var wanted = {};
+      (categoryIds || []).forEach(function(id) { if (id) wanted[id] = true; });
+      var seen = {}, names = [];
+      ((App.Store.get().pricingPlans) || []).forEach(function(p) {
+        if (wanted[p.categoryId] && p.tierName && !seen[p.tierName]) { seen[p.tierName] = true; names.push(p.tierName); }
+      });
+      return names.sort();
+    },
+
     // enrolledOn answers "was this student in this class on this date", using
     // the dated enrolment stints rather than the current class list. The
     // roster used the current list, so unenrolling a student erased them from

@@ -690,7 +690,7 @@
 
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="' + (s.packageSelfStudyHours == null ? 4 : s.packageSelfStudyHours) + '">')
       + '</div>'
-      + _field('Pricing tier', _tierOptions(s.pricingTier),
+      + _field('Pricing tier', _tierOptions(s.pricingTier, s.enrolledClasses || []),
           'Which catalogue tier this student is priced at. Leave as the class default unless they sit at a different level from the class they attend.')
       + _dropinField(s.dropinSelfStudy)
       + '<div class="grid grid-cols-2 gap-4">'
@@ -784,7 +784,7 @@
 
       + _field('Self-study hours included', '<input name="packageSelfStudyHours" type="number" min="0" class="form-input" value="4">')
       + '</div>'
-      + _field('Pricing tier', _tierOptions(''),
+      + _field('Pricing tier', _tierOptions('', []),
           'Which catalogue tier this student is priced at. Leave as the class default unless they sit at a different level from the class they attend.')
       + _dropinField(false)
       + '<div class="grid grid-cols-2 gap-4">'
@@ -876,19 +876,40 @@
   // The rating engine does not read students.level_band at all, so choosing a
   // band changed nothing while looking like it should, and the difference had
   // to be made up with a discount typed by hand.
-  function _tierOptions(current) {
-    var plans = App.Store.get().pricingPlans || [];
-    var seen = {}, tiers = [];
-    plans.forEach(function(p) {
-      if (p.tierName && !seen[p.tierName]) { seen[p.tierName] = true; tiers.push(p.tierName); }
-    });
-    tiers.sort();
-    var html = '<select name="pricingTier" class="form-input">'
-      + '<option value=""' + (current ? '' : ' selected') + '>Same as class</option>';
-    tiers.forEach(function(t) {
-      html += '<option value="' + App.Utils.esc(t) + '"' + (current === t ? ' selected' : '') + '>' + App.Utils.esc(t) + '</option>';
-    });
-    return html + '</select>';
+  //
+  // Only the tiers the student's OWN classes are priced by. A tier from a
+  // category they are not enrolled in cannot be applied -- ApplyStudentTier
+  // refuses it, because writing it would make that enrolment unpriceable -- so
+  // offering it is a control that silently does nothing, which is the trap the
+  // level band was.
+  function _tierNamesFor(classIds) {
+    var classes = App.Store.get().classes || [];
+    return App.Utils.catalogueTiers((classIds || []).map(function(cid) {
+      var c = classes.find(function(x) { return x.id === cid; });
+      return c ? c.pricingCategoryId : '';
+    }));
+  }
+
+  function _tierOptionsHtml(current, classIds) {
+    return '<option value=""' + (current ? '' : ' selected') + '>Same as class</option>'
+      + _tierNamesFor(classIds).map(function(t) {
+          return '<option value="' + App.Utils.esc(t) + '"' + (current === t ? ' selected' : '') + '>' + App.Utils.esc(t) + '</option>';
+        }).join('');
+  }
+
+  function _tierOptions(current, classIds) {
+    return '<select id="student-tier-select" name="pricingTier" class="form-input">'
+      + _tierOptionsHtml(current, classIds) + '</select>';
+  }
+
+  // Ticking a class can bring a whole category into play, so the list is rebuilt
+  // as she ticks rather than on the classes as last saved.
+  function _refreshTierOptions() {
+    var sel = document.getElementById('student-tier-select');
+    if (!sel) return;
+    var form = sel.closest('form');
+    if (!form) return;
+    sel.innerHTML = _tierOptionsHtml(sel.value, new FormData(form).getAll('classIds'));
   }
 
   function _multiClassField(selected, classes, staff) {
@@ -931,7 +952,7 @@
     return '<label data-search="' + App.Utils.esc((c.name + ' ' + sub).toLowerCase()) + '"'
       + ' style="display:flex;align-items:flex-start;gap:0.55rem;padding:0.45rem 0.5rem;border-radius:4px;cursor:pointer"'
       + ' onmouseover="this.style.background=\'#faf9f7\'" onmouseout="this.style.background=\'\'">'
-      + '<input type="checkbox" name="classIds" value="' + c.id + '"' + (isChecked ? ' checked' : '') + ' style="margin-top:0.15rem;accent-color:var(--gold);cursor:pointer">'
+      + '<input type="checkbox" name="classIds" value="' + c.id + '"' + (isChecked ? ' checked' : '') + ' onchange="App.Students._refreshTierOptions()" style="margin-top:0.15rem;accent-color:var(--gold);cursor:pointer">'
       + '<span style="flex:1;line-height:1.3">'
       +   '<span style="display:block;font-size:0.82rem;color:#1e293b">' + App.Utils.esc(c.name) + '</span>'
       +   '<span style="display:block;font-size:0.72rem;color:#94a3b8">' + App.Utils.esc(sub) + '</span>'
@@ -1851,6 +1872,8 @@
   }
 
   App.Students = {
+    _refreshTierOptions: _refreshTierOptions,
+    _tierNamesFor: _tierNamesFor,
     _viewInvoice: _viewInvoice,
     _editInvoice: _editInvoice,
     render: render,

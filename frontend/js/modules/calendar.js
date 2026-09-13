@@ -598,7 +598,7 @@
       +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Teacher(s)</div><div class="font-medium">' + App.Utils.esc(teachers) + '</div></div>'
       +   (isClient ? '' : '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Enrolled</div><div class="font-medium">' + c.enrolled + '/' + c.capacity + '</div></div>')
       +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Type</div><div class="font-medium">' + (c.classType || 'Group') + '</div></div>'
-      +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Level band</div><div class="font-medium">' + (c.levelBand ? 'Level ' + c.levelBand : '—') + '</div></div>'
+      +   '<div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Priced as</div><div class="font-medium">' + App.Utils.esc(_pricedAsLabel(c)) + '</div></div>'
       + '</div>'
       // Enrolled students roster (admin/teacher only — parents see their
       // own kids via Students panel, not other families' kids).
@@ -681,14 +681,57 @@
 
   function _setView(v) { _view = v; App.Router.refresh(); }
 
-  // _levelBandOptions builds <option>s for a class's level band. The band, with
-  // the class type, picks the price from the pricing matrix. "—" = unpriced
-  // (the class won't be auto-billed until a band is set).
+  // _levelBandOptions builds <option>s for a class's level band. The band does
+  // NOT price the class any more -- the catalogue does; it survives only because
+  // the admin session-price preview still reads classes.level_band.
   function _levelBandOptions(selected) {
     return '<option value="">— (not billed)</option>'
       + [['1-3', 'Level 1–3'], ['4-6', 'Level 4–6']].map(function(b) {
           return '<option value="' + b[0] + '"' + (b[0] === selected ? ' selected' : '') + '>' + b[1] + '</option>';
         }).join('');
+  }
+
+  // The catalogue is the only price source, so the class form lists ITS
+  // categories and tiers. A category Nadine adds shows up here with no deploy,
+  // which is the whole point -- before this the class form could not point a
+  // class at the catalogue at all, so every class she created was unpriceable.
+  function _categoryOptions(selected) {
+    var cats = (App.Store.get().pricingCategories || []).slice();
+    cats.sort(function(a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); });
+    return (selected ? '' : '<option value="" disabled selected>Select a category\u2026</option>')
+      + cats.map(function(c) {
+          return '<option value="' + App.Utils.esc(c.id) + '"' + (c.id === selected ? ' selected' : '') + '>' + App.Utils.esc(c.name) + '</option>';
+        }).join('');
+  }
+
+  function _tierOptionsFor(categoryId, selected) {
+    var names = App.Utils.catalogueTiers([categoryId]);
+    return '<option value="">\u2014 none, needs a custom fee below</option>'
+      + names.map(function(n) {
+          return '<option value="' + App.Utils.esc(n) + '"' + (n === selected ? ' selected' : '') + '>' + App.Utils.esc(n) + '</option>';
+        }).join('');
+  }
+
+  // What actually prices this class, for the detail panel. The panel showed the
+  // level band, which prices nothing any more and reads as though it does.
+  function _pricedAsLabel(c) {
+    if (c.monthlyFeeOverride > 0) return 'Custom ' + App.Utils.formatCurrency(c.monthlyFeeOverride);
+    var cat = (App.Store.get().pricingCategories || []).find(function(x) { return x.id === c.pricingCategoryId; });
+    if (!cat) return 'Not priced by the catalogue';
+    if (cat.creditCovered) return cat.name + ', covered by credits';
+    if (!c.defaultTierName) return cat.name + ', no tier set';
+    return cat.name + ' ' + c.defaultTierName;
+  }
+
+  // Changing the category invalidates the tier list, so rebuild it rather than
+  // leave a tier selected that the new category does not price.
+  function _refreshCatalogueTiers() {
+    var sel = document.getElementById('tier-select');
+    if (!sel) return;
+    var form = sel.closest('form');
+    if (!form) return;
+    sel.innerHTML = _tierOptionsFor(new FormData(form).get('pricingCategoryId') || '', sel.value);
+    _refreshFeeHint();
   }
 
   // Half-hour time slots (7 AM–10 PM) as <option>s. Value stays 24h HH:MM so
@@ -756,12 +799,16 @@
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Capacity', '<input id="cap-input" name="capacity" type="number" min="1" max="5" class="form-input" value="5" readonly style="background:#f8fafc;color:#64748b">')
-      + _field('Level band (sets monthly fee)', '<select name="levelBand" class="form-input" onchange="App.Calendar._refreshFeeHint()">' + _levelBandOptions('') + '</select>')
+      + _field('Level band (session preview only)', '<select name="levelBand" class="form-input">' + _levelBandOptions('') + '</select>')
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-4">'
+      + _field('Pricing category', '<select name="pricingCategoryId" class="form-input" required onchange="App.Calendar._refreshCatalogueTiers()">' + _categoryOptions('') + '</select>')
+      + _field('Tier', '<select id="tier-select" name="defaultTierName" class="form-input" onchange="App.Calendar._refreshFeeHint()">' + _tierOptionsFor('', '') + '</select>')
       + '</div>'
       + '<div>'
       + _field('Custom monthly fee (RM)', '<input name="monthlyFeeOverride" type="number" min="0" step="0.01" class="form-input" placeholder="Leave empty for the standard price">')
       + _field('Session rate (RM per session)', '<input name="sessionRate" type="number" min="0" step="0.01" class="form-input" placeholder="Only for classes the hourly matrix cannot price">')
-      + '<p id="fee-hint" style="margin-top:0.3rem;font-size:0.72rem;color:#94a3b8">' + _feeHint('Group', '') + '</p>'
+      + '<p id="fee-hint" style="margin-top:0.3rem;font-size:0.72rem;color:#94a3b8">' + _feeHint('', '') + '</p>'
       + '</div>'
       + '<div class="grid grid-cols-2 gap-4">'
       + _field('Subject', '<select name="subject" class="form-input">' + _subjectOptions('') + '</select>')
@@ -820,6 +867,8 @@
         color: ctx.classType === 'Private' ? 'purple' : 'blue',
         category: '',
         levelBand: fd.get('levelBand') || '',
+        pricingCategoryId: fd.get('pricingCategoryId') || '',
+        defaultTierName: fd.get('defaultTierName') || '',
         monthlyFeeOverride: parseFloat(fd.get('monthlyFeeOverride')) || 0,
         sessionRate: parseFloat(fd.get('sessionRate')) || 0,
         // Label only — pricing stays (classType x levelBand). Shows on the
@@ -860,13 +909,20 @@
   // empty" is a visible number instead of a guess. A class with no level band
   // has no standard price at all, which is precisely when a custom one is
   // required — that combination is what billed Phonics at RM 0.
-  function _feeHint(classType, levelBand) {
-    if (!levelBand) return 'This class has no level band, so there is no standard price. Enter a fee here or it will bill RM 0.';
-    var t = (App.Store.get().pricingTiers || []).find(function(x) {
-      return x.classType === classType && x.levelBand === levelBand;
+  function _feeHint(categoryId, tierName) {
+    var state = App.Store.get();
+    var cat = (state.pricingCategories || []).find(function(c) { return c.id === categoryId; });
+    if (!cat) return 'Pick a pricing category so the catalogue can price this class.';
+    if (cat.creditCovered) return App.Utils.esc(cat.name) + ' is covered by credits. Only overflow beyond the included allowance is billed.';
+    if (!tierName) return 'With no tier the catalogue cannot price this class. Pick a tier, or enter a custom fee below.';
+    var plans = (state.pricingPlans || []).filter(function(p) {
+      return p.categoryId === categoryId && p.tierName === tierName;
     });
-    if (!t) return 'No standard price is set for ' + classType + ' Level ' + levelBand + '. Enter a fee here or it will bill RM 0.';
-    return 'Leave empty to use the standard price, ' + App.Utils.formatCurrency(t.monthlyFee) + ' for ' + classType + ' Level ' + levelBand + '.';
+    if (!plans.length) return 'The catalogue has no price for ' + cat.name + ' ' + tierName + ' yet. Add one on the Pricing page, or enter a fee below.';
+    var fees = plans.map(function(p) { return p.monthlyFee || 0; }).sort(function(a, b) { return a - b; });
+    var label = cat.name + (tierName ? ' ' + tierName : '');
+    if (fees[0] === fees[fees.length - 1]) return 'Leave empty to use the catalogue price, ' + App.Utils.formatCurrency(fees[0]) + ' for ' + label + '.';
+    return 'Leave empty to use the catalogue price for ' + label + ', which runs from ' + App.Utils.formatCurrency(fees[0]) + ' by how often the class meets.';
   }
 
   function _refreshFeeHint() {
@@ -875,7 +931,7 @@
     var form = hint.closest('form');
     if (!form) return;
     var fd = new FormData(form);
-    hint.textContent = _feeHint(fd.get('classType') || 'Group', fd.get('levelBand') || '');
+    hint.textContent = _feeHint(fd.get('pricingCategoryId') || '', fd.get('defaultTierName') || '');
   }
 
   function _field(label, inputHtml) {
@@ -1250,14 +1306,18 @@
       + '</div>'
       + '<div class="grid grid-cols-2 gap-3">'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Class Type</label><select name="classType" class="form-input"><option' + ((c.classType||'Group')==='Group'?' selected':'') + '>Group</option><option' + ((c.classType||'Group')==='Private'?' selected':'') + '>Private</option></select></div>'
-      + _field('Level band (sets fee)', '<select name="levelBand" class="form-input" onchange="App.Calendar._refreshFeeHint()">' + _levelBandOptions(c.levelBand || '') + '</select>')
+      + _field('Level band (session preview only)', '<select name="levelBand" class="form-input">' + _levelBandOptions(c.levelBand || '') + '</select>')
+      + '</div>'
+      + '<div class="grid grid-cols-2 gap-3">'
+      + _field('Pricing category', '<select name="pricingCategoryId" class="form-input" required onchange="App.Calendar._refreshCatalogueTiers()">' + _categoryOptions(c.pricingCategoryId || '') + '</select>')
+      + _field('Tier', '<select id="tier-select" name="defaultTierName" class="form-input" onchange="App.Calendar._refreshFeeHint()">' + _tierOptionsFor(c.pricingCategoryId || '', c.defaultTierName || '') + '</select>')
       + '</div>'
       + '<div class="grid grid-cols-2 gap-3">'
       + _field('Subject', '<select name="subject" class="form-input">' + _subjectOptions(c.subject || '') + '</select>')
       + _field('Custom monthly fee (RM)', '<input name="monthlyFeeOverride" type="number" min="0" step="0.01" class="form-input" placeholder="Leave empty for the standard price" value="' + (c.monthlyFeeOverride ? c.monthlyFeeOverride : '') + '">')
       + _field('Session rate (RM per session)', '<input name="sessionRate" type="number" min="0" step="0.01" class="form-input" placeholder="Only for classes the hourly matrix cannot price" value="' + (c.sessionRate ? c.sessionRate : '') + '">')
       + '</div>'
-      + '<p id="fee-hint" style="font-size:0.72rem;color:#94a3b8;margin:-0.35rem 0 0">' + _feeHint(c.classType || 'Group', c.levelBand || '') + '</p>'
+      + '<p id="fee-hint" style="font-size:0.72rem;color:#94a3b8;margin:-0.35rem 0 0">' + _feeHint(c.pricingCategoryId || '', c.defaultTierName || '') + '</p>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Teacher(s)</label>' + teacherCheckboxes + '</div>'
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
@@ -1289,6 +1349,8 @@
         category: c.category || '',
         classType: fd.get('classType') || 'Group',
         levelBand: fd.get('levelBand') || '',
+        pricingCategoryId: fd.get('pricingCategoryId') || '',
+        defaultTierName: fd.get('defaultTierName') || '',
         // Both must be sent: the API replaces the whole row, so omitting a
         // field blanks it. Subject was missing here, which quietly cleared the
         // invoice line name every time a class was edited.
@@ -1446,5 +1508,5 @@
     });
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _refreshFeeHint: _refreshFeeHint, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _moveSessionModal: _moveSessionModal, _undoMove: _undoMove, _undoCancellation: _undoCancellation };
+  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _refreshFeeHint: _refreshFeeHint, _refreshCatalogueTiers: _refreshCatalogueTiers, _categoryOptions: _categoryOptions, _tierOptionsFor: _tierOptionsFor, _pricedAsLabel: _pricedAsLabel, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _moveSessionModal: _moveSessionModal, _undoMove: _undoMove, _undoCancellation: _undoCancellation };
 })();
