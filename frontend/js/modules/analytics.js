@@ -4,34 +4,38 @@
   let _filterStudent = '';  // '' = all students
   let _filterTeacher = '';  // '' = all staff
   let _filterCategory = ''; // '' = all, or 'Academic', 'Workshop'
-  let _filterLevel = '';    // '' = all, or a levelBand ('4-6' | '1-3')
+  let _filterLevel = '';    // '' = all, or a catalogue tier name
 
-  // Ordered highest-first: the pricing bands from migration 0016.
-  const _BANDS = ['4-6', '1-3'];
+  // The levels to group by are the catalogue's own tiers. They used to be the
+  // two retired pricing_tiers bands read off classes.levelBand -- a column the
+  // catalogue does not maintain, so this view drifted as classes were edited.
+  function _levels() {
+    var cats = App.Store.get().pricingCategories || [];
+    return App.Utils.catalogueTiers(cats.map(function(c) { return c.id; }));
+  }
   let _attMode = 'student'; // 'student' | 'level'
   let _filterMonths = 6;    // number of months to show
   let _filterView = 'overview'; // 'overview' | 'financial' | 'bystudents' | 'byteachers' | 'bysubject' | 'bylevel'
 
   let _charts = {};
 
-  // _studentLevel derives a student's level band from the highest band
-  // found in any enrolled class. Returns null when the student has no banded
-  // class. This is the single source of truth for level grouping (filter, By
-  // Level view, and the attendance-by-level chart all use it).
+  // _studentLevel is the tier a student is PRICED at: their own override if
+  // set, otherwise the default tier of the classes they are in. Single source of
+  // truth for level grouping (filter, By Level view, attendance-by-level chart).
   //
-  // Bands come from classes.levelBand, never from parsing "Level N" out of the
-  // class name: Phonics classes carry no level in their name and were being
-  // grouped as "Other" while still counting toward revenue elsewhere.
-  // Highest first — _studentLevel returns the first match.
+  // Never parsed from the class name: a Phonics class carries no level in its
+  // name and was grouped as "Other" while still counting toward revenue.
   function _studentLevel(s, classes) {
-    var bands = {};
+    if (s.pricingTier) return s.pricingTier;
+    var tiers = {};
     (s.enrolledClasses || []).forEach(function(cid) {
       var c = classes.find(function(x) { return x.id === cid; });
-      if (c && c.levelBand) bands[c.levelBand] = true;
+      if (c && c.defaultTierName) tiers[c.defaultTierName] = true;
     });
-    // Highest band wins when a student straddles two, matching the old
-    // "highest Level N" behaviour.
-    return _BANDS.find(function(b) { return bands[b]; }) || null;
+    // Last wins when a student straddles two, keeping the old "highest band"
+    // behaviour for the Level N-M names the catalogue actually uses.
+    var names = Object.keys(tiers).sort();
+    return names.length ? names[names.length - 1] : null;
   }
 
   // Lazy-load Chart.js the first time analytics renders. Returns a promise
@@ -103,7 +107,7 @@
       // Level filter
       + '<select onchange="App.Analytics._setLevel(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;color:#374151">'
       +   '<option value="">All Levels</option>'
-      +   _BANDS.map(function(l) { return '<option value="' + l + '"' + (_filterLevel === l ? ' selected' : '') + '>Level ' + l + '</option>'; }).join('')
+      +   _levels().map(function(l) { return '<option value="' + App.Utils.esc(l) + '"' + (_filterLevel === l ? ' selected' : '') + '>' + App.Utils.esc(l) + '</option>'; }).join('')
       + '</select>'
       // Month range filter
       + '<select onchange="App.Analytics._setMonths(this.value)" style="padding:0.4rem 0.7rem;font-size:0.82rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;color:#374151">'
@@ -118,7 +122,7 @@
     let filteredClasses = classes;
     if (_filterTeacher) filteredClasses = filteredClasses.filter(function(c) { return c.teacherIds.indexOf(_filterTeacher) > -1; });
     if (_filterCategory) filteredClasses = filteredClasses.filter(function(c) { return (c.category || 'Academic') === _filterCategory; });
-    if (_filterLevel) filteredClasses = filteredClasses.filter(function(c) { return c.levelBand === _filterLevel; });
+    if (_filterLevel) filteredClasses = filteredClasses.filter(function(c) { return c.defaultTierName === _filterLevel; });
     const filteredClassIds = filteredClasses.map(function(c) { return c.id; });
 
     // --- Filter students ---
@@ -318,15 +322,15 @@
       var present = recs.filter(function(a) { return a.status === 'Present' || a.status === 'Late'; }).length;
       return { pct: Math.round(present / recs.length * 100), count: recs.length };
     }
-    return _BANDS.concat([null]).map(function(lvl) {
+    return _levels().concat([null]).map(function(lvl) {
       var stu = activeStudents.filter(function(s) { return _studentLevel(s, classes) === lvl; });
       var ids = stu.map(function(s) { return s.id; });
       var stats = attRate(ids);
-      var lvlClasses = classes.filter(function(c) { return (c.levelBand || null) === lvl; });
+      var lvlClasses = classes.filter(function(c) { return (c.defaultTierName || null) === lvl; });
       var cap = lvlClasses.reduce(function(a, c) { return a + (c.capacity || 0); }, 0);
       var enr = lvlClasses.reduce(function(a, c) { return a + (c.enrolled || 0); }, 0);
       var rev = invoices.filter(function(i) { return i.status === 'Paid' && ids.indexOf(i.studentId) > -1; }).reduce(function(a, i) { return a + (i.amount || 0); }, 0);
-      return { label: lvl == null ? 'Other' : 'Level ' + lvl, students: stu.length, attPct: stats.pct, attCount: stats.count, classes: lvlClasses.length, fill: cap > 0 ? Math.round(enr / cap * 100) : 0, revenue: rev };
+      return { label: lvl == null ? 'Other' : lvl, students: stu.length, attPct: stats.pct, attCount: stats.count, classes: lvlClasses.length, fill: cap > 0 ? Math.round(enr / cap * 100) : 0, revenue: rev };
     }).filter(function(r) { return r.students > 0 || r.classes > 0; });
   }
 
@@ -386,17 +390,16 @@
     var labels, data, colors, tooltipFn;
 
     if (_attMode === 'level') {
-      // Derive student level from "Level N" pattern in any enrolled class
-      // name. Falls back to "Other" when nothing matches.
+      // Grouped by the tier a student is priced at; "Other" when untiered.
       var classes = App.Store.get().classes || [];
       var levelOf = {};
       activeStudents.forEach(function(s) { levelOf[s.id] = _studentLevel(s, classes); });
 
-      var groups = _BANDS.concat([null]);
+      var groups = _levels().concat([null]);
       var rows = groups.map(function(lvl) {
         var ids = activeStudents.filter(function(s) { return levelOf[s.id] === lvl; }).map(function(s) { return s.id; });
         var stats = _attRate(ids);
-        return { label: lvl == null ? 'Other' : 'Level ' + lvl, students: ids.length, pct: stats.pct, count: stats.count };
+        return { label: lvl == null ? 'Other' : lvl, students: ids.length, pct: stats.pct, count: stats.count };
       }).filter(function(r) { return r.students > 0; });
 
       labels = rows.map(function(r) { return r.label; });
@@ -707,6 +710,8 @@
   }
 
   App.Analytics = {
+    _levels: _levels,
+    _studentLevel: _studentLevel,
     render: render,
     _setView: _setView,
     _setStudent: _setStudent,
