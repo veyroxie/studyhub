@@ -45,30 +45,19 @@ thing the centre sells, and treating 0 as unset avoids threading a nullable thro
 scan" (`0037_class_fee_override.sql:11-14`). Treating 0 as a real price recreates the RM 0
 invoice bug that migration was written to fix.
 
-**Session pricing (F8, migration `0045`, not yet consumed by the cron).** The parallel
-per-SESSION price source for the 8.7 switchover is `store.SessionRateFor(db, classID,
-studentBand)` (`store/rates.go`):
+**Per-session pricing is gone (2026-09-17).** StudyHub bills a monthly subscription
+plus credits; the F8 switchover to per-session billing was cancelled. `store/rates.go`
+(`SessionRateFor` / `SessionRateOn`), `jobs/session_preview.go` and the
+`GET /api/admin/billing/session-preview` route were deleted along with their tests. It
+could not have done the job regardless: it priced a session off the retired
+`pricing_tiers` matrix keyed on `class_type` + `level_band`, and 39 of 43 production
+classes have neither a band nor a session rate.
 
-```
-classes.session_rate            > 0  ->  use it (one session, outright)
-  -> pricing_tiers[class_type][band].hourly_rate x class duration (time..end_time)
-     where band = students.level_band, falling back to classes.level_band
-  -> any hole (no band, no tier, rate 0, bad times)  ->  ERROR, never RM 0
-```
-
-The student's own `level_band` exists for mixed classes straddling the 1-3 / 4-6 boundary
-(the L4 student in an L3&4 class pays RM65/hr). `hourly_rate` was backfilled as
-`monthly_fee / 4` (four weekly 1-hour sessions), reproducing the centre's quoted
-60/65/120/130. Unlike the monthly path's skip-with-warning, the resolver RETURNS an error --
-the future cron decides whether to skip the line or flag the invoice, but it can never
-silently price at 0. Locked by `TestSessionRateFor`.
-
-**Dry run:** `GET /api/admin/billing/session-preview?month=YYYY-MM`
-(`jobs/session_preview.go`) computes session totals (expander x resolver) beside the live
-monthly fees per student, tenant-scoped, read-only. F5 rules live here: zero-billable line
-skipped, nothing-to-bill student skipped (no invoice -> no referral credit consumed),
-pricing hole flags the line. Locked by `TestSessionBillingPreview`. The switchover must
-reuse this compute path, not reimplement it.
+Anything elsewhere in this repo describing an 8.7 or F8 switchover, `session_rate`, or an
+hourly matrix is stale by that decision -- treat it as history, not as a spec. The columns
+themselves survive (`classes.session_rate`, `classes.level_band`, `students.level_band`)
+because dropping them needs a migration, and because `level_band` still bills: see the
+monthly path above.
 
 ## One rating engine, and where it lives
 
