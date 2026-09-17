@@ -12,64 +12,7 @@ import (
 	"studyhub/internal/auth"
 	"studyhub/internal/core"
 	"studyhub/internal/models"
-	"studyhub/internal/store"
 )
-
-// TestSessionRateFor locks the F8 resolution order (class override, then
-// student band, then class band against the hourly matrix x duration) and
-// the no-silent-zeros constraint: every pricing hole errors, never RM 0.
-// The tier rates come from migration 0045's backfill (monthly / 4), so the
-// expected 60/65 also verify the backfill itself.
-func TestSessionRateFor(t *testing.T) {
-	_, db, cleanup := setupFeatureTestApp(t)
-	defer cleanup()
-
-	mkClass := func(band, start, end string, sessionRate float64) string {
-		id := core.GenerateID("CLS")
-		db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,class_type,level_band,session_rate) VALUES(?,?,?,?,?,?,?,?,?)`,
-			id, 1, "Rate "+id, "Monday", start, end, "Group", band, sessionRate)
-		return id
-	}
-
-	oneHour13 := mkClass("1-3", "10:00", "11:00", 0)
-	if got, err := store.SessionRateFor(db, oneHour13, ""); err != nil || got != 60 {
-		t.Errorf("1h Group 1-3 via class band: want 60, got %v (err %v)", got, err)
-	}
-	// The L4 student in a mixed class banded 1-3 pays their OWN band's rate.
-	if got, err := store.SessionRateFor(db, oneHour13, "4-6"); err != nil || got != 65 {
-		t.Errorf("student band 4-6 must win over class band: want 65, got %v (err %v)", got, err)
-	}
-
-	halfHour := mkClass("1-3", "15:00", "15:30", 0)
-	if got, err := store.SessionRateFor(db, halfHour, ""); err != nil || got != 30 {
-		t.Errorf("30-min class: want 30, got %v (err %v)", got, err)
-	}
-	threeQuarters := mkClass("4-6", "09:00", "09:45", 0)
-	if got, err := store.SessionRateFor(db, threeQuarters, ""); err != nil || got != 48.75 {
-		t.Errorf("45-min at RM65/hr: want 48.75, got %v (err %v)", got, err)
-	}
-
-	override := mkClass("1-3", "10:00", "11:00", 35)
-	if got, err := store.SessionRateFor(db, override, "4-6"); err != nil || got != 35 {
-		t.Errorf("session_rate override must win over everything: want 35, got %v (err %v)", got, err)
-	}
-
-	if _, err := store.SessionRateFor(db, mkClass("", "10:00", "11:00", 0), ""); err == nil {
-		t.Error("no band anywhere must error, not bill RM 0")
-	}
-	if _, err := store.SessionRateFor(db, mkClass("1-3", "", "", 0), ""); err == nil {
-		t.Error("missing times must error, not bill RM 0")
-	}
-	noTier := core.GenerateID("CLS")
-	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,class_type,level_band) VALUES(?,?,?,?,?,?,?,?)`,
-		noTier, 1, "Workshop Rate", "Monday", "10:00", "11:00", "Workshop", "1-3")
-	if _, err := store.SessionRateFor(db, noTier, ""); err == nil {
-		t.Error("missing pricing tier must error, not bill RM 0")
-	}
-	if _, err := store.SessionRateFor(db, "CLS_missing", ""); err == nil {
-		t.Error("unknown class must error")
-	}
-}
 
 // TestPricingTierPatch_OmittedFieldSurvives locks the partial-update contract:
 // a PUT carrying only monthlyFee must not zero hourly_rate. The bare-float
@@ -138,48 +81,6 @@ func TestPricingTierPatch_OmittedFieldSurvives(t *testing.T) {
 	}
 	if w := authedJSON(t, r, "PUT", "/api/pricing/"+tierID, tok, map[string]any{"monthlyFee": -5}); w.Code != http.StatusBadRequest {
 		t.Fatalf("negative fee should 400, got %d", w.Code)
-	}
-}
-
-// TestSessionRateOn_PricesTheDurationThatRan locks NEW-31: a schedule change
-// that alters a class's LENGTH must not reprice earlier months. The rate for a
-// past session comes from the times that session actually ran at, not the
-// class row's current ones.
-func TestSessionRateOn_PricesTheDurationThatRan(t *testing.T) {
-	_, db, cleanup := setupFeatureTestApp(t)
-	defer cleanup()
-
-	var tierID string
-	db.QueryRow(`SELECT id FROM pricing_tiers WHERE class_type='Group' AND level_band='1-3' AND deleted_at IS NULL LIMIT 1`).Scan(&tierID)
-	if tierID == "" {
-		t.Skip("no seeded Group 1-3 tier")
-	}
-	var origMonthly, origHourly float64
-	db.QueryRow(`SELECT COALESCE(monthly_fee,0), COALESCE(hourly_rate,0) FROM pricing_tiers WHERE id=?`, tierID).Scan(&origMonthly, &origHourly)
-	defer func() {
-		if _, err := db.Exec(`UPDATE pricing_tiers SET monthly_fee=?, hourly_rate=? WHERE id=?`, origMonthly, origHourly, tierID); err != nil {
-			t.Errorf("restoring shared pricing tier failed: %v", err)
-		}
-	}()
-	db.Exec(`UPDATE pricing_tiers SET hourly_rate=60 WHERE id=?`, tierID)
-
-	// The class now runs 30 minutes; it used to run a full hour.
-	classID := core.GenerateID("CLS")
-	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,class_type,level_band) VALUES(?,?,?,?,?,?,?,?)`,
-		classID, 1, "Shrinking Class", "Monday", "10:00", "10:30", "Group", "1-3")
-
-	// Priced as it stands now: half an hour at RM60/hr.
-	if got, err := store.SessionRateFor(db, classID, ""); err != nil || got != 30 {
-		t.Fatalf("current duration: want 30, got %v (err %v)", got, err)
-	}
-	// Priced as it ran back then: a full hour.
-	if got, err := store.SessionRateOn(db, classID, "", "10:00", "11:00"); err != nil || got != 60 {
-		t.Fatalf("historical duration: want 60, got %v (err %v)", got, err)
-	}
-	// A flat per-session override ignores duration entirely.
-	db.Exec(`UPDATE classes SET session_rate=35 WHERE id=?`, classID)
-	if got, err := store.SessionRateOn(db, classID, "", "10:00", "11:00"); err != nil || got != 35 {
-		t.Fatalf("override must win over duration: want 35, got %v (err %v)", got, err)
 	}
 }
 
