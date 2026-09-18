@@ -192,6 +192,21 @@ func runHealthSelfCheck(db *store.DB) {
 		}
 	}
 
+	// A month drafted but never issued is the failure this workflow introduced:
+	// the drafts sit, no parent is billed, and nothing complains. Before drafts
+	// existed the cron wrote invoices on its own, so silence meant success.
+	if n, when := unissuedDraftMonth(db); n > 0 && alertOnce("drafts:"+when) {
+		alerts = append(alerts, fmt.Sprintf(
+			"%d invoice(s) for %s are still drafts and the 7th has passed. Nobody has been billed for that month — issue them from Bills and Payments, Run the month.", n, when))
+	}
+
+	// The outbox draining is what turns "issued" into "the parent was told".
+	// A backlog that stops moving is silent otherwise.
+	if n, err := store.PendingOutboxCount(db); err == nil && n > 20 && alertOnce("outbox_backlog") {
+		alerts = append(alerts, fmt.Sprintf(
+			"%d outbox job(s) are unprocessed. Invoices have been issued that no parent has been told about.", n))
+	}
+
 	// Fresh local backups are NOT a working backup: they sit on the same
 	// droplet as the database, so losing the machine loses both. This went
 	// unnoticed for months because the freshness check above was passing --
@@ -627,4 +642,21 @@ func isEarlyBirdLine(lineName, typedName string) bool {
 		return lineName == typedName
 	}
 	return strings.HasPrefix(lineName, models.EarlyBirdLinePrefix)
+}
+
+// unissuedDraftMonth reports the oldest month that still has Monthly drafts
+// after its 7th, and how many. Only past-cutoff months count: drafts sitting on
+// the 2nd are the workflow working, not a problem.
+func unissuedDraftMonth(db *store.DB) (int, string) {
+	var n int
+	var month string
+	err := db.QueryRow(`SELECT COUNT(*), MIN(period) FROM invoices
+		WHERE type='Monthly' AND status=? AND deleted_at IS NULL AND period <> ''
+		  AND period || '-07' < ?
+		GROUP BY period ORDER BY MIN(period) LIMIT 1`,
+		models.InvoiceStatusDraft, core.Today()).Scan(&n, &month)
+	if err != nil {
+		return 0, ""
+	}
+	return n, month
 }

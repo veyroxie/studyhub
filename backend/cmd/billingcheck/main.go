@@ -217,6 +217,13 @@ func issueEveryDraft(db *store.DB, month string) (int, int) {
 			failed++
 			continue
 		}
+		// Exactly what the review screen does, settle included -- otherwise this
+		// check exercises a path production does not have.
+		if err := store.SettleEarlyBirdOnIssue(tx, d.tenantID, d.id, core.Today()); err != nil {
+			tx.Rollback()
+			failed++
+			continue
+		}
 		number, err := store.IssueInvoice(tx, claims, d.id, models.InvoiceStatusUnpaid)
 		if err != nil || number == "" {
 			tx.Rollback()

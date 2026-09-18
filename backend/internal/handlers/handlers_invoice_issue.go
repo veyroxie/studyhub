@@ -33,6 +33,14 @@ func HandleInvoiceIssue(db *store.DB) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
+		// Same rule as the monthly run: a draft whose early-bird cutoff has
+		// passed is issued at full price, rather than issued carrying a
+		// discount the hourly clawback would void it for within the hour.
+		if err := store.SettleEarlyBirdOnIssue(tx, store.TenantID(c), id, core.Today()); err != nil {
+			core.LogFromReq(r).Error("early bird settle failed", "err", err, "invoice_id", id)
+			core.RespondError(w, "could not issue the invoice", 500)
+			return
+		}
 		number, err := store.IssueInvoice(tx, c, id, models.InvoiceStatusUnpaid)
 		if err != nil {
 			core.LogFromReq(r).Error("issue failed", "err", err, "invoice_id", id)

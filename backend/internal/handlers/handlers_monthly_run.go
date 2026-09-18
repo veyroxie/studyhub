@@ -223,6 +223,12 @@ func issueOneDraft(r *http.Request, db *store.DB, c *core.Claims, id string, ten
 	}
 	defer tx.Rollback()
 
+	// Settle the conditional discount BEFORE the row freezes: a draft whose
+	// early-bird cutoff has passed must not be issued carrying it.
+	if err := store.SettleEarlyBirdOnIssue(tx, tenantID, id, core.Today()); err != nil {
+		core.LogFromReq(r).Error("early bird settle failed", "err", err, "invoice_id", id)
+		return false
+	}
 	number, err := store.IssueInvoice(tx, c, id, models.InvoiceStatusUnpaid)
 	if err != nil || number == "" {
 		core.LogFromReq(r).Error("issue failed", "err", err, "invoice_id", id)
