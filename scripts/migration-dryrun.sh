@@ -132,6 +132,18 @@ CHECK_MONTH="${MONTH:-$(date +%Y-%m)}"
 (cd backend && DATABASE_URL="$DSN" go run ./cmd/pricecheck -month="$CHECK_MONTH" 2>&1) | sed 's/^/  /'
 
 echo
+echo "==> Does the CRON issue what the catalogue quotes? (real data) ..."
+# pricecheck answers "what would the catalogue charge". This answers the
+# question the switchover actually turns on: when the cron RUNS, is the invoice
+# it writes the same figure? A wrong discount column or a student silently
+# skipped is invisible to a totals comparison.
+#
+# It issues invoices, so it runs LAST and only ever against this throwaway copy
+# -- it refuses to start against the production host. The copy is destroyed on
+# exit either way.
+(cd backend && DATABASE_URL="$DSN" go run ./cmd/billingcheck -month="$CHECK_MONTH" 2>&1) | sed 's/^/  /'
+
+echo
 echo "==> Hidden attendance after migration (0055, real data) ..."
 # 0055 backdates an enrolment start to the student's first attendance record,
 # because 35 rows recorded when the ROW was made and hid 85 real August

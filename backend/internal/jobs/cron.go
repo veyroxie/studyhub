@@ -296,6 +296,16 @@ func previousMonth(now time.Time) time.Time {
 	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).AddDate(0, -1, 0)
 }
 
+// RunMonthlyInvoices issues the month's invoices for the given clock. Exported
+// only for the pre-deploy check (cmd/billingcheck), which runs it against a
+// THROWAWAY copy of production to prove the cron issues exactly what the
+// catalogue quotes. Nothing in the server calls this -- the scheduler and the
+// manual-run endpoint both go through the unexported path, which holds the
+// advisory lock this one does not.
+func RunMonthlyInvoices(db *store.DB, now time.Time) int {
+	return generateMonthlyInvoices(db, now)
+}
+
 // generateMonthlyInvoices is the core of the monthly subscription cycle.
 // Returns the number of invoices created. Safe to call repeatedly: an
 // existing Monthly invoice for the current month blocks duplicates.

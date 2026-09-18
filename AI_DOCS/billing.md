@@ -74,6 +74,22 @@ themselves survive (`classes.session_rate`, `classes.level_band`, `students.leve
 because dropping them needs a migration, and because `level_band` still bills: see the
 monthly path above.
 
+## Proving a billing change before it deploys
+
+`make migration-dryrun` restores production into a throwaway local Postgres
+(read-only `pg_dump` on the droplet), applies pending migrations, then runs two
+different checks against real data:
+
+- `cmd/pricecheck` -- what the catalogue WOULD charge, beside what was actually
+  invoiced. Answers a question about the resolver. Writes nothing.
+- `cmd/billingcheck` -- RUNS the monthly cron and checks the invoices it wrote.
+  Asserts `amount + early_bird + sibling + referral == catalogue total` for every
+  invoice, and separately that no ACTIVE student was left unbilled. A totals
+  comparison cannot see a wrong discount column or a silently skipped student.
+
+billingcheck issues invoices, so it allowlists the `studyhub_dryrun` database and
+refuses to start anywhere else -- its first act is to delete the month.
+
 ## One rating engine, and where it lives
 
 `internal/rating` computes what a student costs. It is pure -- no database, no
