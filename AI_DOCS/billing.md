@@ -24,21 +24,36 @@ formatted as an integer string; Stripe currency is hardcoded `myr`
 
 ## Price resolution -- the precedence order
 
-This is the single most valuable thing in this file. Reading only `handlers_pricing.go`
-would lead you to believe the 2x2 matrix is the sole price source. It is the last resort.
+There is ONE price resolver, `rating.Price`, and every caller goes through it: the
+monthly cron, the proposed-invoice endpoint and the shadow differ.
 
 ```
-student.package_amount  > 0  ->  use it, ignore per-class pricing entirely
+student.package_amount  > 0  ->  that IS the price, nothing else is read
                               |
-                              +-- otherwise, per enrolled class:
+                              +-- otherwise, per CATEGORY the student is enrolled in:
                                     classes.monthly_fee_override  (0 = UNSET, not free)
-                                    -> pricing_tiers[class_type][level_band].monthly_fee
-                                    -> 0  -> line SKIPPED with a warning, never billed at 0
+                                    -> category is credit-covered -> 0, deliberately
+                                      -> plan for (category, tier, slots that week)
+                                        -> UNPRICEABLE, named -- never silently 0
 ```
 
-Implemented as `COALESCE(NULLIF(c.monthly_fee_override,0), pt.monthly_fee, 0)`
-(`cron.go:345`) with the package short-circuit at `cron.go:476-478` and the skip at
-`cron.go:487-493`.
+Slots are counted from live enrolments, never stored: two enrolments in one category is a
+twice-weekly student and gets that category's 2x tier as ONE line, not two 1x lines.
+
+The tier comes from `enrollments.tier_name`, falling back to `classes.default_tier_name`.
+The cron reads the `enrollments` table for this, never `students.enrolled_classes` -- the
+denormalised array carries no tier, so it would bill every student the class default.
+
+Until 2026-09-18 the cron had its own copy: `COALESCE(NULLIF(c.monthly_fee_override,0),
+pt.monthly_fee, 0)` joining `pricing_tiers` on `class_type` + `level_band`. 39 of 43
+production classes have no band, so that join returned nothing, the fee came out 0, the
+`base <= 0` rule skipped the student, and **the cron issued nothing at all** -- every
+invoice was made by hand while an active student with four priced classes went unbilled.
+That is what two implementations of "what does a student cost" costs, and why there is
+now only one.
+
+Both paths price MID-MONTH (`monthPrefix + "-15"`), so the cron and the shadow run cannot
+disagree about which enrolments or which price version were in force (0066).
 
 `monthly_fee_override = 0` means **not set**, not free: "a genuinely free class is not a
 thing the centre sells, and treating 0 as unset avoids threading a nullable through every
