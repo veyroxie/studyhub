@@ -70,11 +70,12 @@ type StudentPrice struct {
 }
 
 type AppliedDiscount struct {
-	TypeID string  `json:"typeId"`
-	Name   string  `json:"name"`
-	Source string  `json:"source,omitempty"`
-	Amount float64 `json:"amount"`
-	State  string  `json:"state,omitempty"`
+	TypeID   string  `json:"typeId"`
+	Name     string  `json:"name"`
+	Source   string  `json:"source,omitempty"`
+	Sequence int     `json:"sequence"`
+	Amount   float64 `json:"amount"`
+	State    string  `json:"state,omitempty"`
 }
 
 // AmountOf returns what came off for one discount type, in ringgit.
@@ -250,7 +251,7 @@ func toStudentPrice(s rating.Student, r rating.Result) StudentPrice {
 		Unpriceable: r.Unpriceable, Lines: make([]PriceLine, 0, len(r.Lines))}
 	for _, d := range r.Discounts {
 		sp.Discounts = append(sp.Discounts, AppliedDiscount{TypeID: d.TypeID, Name: d.Name,
-			Source: d.Source, Amount: d.Amount.RM(), State: d.State})
+			Source: d.Source, Sequence: d.Sequence, Amount: d.Amount.RM(), State: d.State})
 	}
 	for _, l := range r.Lines {
 		sp.Lines = append(sp.Lines, PriceLine{ClassID: l.ClassID, ClassName: l.ClassName,

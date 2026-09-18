@@ -6,6 +6,7 @@ import (
 
 	"studyhub/internal/core"
 	"studyhub/internal/models"
+	"studyhub/internal/rating"
 	"studyhub/internal/store"
 )
 
@@ -30,6 +31,8 @@ func TestMonthlyCronBillsAClassTheOldTierJoinPricedAtZero(t *testing.T) {
 		db.Exec(`DELETE FROM email_queue WHERE to_email LIKE 'cron-test%'`)
 		// Every student the run billed for this period, not just ours: the cron
 		// spans all tenants and this database is shared with other suites.
+		db.Exec(`DELETE FROM applied_discounts WHERE invoice_id IN (SELECT id FROM invoices WHERE period=?)`, period)
+		db.Exec(`DELETE FROM outbox`)
 		db.Exec(`DELETE FROM invoices WHERE period=?`, period)
 		db.Exec(`DELETE FROM enrollments WHERE student_id=?`, studentID)
 		db.Exec(`DELETE FROM students WHERE id=?`, studentID)
@@ -62,13 +65,28 @@ func TestMonthlyCronBillsAClassTheOldTierJoinPricedAtZero(t *testing.T) {
 	}
 
 	var amount, earlyBird, sibling, referral float64
-	var gotPeriod, cutoff, itemsJSON string
-	err := db.QueryRow(`SELECT amount, period, COALESCE(early_bird_discount,0), COALESCE(sibling_discount,0),
-		COALESCE(referral_credit,0), COALESCE(early_bird_cutoff,''), COALESCE(line_items,'[]')
+	var gotPeriod, cutoff, itemsJSON, status, invoiceNo, invoiceID string
+	err := db.QueryRow(`SELECT id, amount, period, COALESCE(early_bird_discount,0), COALESCE(sibling_discount,0),
+		COALESCE(referral_credit,0), COALESCE(early_bird_cutoff,''), COALESCE(line_items,'[]'),
+		status, COALESCE(invoice_no,'')
 		FROM invoices WHERE student_id=? AND type='Monthly' AND period=?`, studentID, period).
-		Scan(&amount, &gotPeriod, &earlyBird, &sibling, &referral, &cutoff, &itemsJSON)
+		Scan(&invoiceID, &amount, &gotPeriod, &earlyBird, &sibling, &referral, &cutoff, &itemsJSON, &status, &invoiceNo)
 	if err != nil {
-		t.Fatalf("no monthly invoice was issued for a student the catalogue can price: %v", err)
+		t.Fatalf("no monthly invoice was drafted for a student the catalogue can price: %v", err)
+	}
+
+	// The run DRAFTS. Nothing reaches a parent and no number is burned until
+	// someone reviews the month and issues it.
+	if status != models.InvoiceStatusDraft {
+		t.Errorf("status %q, want %q -- the run must draft, not issue", status, models.InvoiceStatusDraft)
+	}
+	if invoiceNo != "" {
+		t.Errorf("a draft carries no number, got %q", invoiceNo)
+	}
+	var queued int
+	db.QueryRow(`SELECT count(*) FROM email_queue WHERE subject LIKE '%Cron Tester%'`).Scan(&queued)
+	if queued != 0 {
+		t.Errorf("drafting emailed a parent %d time(s); a draft tells them nothing", queued)
 	}
 
 	// Group / Level 3-4 once a week is 260 in the seeded catalogue, less the
@@ -108,5 +126,28 @@ func TestMonthlyCronBillsAClassTheOldTierJoinPricedAtZero(t *testing.T) {
 	}
 	if tuition != 1 || discount != 1 {
 		t.Errorf("got %d tuition and %d discount lines, want 1 and 1: %s", tuition, discount, itemsJSON)
+	}
+
+	// The discount is recorded with its TYPE, not just an amount in a column.
+	// Two of ours are both a flat RM10, so an amount alone identifies neither.
+	ds, derr := store.AppliedDiscountsFor(db, 1, invoiceID)
+	if derr != nil {
+		t.Fatalf("read applied discounts: %v", derr)
+	}
+	var found bool
+	for _, d := range ds {
+		if d.TypeID != rating.TypeEarlyBird {
+			continue
+		}
+		found = true
+		if d.Amount != 10 {
+			t.Errorf("recorded early bird %.2f, want 10", d.Amount)
+		}
+		if d.State != rating.StatePending {
+			t.Errorf("early bird state %q, want %q -- it is granted conditionally", d.State, rating.StatePending)
+		}
+	}
+	if !found {
+		t.Errorf("no early-bird row in applied_discounts for %s", invoiceID)
 	}
 }

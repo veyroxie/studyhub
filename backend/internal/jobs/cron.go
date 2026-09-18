@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"studyhub/internal/core"
-	"studyhub/internal/mailer"
 	"studyhub/internal/models"
 	"studyhub/internal/rating"
 	"studyhub/internal/store"
@@ -453,15 +452,6 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
 	periodEnd := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location()).AddDate(0, 0, -1).Format("2006-01-02")
 
-	// Invoice emails are queued AFTER commit so a rollback never emails a
-	// parent about an invoice that doesn't exist.
-	type issuedEmail struct {
-		tid                            int
-		to, parentName, studentName    string
-		amount, dueDate, earlyBirdNote string
-	}
-	var emails []issuedEmail
-
 	created := 0
 	for _, s := range pending {
 		// One engine decides what this student costs. Referral and sibling
@@ -539,9 +529,6 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		siblingDiscount := sp.AmountOf(rating.TypeSibling)
 		earlyBirdApplied := sp.AmountOf(rating.TypeEarlyBird)
 		discounted := sp.Total
-		// What the parent owes if the early bird is lost, which is what the
-		// clawback restores and what the reminder email quotes.
-		full := discounted + earlyBirdApplied
 
 		// Included self-study: a membership line then a matching FOC discount,
 		// so it nets to zero and never moves the total.
@@ -580,7 +567,7 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 			INSERT INTO invoices(id,tenant_id,student_id,description,type,amount,due_date,status,created_on,paid_on,payment_method,discount_pct,submitted_by_parent,sibling_ids,sibling_discount,referral_credit,reference_no,early_bird_cutoff,early_bird_discount,line_items,period)
 			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT DO NOTHING`,
-			invID, s.tenantID, s.id, desc, "Monthly", discounted, dueDate, "Unpaid",
+			invID, s.tenantID, s.id, desc, "Monthly", discounted, dueDate, models.InvoiceStatusDraft,
 			createdOn, nil, "", 0.0, false, siblingIDsJSON, siblingDiscount, referralCredit, "",
 			earlyBirdCutoff, earlyBirdApplied, models.MarshalLineItems(items), monthPrefix,
 		)
@@ -605,6 +592,17 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		if n == 0 {
 			core.Logger.Info("monthly invoice already existed — concurrent run",
 				"student_id", s.id, "period", monthPrefix)
+			tx.Rollback()
+			continue
+		}
+		tenantIDNum := 1
+		if n, convErr := strconv.Atoi(s.tenantID); convErr == nil {
+			tenantIDNum = n
+		}
+		// Same transaction as the invoice: a discount row with no invoice, or an
+		// invoice whose discounts were lost, is money either way.
+		if err := store.SaveAppliedDiscounts(tx, tenantIDNum, invID, sp.Discounts); err != nil {
+			core.Logger.Error("could not record applied discounts", "err", err, "invoice_id", invID)
 			tx.Rollback()
 			continue
 		}
@@ -642,28 +640,10 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		if referralCredit > 0 && s.familyID != "" {
 			familyCredits[creditKey]--
 		}
-		if s.contact != "" {
-			note := ""
-			if earlyBirdApplied > 0 {
-				note = fmt.Sprintf("Pay by %s to keep the RM%.0f early-bird discount (RM%.2f after).", dueDate, earlyBirdApplied, full)
-			}
-			tid := 1
-			if n, convErr := strconv.Atoi(s.tenantID); convErr == nil {
-				tid = n
-			}
-			emails = append(emails, issuedEmail{
-				tid: tid, to: s.contact, parentName: s.parentName,
-				studentName: s.firstName + " " + s.lastName,
-				amount:      fmt.Sprintf("%.2f", discounted), dueDate: dueDate, earlyBirdNote: note,
-			})
-		}
 		created++
 	}
-	for _, e := range emails {
-		body := mailer.RenderInvoiceIssuedEmail(e.parentName, e.studentName, "Monthly tuition — "+monthLabel, e.amount, e.dueDate, e.earlyBirdNote)
-		if _, err := store.QueueEmail(db, e.tid, e.to, "Invoice for "+monthLabel+" — "+e.studentName, body); err != nil {
-			core.Logger.Error("could not queue invoice email", "err", err, "to", e.to)
-		}
+	if created > 0 {
+		core.Logger.Info("monthly drafts ready for review", "period", monthPrefix, "drafts", created)
 	}
 	return created
 }

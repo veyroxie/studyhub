@@ -13,6 +13,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -24,6 +25,7 @@ import (
 
 	"studyhub/internal/core"
 	"studyhub/internal/jobs"
+	"studyhub/internal/models"
 	"studyhub/internal/store"
 )
 
@@ -65,23 +67,32 @@ func main() {
 		log.Fatalf("clear the month on the copy: %v", err)
 	}
 
-	issued := jobs.RunMonthlyInvoices(db, on)
+	drafted := jobs.RunMonthlyInvoices(db, on)
+
+	// The run drafts; issuing is a separate, explicit act. Do both here, so the
+	// check covers the whole path a month actually takes -- including the
+	// numbering transition, which no production invoice has ever been through.
+	issued, failedIssue := issueEveryDraft(db, month)
 
 	type inv struct {
 		amount, earlyBird, sibling, referral float64
 	}
 	got := map[string]inv{}
+	unnumbered := 0
 	rows, err := db.Query(`SELECT student_id, amount, COALESCE(early_bird_discount,0),
-		COALESCE(sibling_discount,0), COALESCE(referral_credit,0)
+		COALESCE(sibling_discount,0), COALESCE(referral_credit,0), COALESCE(invoice_no,'')
 		FROM invoices WHERE deleted_at IS NULL AND type='Monthly' AND period=?`, month)
 	if err != nil {
 		log.Fatalf("read issued invoices: %v", err)
 	}
 	for rows.Next() {
-		var id string
+		var id, number string
 		var v inv
-		if rows.Scan(&id, &v.amount, &v.earlyBird, &v.sibling, &v.referral) == nil {
+		if rows.Scan(&id, &v.amount, &v.earlyBird, &v.sibling, &v.referral, &number) == nil {
 			got[id] = v
+			if number == "" {
+				unnumbered++
+			}
 		}
 	}
 	rows.Close()
@@ -147,7 +158,10 @@ func main() {
 	sort.Slice(bad, func(i, j int) bool { return bad[i].name < bad[j].name })
 	sort.Slice(unbilled, func(i, j int) bool { return unbilled[i].name < unbilled[j].name })
 
-	fmt.Printf("  the cron issued %d invoice(s) for %s\n\n", issued, month)
+	fmt.Printf("  the run drafted %d and issued %d invoice(s) for %s\n\n", drafted, issued, month)
+	if failedIssue > 0 {
+		fmt.Printf("  %d draft(s) could not be issued\n", failedIssue)
+	}
 	for _, l := range bad {
 		fmt.Printf("  %-30s MISMATCH  %s\n", l.name, l.note)
 	}
@@ -156,6 +170,10 @@ func main() {
 	}
 	fmt.Printf("\n  %s: %d issued invoices match the catalogue, %d do not, %d active students were missed (%d frozen or inactive, correctly skipped)\n",
 		month, matched, mismatched, len(unbilled), skipped-len(unbilled))
+	if unnumbered > 0 {
+		fmt.Printf("  %d ISSUED invoice(s) carry no number.\n", unnumbered)
+		os.Exit(1)
+	}
 	if len(unbilled) > 0 {
 		fmt.Printf("  %d ACTIVE student(s) the catalogue can price were not billed.\n", len(unbilled))
 		os.Exit(1)
@@ -165,4 +183,56 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("  CRON AGREES: every invoice it issued is what the catalogue quotes.")
+}
+
+// issueEveryDraft finalises the month exactly as the review screen does: one
+// transaction per draft, each writing its outbox row, so one failure cannot
+// strand the rest and a number allocated inside a rolled-back transaction comes
+// back with it.
+func issueEveryDraft(db *store.DB, month string) (int, int) {
+	rows, err := db.Query(`SELECT id, tenant_id FROM invoices
+		WHERE type='Monthly' AND period=? AND status=? AND deleted_at IS NULL ORDER BY id`,
+		month, models.InvoiceStatusDraft)
+	if err != nil {
+		log.Fatalf("read drafts: %v", err)
+	}
+	type draft struct {
+		id       string
+		tenantID int
+	}
+	drafts := []draft{}
+	for rows.Next() {
+		var d draft
+		if rows.Scan(&d.id, &d.tenantID) == nil {
+			drafts = append(drafts, d)
+		}
+	}
+	rows.Close()
+
+	issued, failed := 0, 0
+	for _, d := range drafts {
+		claims := &core.Claims{Email: "billingcheck", Role: "admin", TenantID: d.tenantID}
+		tx, err := db.BeginTx(context.Background())
+		if err != nil {
+			failed++
+			continue
+		}
+		number, err := store.IssueInvoice(tx, claims, d.id, models.InvoiceStatusUnpaid)
+		if err != nil || number == "" {
+			tx.Rollback()
+			failed++
+			continue
+		}
+		if err := store.EnqueueOutbox(tx, d.tenantID, store.OutboxTopicInvoiceIssued, d.id); err != nil {
+			tx.Rollback()
+			failed++
+			continue
+		}
+		if err := tx.Commit(); err != nil {
+			failed++
+			continue
+		}
+		issued++
+	}
+	return issued, failed
 }

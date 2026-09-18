@@ -417,7 +417,10 @@
       +   '<h1 class="text-2xl font-bold text-slate-800">Billing</h1>'
       +   (isAdmin
           ? '<div class="flex gap-2">'
-          + '<button onclick="App.Billing._generateMonthly()" class="px-4 py-2 text-sm text-white rounded-lg" style="background:#4f46e5" title="Run the monthly invoice + payroll job for this month">Generate Monthly</button>'
+          + '<button onclick="App.Billing._monthRunModal()" class="px-4 py-2 text-sm text-white rounded-lg" style="background:#4f46e5" title="Draft the month, review it, then issue the lot">Run the month</button>'
+          // Kept alongside: this one also generates payroll and self-study
+          // overflow, which the invoice review flow deliberately does not touch.
+          + '<button onclick="App.Billing._generateMonthly()" class="px-4 py-2 text-sm rounded-lg" style="background:#fff;border:1px solid #e2e8f0;color:#334155" title="Also generates payroll and self-study overflow for the month">Payroll + overflow</button>'
           + '<button onclick="App.Billing._exportCSV()" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Export CSV</button>'
           + '<button onclick="App.Billing._createModal()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Create Invoice</button>'
           + '</div>'
@@ -1268,13 +1271,154 @@
     _payOnlineInFlight = false;
   }
 
+  // ── The month Nadine actually runs ──────────────────────────────────────────
+  //
+  // Draft every billable student, look at the list, fix what is wrong, then
+  // issue the lot. The review step exists because rating can be correct and
+  // still wrong for a student -- someone quit but the enrolment was never
+  // ended, a make-up lesson needs adding -- and an issued invoice is a
+  // document, not a row you keep editing.
+  //
+  // Drafting emails nobody. The parent hears about an invoice when it is
+  // issued, which is also when it gets its number.
+  var _runMonth = '';
+
+  function _monthRunModal(month) {
+    _runMonth = month || App.Utils.today().slice(0, 7);
+    _refreshMonthRun();
+  }
+
+  function _setRunMonth(m) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(m || '')) return;
+    _runMonth = m;
+    _refreshMonthRun();
+  }
+
+  async function _refreshMonthRun() {
+    try {
+      var data = await App.Api.get('/api/billing/month?month=' + encodeURIComponent(_runMonth));
+      App.Utils.showModal(_monthRunHtml(data));
+    } catch (err) {
+      // Auto-toasted.
+    }
+  }
+
+  function _monthRunRow(d) {
+    return '<tr style="border-top:1px solid #f1f5f9">'
+      + '<td style="padding:0.5rem 0.6rem">' + App.Utils.esc(d.studentName || d.studentId) + '</td>'
+      + '<td style="padding:0.5rem 0.6rem;text-align:right;font-variant-numeric:tabular-nums">' + App.Utils.formatCurrency(d.amount) + '</td>'
+      + '<td style="padding:0.5rem 0.6rem;text-align:right">'
+      +   '<button onclick="App.Billing._editModal(\'' + d.invoiceId + '\')" style="font-size:0.72rem;color:#4f46e5;background:none;border:none;cursor:pointer">Edit</button>'
+      +   '<button onclick="App.Billing._dropDraft(\'' + d.invoiceId + '\')" style="font-size:0.72rem;color:#dc2626;background:none;border:none;cursor:pointer;margin-left:0.5rem">Remove</button>'
+      + '</td></tr>';
+  }
+
+  function _monthRunHtml(data) {
+    var drafts = data.drafts || [];
+    var issued = data.issued || [];
+    var problems = data.problems || [];
+    var body = ''
+      + '<div class="p-6" style="min-width:min(560px,92vw);max-width:640px">'
+      + '<h2 class="text-xl font-bold mb-1">Run the month</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">Draft every billable student, check the list, then issue them all. Nothing reaches a parent until you issue.</p>'
+      + '<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem">'
+      +   '<input type="month" value="' + App.Utils.esc(_runMonth) + '" onchange="App.Billing._setRunMonth(this.value)" class="form-input" style="max-width:11rem">'
+      +   '<button onclick="App.Billing._draftMonth()" style="padding:0.45rem 0.9rem;font-size:0.82rem;font-weight:600;background:#fff;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Draft the month</button>'
+      + '</div>';
+
+    if (problems.length > 0) {
+      body += '<div style="margin-bottom:1rem;padding:0.7rem 0.8rem;background:#fef2f2;border:1px solid #fecaca;border-radius:6px">'
+        + '<div style="font-size:0.78rem;font-weight:700;color:#991b1b;margin-bottom:0.35rem">Cannot be priced, so not drafted</div>'
+        + problems.map(function(p) {
+            return '<div style="font-size:0.75rem;color:#7f1d1d">' + App.Utils.esc(p.studentName) + ' — ' + App.Utils.esc(p.reason) + '</div>';
+          }).join('')
+        + '</div>';
+    }
+
+    if (drafts.length === 0) {
+      body += '<p style="font-size:0.82rem;color:#94a3b8;margin-bottom:1rem">No drafts for this month yet.</p>';
+    } else {
+      body += '<table style="width:100%;font-size:0.82rem;border-collapse:collapse;margin-bottom:0.75rem">'
+        + '<thead><tr style="text-align:left;color:#64748b;font-size:0.72rem;text-transform:uppercase">'
+        + '<th style="padding:0.4rem 0.6rem">Student</th><th style="padding:0.4rem 0.6rem;text-align:right">Amount</th><th></th>'
+        + '</tr></thead><tbody>'
+        + drafts.map(_monthRunRow).join('')
+        + '</tbody></table>'
+        + '<div style="display:flex;justify-content:space-between;font-size:0.82rem;font-weight:700;padding:0 0.6rem 0.75rem">'
+        +   '<span>' + drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') + '</span>'
+        +   '<span>' + App.Utils.formatCurrency(data.draftTotal || 0) + '</span>'
+        + '</div>';
+    }
+
+    if (issued.length > 0) {
+      body += '<p style="font-size:0.75rem;color:#64748b;margin-bottom:1rem">Already issued this month: '
+        + issued.length + ' invoice' + (issued.length === 1 ? '' : 's') + ', '
+        + App.Utils.formatCurrency(data.issuedTotal || 0) + '. Issued invoices cannot be edited — reissue to correct one.</p>';
+    }
+
+    body += '<div class="flex justify-end gap-3 pt-2">'
+      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Close</button>'
+      + (drafts.length > 0
+        ? '<button onclick="App.Billing._issueMonth()" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Issue all ' + drafts.length + '</button>'
+        : '')
+      + '</div></div>';
+    return body;
+  }
+
+  async function _draftMonth() {
+    try {
+      var res = await App.Api.post('/api/billing/month/draft', { month: _runMonth });
+      App.Utils.showToast((res && res.drafted ? res.drafted : 0) + ' draft(s) ready to review', 'info');
+      await App.Api.loadSnapshot();
+      _refreshMonthRun();
+    } catch (err) {
+      // Auto-toasted.
+    }
+  }
+
+  async function _dropDraft(id) {
+    var ok = await App.Utils.showConfirm({
+      title: 'Remove this draft?',
+      message: 'The student will not be billed for this month unless you draft again.',
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
+    try {
+      await App.Api.del('/api/invoices/' + id);
+      await App.Api.loadSnapshot();
+      _refreshMonthRun();
+    } catch (err) {
+      // Auto-toasted.
+    }
+  }
+
+  async function _issueMonth() {
+    var ok = await App.Utils.showConfirm({
+      title: 'Issue every draft?',
+      message: 'Each one gets an invoice number and is emailed to the parent. An issued invoice cannot be edited — only reissued.',
+      confirmLabel: 'Issue them',
+    });
+    if (!ok) return;
+    try {
+      var res = await App.Api.post('/api/billing/month/issue', { month: _runMonth });
+      var msg = (res && res.issued ? res.issued : 0) + ' invoice(s) issued';
+      if (res && res.failed > 0) msg += ', ' + res.failed + ' could not be issued';
+      App.Utils.showToast(msg, res && res.failed > 0 ? 'error' : 'success');
+      await App.Api.loadSnapshot();
+      _refreshMonthRun();
+      App.Router.refresh();
+    } catch (err) {
+      // Auto-toasted.
+    }
+  }
+
   // _generateMonthly fires the manual cron — useful when admin needs to
   // catch up after a missed window or after onboarding new students mid-month.
   // The backend runs in a goroutine and returns 202 immediately.
   async function _generateMonthly() {
     var ok = await App.Utils.showConfirm({
       title: 'Generate monthly invoices?',
-      message: 'This will create this month\'s subscription invoices + last month\'s payroll for any active student/staff that doesn\'t already have one. Safe to run multiple times — duplicates are skipped.',
+      message: 'Drafts this month\'s subscription invoices and generates last month\'s payroll for any active student/staff that doesn\'t already have one. Invoices are DRAFTED only — issue them from "Run the month". Safe to run multiple times.',
       confirmLabel: 'Run',
     });
     if (!ok) return;
@@ -1968,6 +2112,11 @@
     _bulkDeleteInvConfirm: _bulkDeleteInvConfirm,
     _bulkConfirmPaid: _bulkConfirmPaid,
     _setInvMode: _setInvMode,
+    _monthRunModal: _monthRunModal,
+    _setRunMonth: _setRunMonth,
+    _draftMonth: _draftMonth,
+    _dropDraft: _dropDraft,
+    _issueMonth: _issueMonth,
     _toggleEarlyBird: _toggleEarlyBird,
     _updateNetAmount: _updateNetAmount,
     _addLineItem: _addLineItem,

@@ -268,6 +268,10 @@ func Build(db *store.DB) http.Handler {
 		r.Delete("/api/pricing-categories/{id}", handlers.HandlePricingCategoryByID(db))
 		r.Get("/api/billing/price-preview", handlers.HandlePricePreview(db))
 		r.Get("/api/billing/proposed-invoice", handlers.HandleProposedInvoice(db))
+		// The monthly run: draft the month, review it, issue the lot.
+		r.Get("/api/billing/month", handlers.HandleMonthRun(db))
+		r.Post("/api/billing/month/draft", handlers.HandleMonthDraft(db))
+		r.Post("/api/billing/month/issue", handlers.HandleMonthIssue(db))
 		r.Get("/api/pricing-plans", handlers.HandlePricingPlans(db))
 		r.Post("/api/pricing-plans", handlers.HandlePricingPlans(db))
 		r.Put("/api/pricing-plans/{id}", handlers.HandlePricingPlanByID(db))

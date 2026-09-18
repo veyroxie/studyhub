@@ -57,6 +57,19 @@ func QueueEmail(db *DB, tenantID int, to, subject, bodyHTML string) (int64, erro
 	return id, err
 }
 
+// QueueEmailTx enqueues inside the caller's transaction, so the row that CAUSED
+// the email and the email itself commit together. The outbox relay needs this:
+// queueing outside the transaction that marks the outbox row processed would
+// send the same email again after a crash between the two.
+func QueueEmailTx(tx *Tx, tenantID int, to, subject, bodyHTML string) (int64, error) {
+	var id int64
+	err := tx.QueryRow(
+		`INSERT INTO email_queue(tenant_id, to_email, subject, body_html, status, next_attempt_at) VALUES(?,?,?,?,?,NOW()) RETURNING id`,
+		tenantID, to, subject, bodyHTML, "pending",
+	).Scan(&id)
+	return id, err
+}
+
 // processEmailQueue is the worker. Picks pending rows, tries to send,
 // updates state. Returns the count attempted (for log visibility).
 func ProcessEmailQueue(db *DB) int {

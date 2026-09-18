@@ -10,6 +10,7 @@ import (
 	"studyhub/internal/core"
 	"studyhub/internal/mailer"
 	"studyhub/internal/models"
+	"studyhub/internal/rating"
 	"studyhub/internal/store"
 	"sync"
 	"syscall"
@@ -56,7 +57,10 @@ func StartJobs(ctx context.Context, wg *sync.WaitGroup, db *store.DB) {
 		// alert the operator. Complements an external uptime monitor (which
 		// catches "app down") by catching "app up but degraded".
 		{1 * time.Hour, "health-selfcheck", func() { runHealthSelfCheck(db) }},
-		// Every 30s: drain the email queue (send + retry with backoff).
+		// Every 30s: perform the effects issuing an invoice queued, THEN drain
+		// the email queue, so an invoice issued between ticks reaches the parent
+		// on the same pass rather than the next one.
+		{30 * time.Second, OutboxRelayJob, func() { ProcessOutbox(db) }},
 		{30 * time.Second, "email-queue-worker", func() { store.ProcessEmailQueue(db) }},
 		// Daily: prune long-since-sent/failed email rows.
 		{24 * time.Hour, "email-queue-prune", func() { store.PurgeOldEmailQueueRows(db) }},
@@ -284,9 +288,21 @@ func applyEarlyBirdExpiry(db *store.DB) {
 
 	replaced := 0
 	for _, e := range toExpire {
+		// Which line to strip and how much to restore come from the TYPED
+		// record: matching the line name was fragile the moment anyone renamed
+		// what prints on an invoice. Invoices issued before 0069 have no such
+		// row, so the old name match remains as their path -- and only theirs.
+		typedName, restore := "", e.discount
+		if ds, derr := store.AppliedDiscountsFor(db, e.tenantID, e.id); derr == nil {
+			for _, d := range ds {
+				if d.TypeID == rating.TypeEarlyBird {
+					typedName, restore = d.Name, d.Amount
+				}
+			}
+		}
 		kept := []models.InvoiceLineItem{}
 		for _, it := range models.ParseLineItems(e.lineItems) {
-			if it.Kind == models.LineItemKindDiscount && strings.HasPrefix(it.Name, models.EarlyBirdLinePrefix) {
+			if it.Kind == models.LineItemKindDiscount && isEarlyBirdLine(it.Name, typedName) {
 				continue
 			}
 			kept = append(kept, it)
@@ -294,12 +310,17 @@ func applyEarlyBirdExpiry(db *store.DB) {
 		claims := &core.Claims{TenantID: e.tenantID, Role: "system"}
 		newID, number, err := store.ReissueInvoice(context.Background(), db, claims, e.id, store.Reissue{
 			StudentID: e.studentID, Description: e.description, Type: e.invType,
-			Amount:  e.amount + e.discount,
+			Amount:  e.amount + restore,
 			DueDate: e.dueDate, CreatedOn: e.createdOn, Period: e.period, LineItems: kept,
 		})
 		if err != nil {
 			core.Logger.Error("early-bird-expiry reissue failed", "err", err, "invoice_id", e.id)
 			continue
+		}
+		// The discount was granted pending and has now not been earned. Recording
+		// that keeps the voided invoice able to say why it cost what it did.
+		if ferr := store.ForfeitDiscount(db, e.tenantID, e.id, rating.TypeEarlyBird); ferr != nil {
+			core.Logger.Error("could not mark the early bird forfeited", "err", ferr, "invoice_id", e.id)
 		}
 		core.LogAudit(db, e.tenantID, "system", "early_bird_lapsed", "invoice", e.id,
 			"replaced by "+newID+" ("+number+") at full price")
@@ -596,4 +617,14 @@ func recheckReferralMilestones(db *store.DB) {
 		// cross-tenant.
 		store.ReferralReconcile(db, p.studentID, &core.Claims{TenantID: p.tenantID, Role: "system"})
 	}
+}
+
+// isEarlyBirdLine says whether a discount line is the early bird. The typed name
+// is exact; the prefix match is the fallback for invoices issued before 0069,
+// which carry no applied_discounts row.
+func isEarlyBirdLine(lineName, typedName string) bool {
+	if typedName != "" {
+		return lineName == typedName
+	}
+	return strings.HasPrefix(lineName, models.EarlyBirdLinePrefix)
 }
