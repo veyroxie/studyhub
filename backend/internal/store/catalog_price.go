@@ -1,10 +1,12 @@
 package store
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
 	"studyhub/internal/core"
+	"studyhub/internal/models"
 	"studyhub/internal/rating"
 )
 
@@ -61,6 +63,28 @@ type StudentPrice struct {
 	Total       float64     `json:"total"`
 	Lines       []PriceLine `json:"lines"`
 	Unpriceable bool        `json:"unpriceable"`
+	// Discounts is what actually came off after clamping, with its type. The
+	// monthly cron stores these per-type on the invoice row, and the early-bird
+	// clawback restores the exact figure rather than assuming the full RM10.
+	Discounts []AppliedDiscount `json:"discounts,omitempty"`
+}
+
+type AppliedDiscount struct {
+	TypeID string  `json:"typeId"`
+	Name   string  `json:"name"`
+	Source string  `json:"source,omitempty"`
+	Amount float64 `json:"amount"`
+	State  string  `json:"state,omitempty"`
+}
+
+// AmountOf returns what came off for one discount type, in ringgit.
+func (sp StudentPrice) AmountOf(typeID string) float64 {
+	for _, d := range sp.Discounts {
+		if d.TypeID == typeID {
+			return d.Amount
+		}
+	}
+	return 0
 }
 
 type catClass struct {
@@ -78,7 +102,12 @@ type catClass struct {
 // left since, and would have shown a clean 0 against a real invoice. The
 // window is half-open [started_on, ended_on), the same rule enrolledOn and
 // EnrollmentWindowsIn already use, so the day a student leaves is not counted.
-func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
+// LoadCatalogue loads the price list and the class shapes in force on asOf.
+// Split out of CatalogPrices so the monthly cron prices from the same catalogue
+// instead of its own pricing_tiers join: two implementations of "what does a
+// class cost" is how the monthly and session paths drifted apart. Pass nil
+// claims to span every tenant, which is what the cron needs.
+func LoadCatalogue(db *DB, c *core.Claims, asOf string) rating.Catalogue {
 	tw, twArgs := ScopeTenant(c, "")
 
 	classes := map[string]catClass{}
@@ -90,7 +119,7 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 	 WHERE cl.deleted_at IS NULL`+strings.ReplaceAll(tw, "tenant_id", "cl.tenant_id"), twArgs...)
 	if err != nil {
 		core.Logger.Error("catalog price: class load failed", "err", err)
-		return nil
+		return rating.Catalogue{}
 	}
 	for rows.Next() {
 		var id string
@@ -119,7 +148,7 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 		   AND daterange(effective_from, effective_to, '[)') @> ?::date`+tw, planArgs...)
 	if err != nil {
 		core.Logger.Error("catalog price: plan load failed", "err", err)
-		return nil
+		return rating.Catalogue{}
 	}
 	for prows.Next() {
 		var cat, tier string
@@ -130,6 +159,49 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 		}
 	}
 	prows.Close()
+
+	return rating.Catalogue{Classes: ratingClasses(classes), Plans: plans}
+}
+
+// LoadEnrolments returns each student's live enrolments on asOf, carrying the
+// tier that enrolment is priced at. The cron reads this rather than the
+// denormalised students.enrolled_classes, which has no tier on it at all -- so
+// a student put on a specific tier would be billed the class default.
+func LoadEnrolments(db *DB, c *core.Claims, asOf string) map[string][]rating.Enrolment {
+	tw, twArgs := ScopeTenant(c, "")
+	out := map[string][]rating.Enrolment{}
+	// One window, always. The live branch used to be `ended_on IS NULL` with no
+	// lower bound, so an enrolment starting next month was priced this month --
+	// two answers to "what does this student cost" inside the resolver whose
+	// whole point is that there is only one. Empty asOf means today.
+	when := asOf
+	if when == "" {
+		when = time.Now().Format("2006-01-02")
+	}
+	enrolSQL := `SELECT student_id, class_id, COALESCE(tier_name,'')
+		FROM enrollments WHERE started_on <= ? AND (ended_on IS NULL OR ended_on > ?)` + tw
+	enrolArgs := append([]any{when, when}, twArgs...)
+	erows, err := db.Query(enrolSQL, enrolArgs...)
+	if err != nil {
+		core.Logger.Error("catalog price: enrolment load failed", "err", err)
+		return out
+	}
+	for erows.Next() {
+		var sid, cid, tn string
+		if erows.Scan(&sid, &cid, &tn) != nil {
+			continue
+		}
+		out[sid] = append(out[sid], rating.Enrolment{ClassID: cid, Tier: tn})
+	}
+	erows.Close()
+
+	return out
+}
+
+func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
+	tw, twArgs := ScopeTenant(c, "")
+	cat := LoadCatalogue(db, c, asOf)
+	byStudent := LoadEnrolments(db, c, asOf)
 
 	students := map[string]*rating.Student{}
 	order := []string{}
@@ -151,37 +223,10 @@ func CatalogPrices(db *DB, c *core.Claims, asOf string) []StudentPrice {
 	}
 	srows.Close()
 
-	// One window, always. The live branch used to be `ended_on IS NULL` with no
-	// lower bound, so an enrolment starting next month was priced this month --
-	// two answers to "what does this student cost" inside the resolver whose
-	// whole point is that there is only one. Empty asOf means today.
-	when := asOf
-	if when == "" {
-		when = time.Now().Format("2006-01-02")
-	}
-	enrolSQL := `SELECT student_id, class_id, COALESCE(tier_name,'')
-		FROM enrollments WHERE started_on <= ? AND (ended_on IS NULL OR ended_on > ?)` + tw
-	enrolArgs := append([]any{when, when}, twArgs...)
-	erows, err := db.Query(enrolSQL, enrolArgs...)
-	if err != nil {
-		core.Logger.Error("catalog price: enrolment load failed", "err", err)
-		return nil
-	}
-	for erows.Next() {
-		var sid, cid, tn string
-		if erows.Scan(&sid, &cid, &tn) != nil {
-			continue
-		}
-		if st, ok := students[sid]; ok {
-			st.Enrolments = append(st.Enrolments, rating.Enrolment{ClassID: cid, Tier: tn})
-		}
-	}
-	erows.Close()
-
-	cat := rating.Catalogue{Classes: ratingClasses(classes), Plans: plans}
 	out := []StudentPrice{}
 	for _, sid := range order {
 		st := students[sid]
+		st.Enrolments = byStudent[sid]
 		out = append(out, toStudentPrice(*st, rating.Price(*st, cat, rating.StandingDiscount(*st))))
 	}
 	return out
@@ -203,10 +248,85 @@ func ratingClasses(in map[string]catClass) map[string]rating.Class {
 func toStudentPrice(s rating.Student, r rating.Result) StudentPrice {
 	sp := StudentPrice{StudentID: s.ID, StudentName: s.Name, Total: r.Total.RM(),
 		Unpriceable: r.Unpriceable, Lines: make([]PriceLine, 0, len(r.Lines))}
+	for _, d := range r.Discounts {
+		sp.Discounts = append(sp.Discounts, AppliedDiscount{TypeID: d.TypeID, Name: d.Name,
+			Source: d.Source, Amount: d.Amount.RM(), State: d.State})
+	}
 	for _, l := range r.Lines {
 		sp.Lines = append(sp.Lines, PriceLine{ClassID: l.ClassID, ClassName: l.ClassName,
 			CategoryName: l.CategoryName, TierName: l.TierName, SessionsPerWeek: l.SessionsPerWeek,
 			Amount: l.Amount.RM(), Source: l.Source, Problem: l.Problem})
 	}
 	return sp
+}
+
+// InvoiceLines renders a priced student as invoice line items, plus the reasons
+// any class could not be priced. One mapping, used by the proposed-invoice
+// endpoint and by the monthly cron, so a generated invoice and a hand-built one
+// read identically -- a second copy here is how the two drifted before.
+// periodStart/periodEnd may be empty for a proposal, which bills no period.
+func (sp StudentPrice) InvoiceLines(periodStart, periodEnd string) ([]models.InvoiceLineItem, []string) {
+	items := []models.InvoiceLineItem{}
+	problems := []string{}
+	for _, l := range sp.Lines {
+		if l.Source == SourceUnpriceable {
+			problems = append(problems, problemText(l))
+			continue
+		}
+		if l.Source == SourceDiscount {
+			items = append(items, models.InvoiceLineItem{
+				Kind: models.LineItemKindDiscount, Name: l.ClassName,
+				Qty: 1, UnitPrice: -l.Amount, Amount: l.Amount,
+			})
+			continue
+		}
+		items = append(items, models.InvoiceLineItem{
+			Kind: models.LineItemKindItem, Name: lineName(l), Descriptor: lineDescriptor(l),
+			PeriodStart: periodStart, PeriodEnd: periodEnd,
+			Qty: 1, UnitPrice: l.Amount, Amount: l.Amount,
+		})
+	}
+	return items, problems
+}
+
+func lineName(l PriceLine) string {
+	if l.CategoryName != "" {
+		return l.CategoryName
+	}
+	return l.ClassName
+}
+
+// The descriptor is what makes a figure checkable by eye: which tier, how many
+// sessions a week, which classes it covers.
+func lineDescriptor(l PriceLine) string {
+	if l.TierName == "" {
+		return l.ClassName
+	}
+	d := l.TierName
+	if l.SessionsPerWeek > 0 {
+		d += ", " + strconv.Itoa(l.SessionsPerWeek) + "x a week"
+	}
+	if l.ClassName != "" {
+		d += " (" + l.ClassName + ")"
+	}
+	return d
+}
+
+func problemText(l PriceLine) string {
+	who := l.ClassName
+	if who == "" {
+		who = l.CategoryName
+	}
+	if who == "" {
+		return l.Problem
+	}
+	return who + ": " + l.Problem
+}
+
+// PriceStudent prices one student against an already-loaded catalogue. The
+// monthly cron prices the whole roster against one catalogue, so it loads the
+// catalogue once and calls this per student; CatalogPrices does the same in
+// bulk. Both go through rating.Price -- there is no second implementation.
+func PriceStudent(s rating.Student, cat rating.Catalogue, ds []rating.Discount) StudentPrice {
+	return toStudentPrice(s, rating.Price(s, cat, ds))
 }

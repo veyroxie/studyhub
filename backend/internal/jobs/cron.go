@@ -11,6 +11,7 @@ import (
 	"studyhub/internal/core"
 	"studyhub/internal/mailer"
 	"studyhub/internal/models"
+	"studyhub/internal/rating"
 	"studyhub/internal/store"
 	"sync"
 	"time"
@@ -37,17 +38,6 @@ const SiblingMonthlyRM = 10.0
 // quota is generous and overflow is a soft nudge, not a profit centre.
 const SelfStudyOverflowRatePerHour = 10.0
 
-// classMeta carries the per-class detail the monthly cron needs to render one
-// invoice line item per enrolled class (name, type and band for the label,
-// plus the monthly fee from the pricing matrix).
-type classMeta struct {
-	fee       float64
-	name      string
-	classType string
-	band      string
-	subject   string
-}
-
 // appendDiscount adds a negative "discount" line item when amt > 0. Keeps the
 // invoice builder flat instead of nesting an if around every discount append.
 func appendDiscount(items []models.InvoiceLineItem, name string, amt float64) []models.InvoiceLineItem {
@@ -57,40 +47,11 @@ func appendDiscount(items []models.InvoiceLineItem, name string, amt float64) []
 	return append(items, models.InvoiceLineItem{Kind: models.LineItemKindDiscount, Name: name, Amount: -amt})
 }
 
-// monthlyClassLineName renders the bold line-item heading for an enrolled
-// class, e.g. "Singapore Math - Group".
-func monthlyClassLineName(m classMeta) string {
-	// Parents read this line on the invoice, so lead with what was taught:
-	// "Math group lessons" rather than the internal class name.
-	if m.subject != "" && m.classType != "" {
-		return m.subject + " " + strings.ToLower(m.classType) + " lessons"
-	}
-	if m.subject != "" {
-		return m.subject + " lessons"
-	}
-	if m.classType == "" {
-		return m.name
-	}
-	return m.name + " - " + m.classType
-}
-
 // isPartTime tolerates the two encodings in the wild: the staff form saves
 // 'parttime' while the backend default is 'Full-time'. Comparing normalized
 // keeps part-time teachers from being silently paid a flat salary.
 func isPartTime(employmentType string) bool {
 	return strings.EqualFold(strings.ReplaceAll(employmentType, "-", ""), "parttime")
-}
-
-// monthlyClassDescriptor renders the gray sub-line, e.g. "Group class, Level 1-3".
-func monthlyClassDescriptor(m classMeta) string {
-	parts := []string{}
-	if m.classType != "" {
-		parts = append(parts, m.classType+" class")
-	}
-	if m.band != "" {
-		parts = append(parts, "Level "+m.band)
-	}
-	return strings.Join(parts, ", ")
 }
 
 // MonthlyCronJob names the billing scheduler in the heartbeat and alert paths.
@@ -358,33 +319,26 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		return 0
 	}
 
-	// Pre-load classID → monthly fee, derived from the type×level pricing matrix
-	// (a class joins pricing_tiers on its class_type + level_band), unless the
-	// class carries its own monthly_fee_override — Phonics and the 30-minute
-	// group have no matching tier and would otherwise price at 0.  Class IDs are
-	// unique, so a flat map keyed by class id is enough (cron spans all tenants).
-	// Fail closed like the dedup preloads above: an empty map prices every class
-	// at 0, so every student trips the `base <= 0` skip and the run bills nobody
-	// while logging nothing.
-	classByID := map[string]classMeta{}
-	frows, ferr := db.Query(`SELECT c.id, COALESCE(NULLIF(c.monthly_fee_override,0), pt.monthly_fee, 0), COALESCE(c.name,''), COALESCE(c.class_type,''), COALESCE(c.level_band,''), COALESCE(c.subject,'') FROM classes c LEFT JOIN pricing_tiers pt ON pt.class_type = c.class_type AND pt.level_band = c.level_band AND pt.tenant_id = c.tenant_id AND pt.deleted_at IS NULL WHERE c.deleted_at IS NULL`)
-	if ferr != nil {
-		core.Logger.Error("monthly cron: class fee preload failed", "err", ferr)
-		return 0
-	}
-	for frows.Next() {
-		var cid string
-		var m classMeta
-		if err := frows.Scan(&cid, &m.fee, &m.name, &m.classType, &m.band, &m.subject); err == nil {
-			classByID[cid] = m
-		}
-	}
-	frows.Close()
+	// Price from the catalogue, on the month being billed -- mid-month, exactly
+	// as the differ does, so the cron and the shadow run cannot disagree about
+	// which enrolments and which price version were in force (0066).
+	//
+	// This replaced a pricing_tiers join on class_type + level_band. 39 of 43
+	// production classes have no band, so that join priced them at 0, the
+	// `base <= 0` rule skipped the student, and the cron issued nothing at all
+	// while every invoice was made by hand.
+	//
+	// Fails closed like the dedup preload above: an empty catalogue makes every
+	// class unpriceable, so students are skipped loudly rather than billed at 0.
+	priceOn := monthPrefix + "-15"
+	catalogue := store.LoadCatalogue(db, nil, priceOn)
+	enrolmentsByStudent := store.LoadEnrolments(db, nil, priceOn)
 
 	rows, err := db.Query(`
 		SELECT s.id, s.tenant_id, s.first_name, s.last_name, s.family_id, s.package_amount,
 		       COALESCE(s.contact,''), COALESCE(s.parent_name,''), COALESCE(s.enrolled_classes,'[]'),
-		       COALESCE(s.package_self_study_hours,4)
+		       COALESCE(s.package_self_study_hours,4),
+		       COALESCE(s.standing_discount,0), COALESCE(s.standing_discount_reason,'')
 		FROM students s
 		WHERE s.deleted_at IS NULL
 		  AND COALESCE(s.subscription_status,'active') = 'active'
@@ -399,11 +353,13 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		packageAmount                               float64
 		contact, parentName, enrolledClasses        string
 		selfStudyHours                              int
+		standingDiscount                            float64
+		standingReason                              string
 	}
 	var pending []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.tenantID, &r.firstName, &r.lastName, &r.familyID, &r.packageAmount, &r.contact, &r.parentName, &r.enrolledClasses, &r.selfStudyHours); err != nil {
+		if err := rows.Scan(&r.id, &r.tenantID, &r.firstName, &r.lastName, &r.familyID, &r.packageAmount, &r.contact, &r.parentName, &r.enrolledClasses, &r.selfStudyHours, &r.standingDiscount, &r.standingReason); err != nil {
 			continue
 		}
 		if existing[r.tenantID+"|"+r.id] {
@@ -498,57 +454,20 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 
 	created := 0
 	for _, s := range pending {
-		// Base tuition: a manual package_amount (>0) overrides; otherwise sum
-		// the subject fees of the student's enrolled classes. Each priced class
-		// becomes its own invoice line item; the manual override is one line.
-		base := s.packageAmount
-		var items []models.InvoiceLineItem
-		if base > 0 {
-			items = append(items, models.InvoiceLineItem{
-				Kind: models.LineItemKindItem, Name: "Monthly tuition — " + monthLabel,
-				PeriodStart: periodStart, PeriodEnd: periodEnd,
-				Qty: 1, UnitPrice: base, Amount: base,
-			})
-		} else {
-			for _, cid := range models.DedupStrings(models.ParseArr(s.enrolledClasses)) {
-				m := classByID[cid]
-				if m.fee <= 0 {
-					// A class with no level band (or a zeroed pricing tier)
-					// prices at 0 — surface it, or students silently never
-					// get billed and nobody finds out until month-end.
-					core.Logger.Warn("monthly billing: class has no priced tier — line skipped",
-						"class_id", cid, "student_id", s.id, "tenant_id", s.tenantID)
-					continue
-				}
-				base += m.fee
-				items = append(items, models.InvoiceLineItem{
-					Kind: models.LineItemKindItem, Name: monthlyClassLineName(m),
-					Descriptor: monthlyClassDescriptor(m), PeriodStart: periodStart, PeriodEnd: periodEnd,
-					Qty: 1, UnitPrice: m.fee, Amount: m.fee,
-				})
-			}
-		}
-		if base <= 0 {
-			// Whole student skipped: log it — "nothing to bill" and "billing
-			// silently broken" look identical without this line.
-			core.Logger.Warn("monthly billing: student skipped — no priced classes and no package amount",
-				"student_id", s.id, "tenant_id", s.tenantID)
-			continue
-		}
-
-		// One referral credit per child-invoice: each enrolled child consumes a
-		// credit from the family balance while any remain (see ReferralMonthlyRM).
-		referralCredit := 0.0
+		// One engine decides what this student costs. Referral and sibling
+		// ELIGIBILITY is still decided here -- it depends on family state the
+		// engine knows nothing about -- but what they are WORTH, the order they
+		// stack in and the clamping are the engine's, so a cron invoice and the
+		// proposed invoice for the same student agree by construction.
+		referralEligible := 0.0
 		creditKey := s.tenantID + "|" + s.familyID
 		if s.familyID != "" && familyCredits[creditKey] > 0 {
-			referralCredit = ReferralMonthlyRM
+			referralEligible = ReferralMonthlyRM
 		}
-		// Sibling discount applies when the family has 2+ active subscribed
-		// students this month. Each child gets RM10 off — flat per child.
-		siblingDiscount := 0.0
+		siblingEligible := 0.0
 		siblingIDsJSON := "[]"
 		if sibs := siblingsByFamily[s.familyID]; len(sibs) >= 2 {
-			siblingDiscount = SiblingMonthlyRM
+			siblingEligible = SiblingMonthlyRM
 			// Store the other siblings' IDs so the frontend can render
 			// "shared family: X, Y" without re-querying.
 			others := make([]string, 0, len(sibs)-1)
@@ -559,27 +478,63 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 			}
 			siblingIDsJSON = models.JSONArr(others)
 		}
-		// Full price (after sibling/referral); early-bird is applied now but
-		// clawed back later if unpaid past the cutoff. earlyBirdApplied is the
-		// exact RM removed, so the clawback restores precisely the full price.
-		full := base - referralCredit - siblingDiscount
-		if full < 0 {
-			full = 0
+
+		priced := rating.Student{
+			ID: s.id, Name: s.firstName + " " + s.lastName,
+			Package:          rating.FromRM(s.packageAmount),
+			StandingDiscount: rating.FromRM(s.standingDiscount),
+			DiscountReason:   s.standingReason,
+			Enrolments:       enrolmentsByStudent[s.id],
 		}
-		discounted := full - EarlyBirdRM
-		if discounted < 0 {
-			discounted = 0
+		ds := rating.StandingDiscount(priced)
+		if referralEligible > 0 {
+			ds = append(ds, rating.Discount{TypeID: rating.TypeReferral, Name: "Referral discount",
+				Kind: rating.KindFixed, Amount: rating.FromRM(referralEligible),
+				Sequence: rating.SeqReferral, Source: "referral_rewards balance"})
 		}
-		earlyBirdApplied := full - discounted
-		if isLateRun {
-			// No early bird on a late manual run — full price, and the
-			// appendDiscount below is a no-op with a zero amount.
-			discounted = full
-			earlyBirdApplied = 0
+		if siblingEligible > 0 {
+			ds = append(ds, rating.Discount{TypeID: rating.TypeSibling, Name: "Sibling discount",
+				Kind: rating.KindFixed, Amount: rating.FromRM(siblingEligible),
+				Sequence: rating.SeqSibling, Source: "family " + s.familyID})
+		}
+		// Conditional: given on issue, clawed back if unpaid past the cutoff.
+		// A late manual run does not grant it at all.
+		if !isLateRun {
+			ds = append(ds, rating.Discount{TypeID: rating.TypeEarlyBird, Name: models.EarlyBirdLineName,
+				Kind: rating.KindFixed, Amount: rating.FromRM(EarlyBirdRM),
+				Sequence: rating.SeqEarlyBird, Source: "issued by " + earlyBirdCutoff,
+				Conditional: true})
 		}
 
-		// Included self-study: shown as a membership line then fully waived by a
-		// matching FOC discount, so it nets to zero and never moves the total.
+		sp := store.PriceStudent(priced, catalogue, ds)
+		items, problems := sp.InvoiceLines(periodStart, periodEnd)
+		if sp.Unpriceable {
+			// Never issue a partial invoice: a missing line is a parent charged
+			// the wrong amount, which is worse than a student visibly unbilled.
+			core.Logger.Warn("monthly billing: student skipped — a class has no agreed price",
+				"student_id", s.id, "tenant_id", s.tenantID, "problems", strings.Join(problems, "; "))
+			continue
+		}
+		if sp.Total <= 0 {
+			// "Nothing to bill" and "billing silently broken" look identical
+			// without this line.
+			core.Logger.Warn("monthly billing: student skipped — nothing priced and no package amount",
+				"student_id", s.id, "tenant_id", s.tenantID)
+			continue
+		}
+
+		// What actually came off, after the engine clamped it -- not what was
+		// offered. The clawback restores this exact figure.
+		referralCredit := sp.AmountOf(rating.TypeReferral)
+		siblingDiscount := sp.AmountOf(rating.TypeSibling)
+		earlyBirdApplied := sp.AmountOf(rating.TypeEarlyBird)
+		discounted := sp.Total
+		// What the parent owes if the early bird is lost, which is what the
+		// clawback restores and what the reminder email quotes.
+		full := discounted + earlyBirdApplied
+
+		// Included self-study: a membership line then a matching FOC discount,
+		// so it nets to zero and never moves the total.
 		if s.selfStudyHours > 0 {
 			ssValue := float64(s.selfStudyHours) * SelfStudyOverflowRatePerHour
 			items = append(items, models.InvoiceLineItem{
@@ -590,9 +545,6 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 			})
 			items = appendDiscount(items, "Special pass FOC (self-study included)", ssValue)
 		}
-		items = appendDiscount(items, "Referral discount", referralCredit)
-		items = appendDiscount(items, "Sibling discount", siblingDiscount)
-		items = appendDiscount(items, models.EarlyBirdLineName, earlyBirdApplied)
 
 		invID := core.GenerateID("INV")
 		desc := "Monthly tuition — " + monthLabel + " — " + s.firstName + " " + s.lastName

@@ -3,7 +3,6 @@ package handlers
 import (
 	"net/http"
 	"regexp"
-	"strconv"
 
 	"studyhub/internal/core"
 	"studyhub/internal/models"
@@ -72,59 +71,7 @@ func HandleProposedInvoice(db *store.DB) http.HandlerFunc {
 }
 
 func toProposedInvoice(sp store.StudentPrice, month string) ProposedInvoice {
-	out := ProposedInvoice{StudentID: sp.StudentID, StudentName: sp.StudentName, Month: month,
-		Lines: []models.InvoiceLineItem{}, Unpriceable: sp.Unpriceable, Problems: []string{}}
-	for _, l := range sp.Lines {
-		if l.Source == store.SourceUnpriceable {
-			out.Problems = append(out.Problems, problemText(l))
-			continue
-		}
-		if l.Source == store.SourceDiscount {
-			out.Lines = append(out.Lines, models.InvoiceLineItem{
-				Kind: models.LineItemKindDiscount, Name: l.ClassName,
-				Qty: 1, UnitPrice: -l.Amount, Amount: l.Amount,
-			})
-			continue
-		}
-		out.Lines = append(out.Lines, models.InvoiceLineItem{
-			Kind: models.LineItemKindItem, Name: lineName(l), Descriptor: lineDescriptor(l),
-			Qty: 1, UnitPrice: l.Amount, Amount: l.Amount,
-		})
-	}
-	out.Total = sp.Total
-	return out
-}
-
-func lineName(l store.PriceLine) string {
-	if l.CategoryName != "" {
-		return l.CategoryName
-	}
-	return l.ClassName
-}
-
-// The descriptor is what makes a figure checkable by eye: which tier, how many
-// sessions a week, which classes it covers.
-func lineDescriptor(l store.PriceLine) string {
-	if l.TierName == "" {
-		return l.ClassName
-	}
-	d := l.TierName
-	if l.SessionsPerWeek > 0 {
-		d += ", " + strconv.Itoa(l.SessionsPerWeek) + "x a week"
-	}
-	if l.ClassName != "" {
-		d += " (" + l.ClassName + ")"
-	}
-	return d
-}
-
-func problemText(l store.PriceLine) string {
-	who := l.ClassName
-	if who == "" {
-		who = l.CategoryName
-	}
-	if who == "" {
-		return l.Problem
-	}
-	return who + ": " + l.Problem
+	lines, problems := sp.InvoiceLines("", "")
+	return ProposedInvoice{StudentID: sp.StudentID, StudentName: sp.StudentName, Month: month,
+		Lines: lines, Problems: problems, Unpriceable: sp.Unpriceable, Total: sp.Total}
 }
