@@ -133,11 +133,11 @@ func runMonthlyInvoiceCycle(db *store.DB) {
 	if created > 0 {
 		core.Logger.Info("monthly invoice cron created invoices", "count", created, "month", now.Format("2006-01"))
 	}
-	overflow := generateSelfStudyOverflowInvoices(db, now)
+	overflow := generateSelfStudyOverflowInvoices(db, now, crossTenant())
 	if overflow > 0 {
 		core.Logger.Info("self-study overflow invoices created", "count", overflow, "month", previousMonth(now).Format("2006-01"))
 	}
-	payrolls := generateMonthlyPayroll(db, now)
+	payrolls := generateMonthlyPayroll(db, now, crossTenant())
 	if payrolls > 0 {
 		core.Logger.Info("monthly payroll cron created rows", "count", payrolls, "month", previousMonth(now).Format("2006-01"))
 	}
@@ -153,7 +153,7 @@ func runMonthlyInvoiceCycle(db *store.DB) {
 // are summed from self_study_sessions.duration_min (rounded UP to whole
 // hours so a 61-minute session counts as 2). Idempotent: skips students that
 // already have a "Self-study overflow — <YYYY-MM>" invoice for the period.
-func generateSelfStudyOverflowInvoices(db *store.DB, now time.Time) int {
+func generateSelfStudyOverflowInvoices(db *store.DB, now time.Time, c *core.Claims) int {
 	prev := previousMonth(now)
 	monthHuman := prev.Format("Jan 2006")
 	// The dedup key. Not derived from created_on anywhere: overflow bills the
@@ -205,6 +205,7 @@ func generateSelfStudyOverflowInvoices(db *store.DB, now time.Time) int {
 	}
 	rcRows.Close()
 
+	ovScope, ovScopeArgs := store.ScopeTenant(c, "s")
 	rows, err := db.Query(`
 		SELECT s.id, s.tenant_id, s.first_name, s.last_name,
 		       COALESCE(s.package_self_study_hours,4),
@@ -213,9 +214,9 @@ func generateSelfStudyOverflowInvoices(db *store.DB, now time.Time) int {
 		  LEFT JOIN self_study_sessions ss ON ss.student_id = s.id AND ss.tenant_id = s.tenant_id AND ss.deleted_at IS NULL AND ss.date BETWEEN ? AND ?
 		 WHERE s.deleted_at IS NULL
 		   AND COALESCE(s.subscription_status,'active') = 'active'
-		   AND COALESCE(s.status,'Active') NOT IN ('Inactive','Waitlisted')
+		   AND COALESCE(s.status,'Active') NOT IN ('Inactive','Waitlisted')`+ovScope+`
 		 GROUP BY s.id, s.tenant_id, s.first_name, s.last_name, s.package_self_study_hours
-	`, monthStart, monthEnd)
+	`, append([]any{monthStart, monthEnd}, ovScopeArgs...)...)
 	if err != nil {
 		core.Logger.Error("self-study overflow query failed", "err", err)
 		return 0
@@ -806,8 +807,8 @@ func HandleRunMonthlyCron(db *store.DB) http.HandlerFunc {
 			safeRun(MonthlyCronJob, func() {
 				now := time.Now()
 				invoices := generateMonthlyInvoices(db, now, c)
-				overflow := generateSelfStudyOverflowInvoices(db, now)
-				payrolls := generateMonthlyPayroll(db, now)
+				overflow := generateSelfStudyOverflowInvoices(db, now, c)
+				payrolls := generateMonthlyPayroll(db, now, c)
 				if invoices+overflow+payrolls > 0 {
 					store.SnapshotCacheInvalidateAll()
 				}
@@ -829,18 +830,18 @@ func HandleRunMonthlyCron(db *store.DB) http.HandlerFunc {
 // teacher who checks in after the first cron run still gets counted. Paid
 // and manually_edited rows are frozen. Returns rows created + refreshed.
 // Status starts Pending so admin reviews/confirms via the existing UI.
-func generateMonthlyPayroll(db *store.DB, now time.Time) int {
+func generateMonthlyPayroll(db *store.DB, now time.Time, c *core.Claims) int {
 	prev := previousMonth(now)
 	monthLabel := prev.Format("2006-01")
 	monthStart := prev.Format("2006-01-02")
 	monthEnd := time.Date(prev.Year(), prev.Month()+1, 1, 0, 0, 0, 0, prev.Location()).AddDate(0, 0, -1).Format("2006-01-02")
 
+	payScope, payScopeArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`
 		SELECT id, tenant_id, COALESCE(employment_type,'Full-time'),
 		       COALESCE(salary,0), COALESCE(hourly_rate,0)
 		FROM staff
-		WHERE deleted_at IS NULL AND COALESCE(status,'Active') = 'Active'
-	`)
+		WHERE deleted_at IS NULL AND COALESCE(status,'Active') = 'Active'`+payScope, payScopeArgs...)
 	if err != nil {
 		core.Logger.Error("monthly payroll cron query failed", "err", err)
 		return 0
@@ -1128,7 +1129,7 @@ func HandleRegeneratePayroll(db *store.DB) http.HandlerFunc {
 			defer conn.Close()
 			defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, lockKey)
 			safeRun("payroll-regenerate", func() {
-				count := generateMonthlyPayroll(db, target)
+				count := generateMonthlyPayroll(db, target, c)
 				core.Logger.Info("payroll regenerated", "actor", actor, "month", monthArg, "created", count)
 				core.LogAudit(db, store.TenantID(c), actor, "payroll_regenerated", "system", monthArg, "")
 			})
