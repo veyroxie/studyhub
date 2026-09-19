@@ -153,7 +153,9 @@ func HandleMonthDraft(db *store.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		drafted := jobs.RunMonthlyInvoices(db, draftClock(month))
+		// The caller's tenant only: an admin endpoint must not draft invoices
+		// for another centre's students the way the all-tenant scheduler does.
+		drafted := jobs.RunMonthlyInvoicesFor(db, draftClock(month), c)
 		core.LogAudit(db, store.TenantID(c), c.Email, "monthly_drafted", "invoice", month,
 			"drafts: "+itoa(drafted))
 		store.SnapshotCacheInvalidateAll()

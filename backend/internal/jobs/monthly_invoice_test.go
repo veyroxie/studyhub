@@ -60,7 +60,7 @@ func TestMonthlyCronBillsAClassTheOldTierJoinPricedAtZero(t *testing.T) {
 		t.Fatalf("seed enrolment: %v", err)
 	}
 
-	if n := generateMonthlyInvoices(db, now); n == 0 {
+	if n := generateMonthlyInvoices(db, now, crossTenant()); n == 0 {
 		t.Fatal("the run issued nothing at all")
 	}
 

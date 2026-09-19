@@ -129,7 +129,7 @@ func runMonthlyInvoiceCycle(db *store.DB) {
 		return
 	}
 	defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, lockKey)
-	created := generateMonthlyInvoices(db, now)
+	created := generateMonthlyInvoices(db, now, crossTenant())
 	if created > 0 {
 		core.Logger.Info("monthly invoice cron created invoices", "count", created, "month", now.Format("2006-01"))
 	}
@@ -302,7 +302,20 @@ func previousMonth(now time.Time) time.Time {
 // manual-run endpoint both go through the unexported path, which holds the
 // advisory lock this one does not.
 func RunMonthlyInvoices(db *store.DB, now time.Time) int {
-	return generateMonthlyInvoices(db, now)
+	return generateMonthlyInvoices(db, now, crossTenant())
+}
+
+// crossTenant is what the SCHEDULER runs as: tenant 0 means every tenant
+// (store/scope.go:40). A nil *core.Claims does NOT mean that -- store.TenantID
+// returns 1 for nil -- so passing nil here would silently bill only the first
+// centre and no query would look wrong.
+func crossTenant() *core.Claims { return &core.Claims{TenantID: 0, Role: "system"} }
+
+// RunMonthlyInvoicesFor drafts only the caller's tenant. The scheduler spans
+// every tenant by design; an admin endpoint must not, or one centre's admin
+// drafts invoices for another's students.
+func RunMonthlyInvoicesFor(db *store.DB, now time.Time, c *core.Claims) int {
+	return generateMonthlyInvoices(db, now, c)
 }
 
 // generateMonthlyInvoices is the core of the monthly subscription cycle.
@@ -313,7 +326,7 @@ func RunMonthlyInvoices(db *store.DB, now time.Time) int {
 // up-front, then issues all inserts inside a single transaction. The naive
 // per-student loop ran ~3 queries × N students; for N=200 that's 600 round
 // trips. The bulk version is 3 setup queries + N inserts in one transaction.
-func generateMonthlyInvoices(db *store.DB, now time.Time) int {
+func generateMonthlyInvoices(db *store.DB, now time.Time, c *core.Claims) int {
 	monthPrefix := now.Format("2006-01")
 
 	// Key by (tenant_id, student_id) so a colliding STU_<ts> across tenants
@@ -322,7 +335,7 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	//
 	// Fail closed: a transient error here would leave `existing` empty and
 	// re-issue an invoice to every active student, so abort the run instead.
-	existing, err := loadExistingMonthlyInvoiceStudentIDs(db, monthPrefix)
+	existing, err := loadExistingMonthlyInvoiceStudentIDs(db, monthPrefix, c)
 	if err != nil {
 		core.Logger.Error("monthly invoice dedup preload failed", "err", err)
 		return 0
@@ -340,9 +353,10 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 	// Fails closed like the dedup preload above: an empty catalogue makes every
 	// class unpriceable, so students are skipped loudly rather than billed at 0.
 	priceOn := monthPrefix + "-15"
-	catalogue := store.LoadCatalogue(db, nil, priceOn)
-	enrolmentsByStudent := store.LoadEnrolments(db, nil, priceOn)
+	catalogue := store.LoadCatalogue(db, c, priceOn)
+	enrolmentsByStudent := store.LoadEnrolments(db, c, priceOn)
 
+	studentScope, studentScopeArgs := store.ScopeTenant(c, "s")
 	rows, err := db.Query(`
 		SELECT s.id, s.tenant_id, s.first_name, s.last_name, s.family_id, s.package_amount,
 		       COALESCE(s.contact,''), COALESCE(s.parent_name,''), COALESCE(s.enrolled_classes,'[]'),
@@ -352,7 +366,7 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 		WHERE s.deleted_at IS NULL
 		  AND COALESCE(s.subscription_status,'active') = 'active'
 		  AND COALESCE(s.status,'Active') NOT IN ('Inactive','Waitlisted')
-	`)
+	`+studentScope, studentScopeArgs...)
 	if err != nil {
 		core.Logger.Error("monthly invoice cron query failed", "err", err)
 		return 0
@@ -418,7 +432,8 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 			fph[i] = "?"
 			fargs[i] = id
 		}
-		rows, err := db.Query(`SELECT id, family_id FROM students WHERE deleted_at IS NULL AND COALESCE(subscription_status,'active')='active' AND COALESCE(status,'Active') NOT IN ('Inactive','Waitlisted') AND family_id IN (`+strings.Join(fph, ",")+`)`, fargs...)
+		sibScope, sibScopeArgs := store.ScopeTenant(c, "")
+		rows, err := db.Query(`SELECT id, family_id FROM students WHERE deleted_at IS NULL AND COALESCE(subscription_status,'active')='active' AND COALESCE(status,'Active') NOT IN ('Inactive','Waitlisted') AND family_id IN (`+strings.Join(fph, ",")+`)`+sibScope, append(fargs, sibScopeArgs...)...)
 		if err != nil {
 			core.Logger.Error("monthly cron: sibling roster preload failed", "err", err)
 			return 0
@@ -650,15 +665,16 @@ func generateMonthlyInvoices(db *store.DB, now time.Time) int {
 
 // loadExistingMonthlyInvoiceStudentIDs returns the set of (tenant_id|student_id)
 // pairs that already have a Monthly invoice for the given YYYY-MM prefix.
-func loadExistingMonthlyInvoiceStudentIDs(db *store.DB, monthPrefix string) (map[string]bool, error) {
+func loadExistingMonthlyInvoiceStudentIDs(db *store.DB, monthPrefix string, c *core.Claims) (map[string]bool, error) {
 	out := map[string]bool{}
 	// Keyed on period, not the created_on prefix: an invoice raised in September
 	// for August is an August invoice, and matching on when it was created would
 	// let the August run issue a second one.
+	tw, twArgs := store.ScopeTenant(c, "")
 	rows, err := db.Query(`
 		SELECT DISTINCT tenant_id, student_id FROM invoices
-		WHERE type='Monthly' AND period=? AND deleted_at IS NULL`,
-		monthPrefix)
+		WHERE type='Monthly' AND period=? AND deleted_at IS NULL`+tw,
+		append([]any{monthPrefix}, twArgs...)...)
 	if err != nil {
 		return out, err
 	}
@@ -789,7 +805,7 @@ func HandleRunMonthlyCron(db *store.DB) http.HandlerFunc {
 			defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, lockKey)
 			safeRun(MonthlyCronJob, func() {
 				now := time.Now()
-				invoices := generateMonthlyInvoices(db, now)
+				invoices := generateMonthlyInvoices(db, now, c)
 				overflow := generateSelfStudyOverflowInvoices(db, now)
 				payrolls := generateMonthlyPayroll(db, now)
 				if invoices+overflow+payrolls > 0 {
