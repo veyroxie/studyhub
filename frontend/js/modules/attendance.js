@@ -1065,21 +1065,37 @@
     });
   }
 
+  // The weekday a date falls on, read locally. Never toISOString(): that yields
+  // the UTC date, which is still yesterday here until 08:00.
+  function _weekdayOf(dateStr) {
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+  }
+
   function _renderTeacherView() {
-    const { classes } = App.Store.get();
-    // Get teacher's classes
-    const myClasses = classes.filter(function(c) { return c.teacherIds.indexOf(App.currentTeacher) > -1; });
+    const state = App.Store.get();
+    const myClasses = state.classes.filter(function(c) { return c.teacherIds.indexOf(App.currentTeacher) > -1; });
+
+    // Only what actually meets on the date being viewed. The list used to be
+    // every class the teacher owns, so opening attendance on a Wednesday
+    // offered their Saturday and Monday classes too -- and marking a roster
+    // against one of those records a session that never ran.
+    //
+    // runsOnDate, not a day-name match: it honours schedule versions and both
+    // directions of a session move, so a class moved INTO today shows up and
+    // one moved away does not.
+    const dayClasses = myClasses.filter(function(c) { return App.Utils.runsOnDate(c, _attDate, state); });
 
     // Check for pre-selected class from dashboard
     if (App._preselectedClass) {
-      var pre = myClasses.find(function(c) { return c.id === App._preselectedClass; });
+      var pre = dayClasses.find(function(c) { return c.id === App._preselectedClass; });
       if (pre) _attClassId = pre.id;
       App._preselectedClass = null;
     }
 
-    // Auto-select first class if current selection isn't theirs
-    if (!myClasses.find(function(c) { return c.id === _attClassId; }) && myClasses.length > 0) {
-      _attClassId = myClasses[0].id;
+    // Auto-select the first class running that day when the current selection
+    // is not one of them -- including after the date changes underneath it.
+    if (!dayClasses.find(function(c) { return c.id === _attClassId; }) && dayClasses.length > 0) {
+      _attClassId = dayClasses[0].id;
     }
 
     return _renderTeacherSelfCheckIn()
@@ -1087,19 +1103,25 @@
       + '<div style="padding:0.75rem 1.1rem;border-bottom:1px solid #f0ede8;background:rgba(139,92,246,0.05)">'
       +   '<span style="font-size:0.78rem;font-weight:700;color:#7c3aed">MY CLASSES — Student Attendance</span>'
       + '</div>'
-      + _studentTabFiltered(myClasses)
+      + _studentTabFiltered(dayClasses, myClasses.length > 0)
       + '</div>';
   }
 
-  function _studentTabFiltered(myClasses) {
+  function _studentTabFiltered(dayClasses, teachesAnything) {
     const { students, attendance } = App.Store.get();
-    if (myClasses.length === 0) {
-      return '<div style="background:#fff;border-radius:0;border:1px solid var(--rule,#e2e8f0);overflow:hidden">'
-        + App.Utils.emptyState('No classes assigned to you yet',
-            'Once admin assigns you to a class, the attendance roster shows here.')
-        + '</div>';
+    const datePicker = '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;min-height:48px">';
+
+    if (dayClasses.length === 0) {
+      // The date picker is rendered even here. Returning early without it left
+      // a teacher whose classes are on other days with no way to reach one.
+      return '<div style="padding:0.9rem 1rem;border-bottom:1px solid #f0ede8;background:#faf9f7">' + datePicker + '</div>'
+        + (teachesAnything
+          ? App.Utils.emptyState('Nothing on ' + _weekdayOf(_attDate),
+              'None of your classes run on this date. Pick another day above.')
+          : App.Utils.emptyState('No classes assigned to you yet',
+              'Once admin assigns you to a class, the attendance roster shows here.'));
     }
-    const selectedClass = myClasses.find(function(c) { return c.id === _attClassId; }) || myClasses[0];
+    const selectedClass = dayClasses.find(function(c) { return c.id === _attClassId; }) || dayClasses[0];
     const enrolledStudents = selectedClass
       ? App.Utils.rosterFor(students, selectedClass.id, _attDate, App.Store.get().enrollments, attendance)
       : [];
@@ -1108,9 +1130,9 @@
 
     return '<div style="padding:0.9rem 1rem;border-bottom:1px solid #f0ede8;background:#faf9f7">'
       +   '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">'
-      +     '<input type="date" value="' + _attDate + '" onchange="App.Attendance._setDate(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;min-height:48px">'
+      +     datePicker
       +     '<select onchange="App.Attendance._setClass(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;min-height:48px;background:#fff">'
-      +     myClasses.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === selectedClass.id ? 'selected' : '') + '>' + App.Utils.esc(c.name) + ' — ' + c.day + ' ' + App.Utils.formatTime(c.time) + '</option>'; }).join('')
+      +     dayClasses.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === selectedClass.id ? 'selected' : '') + '>' + App.Utils.esc(c.name) + ' — ' + App.Utils.formatTime(App.Utils.scheduleOn(c, App.Store.get().scheduleVersions, _attDate).time) + '</option>'; }).join('')
       +     '</select>'
       +     '<button onclick="App.Attendance._checkAllIn()" style="padding:0.5rem 0.9rem;font-size:0.82rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:4px;cursor:pointer;min-height:48px;white-space:nowrap;transition:opacity 0.15s" onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check All In</button>'
       +   '</div>'
