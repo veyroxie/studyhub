@@ -110,6 +110,22 @@ can look up by bare email. `staff.email` is NOT unique, so staff-by-email lookup
 tenant-scoped or a teacher can inherit another tenant's staff identity and class
 permissions (`auth.go:232-237`, `handlers_students.go:33-35`).
 
+### Changing someone's email
+
+Email is the link from a login to everything else: a parent to their children
+(`students.contact`), a teacher to their classes (`staff.email`). Every path that
+changes a sign-in email -- self-service `POST /api/auth/change-email` (password
+required, login rate limit), the admin's `PUT /api/users/{id}/credentials`, and
+first-login `complete-setup` -- goes through `store.MoveAccountEmail`, which moves
+the login, staff row, students, families and registrations in one transaction,
+discards the old address's email tokens and MFA handshakes, and stamps
+`sessions_invalid_before`, because the old email is inside every live token. Audit,
+sent mail and authorship keep the old address: they are history. A new
+email-keyed link column must be added there, or changing an email orphans it.
+
+Until 2026-09-30 only the login and staff row moved, so changing a parent's email
+cut them off from their own children.
+
 ## Tokens
 
 **Access token**: HS256 JWT in the `sh_token` cookie -- HttpOnly, `SameSite=Lax`, `Path=/`,

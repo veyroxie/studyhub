@@ -3,10 +3,13 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
 	"studyhub/internal/auth"
 	"studyhub/internal/core"
 	"studyhub/internal/store"
-	"time"
 )
 
 // handleProfile lets any authenticated user view and update their own
@@ -197,4 +200,69 @@ func HandleChangePassword(db *store.DB) http.HandlerFunc {
 
 		core.Respond(w, map[string]string{"message": "Password changed."})
 	}
+}
+
+// HandleChangeEmail lets anyone change their own sign-in email, confirmed with
+// their password. Everything keyed on the old email moves with it (a parent's
+// children, a teacher's staff row), and every session ends: the old email is in
+// the token, so the user signs in again with the new one.
+//
+// POST /api/auth/change-email  body: {currentPassword, newEmail}
+func HandleChangeEmail(db *store.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := core.ClaimsFrom(r)
+		if c == nil || c.UserID <= 0 {
+			core.RespondError(w, "not authenticated", http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			CurrentPassword string `json:"currentPassword"`
+			NewEmail        string `json:"newEmail"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			core.RespondError(w, "bad body", http.StatusBadRequest)
+			return
+		}
+		newEmail := strings.ToLower(strings.TrimSpace(body.NewEmail))
+		if !auth.ValidateEmail(newEmail) {
+			core.RespondError(w, "that is not a valid email address", http.StatusBadRequest)
+			return
+		}
+		// The row, not the token: an admin may have changed the email since this session began.
+		var currentEmail, hash string
+		var tenantID int
+		if err := db.QueryRow(`SELECT email, password_hash, tenant_id FROM users WHERE id=?`, c.UserID).
+			Scan(&currentEmail, &hash, &tenantID); err != nil {
+			core.RespondError(w, "user not found", http.StatusNotFound)
+			return
+		}
+		if auth.VerifyPassword(hash, body.CurrentPassword) != nil {
+			core.RespondError(w, "current password is incorrect", http.StatusForbidden)
+			return
+		}
+		if newEmail == currentEmail {
+			core.RespondError(w, "that is already your email", http.StatusBadRequest)
+			return
+		}
+		if err := moveOwnEmail(r, db, c.UserID, tenantID, currentEmail, newEmail); err != nil {
+			respondEmailMoveError(w, r, err, c.UserID)
+			return
+		}
+		store.RevokeRefreshFamilyByUser(db, c.UserID, "email changed")
+		auth.InvalidateUserStatusCache(c.UserID)
+		core.LogAudit(db, tenantID, newEmail, "email_changed", "user", strconv.Itoa(c.UserID), "from="+currentEmail)
+		core.Respond(w, map[string]string{"email": newEmail, "message": "Email changed. Sign in again with your new email."})
+	}
+}
+
+func moveOwnEmail(r *http.Request, db *store.DB, userID, tenantID int, oldEmail, newEmail string) error {
+	tx, err := db.BeginTx(r.Context())
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := store.MoveAccountEmail(tx, userID, tenantID, oldEmail, newEmail); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

@@ -74,18 +74,8 @@ func HandleCompleteSetup(db *store.DB) http.HandlerFunc {
 		defer tx.Rollback()
 
 		if newEmail != currentEmail {
-			if _, err := tx.Exec(`UPDATE users SET email=? WHERE id=?`, newEmail, c.UserID); err != nil {
-				if isDuplicate(err) {
-					core.RespondError(w, "another account already uses that email", http.StatusConflict)
-					return
-				}
-				core.LogFromReq(r).Error("complete-setup: email update failed", "err", err, "user_id", c.UserID)
-				core.RespondError(w, "could not save your details", 500)
-				return
-			}
-			if _, err := tx.Exec(`UPDATE staff SET email=? WHERE email=? AND deleted_at IS NULL`, newEmail, currentEmail); err != nil {
-				core.LogFromReq(r).Error("complete-setup: staff email update failed", "err", err, "user_id", c.UserID)
-				core.RespondError(w, "could not save your details", 500)
+			if err := store.MoveAccountEmail(tx, c.UserID, store.TenantID(c), currentEmail, newEmail); err != nil {
+				respondEmailMoveError(w, r, err, c.UserID)
 				return
 			}
 		}

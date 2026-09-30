@@ -9,6 +9,13 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- Anyone can change their own sign-in email from My Profile, confirmed with
+  their password and typed twice. They are signed out and sign in again.
+
+### Fixed
+- Changing a parent's email (by an admin, or at first sign-in) no longer cuts
+  them off from their children: the children, family record and pending
+  enrolment requests move with the login.
 - `DEVELOPER_EMAILS` (new env var, forwarded in docker-compose): the technical
   owner's sign-in. Only that account sees developer screens such as role
   preview; admins run the centre and no longer get them. Set it to your own

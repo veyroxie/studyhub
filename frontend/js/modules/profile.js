@@ -110,6 +110,14 @@
       + '<input name="currentPassword" type="password" placeholder="Current password" class="form-input" required>'
       + '<input name="newPassword" type="password" placeholder="New password (min 8 chars)" class="form-input" required minlength="8">'
       + '<button type="submit" style="align-self:flex-start;padding:0.5rem 1.1rem;font-size:0.8rem;font-weight:600;background:#fff;color:#374151;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Update password</button>'
+      + '</form>'
+      + '<form id="pf-email-form" style="display:flex;flex-direction:column;gap:0.75rem;margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid #f1f5f9">'
+      +   '<div style="font-size:0.85rem;font-weight:600;color:#374151">Sign-in email <span style="font-weight:400;color:#94a3b8">' + App.Utils.esc(profile.email || '') + '</span></div>'
+      +   '<input name="newEmail" type="email" placeholder="New email" class="form-input" required autocomplete="email">'
+      +   '<input name="confirmEmail" type="email" placeholder="Type the new email again" class="form-input" required autocomplete="off">'
+      +   '<input name="currentPassword" type="password" placeholder="Current password" class="form-input" required autocomplete="current-password">'
+      +   '<p style="font-size:0.75rem;color:#94a3b8;margin:0">You will be signed out and sign in again with the new email.</p>'
+      +   '<button type="submit" style="align-self:flex-start;padding:0.5rem 1.1rem;font-size:0.8rem;font-weight:600;background:#fff;color:#374151;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Change email</button>'
       + '</form>' + mfa
     );
   }
@@ -140,6 +148,7 @@
   function _wire(profile) {
     _wireAccount(profile);
     _wirePassword();
+    _wireEmail();
     _wireToggles(profile);
     _wirePush();
     var replay = document.getElementById('pf-replay-tour');
@@ -175,6 +184,29 @@
         App.Utils.showToast('Password changed', 'success');
         e.target.reset();
       } catch (err) { /* App.Api already toasted the error */ }
+    });
+  }
+
+  // No confirmation email can be sent while outbound mail is restricted, so the new
+  // address is typed twice: a typo would otherwise lock the person out.
+  function _wireEmail() {
+    var form = document.getElementById('pf-email-form');
+    if (!form) return;
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      var newEmail = String(fd.get('newEmail') || '').trim();
+      if (newEmail.toLowerCase() !== String(fd.get('confirmEmail') || '').trim().toLowerCase()) {
+        App.Utils.showToast('The two emails do not match', 'error');
+        return;
+      }
+      try {
+        await App.Api.post('/api/auth/change-email', { newEmail: newEmail, currentPassword: fd.get('currentPassword') });
+      } catch (err) {
+        return; // App.Api already toasted why (wrong password, email in use)
+      }
+      App.Utils.showToast('Email changed. Sign in with ' + newEmail, 'success', 8000);
+      App.signOut();
     });
   }
 

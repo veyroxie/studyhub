@@ -556,11 +556,7 @@
     document.getElementById('import-btn') && document.getElementById('import-btn').addEventListener('click', importData);
     document.getElementById('reset-btn') && document.getElementById('reset-btn').addEventListener('click', resetData);
     document.getElementById('logout-btn') && document.getElementById('logout-btn').addEventListener('click', function() {
-      App.IdleTimeout.stop();
-      // The page is not reloaded here, so the socket has to be closed
-      // explicitly or it reconnects forever and the next login stacks another.
-      App.Api.disconnectWS();
-      App.Api.logout().then(function() { App.Login.show(); });
+      App.signOut();
     });
 
     // Listen for parent notifications in client mode
@@ -688,6 +684,14 @@
   // switcher itself writes. Client-side gating is a courtesy, not a control:
   // anyone can unhide the element with devtools. What actually protects the
   // data is that the backend ignores the client's claimed role.
+
+  // signOut ends the session without a reload. The socket is closed explicitly, or it
+  // reconnects forever and the next sign-in stacks another.
+  App.signOut = function() {
+    App.IdleTimeout.stop();
+    App.Api.disconnectWS();
+    return App.Api.logout().then(function() { App.Login.show(); });
+  };
 
   // uiRoleFor maps the server's role to one of the UI's three views; a superadmin works in the admin one.
   function uiRoleFor(serverRole) {

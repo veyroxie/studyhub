@@ -172,6 +172,7 @@ func Build(db *store.DB) http.Handler {
 		r.Get("/api/auth/profile", handlers.HandleProfile(db))
 		r.Put("/api/auth/profile", handlers.HandleProfile(db))
 		r.Post("/api/auth/change-password", handlers.HandleChangePassword(db))
+		r.With(core.RateLimitLogin).Post("/api/auth/change-email", handlers.HandleChangeEmail(db))
 		r.Post("/api/push/subscribe", handlers.HandlePushSubscribe(db))
 		r.Get("/api/snapshot", handlers.HandleSnapshot(db))
 

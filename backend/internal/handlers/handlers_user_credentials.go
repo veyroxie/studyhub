@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -69,9 +70,10 @@ func HandleUserCredentials(db *store.DB) http.HandlerFunc {
 
 		tw, twArgs := store.ScopeTenant(c, "")
 		var currentEmail, role string
+		var userID, userTenant int
 		selArgs := append([]any{id}, twArgs...)
-		if err := db.QueryRow(`SELECT email, COALESCE(role,'') FROM users WHERE id=?`+tw, selArgs...).
-			Scan(&currentEmail, &role); err != nil {
+		if err := db.QueryRow(`SELECT id, tenant_id, email, COALESCE(role,'') FROM users WHERE id=?`+tw, selArgs...).
+			Scan(&userID, &userTenant, &currentEmail, &role); err != nil {
 			core.RespondError(w, "user not found", http.StatusNotFound)
 			return
 		}
@@ -94,21 +96,10 @@ func HandleUserCredentials(db *store.DB) http.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		if body.Email != "" && newEmail != currentEmail {
-			emailArgs := append([]any{newEmail, id}, twArgs...)
-			if _, err := tx.Exec(`UPDATE users SET email=? WHERE id=?`+tw, emailArgs...); err != nil {
-				if isDuplicate(err) {
-					core.RespondError(w, "another account already uses that email", http.StatusConflict)
-					return
-				}
-				core.LogFromReq(r).Error("credentials: email update failed", "err", err, "user_id", id)
-				core.RespondError(w, "could not update the account", 500)
-				return
-			}
-			staffArgs := append([]any{newEmail, currentEmail}, twArgs...)
-			if _, err := tx.Exec(`UPDATE staff SET email=? WHERE email=?`+tw+` AND deleted_at IS NULL`, staffArgs...); err != nil {
-				core.LogFromReq(r).Error("credentials: staff email update failed", "err", err, "user_id", id)
-				core.RespondError(w, "could not update the account", 500)
+		emailChanged := newEmail != currentEmail
+		if emailChanged {
+			if err := store.MoveAccountEmail(tx, userID, userTenant, currentEmail, newEmail); err != nil {
+				respondEmailMoveError(w, r, err, userID)
 				return
 			}
 		}
@@ -145,20 +136,27 @@ func HandleUserCredentials(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		// Every existing session dies. A password change that leaves old
-		// sessions alive does not lock anyone out of anything.
-		if body.Password != "" || body.Role != "" {
-			var uid int
-			db.QueryRow(`SELECT id FROM users WHERE id=?`+tw, selArgs...).Scan(&uid)
-			store.RevokeRefreshFamilyByUser(db, uid, "credentials changed by admin")
-			auth.InvalidateUserStatusCache(uid)
+		// Every existing session dies. A password change that leaves old sessions alive
+		// locks nobody out, and after an email change the old email is still in the token.
+		if body.Password != "" || body.Role != "" || emailChanged {
+			store.RevokeRefreshFamilyByUser(db, userID, "credentials changed by admin")
+			auth.InvalidateUserStatusCache(userID)
 		}
 		// The detail records WHAT changed, never the password itself.
 		core.LogAudit(db, store.TenantID(c), c.Email, "user_credentials_changed", "user", id,
-			"email="+boolWord(body.Email != "" && newEmail != currentEmail)+
+			"email="+boolWord(emailChanged)+
 				" password="+boolWord(body.Password != "")+" role="+boolWord(body.Role != ""))
 		core.Respond(w, map[string]string{"id": id, "email": newEmail})
 	}
+}
+
+func respondEmailMoveError(w http.ResponseWriter, r *http.Request, err error, userID int) {
+	if errors.Is(err, store.ErrEmailTaken) {
+		core.RespondError(w, err.Error(), http.StatusConflict)
+		return
+	}
+	core.LogFromReq(r).Error("email move failed", "err", err, "user_id", userID)
+	core.RespondError(w, "could not update the account", http.StatusInternalServerError)
 }
 
 func boolWord(b bool) string {
