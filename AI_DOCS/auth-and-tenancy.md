@@ -89,6 +89,11 @@ times -- a payload carrying a check-in time and `status: "Absent"` is refused
 (`handlers_attendance.go:191-210`). Widening the exemption without keeping that condition
 re-opens the hole.
 
+Undo (`DELETE /api/attendance/{id}`) is admin-only except one case: a teacher may undo
+today's non-absence record for a student in their own class (`teacherMayUndo`). An
+absence stays admin-only because undo does not claw back the replacement credits an
+absence can grant, so re-marking it would grant them twice.
+
 Staff attendance rows are NOT covered: one teacher can still write another's, which moves
 payroll. Left open deliberately -- who operates that screen is not established.
 

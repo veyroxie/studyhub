@@ -85,7 +85,7 @@
       : checkedIn ? 'In: ' + App.Utils.formatTime(rec.checkIn) + '  · still in'
       : 'Not checked in';
 
-    var undoBtn = (rec && App.currentRole === 'admin')
+    var undoBtn = (rec && _mayUndo(rec, isAbsent))
       ? '<button onclick="App.Attendance._undoAttendance(\'' + rec.id + '\',\'' + s.id + '\',' + (isAbsent ? 'true' : 'false') + ')" style="'
         + 'min-height:30px;width:100%;margin-top:0.3rem;padding:0.25rem 0.6rem;background:none;color:#94a3b8;border:1px dashed #e2e8f0;'
         + 'border-radius:4px;font-size:0.7rem;font-weight:600;cursor:pointer" title="Remove this record as if it was never marked">Undo</button>'
@@ -111,6 +111,8 @@
             + 'border-radius:0;font-size:0.72rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
             + 'title="Late notice (less than 3 hours) — no credit issued"'
             + '>Absent (no credit)</button>'
+            // Shown, not only in a tooltip: phones never hover.
+            + '<p style="font-size:0.68rem;color:#94a3b8;margin:0.3rem 0 0;line-height:1.35">Replacement only if the parent told us at least 3 hours before class.</p>'
           : '');
     } else if (!checkedOut) {
       actionBtn = '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" style="'
@@ -1260,9 +1262,28 @@
   }
 
   var _absenceLock = {};
+  // Mirrors the server: an admin may undo any record; a teacher only today's check-in,
+  // because undoing an absence would not take back the credits it granted.
+  function _mayUndo(rec, isAbsent) {
+    if (App.currentRole === 'admin') return true;
+    return App.currentRole === 'teacher' && !isAbsent && rec.date === App.Utils.today();
+  }
+
   async function _markAbsentCredit(studentId) {
     var lockKey = studentId + '|' + _attClassId + '|' + _attDate;
     if (_absenceLock[lockKey]) return;
+    var confirmState = App.Store.get();
+    var who = confirmState.students.find(function(s) { return s.id === studentId; });
+    var clsForCredit = confirmState.classes.find(function(c) { return c.id === _attClassId; });
+    var owed = App.Utils.creditsForClass(clsForCredit);
+    // One tap used to grant credits; they are money the centre owes, so ask first.
+    var ok = await App.Utils.showConfirm({
+      title: 'Mark absent with a replacement?',
+      message: (who ? who.firstName : 'This student') + ' gets ' + owed + ' replacement credit' + (owed === 1 ? '' : 's')
+        + ' (1 credit = 15 minutes). Only if the parent told us at least 3 hours before class.',
+      confirmLabel: 'Mark absent + credit',
+    });
+    if (!ok || _absenceLock[lockKey]) return;
     _absenceLock[lockKey] = true;
     setTimeout(function() { delete _absenceLock[lockKey]; }, 1500);
 

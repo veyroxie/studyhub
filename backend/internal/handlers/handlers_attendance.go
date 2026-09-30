@@ -331,12 +331,12 @@ func HandleAttendance(db *store.DB, hub *WSHub) http.HandlerFunc {
 func HandleDeleteAttendance(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := core.ClaimsFrom(r)
-		if !core.IsAdminRole(c) {
-			core.RespondError(w, "admin only", http.StatusForbidden)
-			return
-		}
 		id := chi.URLParam(r, "id")
 		tw, twArgs := store.ScopeTenant(c, "")
+		if !core.IsAdminRole(c) && !teacherMayUndo(db, c, id, tw, twArgs) {
+			core.RespondError(w, "only an admin can undo this record", http.StatusForbidden)
+			return
+		}
 		res, err := db.Exec(`DELETE FROM attendance WHERE id=?`+tw, append([]any{id}, twArgs...)...)
 		if err != nil {
 			core.RespondError(w, "server error", http.StatusInternalServerError)
@@ -349,4 +349,19 @@ func HandleDeleteAttendance(db *store.DB) http.HandlerFunc {
 		core.LogAudit(db, store.TenantID(c), c.Email, "attendance_undone", "attendance", id, "")
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// teacherMayUndo lets a teacher take back a mis-tapped check-in: today's, for a student
+// in one of their own classes. An absence stays admin-only, because undo does not claw
+// back the replacement credits an absence can grant, so re-marking it would grant twice.
+func teacherMayUndo(db *store.DB, c *core.Claims, id, tw string, twArgs []any) bool {
+	if c == nil || c.Role != "teacher" {
+		return false
+	}
+	var personType, personID, date, status string
+	if err := db.QueryRow(`SELECT person_type, person_id, date, COALESCE(status,'Present') FROM attendance WHERE id=?`+tw,
+		append([]any{id}, twArgs...)...).Scan(&personType, &personID, &date, &status); err != nil {
+		return false
+	}
+	return personType == "student" && status != "Absent" && date == core.Today() && teacherMayActOnStudent(db, c, personID)
 }
