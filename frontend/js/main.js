@@ -167,6 +167,8 @@
   // ── Login ─────────────────────────────────────────────────────────────────
   App.Login = {
     show(msg) {
+      // Every sign-out path lands here; a popup left open would keep #app inert for the next user.
+      App.Utils.hideModal(true);
       const errEl = document.getElementById('login-error');
       if (errEl && msg) { errEl.textContent = msg; errEl.classList.remove('hidden'); }
       document.getElementById('login-screen').classList.remove('hidden');

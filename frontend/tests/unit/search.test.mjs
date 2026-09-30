@@ -42,3 +42,27 @@ test('results are escaped when drawn', () => {
   assert.match(box.innerHTML, /&lt;b&gt;Lim&lt;\/b&gt;/);
   assert.doesNotMatch(box.innerHTML, /<b>Lim<\/b>/);
 });
+
+// "/" from a button inside a half-filled popup replaced the form with the search box.
+test('the shortcut does nothing while a popup is open', () => {
+  const sandbox = loadSandbox(['js/utils.js', 'js/modules/search.js']);
+  let opened = false;
+  const shown = { classList: { contains: () => false } };
+  sandbox.document.getElementById = (id) => (id === 'modal-overlay' || id === 'app' ? shown : null);
+  sandbox.App.Utils.showModal = () => { opened = true; };
+  sandbox.App.currentRole = 'admin';
+  sandbox.App.Search._onShortcut({ key: '/', target: { tagName: 'BUTTON' }, preventDefault() {} });
+  assert.equal(opened, false);
+});
+
+test('the shortcut opens search for an admin on a quiet page', () => {
+  const sandbox = loadSandbox(['js/utils.js', 'js/modules/search.js']);
+  let opened = false;
+  const overlay = { classList: { contains: (c) => c === 'hidden' } };
+  const app = { classList: { contains: () => false } };
+  sandbox.document.getElementById = (id) => ({ 'modal-overlay': overlay, app }[id] || null);
+  sandbox.App.Utils.showModal = () => { opened = true; };
+  sandbox.App.currentRole = 'admin';
+  sandbox.App.Search._onShortcut({ key: '/', target: { tagName: 'BODY' }, preventDefault() {} });
+  assert.equal(opened, true);
+});

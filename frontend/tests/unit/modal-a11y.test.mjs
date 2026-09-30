@@ -24,3 +24,14 @@ test('an open dialog is readable and the page behind it is not', () => {
   assert.equal(nodes.app.inert, false);
   assert.equal(nodes.app.attrs['aria-hidden'], undefined);
 });
+
+// Signing out, or a timed-out session, with a popup open left #app inert, so the next sign-in was unclickable.
+test('the login screen always hands back a usable page', () => {
+  const sandbox = loadSandbox(['js/store.js', 'js/utils.js', 'js/main.js']);
+  const nodes = { app: el(), 'modal-overlay': el(), 'modal-content': el(), 'login-screen': el() };
+  sandbox.document.getElementById = (id) => nodes[id] || null;
+  sandbox.document.removeEventListener = () => {};
+  sandbox.App.Utils.showModal('<h2>Create invoice</h2>');
+  sandbox.App.Login.show('Signed out');
+  assert.equal(nodes.app.inert, false);
+});

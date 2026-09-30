@@ -105,12 +105,21 @@
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (target && target.isContentEditable);
   }
 
-  document.addEventListener('keydown', function(e) {
+  // A popup is open (a half-filled form would be replaced) or the login screen is up.
+  function _isBusy() {
+    var overlay = document.getElementById('modal-overlay');
+    var app = document.getElementById('app');
+    return !overlay || !overlay.classList.contains('hidden') || !app || app.classList.contains('hidden');
+  }
+
+  function _onShortcut(e) {
     if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || _isTyping(e.target)) return;
-    if (App.currentRole !== 'admin') return;
+    if (App.currentRole !== 'admin' || _isBusy()) return;
     e.preventDefault();
     open();
-  });
+  }
 
-  App.Search = { find: find, open: open, _open: _open, _update: _update, _onKey: _onKey };
+  document.addEventListener('keydown', _onShortcut);
+
+  App.Search = { find: find, open: open, _open: _open, _update: _update, _onKey: _onKey, _onShortcut: _onShortcut };
 })();
