@@ -251,6 +251,64 @@ submitted (`submitted_by_parent`, set exclusively by the parent pay path). Admin
 and bulk mark-paid stay silent so reconciliation does not blast every parent
 (`handlers_invoices.go:470-473, 507-523`).
 
+### Who may pay what (`store/invoice_payment.go`)
+
+Every payment write -- the pay endpoint, the family-bill endpoint and both webhooks --
+goes through `store.RecordInvoicePayment`, which refuses a `Draft` (still under review)
+or `Void` (replaced) invoice, and limits a parent to `Unpaid`, `Overdue` or
+`Pending Verification`. `store.PayableFrom` is the same rule for a row already loaded;
+the handler answers 409 with it before writing. Before 2026-09-30 only a re-pay of `Paid`
+was guarded, so a void could be paid and a parent's claim could reopen a confirmed payment.
+
+Parents never see `Draft` or `Void` invoices: every parent read (snapshot,
+`/api/invoices`, the PDFs) appends `store.ParentVisibleInvoiceSQL`. The monthly run drafts
+on the 1st, so without it the unreviewed figures reached parents a week early.
+
+## Family bills (derived, never stored)
+
+A family bill is every `Monthly` invoice one parent can see for one period: the same
+`students.contact` exact match as parent visibility, minus `Draft`/`Void`
+(`store.FamilyBillMembers`). There is no table. That is deliberate -- a stored membership
+would need upkeep in reissue, early-bird expiry, delete, contact edit, relink and family
+PUT, and one miss would put an invoice in a bill its parent cannot see. Deriving it means a
+reissued replacement (same student, same period) joins its bill automatically.
+
+Each child keeps its own invoice, number and receipt. The monthly dedup index, referral
+milestone, early-bird clawback, analytics and the price differ all stay per child; only
+what the parent sees and does is per bill:
+
+| Per bill | Stays per child |
+|---|---|
+| Parent card, one "I've paid", one proof | invoice row, `invoice_no`, `receipt_no` |
+| `POST /api/family-bills/pay` (claim, confirm, reject) | monthly unique index, cron dedup |
+| `GET /api/family-bills/{invoiceId}/pdf` and `/receipt.pdf` | referral milestone count |
+| issue email (`family_bill.issued` outbox topic) | early-bird expiry and reissue |
+| overdue reminder (one per parent) | analytics, price differ |
+
+**Paying a bill.** The client sends the invoice ids and total it displayed; the server
+re-derives the targets inside a `FOR UPDATE` transaction and answers 409 unless they match
+(`store.SameFamilyBill`), then moves every target through `RecordInvoicePayment`. All of
+the bill moves, or none of it. Targets are everything not yet `Paid`, except a rejection
+(`Unpaid`), which reopens only the `Pending Verification` ones. A proof is uploaded once
+against one member and shared, after checking the file name belongs to a target. The
+frontend grouping in `billing.js` (`_familyBills`, `_familyBillTargets`) mirrors these
+rules and must be changed with them.
+
+**Issuing.** `store.MonthDraftGroups` groups a month's drafts by parent and
+`store.IssueDraftGroup` issues a group in one transaction with one outbox row
+(`invoice.issued` for a lone child, `family_bill.issued` for siblings). "Issue all" and
+`cmd/billingcheck` both call these, so the dry run tests the production path. The outbox
+job completes, rather than fails, when an invoice was deleted or voided before it ran: the
+relay has no attempts cap, so a failing row would block every email behind it.
+
+**Invoice this family.** The Create Invoice "Family" tab drafts one parent's month through
+the monthly run itself (`jobs.RunMonthlyInvoicesForParent`), then issues the drafts through
+`IssueDraftGroup`. Never add a second pricing path here: that is what the old Sibling tab
+was (RM150 and 10%), and filing siblings on one invoice let the monthly run bill them again.
+
+Online payment (Billplz/Stripe) is still per invoice. A bill-level checkout needs the
+webhooks to carry several invoice ids and to check the amount, neither of which they do.
+
 ## Payment webhooks
 
 Both **fail closed** when the signing secret is unset -- 503, never skip verification.
@@ -300,9 +358,9 @@ unexplained positive leftover is labelled "Early bird discount" only when `disco
 
 - Cash confirmation requires the typed amount to match within 0.005
   (`billing.js:701`).
-- A manual sibling invoice is **one** invoice attached to `children[0].id`, with the rest
-  stored as a JSON array in `siblingIds` -- not one invoice per child (`billing.js:1587-1589`).
-  Generating per-child invoices here would double-bill.
+- The old Sibling tab (one combined invoice on `children[0]`, rest in `siblingIds`) is gone;
+  see "Invoice this family" above. `sibling_ids` is now written only by the cron, meaning
+  "the other children in this family", display only. Nothing reads it as membership.
 - The edit modal appends the invoice's existing type to the Monthly/Adhoc picker, because
   reclassifying a system type (`Self-study`, `Self-study Overflow`) to Monthly "would corrupt
   billing reports + the overflow dedup" (`billing.js:1112-1117`). The dedup half of that
@@ -314,10 +372,9 @@ unexplained positive leftover is labelled "Early bird discount" only when `disco
 
 ## Open conflicts (verified, unresolved in code)
 
-**Sibling discount has two different shapes.** The cron applies a flat RM10 per child
-(`cron.go:31-33, 518-519`); the frontend's Sibling invoice tab applies a **percentage** per
-child, `perChild * (1 - discount/100)` (`billing.js:1550`). Unifying "the" sibling discount
-changes one of them. Confirm which is intended before touching either.
+**Sibling discount -- RESOLVED 2026-09-30.** Only the cron's flat RM10 per child remains;
+the percentage Sibling tab was removed and its replacement drafts through the cron.
+Whether RM10 per child is Nadine's intended amount is still unconfirmed with her.
 
 **Self-study allowance -- FIXED 2026-08-26.** The frontend self-study tab now reads each
 student's `packageSelfStudyHours` (default 4), matching the cron's per-student

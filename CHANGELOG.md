@@ -9,6 +9,17 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- Family bills. A parent with two or more children billed for the same month
+  sees one bill with one total, pays it with one "I've paid" and one receipt
+  upload, and downloads one PDF (and one receipt once it is all paid). Nadine
+  confirms, rejects or marks it paid as one, with cash matched to the bill
+  total. Issuing the month sends each family one email, and overdue reminders
+  come one per parent. Each child keeps their own invoice and receipt number.
+- Create Invoice has a Family tab in place of Sibling: it drafts one family's
+  month with the same pricing as Run the month (catalogue price, RM10 sibling
+  discount each, early bird in the first week), shows the drafts, and issues
+  them as one family bill.
+- Run the month groups each family's drafts together.
 - A class's timing can change from a chosen date without rewriting the past
   (migration 0046): the Edit Class dialog gains a "new day/time applies
   from" field. Weeks before that date keep the old day and time everywhere
