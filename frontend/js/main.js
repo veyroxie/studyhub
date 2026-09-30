@@ -687,10 +687,11 @@
 
   // signOut ends the session without a reload. The socket is closed explicitly, or it
   // reconnects forever and the next sign-in stacks another.
-  App.signOut = function() {
+  // message is shown on the login screen, e.g. why the session ended.
+  App.signOut = function(message) {
     App.IdleTimeout.stop();
     App.Api.disconnectWS();
-    return App.Api.logout().then(function() { App.Login.show(); });
+    return App.Api.logout().then(function() { App.Login.show(message); });
   };
 
   // uiRoleFor maps the server's role to one of the UI's three views; a superadmin works in the admin one.
@@ -878,11 +879,7 @@
           App.Utils.showToast('Session expiring in 60 seconds — click anywhere to stay logged in', 'warning', WARN_BEFORE);
         }
         if (idle >= IDLE_LIMIT) {
-          _stopIdleWatch();
-          App.Api.disconnectWS();
-          App.Api.logout().then(function() {
-            App.Login.show('Signed out after a period of inactivity — please sign in again. Nothing has been lost; your data is safe on the server.');
-          });
+          App.signOut('Signed out after a period of inactivity — please sign in again. Nothing has been lost; your data is safe on the server.');
         }
       }, CHECK_INTERVAL);
     }
