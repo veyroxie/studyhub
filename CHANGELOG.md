@@ -9,6 +9,10 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- "Send by WhatsApp" (and "Send family bill by WhatsApp") in the admin invoice
+  menu: opens WhatsApp to the parent's number with the amount, due date, early
+  bird deadline and a link to pay filled in, so an invoice reaches a parent
+  while email is still restricted.
 - Rejecting a parent's payment asks for a reason, and the parent sees it next
   to the invoice ("Payment not confirmed: ..."); it clears when they submit
   again. Mark unpaid on a recorded payment asks too, with the reason optional.

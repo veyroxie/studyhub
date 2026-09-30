@@ -438,6 +438,22 @@
       return Math.floor((end - start) / 15);
     },
 
+    // msisdn turns a phone as typed ("012-345 6789", "+60 12 345 6789") into WhatsApp's
+    // digits-only international form. A leading 0 is a Malaysian number; '' when unusable.
+    msisdn(phone) {
+      var digits = String(phone == null ? '' : phone).replace(/\D/g, '');
+      if (digits.charAt(0) === '0') digits = '60' + digits.slice(1);
+      return digits.length >= 10 && digits.length <= 15 ? digits : '';
+    },
+    // whatsAppLink opens a chat with text filled in; with no usable number WhatsApp
+    // asks which chat to send to, so the message is never lost.
+    whatsAppLink(phone, text) {
+      var to = App.Utils.msisdn(phone);
+      return 'https://wa.me/' + to + '?text=' + encodeURIComponent(text);
+    },
+    brandName() {
+      return window.__brandName || document.title || 'StudyHub';
+    },
     esc(str) {
       return String(str == null ? '' : str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     },

@@ -71,6 +71,7 @@
         }).then(function(b) {
           if (!b) return;
           if (b.brandName) {
+            window.__brandName = b.brandName;
             var h = document.getElementById('brand-name');
             if (h) h.textContent = b.brandName;
             document.title = b.brandName;

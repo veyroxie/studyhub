@@ -679,6 +679,7 @@
                           : inv.status === 'Paid'
                           ? '<button onclick="App.Billing._markUnpaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Mark Unpaid</button>'
                           : '<button onclick="App.Billing._markPaid(\'' + payKey + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">' + (billTag ? 'Mark family bill paid' : 'Mark as Paid') + '</button>')
+                  +     (_isEmailable(inv.status) ? '<button onclick="App.Billing._sendWhatsApp(\'' + payKey + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">' + (billTag ? 'Send family bill by WhatsApp' : 'Send by WhatsApp') + '</button>' : '')
                   +     (_isEmailable(inv.status) ? '<button onclick="App.Billing._emailParent(\'' + payKey + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">' + (billTag ? 'Email family bill' : 'Email to parent') + '</button>' : '')
                   +     '<button onclick="App.Billing._editModal(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Edit</button>'
                   +     '<a href="/api/invoices/' + inv.id + '/pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download invoice</a>'
@@ -1452,6 +1453,46 @@
         App.Router.refresh();
       })
       .catch(function() { /* App.Api already toasted; keep the modal open for a retry */ });
+  }
+
+  // ── WhatsApp ──────────────────────────────────────────────────────────────
+  // Parents live on WhatsApp and outbound email is allowlist-only, so this is how an
+  // invoice actually reaches them. Plain text, no em dashes or emoji: it is sent as Nadine.
+  function _whatsAppMessage(payable) {
+    var invs = payable.isBill ? payable.targets : [payable.inv];
+    var stu = (App.Store.get().students || []).find(function(s) { return s.id === invs[0].studentId; }) || {};
+    var due = invs.map(function(i) { return i.dueDate; }).sort()[0];
+    var lines = ['Hi' + (stu.parentName ? ' ' + stu.parentName : '') + ',', ''];
+    if (payable.isBill) {
+      lines.push('This is ' + App.Utils.brandName() + '. Your family bill for ' + _periodLabel(payable.bill.period) + ':');
+      invs.forEach(function(i) { lines.push('- ' + _studentFirstName(i.studentId) + ': ' + App.Utils.formatCurrency(i.amount)); });
+      lines.push('Total: ' + App.Utils.formatCurrency(payable.total) + ', due ' + App.Utils.formatDate(due) + '.');
+    } else {
+      lines.push('This is ' + App.Utils.brandName() + '. ' + (stu.firstName || 'Your child') + '\'s invoice'
+        + (invs[0].invoiceNo ? ' ' + invs[0].invoiceNo : '') + ' (' + _whatsAppLabel(invs[0]) + '): '
+        + App.Utils.formatCurrency(invs[0].amount) + ', due ' + App.Utils.formatDate(due) + '.');
+    }
+    if (invs.some(function(i) { return (i.lineItems || []).some(_isEarlyBirdLine); })) {
+      lines.push('Pay by the ' + EARLY_BIRD_LAST_DAY + 'th to keep the early bird discount.');
+    }
+    lines.push('', 'You can see it and let us know once you have paid here: ' + window.location.origin + '/#billing', '', 'Thank you!');
+    return { phone: stu.phone, text: lines.join('\n') };
+  }
+
+  // The monthly run writes "Monthly tuition — Oct 2026 — Name"; the month says it better.
+  function _whatsAppLabel(inv) {
+    if (inv.type === 'Monthly' && inv.period) return _periodLabel(inv.period) + ' tuition';
+    return String(inv.description || '').replace(/\s*[\u2014\u2013]\s*/g, ', ');
+  }
+
+  function _sendWhatsApp(payKey) {
+    var payable = _payable(payKey);
+    if (!payable) return;
+    var msg = _whatsAppMessage(payable);
+    if (!App.Utils.msisdn(msg.phone)) {
+      App.Utils.showToast('No usable phone number on file, so WhatsApp will ask which chat to send it to', 'info', 6000);
+    }
+    window.open(App.Utils.whatsAppLink(msg.phone, msg.text), '_blank', 'noopener');
   }
 
   // Only an issued invoice still owed is worth sending; mirrors invoiceEmailBlocker.
@@ -2297,6 +2338,8 @@
     _updateSelfStudyAmount: _updateSelfStudyAmount,
     _issueFamilyDrafts: _issueFamilyDrafts,
     _emailParent: _emailParent,
+    _sendWhatsApp: _sendWhatsApp,
+    _whatsAppMessage: function(payKey) { var p = _payable(payKey); return p ? _whatsAppMessage(p) : null; },
     _familyDraftReview: _familyDraftReview,
     _exportCSV: _exportCSV,
     _setPage: _setBillingPage
