@@ -150,8 +150,9 @@
       + (isClient ? '' : '<div class="grid grid-cols-4 gap-4 mb-6">'
         + _statCard('Total Classes', totalClasses, 'text-blue-600', "App.Calendar._setView('timetable')")
         + _statCard('Full Classes', fullClasses, 'text-red-500', "App.Calendar._setView('timetable')")
-        + _statCard('Avg Fill Rate', Math.round(avgFill * 100) + '%', 'text-emerald-600', "App.Router.navigate('analytics')")
-        + _statCard('Active Staff', staff.length, 'text-purple-600', "App.Router.navigate('staff')")
+        // Analytics and Staff are admin pages: for a teacher these stay figures, not links that bounce.
+        + _statCard('Avg Fill Rate', Math.round(avgFill * 100) + '%', 'text-emerald-600', isAdmin ? "App.Router.navigate('analytics')" : null)
+        + _statCard('Active Staff', staff.length, 'text-purple-600', isAdmin ? "App.Router.navigate('staff')" : null)
         + '</div>');
 
     // Parents only get the week view with their child's classes — no
