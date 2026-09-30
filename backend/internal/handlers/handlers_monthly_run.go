@@ -118,6 +118,10 @@ func HandleMonthRun(db *store.DB) http.HandlerFunc {
 				out.DraftTotal += m.Amount
 				continue
 			}
+			// A void was replaced: counting it beside its replacement bills the month twice.
+			if m.Status == models.InvoiceStatusVoid {
+				continue
+			}
 			out.Issued = append(out.Issued, m)
 			out.IssuedTotal += m.Amount
 		}

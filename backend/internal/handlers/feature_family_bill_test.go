@@ -341,3 +341,29 @@ func TestAFamilyEmailForDeletedInvoicesDoesNotBlockTheQueue(t *testing.T) {
 		t.Fatalf("%d outbox rows still pending, want the job completed", pending)
 	}
 }
+
+// A reissue leaves the void beside its replacement; the review must count the month once.
+func TestTheMonthReviewCountsAReissuedInvoiceOnce(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	admin := getAdminToken(t, r)
+	id := monthlyInvoice(t, r, admin, "STU001", 240, "")
+	if w := doRequest(r, "POST", "/api/invoices/"+id+"/reissue", admin, map[string]any{}); w.Code != http.StatusOK {
+		t.Fatalf("reissue: %d", w.Code)
+	}
+	var run struct {
+		Issued []struct {
+			StudentID string `json:"studentId"`
+		} `json:"issued"`
+	}
+	json.NewDecoder(doRequest(r, "GET", "/api/billing/month?month="+billPeriod, admin, nil).Body).Decode(&run)
+	count := 0
+	for _, i := range run.Issued {
+		if i.StudentID == "STU001" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("STU001 listed %d times as issued, want once", count)
+	}
+}

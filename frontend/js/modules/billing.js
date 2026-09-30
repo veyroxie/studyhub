@@ -1496,6 +1496,28 @@
       + '</td></tr>';
   }
 
+  // Drafts grouped the way IssueDraftGroup issues them: by parent, siblings together.
+  function _monthRunFamilies(drafts) {
+    var contactOf = {};
+    (App.Store.get().students || []).forEach(function(s) { contactOf[s.id] = s.contact; });
+    var index = {};
+    var families = [];
+    drafts.forEach(function(d) {
+      var key = contactOf[d.studentId] || ('id:' + d.invoiceId);
+      if (index[key] === undefined) { index[key] = families.length; families.push([]); }
+      families[index[key]].push(d);
+    });
+    return families;
+  }
+
+  function _monthRunFamilyRows(family) {
+    if (family.length < FAMILY_BILL_MIN_CHILDREN) return _monthRunRow(family[0]);
+    return '<tr style="border-top:1px solid #f1f5f9;background:#fffdf7">'
+      + '<td style="padding:0.45rem 0.6rem;font-size:0.72rem;font-weight:700;color:#854d0e">Family bill, ' + family.length + ' children, one email</td>'
+      + '<td style="padding:0.45rem 0.6rem;text-align:right;font-size:0.72rem;font-weight:700;color:#854d0e">' + App.Utils.formatCurrency(_sumAmounts(family)) + '</td><td></td></tr>'
+      + family.map(_monthRunRow).join('');
+  }
+
   function _monthRunHtml(data) {
     var drafts = data.drafts || [];
     var issued = data.issued || [];
@@ -1525,7 +1547,7 @@
         + '<thead><tr style="text-align:left;color:#64748b;font-size:0.72rem;text-transform:uppercase">'
         + '<th style="padding:0.4rem 0.6rem">Student</th><th style="padding:0.4rem 0.6rem;text-align:right">Amount</th><th></th>'
         + '</tr></thead><tbody>'
-        + drafts.map(_monthRunRow).join('')
+        + _monthRunFamilies(drafts).map(_monthRunFamilyRows).join('')
         + '</tbody></table>'
         + '<div style="display:flex;justify-content:space-between;font-size:0.82rem;font-weight:700;padding:0 0.6rem 0.75rem">'
         +   '<span>' + drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') + '</span>'
