@@ -459,6 +459,32 @@ func RenderFamilyBillIssuedEmail(parentName string, lines []FamilyBillEmailLine,
 		emailLayoutClose()
 }
 
+// RenderFamilyReminderEmail is the overdue reminder for a parent with several overdue invoices.
+func RenderFamilyReminderEmail(parentName string, lines []FamilyBillEmailLine, totalRM, billingURL string) string {
+	greeting := "Hi"
+	if strings.TrimSpace(parentName) != "" {
+		greeting = "Hi " + SafeName(parentName)
+	}
+	rows := ""
+	for _, l := range lines {
+		rows += `<tr><td style="padding:12px 18px;font-size:13px;color:#64748b;border-bottom:1px solid #f0eee8">
+  <div style="margin-bottom:4px"><strong style="color:#0a0a0a">` + SafeName(l.StudentName) + `</strong> · ` + html.EscapeString(l.Description) + `</div>
+  <div>Amount: <strong style="color:#0a0a0a">RM ` + html.EscapeString(l.AmountRM) + `</strong> · Due ` + html.EscapeString(l.DueDate) + ` · <strong>` + html.EscapeString(l.Note) + `</strong></div>
+</td></tr>`
+	}
+	return emailLayoutOpen() +
+		`<p style="margin:0 0 16px;font-size:16px;color:#0a0a0a">` + greeting + `,</p>
+<p style="margin:0 0 16px">This is a friendly reminder that these invoices are overdue.</p>
+<table cellpadding="0" cellspacing="0" style="margin:18px 0;background:#fafaf8;border:1px solid #f0eee8;border-radius:10px;width:100%">` + rows + `
+<tr><td style="padding:12px 18px;font-size:14px;color:#0a0a0a"><strong>Total overdue: RM ` + html.EscapeString(totalRM) + `</strong></td></tr>
+</table>
+<p style="margin:18px 0;text-align:center">
+  <a href="` + billingURL + `" style="display:inline-block;padding:12px 28px;background:#C9A227;color:#0a0a0a;font-weight:700;text-decoration:none;border-radius:8px;font-size:15px">View &amp; pay</a>
+</p>
+<p style="margin:0 0 12px;font-size:13px;color:#64748b">Already paid? Just ignore this email — once we mark it received, you'll stop hearing from us. If something's wrong with an invoice, reply to this email and we'll sort it out.</p>` +
+		emailLayoutClose()
+}
+
 // renderCheckEventEmail is sent — only when the parent has opted in — the
 // moment their child is checked in or out. Deliberately short: it's a real-time
 // safety ping, not a marketing mail. `headline` is e.g. "Aisyah checked in",

@@ -476,112 +476,164 @@ func isHolidayToday(db *store.DB, tenantID string) bool {
 	return false
 }
 
+// overdueReminder is one overdue invoice waiting for a reminder.
+type overdueReminder struct {
+	invoiceID   string
+	tenantID    string
+	studentName string
+	parentEmail string
+	parentName  string
+	description string
+	amount      float64
+	dueDate     string
+	daysOverdue int
+}
+
+func (p overdueReminder) amountRM() string { return fmt.Sprintf("%.2f", p.amount) }
+
+func (p overdueReminder) label() string {
+	switch {
+	case p.daysOverdue <= 0:
+		return "overdue"
+	case p.daysOverdue == 1:
+		return "1 day overdue"
+	}
+	return fmt.Sprintf("%d days overdue", p.daysOverdue)
+}
+
+// sendOverdueInvoiceReminders sends each parent one reminder covering all of their
+// overdue invoices, at most every three days per invoice.
 func sendOverdueInvoiceReminders(db *store.DB) {
+	batch := loadOverdueReminders(db)
+	if len(batch) == 0 {
+		return
+	}
+	core.Logger.Info("sending overdue reminders", "invoices", len(batch))
+	// The holiday lookup runs once per tenant rather than once per parent.
+	holidaySkip := map[string]bool{}
+	for _, group := range groupRemindersByParent(batch) {
+		tenantID := group[0].tenantID
+		if _, seen := holidaySkip[tenantID]; !seen {
+			holidaySkip[tenantID] = isHolidayToday(db, tenantID)
+		}
+		if !holidaySkip[tenantID] {
+			sendParentReminder(db, group)
+		}
+	}
+}
+
+func loadOverdueReminders(db *store.DB) []overdueReminder {
 	rows, err := db.Query(`
-		SELECT i.id, i.tenant_id, i.student_id, i.description, i.amount, i.due_date,
+		SELECT i.id, i.tenant_id, i.description, i.amount, i.due_date,
 		       COALESCE(s.first_name||' '||s.last_name,'student'), COALESCE(s.contact,''), COALESCE(s.parent_name,'')
 		FROM invoices i
-		LEFT JOIN students s ON s.id = i.student_id
+		LEFT JOIN students s ON s.id = i.student_id AND s.tenant_id = i.tenant_id
 		WHERE i.status IN ('Unpaid','Overdue')
 		  AND i.due_date < ?
 		  AND i.deleted_at IS NULL
 		  AND (i.reminder_sent_on IS NULL OR i.reminder_sent_on < ?)
+		ORDER BY i.due_date, i.id
 	`, core.Today(), threeDaysAgo())
 	if err != nil {
 		core.Logger.Error("overdue-reminders query failed", "err", err)
-		return
+		return nil
 	}
 	defer rows.Close()
-
-	type pending struct {
-		invoiceID   string
-		tenantID    string
-		studentID   string
-		studentName string
-		parentEmail string
-		parentName  string
-		description string
-		amountRM    string
-		dueDate     string
-		daysOverdue int
-	}
-	var batch []pending
+	var batch []overdueReminder
 	for rows.Next() {
-		var p pending
-		var amount float64
-		if err := rows.Scan(&p.invoiceID, &p.tenantID, &p.studentID, &p.description, &amount, &p.dueDate, &p.studentName, &p.parentEmail, &p.parentName); err != nil {
+		var p overdueReminder
+		if err := rows.Scan(&p.invoiceID, &p.tenantID, &p.description, &p.amount, &p.dueDate, &p.studentName, &p.parentEmail, &p.parentName); err != nil {
 			continue
 		}
-		p.amountRM = fmt.Sprintf("%.2f", amount)
-		// Days overdue from today. Best-effort parse — if the due_date isn't
-		// ISO format we just say "overdue" without a count.
+		// Best-effort: a non-ISO due date just reads as "overdue" without a count.
 		if t, err := time.Parse("2006-01-02", p.dueDate); err == nil {
 			p.daysOverdue = int(time.Since(t).Hours() / 24)
 		}
-		if p.parentEmail == "" {
-			continue // can't reach them, skip
+		if p.parentEmail != "" {
+			batch = append(batch, p)
 		}
-		batch = append(batch, p)
 	}
+	return batch
+}
 
-	if len(batch) == 0 {
+// groupRemindersByParent keeps first-seen order, so the oldest debt leads each email.
+func groupRemindersByParent(batch []overdueReminder) [][]overdueReminder {
+	index := map[string]int{}
+	groups := [][]overdueReminder{}
+	for _, p := range batch {
+		key := p.tenantID + "|" + p.parentEmail
+		if i, ok := index[key]; ok {
+			groups[i] = append(groups[i], p)
+			continue
+		}
+		index[key] = len(groups)
+		groups = append(groups, []overdueReminder{p})
+	}
+	return groups
+}
+
+func sendParentReminder(db *store.DB, group []overdueReminder) {
+	parent := group[0]
+	// Opt-out, defaulting to true on a missing row or a scan error: the zero value
+	// false would silently mark invoices reminded without ever sending.
+	wantReminders := true
+	if err := db.QueryRow(`SELECT COALESCE(notify_invoice_reminders,true) FROM users WHERE email=?`, parent.parentEmail).Scan(&wantReminders); err != nil && err != sql.ErrNoRows {
+		wantReminders = true
+	}
+	if !wantReminders {
+		// Still stamped, so these invoices stop being re-evaluated every hour.
+		for _, p := range group {
+			db.Exec(`UPDATE invoices SET reminder_sent_on=? WHERE id=? AND tenant_id=?`, core.Today(), p.invoiceID, p.tenantID)
+		}
 		return
 	}
-	core.Logger.Info("sending overdue reminders", "count", len(batch))
+	claimed := claimReminders(db, group)
+	if len(claimed) == 0 {
+		return
+	}
+	subject, body := reminderEmail(claimed)
+	if err := core.SendEmail(parent.parentEmail, subject, body); err != nil {
+		core.Logger.Error("overdue reminder send failed", "err", err, "email", parent.parentEmail, "invoices", len(claimed))
+		for _, p := range claimed {
+			db.Exec(`UPDATE invoices SET reminder_sent_on=NULL WHERE id=? AND tenant_id=?`, p.invoiceID, p.tenantID)
+		}
+	}
+}
 
-	// Group skip-checks per tenant so the holiday lookup runs once per
-	// tenant rather than once per reminder.
-	holidaySkip := map[string]bool{}
-
-	for _, p := range batch {
-		if _, seen := holidaySkip[p.tenantID]; !seen {
-			holidaySkip[p.tenantID] = isHolidayToday(db, p.tenantID)
-		}
-		if holidaySkip[p.tenantID] {
-			continue
-		}
-		// Honor parent's notification preference. Default true (opt-out) on a
-		// missing row OR a scan error — the zero value is false, which would
-		// silently mark the invoice reminded without ever sending.
-		wantReminders := true
-		if err := db.QueryRow(`SELECT COALESCE(notify_invoice_reminders,true) FROM users WHERE email=?`, p.parentEmail).Scan(&wantReminders); err != nil && err != sql.ErrNoRows {
-			wantReminders = true
-		}
-		if !wantReminders {
-			// Still mark reminder_sent_on so we don't re-evaluate
-			// this invoice every hour — keeps the query selective.
-			db.Exec(`UPDATE invoices SET reminder_sent_on=? WHERE id=? AND tenant_id=?`, core.Today(), p.invoiceID, p.tenantID)
-			continue
-		}
-		var label string
-		if p.daysOverdue <= 0 {
-			label = "overdue"
-		} else if p.daysOverdue == 1 {
-			label = "1 day overdue"
-		} else {
-			label = fmt.Sprintf("%d days overdue", p.daysOverdue)
-		}
-		// Claim BEFORE sending: mark reminder_sent_on first so two overlapping
-		// instances (rolling deploy) can't both email the same parent. The
-		// guarded WHERE makes exactly one claimer win; the loser skips. On a
-		// send failure the claim is released so a later tick retries.
+// claimReminders marks each invoice BEFORE sending, so two overlapping instances
+// (a rolling deploy) cannot both email it; the guarded WHERE lets one claimer win.
+func claimReminders(db *store.DB, group []overdueReminder) []overdueReminder {
+	claimed := []overdueReminder{}
+	for _, p := range group {
 		res, err := db.Exec(`UPDATE invoices SET reminder_sent_on=? WHERE id=? AND tenant_id=? AND (reminder_sent_on IS NULL OR reminder_sent_on < ?)`,
 			core.Today(), p.invoiceID, p.tenantID, threeDaysAgo())
 		if err != nil {
 			core.Logger.Error("overdue reminder claim failed", "err", err, "invoice_id", p.invoiceID)
 			continue
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			continue // another instance claimed it
-		}
-		billingURL := mailer.AppURL() + "/#billing"
-		body := mailer.RenderInvoiceReminderEmail(p.parentName, p.studentName, p.description, p.amountRM, p.dueDate, label, billingURL)
-		if err := core.SendEmail(p.parentEmail, "Reminder: invoice "+label, body); err != nil {
-			core.Logger.Error("overdue reminder send failed", "err", err, "invoice_id", p.invoiceID, "email", p.parentEmail)
-			db.Exec(`UPDATE invoices SET reminder_sent_on=NULL WHERE id=? AND tenant_id=?`, p.invoiceID, p.tenantID)
-			continue
+		if n, _ := res.RowsAffected(); n > 0 {
+			claimed = append(claimed, p)
 		}
 	}
+	return claimed
+}
+
+func reminderEmail(claimed []overdueReminder) (string, string) {
+	billingURL := mailer.AppURL() + "/#billing"
+	p := claimed[0]
+	if len(claimed) == 1 {
+		return "Reminder: invoice " + p.label(),
+			mailer.RenderInvoiceReminderEmail(p.parentName, p.studentName, p.description, p.amountRM(), p.dueDate, p.label(), billingURL)
+	}
+	lines := make([]mailer.FamilyBillEmailLine, len(claimed))
+	total := 0.0
+	for i, c := range claimed {
+		lines[i] = mailer.FamilyBillEmailLine{StudentName: c.studentName, Description: c.description,
+			AmountRM: c.amountRM(), DueDate: c.dueDate, Note: c.label()}
+		total += c.amount
+	}
+	return fmt.Sprintf("Reminder: %d invoices overdue", len(claimed)),
+		mailer.RenderFamilyReminderEmail(p.parentName, lines, fmt.Sprintf("%.2f", total), billingURL)
 }
 
 // threeDaysAgo returns today() minus 3 days as an ISO date string. Used by
