@@ -73,3 +73,47 @@ describe('paying a family bill', () => {
     assert.equal(body.paymentProof, 'uploads/proof_I1_1.png');
   });
 });
+
+describe('admin actions on a family bill', () => {
+  let sandbox;
+  let posts;
+  let toasts;
+  let typed;
+  const load = (invoices) => {
+    sandbox = loadSandbox(['js/utils.js', 'js/modules/billing.js']);
+    posts = [];
+    toasts = [];
+    sandbox.App.Store = { get: () => ({ students, invoices, referralRewards: [] }) };
+    sandbox.App.Utils.hideModal = () => {};
+    sandbox.App.Utils.showToast = (msg) => toasts.push(msg);
+    sandbox.App.Notifs = { refresh() {} };
+    sandbox.App.Router = { refresh() {} };
+    sandbox.App.Api = {
+      post: (path, body) => { posts.push({ path, body }); return Promise.resolve({}); },
+      put: () => { throw new Error('a bill must not fall back to one-invoice PUTs'); },
+      loadSnapshot: () => Promise.resolve(),
+    };
+    sandbox.document.getElementById = (id) => (id === 'cash-confirm-amount' ? { value: typed, focus() {} } : null);
+  };
+
+  test('cash for a family bill must match the bill total, not one child', () => {
+    load([monthly('I1', 'STU_Z', 230), monthly('I2', 'STU_L', 250)]);
+    typed = '230';
+    sandbox.App.Billing._confirmCashSubmit('bill:I1');
+    assert.equal(posts.length, 0);
+    typed = '480';
+    sandbox.App.Billing._confirmCashSubmit('bill:I1');
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].body.status, 'Paid');
+    assert.equal(posts[0].body.expectedTotal, 480);
+    assert.equal(posts[0].body.parentEmail, PARENT);
+  });
+
+  test('rejecting a family bill reopens only the claimed invoices', () => {
+    load([monthly('I1', 'STU_Z', 230, 'Pending Verification'), monthly('I2', 'STU_L', 250, 'Unpaid')]);
+    sandbox.App.Billing._markUnpaid('bill:I1');
+    assert.equal(posts.length, 1);
+    assert.deepEqual(Array.from(posts[0].body.invoiceIds), ['I1']);
+    assert.equal(posts[0].body.expectedTotal, 230);
+  });
+});

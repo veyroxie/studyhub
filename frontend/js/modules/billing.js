@@ -202,18 +202,30 @@
     return s ? s.firstName : studentId;
   }
 
-  // _payable resolves what a pay button is paying: one invoice, or a family bill's outstanding invoices.
-  function _payable(payKey) {
+  // _payable resolves what a pay button is paying: one invoice, or the family-bill
+  // invoices that `action` moves (defaults to everything still owed).
+  function _payable(payKey, action) {
     if (payKey.indexOf(FAMILY_BILL_KEY) !== 0) {
       var inv = (App.Store.get().invoices || []).find(function(i) { return i.id === payKey; });
       return inv ? { isBill: false, inv: inv, title: inv.description, uploadInvoiceId: inv.id } : null;
     }
     var bill = _familyBillOf(payKey.slice(FAMILY_BILL_KEY.length));
     if (!bill) return null;
-    var targets = _familyBillTargets(bill, 'Pending Verification');
+    var targets = _familyBillTargets(bill, action || 'Pending Verification');
     if (!targets.length) return null;
     return { isBill: true, bill: bill, targets: targets, total: _sumAmounts(targets),
       title: 'Family bill, ' + _periodLabel(bill.period), uploadInvoiceId: targets[0].id };
+  }
+
+  function _payableAmount(payable) {
+    return payable.isBill ? payable.total : payable.inv.amount;
+  }
+
+  function _payableSummaryHtml(payable) {
+    return '<div style="background:#f8fafc;padding:0.75rem 1rem;margin-bottom:1rem">'
+      + '<div style="font-size:0.85rem;font-weight:700;color:#111">' + App.Utils.esc(payable.title) + '</div>'
+      + (payable.isBill ? _familyBillLinesHtml(payable.targets) : '')
+      + '</div>';
   }
 
   function _familyBillLinesHtml(invs) {
@@ -617,9 +629,12 @@
               const stu = _studentMap[inv.studentId];
               const stuName = stu ? stu.firstName + ' ' + stu.lastName : inv.studentId;
               const isNearDue = inv.status === 'Unpaid' && new Date(inv.dueDate) <= in7 && new Date(inv.dueDate) >= today;
+              // Inside a family bill a payment moves the whole bill, so the menu acts on it.
+              const payKey = inFamilyBill[inv.id] ? FAMILY_BILL_KEY + inv.id : inv.id;
+              const billTag = inFamilyBill[inv.id] && isAdmin ? ' <span style="font-size:0.65rem;font-weight:700;color:#854d0e;background:#fefce8;border:1px solid #fde68a;padding:0 0.3rem">Family bill</span>' : '';
               return '<tr class="hover:bg-slate-50 transition-colors">'
                 + (isAdmin ? '<td class="td" style="width:36px"><input type="checkbox" class="inv-cb" data-id="' + inv.id + '" onchange="App.Billing._toggleSelectInv(\'' + inv.id + '\',this.checked)" style="cursor:pointer"' + (_selectedInv[inv.id] ? ' checked' : '') + '></td>' : '')
-                + '<td class="td"><div class="font-medium text-slate-800">' + App.Utils.esc(stuName) + '</div><div class="text-xs text-slate-400">' + inv.id + '</div></td>'
+                + '<td class="td"><div class="font-medium text-slate-800">' + App.Utils.esc(stuName) + billTag + '</div><div class="text-xs text-slate-400">' + inv.id + '</div></td>'
                 + '<td class="td text-sm text-slate-600"><button type="button" onclick="App.Billing._viewInvoiceModal(\'' + inv.id + '\')" title="View breakdown" style="text-align:left;background:none;border:none;padding:0;color:inherit;cursor:pointer;font:inherit;text-decoration:underline;text-decoration-color:#e2e8f0;text-underline-offset:2px">' + App.Utils.esc(inv.description) + '</button></td>'
                 + '<td class="td">' + App.Utils.badge(inv.type, inv.type === 'Monthly' ? 'blue' : 'purple') + '</td>'
                 + '<td class="td text-sm ' + (isNearDue ? 'text-amber-600 font-medium' : 'text-slate-600') + '">'
@@ -641,12 +656,12 @@
                   +     (inv.status === 'Draft' || inv.status === 'Void'
                           ? ''
                           : inv.status === 'Pending Verification'
-                          ? '<button onclick="App.Billing._verifyPaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-green-50 text-green-700 font-semibold">Verify Payment</button>'
-                            + '<button onclick="App.Billing._markPaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Override &amp; Mark Paid</button>'
-                            + '<button onclick="App.Billing._markUnpaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Reject (Mark Unpaid)</button>'
+                          ? '<button onclick="App.Billing._verifyPaid(\'' + payKey + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-green-50 text-green-700 font-semibold">' + (billTag ? 'Verify family bill' : 'Verify Payment') + '</button>'
+                            + '<button onclick="App.Billing._markPaid(\'' + payKey + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Override &amp; Mark Paid</button>'
+                            + '<button onclick="App.Billing._markUnpaid(\'' + payKey + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Reject (Mark Unpaid)</button>'
                           : inv.status === 'Paid'
                           ? '<button onclick="App.Billing._markUnpaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Mark Unpaid</button>'
-                          : '<button onclick="App.Billing._markPaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Mark as Paid</button>')
+                          : '<button onclick="App.Billing._markPaid(\'' + payKey + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">' + (billTag ? 'Mark family bill paid' : 'Mark as Paid') + '</button>')
                   +     '<button onclick="App.Billing._editModal(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Edit</button>'
                   +     '<a href="/api/invoices/' + inv.id + '/pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download invoice</a>'
                   +     (inv.status === 'Paid' ? '<a href="/api/invoices/' + inv.id + '/receipt.pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download receipt</a>' : '')
@@ -836,6 +851,7 @@
     var html = '<div class="p-6">'
       + '<h2 class="text-lg font-bold mb-1">Confirm Payment</h2>'
       + '<p class="text-sm text-slate-500 mb-4">Select payment method received</p>'
+      + (_payable(invId) && _payable(invId).isBill ? _payableSummaryHtml(_payable(invId)) : '')
       + '<div id="admin-payment-methods-grid" class="grid grid-cols-3 gap-3 mb-5">'
       // Cash — show a confirm screen (no receipt to attach, so make it deliberate)
       + '<button onclick="App.Billing._confirmCash(\'' + invId + '\')" '
@@ -942,13 +958,15 @@
       return;
     }
 
+    var payable = _payable(invId);
+    if (!payable) return;
     if (hasFile) {
       var submitBtn = document.getElementById('admin-proof-submit-btn');
       if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Uploading...'; }
 
       var formData = new FormData();
       formData.append('proof', fileInput.files[0]);
-      formData.append('invoiceId', invId);
+      formData.append('invoiceId', payable.uploadInvoiceId);
 
       fetch('/api/upload-proof', {
         method: 'POST',
@@ -961,11 +979,7 @@
         return res.json();
       })
       .then(function(data) {
-        var state = App.Store.get();
-        App.Store.set({ invoices: state.invoices.map(function(i) {
-          return i.id === invId ? Object.assign({}, i, { paymentProof: data.path }) : i;
-        })});
-        _confirmPaid(invId, method, refNo);
+        _confirmPaid(invId, method, refNo, data.path);
       })
       .catch(function() {
         // A receipt is optional, but a receipt the admin CHOSE to attach and
@@ -980,12 +994,13 @@
   }
 
   function _confirmCash(invId) {
-    var inv = App.Store.get().invoices.find(function(i) { return i.id === invId; });
-    if (!inv) return;
+    var payable = _payable(invId);
+    if (!payable) return;
     var html = '<div class="p-6">'
       + '<h2 class="text-lg font-bold mb-1">Confirm cash payment</h2>'
-      + '<p class="text-sm text-slate-500 mb-4">Type the exact amount received to mark "' + App.Utils.esc(inv.description) + '" as paid.</p>'
-      + '<label class="block text-xs font-semibold text-slate-500 mb-1">Amount received (invoice is ' + App.Utils.formatCurrency(inv.amount) + ')</label>'
+      + '<p class="text-sm text-slate-500 mb-4">Type the exact amount received to mark "' + App.Utils.esc(payable.title) + '" as paid.</p>'
+      + (payable.isBill ? _payableSummaryHtml(payable) : '')
+      + '<label class="block text-xs font-semibold text-slate-500 mb-1">Amount received (' + (payable.isBill ? 'family bill' : 'invoice') + ' is ' + App.Utils.formatCurrency(_payableAmount(payable)) + ')</label>'
       + '<input id="cash-confirm-amount" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00" autofocus onkeydown="if(event.key===\'Enter\'){event.preventDefault();App.Billing._confirmCashSubmit(\'' + invId + '\')}" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mb-4 focus:border-blue-500 focus:outline-none">'
       + '<div class="flex gap-2">'
       + '<button onclick="App.Billing._confirmCashSubmit(\'' + invId + '\')" class="flex-1 py-2 text-sm font-bold text-white rounded-lg bg-blue-600 hover:bg-blue-700">Confirm payment</button>'
@@ -998,31 +1013,31 @@
   }
 
   function _confirmCashSubmit(invId) {
-    var inv = App.Store.get().invoices.find(function(i) { return i.id === invId; });
-    if (!inv) return;
+    var payable = _payable(invId);
+    if (!payable) return;
+    var expected = _payableAmount(payable);
     var el = document.getElementById('cash-confirm-amount');
     var typed = el ? parseFloat(el.value) : NaN;
     // Require an exact match (to the cent) so marking paid is deliberate and
     // the recorded amount is confirmed to equal what was received.
-    if (isNaN(typed) || Math.abs(typed - inv.amount) > 0.005) {
-      App.Utils.showToast('Amount must match the invoice exactly (' + App.Utils.formatCurrency(inv.amount) + ')', 'error');
+    if (isNaN(typed) || Math.abs(typed - expected) > 0.005) {
+      App.Utils.showToast('Amount must match exactly (' + App.Utils.formatCurrency(expected) + ')', 'error');
       if (el) el.focus();
       return;
     }
     _confirmPaid(invId, 'Cash');
   }
 
-  function _confirmPaid(invId, method, refNo) {
-    var { invoices } = App.Store.get();
-    var inv = invoices.find(function(i) { return i.id === invId; });
-    if (!inv) return;
-    var payload = { status: 'Paid', paidOn: App.Utils.today(), paymentMethod: method };
+  function _confirmPaid(invId, method, refNo, proofPath) {
+    var payable = _payable(invId, 'Paid');
+    if (!payable) return;
+    var payload = { status: 'Paid', paymentMethod: method };
     if (refNo) payload.referenceNo = refNo;
-    App.Api.put('/api/invoices/' + invId + '/pay', payload)
+    _submitPayment(payable, payload, proofPath)
       .then(function() {
         return App.Api.loadSnapshot();
       }).then(function() {
-        _checkReferralMilestoneClient(inv.studentId);
+        _payableStudentIds(payable).forEach(_checkReferralMilestoneClient);
         App.Utils.hideModal(true);
         App.Utils.showToast('Marked paid · ' + method, 'success');
         App.Notifs.refresh();
@@ -1068,9 +1083,16 @@
     _markPaidModal(invoiceId);
   }
 
+  function _payableStudentIds(payable) {
+    return payable.isBill ? payable.targets.map(function(m) { return m.studentId; }) : [payable.inv.studentId];
+  }
+
+  // For a family bill this is "Reject": it reopens only the invoices the parent claimed.
   function _markUnpaid(invoiceId) {
+    var payable = _payable(invoiceId, 'Unpaid');
+    if (!payable) return;
     App.Utils.hideModal(true);
-    App.Api.put('/api/invoices/' + invoiceId + '/pay', { status: 'Unpaid' })
+    _submitPayment(payable, { status: 'Unpaid' })
       .then(function() { return App.Api.loadSnapshot(); })
       .then(function() {
         App.Utils.showToast('Invoice marked as unpaid', 'info');
@@ -1283,10 +1305,14 @@
 
   function _verifyPaid(invId) {
     const state = App.Store.get();
-    const inv = state.invoices.find(function(i) { return i.id === invId; });
-    if (!inv) return;
+    const payable = _payable(invId, 'Paid');
+    if (!payable) return;
+    // For a family bill the claim is shared: every member carries the same proof, method and reference.
+    const inv = payable.isBill
+      ? (payable.targets.find(function(m) { return m.paymentProof; }) || payable.targets[0])
+      : payable.inv;
     const stu = state.students.find(function(s) { return s.id === inv.studentId; });
-    const stuName = stu ? stu.firstName + ' ' + stu.lastName : inv.studentId;
+    const stuName = payable.isBill ? payable.title : (stu ? stu.firstName + ' ' + stu.lastName : inv.studentId);
 
     var proofSection = '';
     if (inv.paymentProof) {
@@ -1315,16 +1341,16 @@
     App.Utils.showModal(
       '<div class="p-6">'
       + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 0.25rem">Verify Payment</h2>'
-      + '<p style="font-size:0.82rem;color:#94a3b8;margin:0 0 1rem">' + App.Utils.esc(stuName) + ' · ' + App.Utils.esc(inv.id) + '</p>'
+      + '<p style="font-size:0.82rem;color:#94a3b8;margin:0 0 1rem">' + App.Utils.esc(stuName) + (payable.isBill ? '' : ' · ' + App.Utils.esc(inv.id)) + '</p>'
       + '<div style="background:#f8fafc;border-radius:0;padding:0.85rem 1rem;margin-bottom:1rem">'
       +   '<div style="display:flex;justify-content:space-between;align-items:center">'
       +     '<div>'
       +       '<div style="font-size:0.78rem;color:#94a3b8">' + App.Utils.esc(inv.paymentMethod || 'Unknown method') + '</div>'
-      +       '<div style="font-size:0.9rem;font-weight:700;color:#111">' + App.Utils.esc(inv.description) + '</div>'
+      +       '<div style="font-size:0.9rem;font-weight:700;color:#111">' + App.Utils.esc(payable.isBill ? 'Every child in this bill' : inv.description) + '</div>'
       +     '</div>'
-      +     '<div style="font-size:1rem;font-weight:800;color:var(--gold)">' + App.Utils.formatCurrency(inv.amount) + '</div>'
+      +     '<div style="font-size:1rem;font-weight:800;color:var(--gold)">' + App.Utils.formatCurrency(_payableAmount(payable)) + '</div>'
       +   '</div>'
-      +   _invoiceBreakdownHtml(inv)
+      +   (payable.isBill ? _familyBillLinesHtml(payable.targets) : _invoiceBreakdownHtml(inv))
       + '</div>'
       + proofSection
       // Older invoices can sit in Pending Verification with a non-cash method
@@ -1348,7 +1374,9 @@
     // to Pending Verification. Server auto-stamps paid_on and assigns the
     // receipt number. The reference travels with the confirm so invoices
     // stuck without one (pre-mandatory-reference submissions) are fixable.
-    var inv = (App.Store.get().invoices || []).find(function(i) { return i.id === invId; }) || {};
+    var payable = _payable(invId, 'Paid');
+    if (!payable) return;
+    var inv = payable.isBill ? payable.targets[0] : payable.inv;
     var refEl = document.getElementById('verify-ref');
     var refNo = refEl ? refEl.value.trim() : '';
     if (inv.paymentMethod && inv.paymentMethod !== 'Cash' && !refNo) {
@@ -1357,7 +1385,7 @@
     }
     var payload = { status: 'Paid' };
     if (refNo) payload.referenceNo = refNo;
-    App.Api.put('/api/invoices/' + invId + '/pay', payload)
+    _submitPayment(payable, payload)
       .then(function() { return App.Api.loadSnapshot(); })
       .then(function() {
         App.Utils.hideModal(true);
