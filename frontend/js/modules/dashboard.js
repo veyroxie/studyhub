@@ -108,6 +108,8 @@
       + '</div>'
       + '</div>'
 
+      + _setupChecklistHtml(_adminChecklist(s))
+
       // Stats
       + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem">'
       + stat('Active Students', activeStudents,  false, '#1d4ed8',   false, '#eff6ff', 'students')
@@ -309,63 +311,7 @@
       + '</div>'
       + '</div>';
 
-    // ── First-login checklist (show if not dismissed) ────────────────────────
-    var checklistDone = localStorage.getItem('sh_checklist_done');
-    if (!checklistDone) {
-      var visited = JSON.parse(localStorage.getItem('sh_checklist_visited') || '{}');
-      var _cs = App.Store.get();
-      var isAdminUser = App.currentRole === 'admin';
-      var csTitle, csSub, checkItems;
-      if (isAdminUser) {
-        // Admins get a real setup sequence; "done" is data-aware where we can
-        // tell (subjects/students/invoices exist), visited-based otherwise.
-        csTitle = 'Set up your centre';
-        csSub = 'A few steps to get StudyHub ready for billing';
-        checkItems = [
-          { key: 'biz',      label: 'Add business & bank details', page: 'settings', done: !!visited['biz'] },
-          { key: 'subjects', label: 'Add subjects & classes',      page: 'calendar', done: (_cs.subjects || []).length > 0 || (_cs.classes || []).length > 0 },
-          { key: 'students', label: 'Add your students',           page: 'students', done: (_cs.students || []).length > 0 },
-          { key: 'billing',  label: 'Generate invoices',           page: 'billing',  done: (_cs.invoices || []).length > 0 }
-        ];
-      } else {
-        csTitle = 'Welcome to StudyHub';
-        csSub = 'Get started by exploring these sections';
-        checkItems = [
-          { key: 'calendar',   label: 'View your child\'s schedule', page: 'calendar',   done: !!visited['calendar'] },
-          { key: 'billing',    label: 'Check upcoming payments',     page: 'billing',    done: !!visited['billing'] },
-          { key: 'progress',   label: 'See progress reports',        page: 'progress',   done: !!visited['progress'] },
-          { key: 'attendance', label: 'View attendance records',     page: 'attendance', done: !!visited['attendance'] }
-        ];
-      }
-      var allDone = checkItems.every(function(item) { return item.done; });
-
-      html += '<div style="background:#fff;border-radius:0;border:1px solid rgba(201,162,39,0.35);padding:1.25rem 1.5rem;margin-bottom:0.5rem">'
-        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
-        +   '<div>'
-        +     '<div style="font-size:0.95rem;font-weight:700;color:#111">' + csTitle + '</div>'
-        +     '<div style="font-size:0.78rem;color:#94a3b8">' + csSub + '</div>'
-        +   '</div>'
-        +   '<button onclick="localStorage.setItem(\'sh_checklist_done\',\'1\');App.Router.refresh()" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;text-decoration:underline">Dismiss</button>'
-        + '</div>'
-        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">';
-
-      checkItems.forEach(function(item) {
-        html += '<button onclick="App.Dashboard._checklistGo(\'' + item.key + '\',\'' + item.page + '\')" '
-          + 'style="display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.85rem;border-radius:0;border:1px solid ' + (item.done ? '#bbf7d0' : '#e2e8f0') + ';background:' + (item.done ? '#f0fdf4' : '#fff') + ';cursor:pointer;text-align:left;transition:all 0.15s;font-family:inherit" '
-          + 'onmouseover="this.style.borderColor=\'var(--gold)\'" onmouseout="this.style.borderColor=\'' + (item.done ? '#bbf7d0' : '#e2e8f0') + '\'">'
-          + '<span style="width:18px;height:18px;border-radius:50%;border:2px solid ' + (item.done ? '#22c55e' : '#d1d5db') + ';background:' + (item.done ? '#22c55e' : '#fff') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">'
-          + (item.done ? '<svg width="10" height="10" fill="none" stroke="#fff" stroke-width="3" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>' : '')
-          + '</span>'
-          + '<span style="font-size:0.8rem;font-weight:600;color:' + (item.done ? '#15803d' : '#374151') + '">' + item.label + '</span>'
-          + '</button>';
-      });
-
-      html += '</div>';
-      if (allDone) {
-        html += '<div style="margin-top:0.75rem;text-align:center;font-size:0.78rem;color:#15803d;font-weight:600">All done! You\'re all set.</div>';
-      }
-      html += '</div>';
-    }
+    html += _setupChecklistHtml(_parentChecklist());
 
     // ── Alert banner ──────────────────────────────────────────────────────────
     if (overdueInvs.length > 0) {
@@ -1202,6 +1148,70 @@
     App.Router.navigate('profile');
   }
 
+  // ── First-login checklist ─────────────────────────────────────────────────
+  // Storage can throw (private windows), and a checklist must never blank the dashboard.
+  function _visitedSteps() {
+    try { return JSON.parse(localStorage.getItem('sh_checklist_visited') || '{}'); } catch (e) { return {}; }
+  }
+
+  function _checklistDismissed() {
+    try { return !!localStorage.getItem('sh_checklist_done'); } catch (e) { return false; }
+  }
+
+  // Admins (the people running the centre) get a setup sequence; "done" follows the data where it can.
+  function _adminChecklist(state) {
+    var visited = _visitedSteps();
+    return { title: 'Set up your centre', sub: 'A few steps to get StudyHub ready for billing', items: [
+      { key: 'biz',      label: 'Add business & bank details', page: 'settings', done: !!visited['biz'] },
+      { key: 'subjects', label: 'Add subjects & classes',      page: 'calendar', done: (state.subjects || []).length > 0 || (state.classes || []).length > 0 },
+      { key: 'students', label: 'Add your students',           page: 'students', done: (state.students || []).length > 0 },
+      { key: 'billing',  label: 'Generate invoices',           page: 'billing',  done: (state.invoices || []).length > 0 }
+    ] };
+  }
+
+  function _parentChecklist() {
+    var visited = _visitedSteps();
+    return { title: 'Welcome to StudyHub', sub: 'Get started by exploring these sections', items: [
+      { key: 'calendar',   label: 'View your child\'s schedule', page: 'calendar',   done: !!visited['calendar'] },
+      { key: 'billing',    label: 'Check upcoming payments',     page: 'billing',    done: !!visited['billing'] },
+      { key: 'progress',   label: 'See progress reports',        page: 'progress',   done: !!visited['progress'] },
+      { key: 'attendance', label: 'View attendance records',     page: 'attendance', done: !!visited['attendance'] }
+    ] };
+  }
+
+  function _setupChecklistHtml(list) {
+    if (_checklistDismissed()) return '';
+    var allDone = list.items.every(function(item) { return item.done; });
+    var html = '<div style="background:#fff;border-radius:0;border:1px solid rgba(201,162,39,0.35);padding:1.25rem 1.5rem;margin-bottom:0.5rem">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">'
+      +   '<div>'
+      +     '<div style="font-size:0.95rem;font-weight:700;color:#111">' + list.title + '</div>'
+      +     '<div style="font-size:0.78rem;color:#94a3b8">' + list.sub + '</div>'
+      +   '</div>'
+      +   '<button onclick="App.Dashboard._dismissChecklist()" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;text-decoration:underline">Dismiss</button>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:0.5rem">';
+    list.items.forEach(function(item) {
+      html += '<button onclick="App.Dashboard._checklistGo(\'' + item.key + '\',\'' + item.page + '\')" '
+        + 'style="display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.85rem;border-radius:0;border:1px solid ' + (item.done ? '#bbf7d0' : '#e2e8f0') + ';background:' + (item.done ? '#f0fdf4' : '#fff') + ';cursor:pointer;text-align:left;transition:all 0.15s;font-family:inherit">'
+        + '<span aria-hidden="true" style="width:18px;height:18px;border-radius:50%;border:2px solid ' + (item.done ? '#22c55e' : '#d1d5db') + ';background:' + (item.done ? '#22c55e' : '#fff') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+        + (item.done ? '<svg width="10" height="10" fill="none" stroke="#fff" stroke-width="3" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>' : '')
+        + '</span>'
+        + '<span style="font-size:0.8rem;font-weight:600;color:' + (item.done ? '#15803d' : '#374151') + '">' + item.label + (item.done ? ' <span style="font-weight:400">(done)</span>' : '') + '</span>'
+        + '</button>';
+    });
+    html += '</div>';
+    if (allDone) {
+      html += '<div style="margin-top:0.75rem;text-align:center;font-size:0.78rem;color:#15803d;font-weight:600">All done! You\'re all set.</div>';
+    }
+    return html + '</div>';
+  }
+
+  function _dismissChecklist() {
+    try { localStorage.setItem('sh_checklist_done', '1'); } catch (e) { /* private window: it reappears next visit */ }
+    App.Router.refresh();
+  }
+
   // _checklistGo marks a setup/explore step visited and navigates to it.
   // The "biz" step used to live inside Calendar → Settings, which is why this
   // needed a special case at all. It has its own page now (#24).
@@ -1471,6 +1481,7 @@
     _setView: _setDashView,
     _profileModal: _profileModal,
     _checklistGo: _checklistGo,
+    _dismissChecklist: _dismissChecklist,
     _pendingUsersModal: _pendingUsersModal,
     _enrollChildModal: _enrollChildModal,
     _verifyUser: _verifyUser,
