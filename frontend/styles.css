@@ -258,6 +258,12 @@ tr:hover > .td {
 #modal-content {
   animation: modalIn 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
+/* Popups set inline min-widths of 320-520px; on a phone those push past the screen,
+   so every popup, including ones written later, is released to fit. */
+@media (max-width: 640px) {
+  #modal-content [style*="min-width"] { min-width: 0 !important; }
+  #modal-content > * { max-width: 100%; }
+}
 @keyframes modalIn {
   from { opacity: 0; transform: scale(0.96) translateY(8px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
@@ -269,6 +275,30 @@ tr:hover > .td {
 @keyframes slideUp {
   from { transform: translateY(12px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+/* Page layout grids. Inline grid-template-columns cannot be reached by a media
+   query, so layouts use these and fold on a phone. minmax(0,1fr) lets a long word
+   shrink a column instead of pushing the page wider than the screen. */
+.sh-cols-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sh-cols-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sh-cols-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sh-cols-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+@media (max-width: 768px) {
+  .sh-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sh-cols-3, .sh-cols-2, .sh-cols-split { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Week schedule: seven columns on a desktop, a day-by-day list on a phone, where
+   seven columns are too narrow to read. Empty days drop out of the list; today stays. */
+.sh-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.sh-week-day + .sh-week-day { border-left: 1px solid #f1f5f9; }
+.sh-week-note { display: none; }
+@media (max-width: 640px) {
+  .sh-week { grid-template-columns: minmax(0, 1fr); }
+  .sh-week-day + .sh-week-day { border-left: none; border-top: 1px solid #f1f5f9; }
+  .sh-week-day.is-empty:not(.is-today) { display: none; }
+  .sh-week-note { display: block; }
 }
 
 /* Tab buttons */
@@ -337,6 +367,15 @@ body.theme-b #bottom-dock {
   border-color: transparent !important;
   transition: opacity 0.35s ease, background 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease !important;
 }
+/* A touchscreen never hovers, so there the ghost dock would stay faint for good;
+   a keyboard user reaches it by focus. Both get the solid dock. */
+@media (hover: none) {
+  body.theme-b #bottom-dock {
+    opacity: 1 !important;
+    background: rgba(15,15,15,0.92) !important;
+  }
+}
+body.theme-b #bottom-dock:focus-within,
 body.theme-b #bottom-dock:hover {
   opacity: 1 !important;
   background: rgba(15,15,15,0.92) !important;
@@ -565,17 +604,19 @@ body.theme-b .dash-card {
     justify-content: space-around;
     gap: 0;
   }
+  /* Share the width, but never below a readable button: past that the dock scrolls. */
   .dock-btn {
     min-width: 0;
     padding: 5px 4px;
-    flex: 1;
+    flex: 1 0 3.6rem;
   }
   .dock-icon {
     width: 18px;
     height: 18px;
   }
   .dock-label {
-    font-size: 0.5rem;
+    font-size: 0.625rem; /* 10px: 8px was below readable on a phone */
+    white-space: nowrap;
   }
   #dock-topbar {
     padding: 0 0.75rem;

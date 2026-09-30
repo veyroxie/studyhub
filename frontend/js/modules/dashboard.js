@@ -111,7 +111,7 @@
       + _setupChecklistHtml(_adminChecklist(s))
 
       // Stats
-      + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem">'
+      + '<div class="sh-cols-4" style="gap:1rem">'
       + stat('Active Students', activeStudents,  false, '#1d4ed8',   false, '#eff6ff', 'students')
       + stat('Revenue / Month', monthRevenue,    true,  '#92400e', true, '#fef9ec', 'billing')
       + stat('Overdue Invoices',overdueInvs.length, false, overdueInvs.length > 0 ? '#991b1b' : '#94a3b8', false, overdueInvs.length > 0 ? '#fef2f2' : '#f9f9f9', 'billing')
@@ -119,7 +119,7 @@
       + '</div>'
 
       // Main two-col
-      + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:stretch">'
+      + '<div class="sh-cols-split" style="gap:1rem;align-items:stretch">'
 
         // Today's classes
         + card('Today\'s Classes <span style="font-size:0.75rem;font-weight:500;color:#94a3b8;margin-left:6px">' + todayDay + '</span>', 'calendar')
@@ -161,7 +161,7 @@
       + _weeklyAttendanceCard(attendance, today, students)
 
       // Bottom two-col: recent students + overdue invoices
-      + '<div style="display:grid;grid-template-columns:3fr 2fr;gap:1rem;align-items:start">'
+      + '<div class="sh-cols-split" style="gap:1rem;align-items:start">'
 
         // Recent students
         + card('Recent Students', 'students')
@@ -352,8 +352,9 @@
       + '<button onclick="App.Dashboard._enrollChildModal()" style="padding:0.45rem 0.9rem;font-size:0.78rem;font-weight:700;background:#fff;color:#0a0a0a;border:1px solid rgba(201,162,39,0.5);border-radius:4px;cursor:pointer">+ Enrol another child</button>'
       + '</div>'
       + _pendingEnrollmentsHtml(s);
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:1.25rem">';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:1.25rem">';
 
+    // Each tile stops its click: the card itself opens the student, which tiles must not also trigger.
     myStudents.forEach(function(stu) {
       var stuClasses = classes.filter(function(c) { return (stu.enrolledClasses || []).indexOf(c.id) > -1; });
       var stuClassIds = stuClasses.map(function(c) { return c.id; });
@@ -476,17 +477,17 @@
         + '</div>'
 
         // Mini stats grid — each tile is a shortcut into the matching page
-        + '<div style="padding:0.5rem 1.5rem 1rem;display:grid;grid-template-columns:repeat(4,1fr);gap:0.6rem">'
+        + '<div class="sh-cols-4" style="padding:0.5rem 1.5rem 1rem;gap:0.6rem">'
 
         // Attendance
-        +   '<div onclick="App.Router.navigate(\'attendance\')" style="background:#f0fdf4;border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(21,128,61,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
+        +   '<div onclick="event.stopPropagation();App.Router.navigate(\'attendance\')" style="background:#f0fdf4;border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(21,128,61,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#15803d;margin-bottom:0.3rem">Attendance</div>'
         +     '<div style="font-family:var(--serif);font-size:1.15rem;font-weight:700;color:#15803d">' + presentCount + '/' + totalSessions + '</div>'
         +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">Present</div>'
         +   '</div>'
 
         // Next class
-        +   '<div onclick="App.Router.navigate(\'calendar\')" style="background:#eff6ff;border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(37,99,235,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
+        +   '<div onclick="event.stopPropagation();App.Router.navigate(\'calendar\')" style="background:#eff6ff;border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(37,99,235,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#2563eb;margin-bottom:0.3rem">Next Class</div>'
         +     (nextClass
               ? '<div style="font-size:0.82rem;font-weight:700;color:#2563eb">' + nextClassDay + ' ' + App.Utils.formatTime(nextClass.time) + '</div>'
@@ -497,14 +498,14 @@
         // Replacement balance — opens the student modal already switched to
         // the Replacements tab so parents see the credit breakdown without
         // having to hunt for the right tab.
-        +   '<div onclick="if(App.Students){App.Students._viewModal(\'' + stu.id + '\');App.Students._switchTab(\'replacements\');}" style="background:' + (repBalance > 0 ? '#fffbeb' : '#f8fafc') + ';border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(146,64,14,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
+        +   '<div onclick="event.stopPropagation();if(App.Students){App.Students._viewModal(\'' + stu.id + '\');App.Students._switchTab(\'replacements\');}" style="background:' + (repBalance > 0 ? '#fffbeb' : '#f8fafc') + ';border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(146,64,14,0.12)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (repBalance > 0 ? '#92400e' : '#94a3b8') + ';margin-bottom:0.3rem">Replace</div>'
         +     '<div style="font-family:var(--serif);font-size:1.15rem;font-weight:700;color:' + (repBalance > 0 ? '#92400e' : '#64748b') + '">' + repBalance + 'cr</div>'
         +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (repBalance > 0 ? 'credits' : 'none') + '</div>'
         +   '</div>'
 
         // Billing
-        +   '<div onclick="App.Router.navigate(\'billing\')" style="background:' + (outstanding > 0 ? '#fef2f2' : '#f0fdf4') + ';border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(0,0,0,0.08)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
+        +   '<div onclick="event.stopPropagation();App.Router.navigate(\'billing\')" style="background:' + (outstanding > 0 ? '#fef2f2' : '#f0fdf4') + ';border-radius:0;padding:0.65rem 0.7rem;text-align:center;cursor:pointer;transition:transform 0.12s,box-shadow 0.12s" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 3px 8px rgba(0,0,0,0.08)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'none\'">'
         +     '<div style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:' + (outstanding > 0 ? '#991b1b' : '#15803d') + ';margin-bottom:0.3rem">Billing</div>'
         +     '<div style="font-family:var(--serif);font-size:1.05rem;font-weight:700;color:' + (outstanding > 0 ? '#991b1b' : '#15803d') + '">RM ' + outstanding.toFixed(0) + '</div>'
         +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (outstanding > 0 ? 'outstanding' : 'Paid up') + '</div>'
@@ -865,7 +866,7 @@
       var todayCount  = catClasses.filter(function(c) { return App.Utils.runsOnDate(c, today, s); }).length;
       return '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);padding:1.1rem 1.2rem;border-top:3px solid ' + catColors[cat] + '">'
         + '<div style="font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:' + catColors[cat] + ';margin-bottom:0.7rem">' + cat + '</div>'
-        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
+        + '<div class="sh-cols-2" style="gap:0.75rem">'
         + _miniStat('Classes', catClasses.length)
         + _miniStat('Students', catStudents.length)
         + _miniStat('Today', todayCount)
@@ -913,12 +914,12 @@
 
       // Sector breakdown
       + '<div style="margin-bottom:0.5rem"><p style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#94a3b8;margin:0 0 0.65rem">By Sector</p></div>'
-      + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem">'
+      + '<div class="sh-cols-3" style="gap:1rem;margin-bottom:1.5rem">'
       + sectorCards
       + '</div>'
 
       // Pending + Today split
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">'
+      + '<div class="sh-cols-2" style="gap:1.25rem;margin-bottom:1.25rem">'
 
       // Pending actions
       + '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden">'
@@ -1038,7 +1039,7 @@
       + '</div>'
 
       // Stats row
-      + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.25rem">'
+      + '<div class="sh-cols-3" style="gap:1rem;margin-bottom:1.25rem">'
       + stat('My Classes', myClasses.length, false, '#6366f1', false, '#f5f3ff', 'calendar')
       + stat('My Students', myStudents.length, false, '#0891b2', false, '#ecfeff', 'students')
       + stat('Today', todayClasses.length, false, '#d97706', false, '#fefce8', 'attendance')
@@ -1069,7 +1070,7 @@
       + '</div>'
 
       // Quick links
-      + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem">'
+      + '<div class="sh-cols-4" style="gap:0.75rem">'
       + [
           { label:'My Students', page:'students', color:'#3b82f6' },
           { label:'Progress Reports', page:'progress', color:'#8b5cf6' },
@@ -1356,15 +1357,15 @@
   function _enrollChildFormHtml() {
     var html = '';
     html += '<form id="enroll-child-form" style="display:flex;flex-direction:column;gap:0.85rem">'
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
+      + '<div class="sh-cols-2" style="gap:0.75rem">'
       +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">First Name *</label><input name="studentFirstName" required style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px #FFFDF6\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
       +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Last Name</label><input name="studentLastName" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px #FFFDF6\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
       + '</div>'
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
+      + '<div class="sh-cols-2" style="gap:0.75rem">'
       +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Date of Birth</label><input name="studentDob" type="date" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
       +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Gender</label><select name="studentGender" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><option>Male</option><option>Female</option></select></div>'
       + '</div>'
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
+      + '<div class="sh-cols-2" style="gap:0.75rem">'
       +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">School</label><input name="schoolName" placeholder="e.g. SK Taman Melawati" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
       +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Year / Grade</label><select name="yearGrade" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><optgroup label="Primary"><option>Standard 1</option><option>Standard 2</option><option>Standard 3</option><option>Standard 4</option><option>Standard 5</option><option>Standard 6</option></optgroup><optgroup label="Secondary"><option>Form 1</option><option>Form 2</option><option>Form 3</option><option>Form 4</option><option>Form 5</option></optgroup><optgroup label="Pre-school"><option>Pre-school (4-5)</option><option>Pre-school (5-6)</option></optgroup></select></div>'
       + '</div>'
