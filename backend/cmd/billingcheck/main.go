@@ -25,7 +25,6 @@ import (
 
 	"studyhub/internal/core"
 	"studyhub/internal/jobs"
-	"studyhub/internal/models"
 	"studyhub/internal/store"
 )
 
@@ -186,60 +185,22 @@ func main() {
 }
 
 // issueEveryDraft finalises the month exactly as the review screen does: one
-// transaction per draft, each writing its outbox row, so one failure cannot
-// strand the rest and a number allocated inside a rolled-back transaction comes
-// back with it.
+// transaction per family through store.IssueDraftGroup, each writing one outbox
+// row, so one failure cannot strand the rest and a number allocated inside a
+// rolled-back transaction comes back with it.
 func issueEveryDraft(db *store.DB, month string) (int, int) {
-	rows, err := db.Query(`SELECT id, tenant_id FROM invoices
-		WHERE type='Monthly' AND period=? AND status=? AND deleted_at IS NULL ORDER BY id`,
-		month, models.InvoiceStatusDraft)
+	groups, err := store.MonthDraftGroups(db, "", nil, month)
 	if err != nil {
 		log.Fatalf("read drafts: %v", err)
 	}
-	type draft struct {
-		id       string
-		tenantID int
-	}
-	drafts := []draft{}
-	for rows.Next() {
-		var d draft
-		if rows.Scan(&d.id, &d.tenantID) == nil {
-			drafts = append(drafts, d)
-		}
-	}
-	rows.Close()
-
 	issued, failed := 0, 0
-	for _, d := range drafts {
-		claims := &core.Claims{Email: "billingcheck", Role: "admin", TenantID: d.tenantID}
-		tx, err := db.BeginTx(context.Background())
-		if err != nil {
-			failed++
+	for _, g := range groups {
+		claims := &core.Claims{Email: "billingcheck", Role: "admin", TenantID: g.TenantID}
+		if _, err := store.IssueDraftGroup(context.Background(), db, claims, g, core.Today()); err != nil {
+			failed += len(g.InvoiceIDs)
 			continue
 		}
-		// Exactly what the review screen does, settle included -- otherwise this
-		// check exercises a path production does not have.
-		if err := store.SettleEarlyBirdOnIssue(tx, d.tenantID, d.id, core.Today()); err != nil {
-			tx.Rollback()
-			failed++
-			continue
-		}
-		number, err := store.IssueInvoice(tx, claims, d.id, models.InvoiceStatusUnpaid)
-		if err != nil || number == "" {
-			tx.Rollback()
-			failed++
-			continue
-		}
-		if err := store.EnqueueOutbox(tx, d.tenantID, store.OutboxTopicInvoiceIssued, d.id); err != nil {
-			tx.Rollback()
-			failed++
-			continue
-		}
-		if err := tx.Commit(); err != nil {
-			failed++
-			continue
-		}
-		issued++
+		issued += len(g.InvoiceIDs)
 	}
 	return issued, failed
 }

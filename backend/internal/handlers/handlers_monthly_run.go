@@ -163,10 +163,11 @@ func HandleMonthDraft(db *store.DB) http.HandlerFunc {
 	}
 }
 
-// HandleMonthIssue issues every draft in the month. Each draft gets its own
-// transaction, as #5 requires: one student whose issue fails must not strand
-// the other forty, and a number allocated inside a rolled-back transaction
-// comes back with it.
+// HandleMonthIssue issues every draft in the month, one family per transaction:
+// a family's children are issued together (so their bill is whole) and one email
+// tells the parent about all of them. One family whose issue fails must not
+// strand the rest, and a number allocated inside a rolled-back transaction comes
+// back with it.
 func HandleMonthIssue(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := core.ClaimsFrom(r)
@@ -178,36 +179,13 @@ func HandleMonthIssue(db *store.DB) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		tw, twArgs := store.ScopeTenant(c, "")
-		args := append([]any{month, models.InvoiceStatusDraft}, twArgs...)
-		rows, err := db.Query(`SELECT id, tenant_id FROM invoices
-			WHERE type='Monthly' AND period=? AND status=? AND deleted_at IS NULL`+tw+`
-			ORDER BY id`, args...)
+		tw, twArgs := store.ScopeTenant(c, "i")
+		groups, err := store.MonthDraftGroups(db, tw, twArgs, month)
 		if err != nil {
 			core.RespondError(w, "could not read the drafts", http.StatusInternalServerError)
 			return
 		}
-		type draft struct {
-			id       string
-			tenantID int
-		}
-		drafts := []draft{}
-		for rows.Next() {
-			var d draft
-			if rows.Scan(&d.id, &d.tenantID) == nil {
-				drafts = append(drafts, d)
-			}
-		}
-		rows.Close()
-
-		issued, failed := 0, 0
-		for _, d := range drafts {
-			if issueOneDraft(r, db, c, d.id, d.tenantID) {
-				issued++
-				continue
-			}
-			failed++
-		}
+		issued, failed := issueDraftGroups(r, db, c, groups)
 		core.LogAudit(db, store.TenantID(c), c.Email, "monthly_issued", "invoice", month,
 			"issued: "+itoa(issued)+", failed: "+itoa(failed))
 		store.SnapshotCacheInvalidateAll()
@@ -215,34 +193,19 @@ func HandleMonthIssue(db *store.DB) http.HandlerFunc {
 	}
 }
 
-// issueOneDraft finalises a single draft and queues the parent's email in the
-// SAME transaction, via the outbox. Sending inside the transaction is how the
-// email goes out for an invoice that then rolls back.
-func issueOneDraft(r *http.Request, db *store.DB, c *core.Claims, id string, tenantID int) bool {
-	tx, err := db.BeginTx(r.Context())
-	if err != nil {
-		return false
+func issueDraftGroups(r *http.Request, db *store.DB, c *core.Claims, groups []store.DraftGroup) (int, int) {
+	issued, failed := 0, 0
+	for _, g := range groups {
+		numbers, err := store.IssueDraftGroup(r.Context(), db, c, g, core.Today())
+		if err != nil {
+			core.LogFromReq(r).Error("issue failed", "err", err, "invoices", g.InvoiceIDs)
+			failed += len(g.InvoiceIDs)
+			continue
+		}
+		for i, id := range g.InvoiceIDs {
+			core.LogAudit(db, g.TenantID, c.Email, "invoice_issued", "invoice", id, numbers[i])
+		}
+		issued += len(g.InvoiceIDs)
 	}
-	defer tx.Rollback()
-
-	// Settle the conditional discount BEFORE the row freezes: a draft whose
-	// early-bird cutoff has passed must not be issued carrying it.
-	if err := store.SettleEarlyBirdOnIssue(tx, tenantID, id, core.Today()); err != nil {
-		core.LogFromReq(r).Error("early bird settle failed", "err", err, "invoice_id", id)
-		return false
-	}
-	number, err := store.IssueInvoice(tx, c, id, models.InvoiceStatusUnpaid)
-	if err != nil || number == "" {
-		core.LogFromReq(r).Error("issue failed", "err", err, "invoice_id", id)
-		return false
-	}
-	if err := store.EnqueueOutbox(tx, tenantID, store.OutboxTopicInvoiceIssued, id); err != nil {
-		core.LogFromReq(r).Error("outbox enqueue failed", "err", err, "invoice_id", id)
-		return false
-	}
-	if err := tx.Commit(); err != nil {
-		return false
-	}
-	core.LogAudit(db, tenantID, c.Email, "invoice_issued", "invoice", id, number)
-	return true
+	return issued, failed
 }

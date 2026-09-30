@@ -1578,7 +1578,7 @@
   async function _issueMonth() {
     var ok = await App.Utils.showConfirm({
       title: 'Issue every draft?',
-      message: 'Each one gets an invoice number and is emailed to the parent. An issued invoice cannot be edited — only reissued.',
+      message: 'Each one gets an invoice number. Each parent gets one email covering all of their children. An issued invoice cannot be edited — only reissued.',
       confirmLabel: 'Issue them',
     });
     if (!ok) return;

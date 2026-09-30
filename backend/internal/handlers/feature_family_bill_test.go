@@ -3,10 +3,12 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
 
+	"studyhub/internal/jobs"
 	"studyhub/internal/models"
 	"studyhub/internal/store"
 )
@@ -59,7 +61,8 @@ type billFixture struct {
 func newBillFixture(t *testing.T) billFixture {
 	t.Helper()
 	r, cleanup := setupTestApp(t)
-	f := billFixture{r: r, cleanup: cleanup, db: store.InitDB(testDSN())}
+	db := store.InitDB(testDSN())
+	f := billFixture{r: r, db: db, cleanup: func() { db.Close(); cleanup() }}
 	f.admin = getAdminToken(t, r)
 	f.parent = getParentToken(t, r)
 	f.zayden = monthlyInvoice(t, r, f.admin, "STU001", 240, "")
@@ -184,6 +187,7 @@ func TestADraftSiblingIsNotPartOfTheBill(t *testing.T) {
 	r, cleanup := setupTestApp(t)
 	defer cleanup()
 	db := store.InitDB(testDSN())
+	defer db.Close()
 	admin, parent := getAdminToken(t, r), getParentToken(t, r)
 	issued := monthlyInvoice(t, r, admin, "STU001", 240, "")
 	draft := monthlyInvoice(t, r, admin, "STU002", 260, models.InvoiceStatusDraft)
@@ -258,5 +262,82 @@ func TestADraftHasNoFamilyBillPDFForTheParent(t *testing.T) {
 	draft := monthlyInvoice(t, r, admin, "STU001", 240, models.InvoiceStatusDraft)
 	if w := doRequest(r, "GET", "/api/family-bills/"+draft+"/pdf", parent, nil); w.Code != http.StatusNotFound {
 		t.Fatalf("draft bill PDF: got %d, want 404", w.Code)
+	}
+}
+
+func issueBillMonth(t *testing.T, r *chi.Mux, admin string) {
+	t.Helper()
+	w := doRequest(r, "POST", "/api/billing/month/issue", admin, map[string]any{"month": billPeriod})
+	if w.Code != http.StatusOK {
+		t.Fatalf("issue the month: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func familyOutbox(t *testing.T, db *store.DB, ids ...string) (string, string) {
+	t.Helper()
+	var topic, payload string
+	for _, id := range ids {
+		db.QueryRow(`SELECT topic, payload FROM outbox WHERE payload LIKE ? ORDER BY id DESC LIMIT 1`, "%"+id+"%").Scan(&topic, &payload)
+	}
+	return topic, payload
+}
+
+// Issuing the month tells a two-child parent once, not once per child.
+func TestIssuingTheMonthEmailsAFamilyOnce(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	db := store.InitDB(testDSN())
+	defer db.Close()
+	db.Exec(`DELETE FROM outbox`)
+	db.Exec(`DELETE FROM email_queue WHERE to_email=?`, billParent)
+	admin := getAdminToken(t, r)
+	zayden := monthlyInvoice(t, r, admin, "STU001", 240, models.InvoiceStatusDraft)
+	lucy := monthlyInvoice(t, r, admin, "STU002", 260, models.InvoiceStatusDraft)
+
+	issueBillMonth(t, r, admin)
+
+	var rows int
+	db.QueryRow(`SELECT count(*) FROM outbox WHERE payload LIKE ? OR payload LIKE ?`, "%"+zayden+"%", "%"+lucy+"%").Scan(&rows)
+	if rows != 1 {
+		t.Fatalf("%d outbox rows for the family, want 1", rows)
+	}
+	topic, payload := familyOutbox(t, db, zayden)
+	if topic != store.OutboxTopicFamilyBillIssued || !strings.Contains(payload, zayden) || !strings.Contains(payload, lucy) {
+		t.Fatalf("outbox %q %q, want one family_bill.issued naming both", topic, payload)
+	}
+	for _, id := range []string{zayden, lucy} {
+		if got := readBillRow(t, db, id).status; got != models.InvoiceStatusUnpaid {
+			t.Fatalf("%s: status %q after issue, want Unpaid", id, got)
+		}
+	}
+
+	jobs.ProcessOutbox(db)
+	var emails int
+	var subject string
+	db.QueryRow(`SELECT count(*), COALESCE(MAX(subject),'') FROM email_queue WHERE to_email=?`, billParent).Scan(&emails, &subject)
+	if emails != 1 || !strings.HasPrefix(subject, "Family bill") {
+		t.Fatalf("%d emails (%q) to the parent, want one family bill email", emails, subject)
+	}
+}
+
+// A job whose invoices were all deleted before it ran completes quietly; failing it
+// would block every email queued behind it.
+func TestAFamilyEmailForDeletedInvoicesDoesNotBlockTheQueue(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	db := store.InitDB(testDSN())
+	defer db.Close()
+	db.Exec(`DELETE FROM outbox`)
+	admin := getAdminToken(t, r)
+	zayden := monthlyInvoice(t, r, admin, "STU001", 240, models.InvoiceStatusDraft)
+	lucy := monthlyInvoice(t, r, admin, "STU002", 260, models.InvoiceStatusDraft)
+	issueBillMonth(t, r, admin)
+	db.Exec(`UPDATE invoices SET deleted_at=NOW() WHERE id IN (?,?)`, zayden, lucy)
+
+	jobs.ProcessOutbox(db)
+	var pending int
+	db.QueryRow(`SELECT count(*) FROM outbox WHERE processed_at IS NULL`).Scan(&pending)
+	if pending != 0 {
+		t.Fatalf("%d outbox rows still pending, want the job completed", pending)
 	}
 }

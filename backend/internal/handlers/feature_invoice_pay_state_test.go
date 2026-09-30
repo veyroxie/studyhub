@@ -36,6 +36,7 @@ func TestADraftInvoiceCannotBePaid(t *testing.T) {
 	defer cleanup()
 	admin := getAdminToken(t, r)
 	db := store.InitDB(testDSN())
+	defer db.Close()
 
 	id := createInvoiceWithLines(t, r, admin, []models.InvoiceLineItem{baseLine()})
 	if w := doRequest(r, "PUT", "/api/invoices/"+id+"/pay", admin, cashPaid); w.Code != http.StatusConflict {
@@ -52,6 +53,7 @@ func TestAVoidedInvoiceCannotBePaid(t *testing.T) {
 	defer cleanup()
 	admin := getAdminToken(t, r)
 	db := store.InitDB(testDSN())
+	defer db.Close()
 
 	id := issuedInvoice(t, r, admin)
 	if w := doRequest(r, "POST", "/api/invoices/"+id+"/reissue", admin, map[string]any{}); w.Code != http.StatusOK {
@@ -72,6 +74,7 @@ func TestAParentCannotUnconfirmAPaidInvoice(t *testing.T) {
 	admin := getAdminToken(t, r)
 	parent := getParentToken(t, r)
 	db := store.InitDB(testDSN())
+	defer db.Close()
 
 	id := issuedInvoice(t, r, admin)
 	if w := doRequest(r, "PUT", "/api/invoices/"+id+"/pay", admin, cashPaid); w.Code != http.StatusOK {

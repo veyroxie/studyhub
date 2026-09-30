@@ -420,6 +420,45 @@ func RenderInvoiceIssuedEmail(parentName, studentName, description, amountRM, du
 		emailLayoutClose()
 }
 
+// FamilyBillEmailLine is one child's invoice in a family bill email.
+type FamilyBillEmailLine struct {
+	StudentName string
+	Description string
+	AmountRM    string
+	DueDate     string
+	Note        string
+}
+
+// RenderFamilyBillIssuedEmail tells a parent about several children's invoices at once.
+func RenderFamilyBillIssuedEmail(parentName string, lines []FamilyBillEmailLine, totalRM string) string {
+	greeting := "Hi"
+	if strings.TrimSpace(parentName) != "" {
+		greeting = "Hi " + SafeName(parentName)
+	}
+	rows := ""
+	for _, l := range lines {
+		note := ""
+		if strings.TrimSpace(l.Note) != "" {
+			note = `<div style="margin-top:4px;color:#92400e"><strong>` + html.EscapeString(l.Note) + `</strong></div>`
+		}
+		rows += `<tr><td style="padding:12px 18px;font-size:13px;color:#64748b;border-bottom:1px solid #f0eee8">
+  <div style="margin-bottom:4px"><strong style="color:#0a0a0a">` + SafeName(l.StudentName) + `</strong> · ` + html.EscapeString(l.Description) + `</div>
+  <div>Amount: <strong style="color:#0a0a0a">RM ` + html.EscapeString(l.AmountRM) + `</strong> · Due ` + html.EscapeString(l.DueDate) + `</div>` + note + `
+</td></tr>`
+	}
+	return emailLayoutOpen() +
+		`<p style="margin:0 0 16px;font-size:16px;color:#0a0a0a">` + greeting + `,</p>
+<p style="margin:0 0 16px">This month's invoices for your children are ready. You can pay them together as one family bill.</p>
+<table cellpadding="0" cellspacing="0" style="margin:18px 0;background:#fafaf8;border:1px solid #f0eee8;border-radius:10px;width:100%">` + rows + `
+<tr><td style="padding:12px 18px;font-size:14px;color:#0a0a0a"><strong>Family total: RM ` + html.EscapeString(totalRM) + `</strong></td></tr>
+</table>
+<p style="margin:18px 0;text-align:center">
+  <a href="` + AppURL() + `/#billing" style="display:inline-block;padding:12px 28px;background:#C9A227;color:#0a0a0a;font-weight:700;text-decoration:none;border-radius:8px;font-size:15px">View &amp; pay</a>
+</p>
+<p style="margin:0 0 12px;font-size:13px;color:#64748b">Already paid? You can ignore this email. Questions about the bill? Just reply and we'll sort it out.</p>` +
+		emailLayoutClose()
+}
+
 // renderCheckEventEmail is sent — only when the parent has opted in — the
 // moment their child is checked in or out. Deliberately short: it's a real-time
 // safety ping, not a marketing mail. `headline` is e.g. "Aisyah checked in",
