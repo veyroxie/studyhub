@@ -42,3 +42,20 @@ test('a page the role hides cannot be opened by typing its address', async () =>
   sandbox.App.Router.navigate('settings');
   assert.equal(pages.opened, 'settings');
 });
+
+test('every page the code navigates to exists', () => {
+  const dir = path.join(FRONTEND, 'js');
+  const files = fs.readdirSync(dir, { recursive: true }).filter((f) => f.endsWith('.js')).map((f) => path.join(dir, f));
+  const targets = new Map();
+  for (const file of files) {
+    // Whole-line comments mention navigate('page') as an example, not a link.
+    const src = fs.readFileSync(file, 'utf8').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    // navigate('x') in code, navigate(\'x\') inside built HTML, and quick-link page:'x' entries.
+    for (const m of src.matchAll(/navigate\(\\?'([a-z][\w-]*)\\?'|\bpage:\s*'([a-z][\w-]*)'/g)) {
+      const id = m[1] || m[2];
+      if (!targets.has(id)) targets.set(id, path.relative(FRONTEND, file));
+    }
+  }
+  const missing = [...targets].filter(([id]) => !live.includes(`id="${id}-page"`)).map(([id, file]) => `${id} (${file})`);
+  assert.deepEqual(missing, []);
+});

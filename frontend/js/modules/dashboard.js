@@ -1126,7 +1126,7 @@
       + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem">'
       + [
           { label:'My Students', page:'students', color:'#3b82f6' },
-          { label:'Log Feedback', page:'feedback', color:'#8b5cf6' },
+          { label:'Progress Reports', page:'progress', color:'#8b5cf6' },
           { label:'Attendance', page:'attendance', color:'#10b981' },
           { label:'Announcements', page:'communication', color:'#f59e0b' }
         ].map(function(item) {
