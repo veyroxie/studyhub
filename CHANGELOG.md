@@ -37,6 +37,7 @@ dated section when you cut a deploy.
   their password and typed twice. They are signed out and sign in again.
 
 ### Fixed
+- Signing out, or being timed out, with a popup open no longer leaves the page unclickable after the next sign-in.
 - The Settings page opens (it was a dead click), and only for admins.
 - Parents and teachers no longer see the role switch; it is a developer tool.
 - A parent's own child's class no longer disappears from the schedule when full.
