@@ -383,11 +383,6 @@
     // but hasn't enrolled any children yet, OR has pending enrollments that
     // admin hasn't approved.
     if (myStudents.length === 0) {
-      // Check if the parent already has pending enrollment requests.
-      var pendingEnrollments = (s.registrations || []).filter(function(r) {
-        return !!App.clientParent && r.type === 'enrollment' && r.status === 'pending' && r.email === App.clientParent;
-      });
-
       html += '<div style="background:#fff;border-radius:0;border:1px solid rgba(201,162,39,0.35);padding:2.5rem 2rem;max-width:560px;margin:1rem auto 0">'
         + '<div style="text-align:center;margin-bottom:1.5rem">'
         +   '<div style="width:56px;height:56px;border-radius:50%;background:#FFFDF6;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem">'
@@ -397,70 +392,20 @@
         +   '<p style="color:#64748b;font-size:0.85rem;line-height:1.5;margin:0 auto;max-width:380px">Fill in your child\'s details below. Once our team reviews and approves, you\'ll see their schedule, billing, and feedback here.</p>'
         + '</div>';
 
-      // Show pending enrollment requests if any.
-      if (pendingEnrollments.length > 0) {
-        html += '<div style="margin-bottom:1.5rem;padding:0.85rem 1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:0">'
-          + '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.35rem">Pending enrolments</div>';
-        pendingEnrollments.forEach(function(r) {
-          html += '<div style="font-size:0.82rem;color:#92400e;padding:0.25rem 0">' + App.Utils.esc(r.studentFirstName || '') + ' ' + App.Utils.esc(r.studentLastName || '') + ' <span style="font-size:0.7rem;color:#94a3b8">— submitted ' + App.Utils.formatDate(r.submittedOn) + '</span></div>';
-        });
-        html += '</div>';
-      }
-
-      // Enrollment form
-      html += '<form id="enroll-child-form" style="display:flex;flex-direction:column;gap:0.85rem">'
-        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">First Name *</label><input name="studentFirstName" required style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px #FFFDF6\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Last Name</label><input name="studentLastName" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px #FFFDF6\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
-        + '</div>'
-        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Date of Birth</label><input name="studentDob" type="date" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Gender</label><select name="studentGender" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><option>Male</option><option>Female</option></select></div>'
-        + '</div>'
-        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">School</label><input name="schoolName" placeholder="e.g. SK Taman Melawati" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
-        +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Year / Grade</label><select name="yearGrade" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><optgroup label="Primary"><option>Standard 1</option><option>Standard 2</option><option>Standard 3</option><option>Standard 4</option><option>Standard 5</option><option>Standard 6</option></optgroup><optgroup label="Secondary"><option>Form 1</option><option>Form 2</option><option>Form 3</option><option>Form 4</option><option>Form 5</option></optgroup><optgroup label="Pre-school"><option>Pre-school (4-5)</option><option>Pre-school (5-6)</option></optgroup></select></div>'
-        + '</div>'
-        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Subjects Interested In</label><input name="subjectInterest" placeholder="e.g. Mathematics, English, Science" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
-        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Notes <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#94a3b8">- optional</span></label><textarea name="notes" rows="2" placeholder="Learning needs, allergies, or anything we should know" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;resize:vertical"></textarea></div>'
-        + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Referral Code <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#94a3b8">- optional</span></label><input name="referralCode" placeholder="SH-XXXX" maxlength="10" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;text-transform:uppercase;letter-spacing:0.05em"><p style="margin:0.3rem 0 0;font-size:0.7rem;color:#94a3b8">Got a code from a friend? Their family gets RM10/month off when your child stays for 3 months.</p></div>'
-        + '<button type="submit" id="enroll-submit-btn" style="width:100%;padding:0.7rem;background:var(--gold,#C9A227);color:#0a0a0a;font-weight:700;font-size:0.82rem;border:none;border-radius:4px;cursor:pointer;transition:opacity 0.15s;font-family:inherit">Submit enrolment request</button>'
-        + '</form>'
+      html += _pendingEnrollmentsHtml(s)
+        + _enrollChildFormHtml()
         + '</div>';
-
-      // Wire the form after render
-      setTimeout(function() {
-        var form = document.getElementById('enroll-child-form');
-        if (!form) return;
-        form.addEventListener('submit', async function(e) {
-          e.preventDefault();
-          var btn = document.getElementById('enroll-submit-btn');
-          btn.disabled = true;
-          btn.textContent = 'Submitting...';
-          var fd = new FormData(e.target);
-          var body = {};
-          fd.forEach(function(v, k) { body[k] = v; });
-          body.referralCode = (body.referralCode || '').trim().toUpperCase();
-          try {
-            var result = await App.Api.post('/api/enrollment-requests', body);
-            if (result && result.codeWarning) {
-              App.Utils.showToast(result.codeWarning, 'warning', 10000);
-            } else {
-              App.Utils.showToast(result && result.message || 'Enrolment request submitted.', 'success');
-            }
-            await App.Api.loadSnapshot();
-            App.Router.refresh();
-          } catch(err) {
-            btn.disabled = false;
-            btn.textContent = 'Submit enrolment request';
-          }
-        });
-      }, 0);
+      setTimeout(function() { _wireEnrollChildForm(); }, 0);
 
       return html;
     }
 
     // ── Children Cards ────────────────────────────────────────────────────────
+    // A sibling joins through the same request form a first child does.
+    html += '<div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem">'
+      + '<button onclick="App.Dashboard._enrollChildModal()" style="padding:0.45rem 0.9rem;font-size:0.78rem;font-weight:700;background:#fff;color:#0a0a0a;border:1px solid rgba(201,162,39,0.5);border-radius:4px;cursor:pointer">+ Enrol another child</button>'
+      + '</div>'
+      + _pendingEnrollmentsHtml(s);
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:1.25rem">';
 
     myStudents.forEach(function(stu) {
@@ -1368,6 +1313,88 @@
     } catch (err) {}
   }
 
+  // ── Enrolment requests (parent) ───────────────────────────────────────────
+  // One form for a first child and for a sibling, so both reach the same review.
+
+  function _pendingEnrollmentsHtml(s) {
+    var pendingEnrollments = (s.registrations || []).filter(function(r) {
+      return !!App.clientParent && r.type === 'enrollment' && r.status === 'pending' && r.email === App.clientParent;
+    });
+    var html = '';
+    if (pendingEnrollments.length > 0) {
+      html += '<div style="margin-bottom:1.5rem;padding:0.85rem 1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:0">'
+        + '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.35rem">Pending enrolments</div>';
+      pendingEnrollments.forEach(function(r) {
+        html += '<div style="font-size:0.82rem;color:#92400e;padding:0.25rem 0">' + App.Utils.esc(r.studentFirstName || '') + ' ' + App.Utils.esc(r.studentLastName || '') + ' <span style="font-size:0.7rem;color:#94a3b8">— submitted ' + App.Utils.formatDate(r.submittedOn) + '</span></div>';
+      });
+      html += '</div>';
+    }
+    return html;
+  }
+
+  function _enrollChildFormHtml() {
+    var html = '';
+    html += '<form id="enroll-child-form" style="display:flex;flex-direction:column;gap:0.85rem">'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
+      +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">First Name *</label><input name="studentFirstName" required style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px #FFFDF6\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
+      +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Last Name</label><input name="studentLastName" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit" onfocus="this.style.borderColor=\'var(--gold)\';this.style.boxShadow=\'0 0 0 3px #FFFDF6\'" onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'none\'"></div>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
+      +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Date of Birth</label><input name="studentDob" type="date" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
+      +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Gender</label><select name="studentGender" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><option>Male</option><option>Female</option></select></div>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">'
+      +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">School</label><input name="schoolName" placeholder="e.g. SK Taman Melawati" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
+      +   '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Year / Grade</label><select name="yearGrade" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;background:#fff"><option value="">Select...</option><optgroup label="Primary"><option>Standard 1</option><option>Standard 2</option><option>Standard 3</option><option>Standard 4</option><option>Standard 5</option><option>Standard 6</option></optgroup><optgroup label="Secondary"><option>Form 1</option><option>Form 2</option><option>Form 3</option><option>Form 4</option><option>Form 5</option></optgroup><optgroup label="Pre-school"><option>Pre-school (4-5)</option><option>Pre-school (5-6)</option></optgroup></select></div>'
+      + '</div>'
+      + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Subjects Interested In</label><input name="subjectInterest" placeholder="e.g. Mathematics, English, Science" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit"></div>'
+      + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Notes <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#94a3b8">- optional</span></label><textarea name="notes" rows="2" placeholder="Learning needs, allergies, or anything we should know" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;resize:vertical"></textarea></div>'
+      + '<div><label style="display:block;font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.3rem">Referral Code <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#94a3b8">- optional</span></label><input name="referralCode" placeholder="SH-XXXX" maxlength="10" style="width:100%;padding:0.55rem 0.75rem;border:1px solid #e2e8f0;border-radius:4px;font-size:0.85rem;outline:none;font-family:inherit;text-transform:uppercase;letter-spacing:0.05em"><p style="margin:0.3rem 0 0;font-size:0.7rem;color:#94a3b8">Got a code from a friend? Their family gets RM10/month off when your child stays for 3 months.</p></div>'
+      + '<button type="submit" id="enroll-submit-btn" style="width:100%;padding:0.7rem;background:var(--gold,#C9A227);color:#0a0a0a;font-weight:700;font-size:0.82rem;border:none;border-radius:4px;cursor:pointer;transition:opacity 0.15s;font-family:inherit">Submit enrolment request</button>'
+      + '</form>'
+    return html;
+  }
+
+  function _enrollChildModal() {
+    App.Utils.showModal('<div class="p-6" style="width:min(560px,92vw)">'
+      + '<h2 style="font-family:var(--serif);font-size:1.2rem;font-weight:700;color:#0a0a0a;margin:0 0 0.35rem">Enrol another child</h2>'
+      + '<p style="color:#64748b;font-size:0.82rem;margin:0 0 1rem">Our team reviews the request, then your child appears here with their schedule and billing.</p>'
+      + _pendingEnrollmentsHtml(App.Store.get())
+      + _enrollChildFormHtml()
+      + '</div>');
+    _wireEnrollChildForm(function() { App.Utils.hideModal(true); });
+  }
+
+  // onDone runs after a successful request: the popup closes, the page just refreshes.
+  function _wireEnrollChildForm(onDone) {
+    var form = document.getElementById('enroll-child-form');
+    if (!form) return;
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var btn = document.getElementById('enroll-submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Submitting...';
+      var fd = new FormData(e.target);
+      var body = {};
+      fd.forEach(function(v, k) { body[k] = v; });
+      body.referralCode = (body.referralCode || '').trim().toUpperCase();
+      try {
+        var result = await App.Api.post('/api/enrollment-requests', body);
+        if (result && result.codeWarning) {
+          App.Utils.showToast(result.codeWarning, 'warning', 10000);
+        } else {
+          App.Utils.showToast(result && result.message || 'Enrolment request submitted.', 'success');
+        }
+        await App.Api.loadSnapshot();
+        if (onDone) onDone();
+        App.Router.refresh();
+      } catch(err) {
+        btn.disabled = false;
+        btn.textContent = 'Submit enrolment request';
+      }
+    });
+  }
+
   // ── Pending Users Modal ────────────────────────────────────────────────────
   function _pendingUsersModal() {
     var users = (App.Store.get().pendingUsers || []);
@@ -1445,6 +1472,7 @@
     _profileModal: _profileModal,
     _checklistGo: _checklistGo,
     _pendingUsersModal: _pendingUsersModal,
+    _enrollChildModal: _enrollChildModal,
     _verifyUser: _verifyUser,
     _resendVerification: _resendVerification,
     _copyInviteLink: _copyInviteLink,
