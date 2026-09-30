@@ -43,6 +43,22 @@ dated section when you cut a deploy.
   rather than claiming it was delivered.
 
 ### Fixed
+- Create Invoice no longer answers "Select a family" (or "Select a student")
+  for an ordinary single invoice. The popup remembered the last tab used even
+  though it always reopened showing Single; the tab now lives in the form, so
+  what is on screen is what gets submitted.
+- An invoice can no longer get the early bird twice. The "+ Early bird" line
+  and a checkbox that ticked itself on the 1st to 7th stacked into RM20 off,
+  and only RM10 was ever clawed back. Single invoices now carry the early bird
+  as one line (added automatically in the window), and the server refuses a
+  second early-bird line or one on a non-monthly invoice.
+- Sibling invoices take RM10 early bird per child, as the monthly run does,
+  and use the invoice date entered rather than today.
+- Create Invoice locks its button while saving, so a double click cannot make
+  two invoices, and the Self-Study tab no longer closes before the save
+  succeeds.
+- "Build from catalogue" prices the month the invoice is dated in rather than
+  the current month, and keeps an early-bird line already on the invoice.
 - The hourly health check no longer emails a list of healthy jobs after
   every deploy. A job that had not yet reported was treated as broken
   immediately, so a restart — when nothing has run yet — alerted on

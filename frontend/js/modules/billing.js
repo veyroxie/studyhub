@@ -14,6 +14,11 @@
   // alone cannot tell the two apart.
   var EARLY_BIRD_RM = 10;
   var EARLY_BIRD_LINE_NAME = 'Early bird discount';
+  var EARLY_BIRD_LINE_PREFIX = 'Early bird';
+  var EARLY_BIRD_LAST_DAY = 7; // the cutoff is the 7th of the invoice's month
+
+  // The Create Invoice popup's tabs. Values travel in the form's hidden `mode` field.
+  var INV_MODE = Object.freeze({ single: 'single', sibling: 'sibling', selfstudy: 'selfstudy' });
 
   var SELF_STUDY_SESSION_RATE = 10; // RM per self-study session (manual drop-in billing)
   var SELF_STUDY_HOUR_RATE = 10;    // RM per self-study hour (member included value / add-on)
@@ -128,6 +133,11 @@
     return li.kind === 'discount' ? -Math.abs(raw) : raw;
   }
 
+  function _lineItemPayload(li) {
+    return { kind: li.kind, name: li.name, descriptor: li.descriptor || '',
+      qty: parseFloat(li.qty) || 0, unitPrice: parseFloat(li.unitPrice) || 0, amount: _lineItemAmount(li) };
+  }
+
   function _addLineItem(key) {
     if (!key) return;
     var c = _packageCatalog().find(function(x) { return x.key === key; });
@@ -192,12 +202,15 @@
       App.Utils.showToast('Cannot price this student: ' + p.problems.join('; '), 'error');
       return;
     }
+    // The catalogue has no opinion on the early bird, so a rebuild must not quietly drop it.
+    var earlyBird = _lineItems.filter(_isEarlyBirdLine);
     _lineItems = [];
     (p.lines || []).forEach(function(li) {
       _lineSeq++;
       _lineItems.push({ id: _lineSeq, kind: li.kind, name: li.name, descriptor: li.descriptor || '',
         qty: li.qty || 1, unitPrice: li.unitPrice || 0, editableQty: false });
     });
+    _lineItems = _lineItems.concat(earlyBird);
     _renderLineItems();
     App.Utils.showToast('Built from the catalogue: RM ' + (p.total || 0).toFixed(2), 'success');
   }
@@ -205,7 +218,18 @@
   function _buildFromCatalogueForForm(formID) {
     var form = document.getElementById(formID);
     var sel = form ? form.querySelector('[name="studentId"]') : null;
-    _buildFromCatalogue(sel ? sel.value : '', null);
+    // Price the month the invoice is dated in: the server bills that period, not today's.
+    var date = form ? form.querySelector('[name="invoiceDate"]') : null;
+    _buildFromCatalogue(sel ? sel.value : '', date && date.value ? date.value.slice(0, 7) : null);
+  }
+
+  // Mirrors models.EarlyBirdLinePrefix: the clawback matches on the name's prefix.
+  function _isEarlyBirdLine(li) {
+    return li.kind === 'discount' && (li.name || '').indexOf(EARLY_BIRD_LINE_PREFIX) === 0;
+  }
+
+  function _isEarlyBirdWindow(isoDate) {
+    return parseInt(isoDate.slice(8, 10), 10) <= EARLY_BIRD_LAST_DAY;
   }
 
   // The early bird as one click rather than a renamed blank discount. Typing
@@ -214,7 +238,7 @@
   // every September invoice ended up keeping its RM10 whether or not the
   // parent paid by the 7th.
   function _addEarlyBirdLine() {
-    if (_lineItems.some(function(li) { return li.name === EARLY_BIRD_LINE_NAME; })) {
+    if (_lineItems.some(_isEarlyBirdLine)) {
       App.Utils.showToast('This invoice already has the early bird discount', 'info');
       return;
     }
@@ -308,7 +332,6 @@
     });
     var t = document.getElementById('line-items-total');
     if (t) t.innerHTML = '<strong>Total: RM ' + total.toFixed(2) + '</strong>';
-    _updateNetAmount();
   }
 
   function _paginationControls(page, total, moduleFn) {
@@ -1451,11 +1474,7 @@
       createdOn: fd.get('invoiceDate')
     };
     if (_lineItems.length > 0) {
-      payload.lineItems = _lineItems.map(function(li) {
-        return { kind: li.kind, name: li.name, descriptor: li.descriptor || '',
-          qty: parseFloat(li.qty) || 0, unitPrice: parseFloat(li.unitPrice) || 0,
-          amount: _lineItemAmount(li) };
-      });
+      payload.lineItems = _lineItems.map(_lineItemPayload);
     }
     if (!_confirmMissingTuition(payload.type, payload.lineItems)) return;
     if (!window.confirm('Cancel this invoice and issue a replacement with these figures?\n\n'
@@ -1552,11 +1571,7 @@
       // ignores the amount, which is what keeps NormalizeLineItems the single
       // authority on what an invoice adds up to.
       if (_lineItems.length > 0) {
-        payload.lineItems = _lineItems.map(function(li) {
-          return { kind: li.kind, name: li.name, descriptor: li.descriptor || '',
-            qty: parseFloat(li.qty) || 0, unitPrice: parseFloat(li.unitPrice) || 0,
-            amount: _lineItemAmount(li) };
-        });
+        payload.lineItems = _lineItems.map(_lineItemPayload);
       }
       if (!_confirmMissingTuition(payload.type, payload.lineItems)) return;
       App.Utils.hideModal(true);
@@ -1609,6 +1624,8 @@
       + '</div>'
 
       + '<form id="create-invoice-form" class="space-y-4">'
+      // The tab lives in the form it describes, so a fresh popup always starts on Single.
+      + '<input type="hidden" name="mode" value="' + INV_MODE.single + '">'
 
       // ── SINGLE fields ──
       + '<div id="inv-single-fields">'
@@ -1675,19 +1692,13 @@
             + '<div id="selfstudy-amount-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:0;padding:0.65rem;font-size:0.82rem;color:#166534;margin-top:0.5rem"></div>')
       + '</div>'
 
-      // ── Shared: early bird + due date ──
-      + '<div id="inv-early-bird-section" style="background:#fafaf8;border:1px solid #f0ede8;border-radius:0;padding:0.85rem">'
-      +   '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem">'
-      +     '<input type="checkbox" id="early-bird-cb" onchange="App.Billing._toggleEarlyBird()" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">'
-      +     '<label for="early-bird-cb" style="font-size:0.83rem;font-weight:600;color:#374151;cursor:pointer">Early Bird Discount</label>'
+      // ── Sibling only: early bird. Single invoices carry it as a line item. ──
+      + '<div id="inv-early-bird-section" style="display:none;background:#fafaf8;border:1px solid #f0ede8;border-radius:0;padding:0.85rem">'
+      +   '<div style="display:flex;align-items:center;gap:0.6rem">'
+      +     '<input type="checkbox" id="early-bird-cb" onchange="App.Billing._updateSiblingTotal()" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">'
+      +     '<label for="early-bird-cb" style="font-size:0.83rem;font-weight:600;color:#374151;cursor:pointer">Early bird: RM' + EARLY_BIRD_RM + ' off per child</label>'
       +   '</div>'
-      +   '<div id="early-bird-fields" style="display:none;margin-top:0.5rem">'
-      +     '<div class="grid grid-cols-2 gap-3">'
-      +       _field('Discount (RM)', '<input id="discount-rm" name="discountRM" type="number" min="0" step="0.01" class="form-input" value="10" oninput="App.Billing._updateNetAmount()">')
-      +       _field('Pay by (cutoff)', '<input name="earlyBirdCutoff" type="date" class="form-input">')
-      +     '</div>'
-      +     '<div id="net-amount-preview" style="margin-top:0.5rem;font-size:0.82rem;color:#6b7280"></div>'
-      +   '</div>'
+      +   '<p class="text-xs text-slate-400 mt-1">Put back automatically if unpaid after the ' + EARLY_BIRD_LAST_DAY + 'th of the invoice month.</p>'
       + '</div>'
 
       + '<div class="grid grid-cols-2 gap-4">'
@@ -1705,70 +1716,65 @@
 
     _renderLineItems();
 
-    // Auto-enable early bird if within the early-bird window (1st–7th)
-    (function() {
-      if (new Date().getDate() <= 7) {
-        var cb = document.getElementById('early-bird-cb');
-        if (cb) { cb.checked = true; _toggleEarlyBird(); }
-      }
-    })();
+    // Inside the window the discount starts on; removing the line (or unticking, for siblings) drops it.
+    if (_isEarlyBirdWindow(App.Utils.today())) {
+      _addEarlyBirdLine();
+      var cb = document.getElementById('early-bird-cb');
+      if (cb) cb.checked = true;
+    }
 
     document.getElementById('create-invoice-form').addEventListener('submit', function(e) {
       e.preventDefault();
-      var mode = _currentInvMode || 'single';
-      if (mode === 'sibling') { _doSiblingInvoice(new FormData(e.target)); return; }
-      if (mode === 'selfstudy') { _doSelfStudyInvoice(new FormData(e.target)); return; }
-      // Single invoice — built from selected package line items. The server
-      // derives the total from the items, so no amount is sent.
       var fd = new FormData(e.target);
-      if (!fd.get('studentId')) { App.Utils.showToast('Select a student', 'warning'); return; }
-      if (_lineItems.length === 0) { App.Utils.showToast('Add at least one package', 'warning'); return; }
-      var lineItems = _lineItems.map(function(li) {
-        return { kind: li.kind, name: li.name, descriptor: li.descriptor || '',
-          qty: parseFloat(li.qty) || 0, unitPrice: parseFloat(li.unitPrice) || 0, amount: _lineItemAmount(li) };
-      });
-      var earlyBirdOn = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked;
-      var discountRM = earlyBirdOn ? (parseFloat(fd.get('discountRM')) || 0) : 0;
-      if (discountRM > 0) {
-        // Discount the NET subtotal so free/FOC lines (a +40 add-on cancelled
-        // by a -40 credit) and existing discounts don't inflate the base. The
-        // early-bird line isn't pushed yet, so this sums everything but it.
-        var netSubtotal = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
-        // Flat ringgit off, matching the monthly cron's EarlyBirdRM. Clamped
-        // to the subtotal so a discount larger than the bill can't invert it.
-        var eb = Math.min(discountRM, netSubtotal);
-        if (eb > 0) {
-          lineItems.push({ kind: 'discount', name: EARLY_BIRD_LINE_NAME, descriptor: '', qty: 1, unitPrice: eb, amount: -eb });
-        }
-      }
-      if (!_confirmMissingTuition(fd.get('type'), lineItems)) return;
-      var newInvoice = {
-        studentId: fd.get('studentId'),
-        type: fd.get('type'),
-        lineItems: lineItems,
-        earlyBirdCutoff: fd.get('earlyBirdCutoff') || undefined,
-        dueDate: fd.get('dueDate'),
-        status: 'Unpaid',
-        createdOn: fd.get('invoiceDate') || App.Utils.today(),
-        paidOn: null
-      };
-      App.Api.post('/api/invoices', newInvoice).then(function() {
-        return App.Api.loadSnapshot();
-      }).then(function() {
-        App.Utils.hideModal(true);
-        App.Utils.showToast('Invoice created', 'success');
-        App.Router.refresh();
-      }).catch(function() {
-        // Keep the modal open on failure so the built line items aren't lost
-        // and the admin can fix and resubmit. App.Api already toasted the error.
-      });
+      var submitters = {};
+      submitters[INV_MODE.single] = _doSingleInvoice;
+      submitters[INV_MODE.sibling] = _doSiblingInvoice;
+      submitters[INV_MODE.selfstudy] = _doSelfStudyInvoice;
+      submitters[fd.get('mode')](fd);
     });
   }
 
-  var _currentInvMode = 'single';
+  function _doSingleInvoice(fd) {
+    if (!fd.get('studentId')) { App.Utils.showToast('Select a student', 'warning'); return; }
+    if (_lineItems.length === 0) { App.Utils.showToast('Add at least one package', 'warning'); return; }
+    var lineItems = _lineItems.map(_lineItemPayload);
+    if (fd.get('type') !== 'Monthly' && lineItems.some(_isEarlyBirdLine)) {
+      App.Utils.showToast('The early bird is for monthly invoices only. Remove its line or set the type to Monthly.', 'warning');
+      return;
+    }
+    if (!_confirmMissingTuition(fd.get('type'), lineItems)) return;
+    // The server derives the total from the lines, so no amount is sent.
+    _postInvoice({
+      studentId: fd.get('studentId'),
+      type: fd.get('type'),
+      lineItems: lineItems,
+      dueDate: fd.get('dueDate'),
+      status: 'Unpaid',
+      createdOn: fd.get('invoiceDate') || App.Utils.today(),
+      paidOn: null
+    }, 'Invoice created');
+  }
+
+  // One save path for every tab: the button locks until the invoice exists, so a
+  // double click cannot create two, and the popup only closes once it has saved.
+  function _postInvoice(invoice, successMessage) {
+    return App.Utils.withLoading('#inv-submit-btn', function() {
+      return App.Api.post('/api/invoices', invoice).then(function() {
+        return App.Api.loadSnapshot();
+      });
+    }).then(function() {
+      App.Utils.hideModal(true);
+      App.Utils.showToast(successMessage, 'success');
+      App.Router.refresh();
+    }).catch(function() {
+      // Popup stays open so nothing typed is lost; App.Api already toasted the error.
+    });
+  }
 
   function _setInvMode(mode) {
-    _currentInvMode = mode;
+    var form = document.getElementById('create-invoice-form');
+    if (!form) return;
+    form.querySelector('[name="mode"]').value = mode;
     var tabs = document.querySelectorAll('#inv-mode-tabs button');
     tabs.forEach(function(btn) {
       var m = btn.getAttribute('data-mode');
@@ -1779,49 +1785,19 @@
     var single    = document.getElementById('inv-single-fields');
     var sibling   = document.getElementById('inv-sibling-fields');
     var selfstudy = document.getElementById('inv-selfstudy-fields');
-    if (single)    single.style.display    = mode === 'single'    ? 'block' : 'none';
-    if (sibling)   sibling.style.display   = mode === 'sibling'   ? 'block' : 'none';
-    if (selfstudy) selfstudy.style.display = mode === 'selfstudy' ? 'block' : 'none';
+    if (single)    single.style.display    = mode === INV_MODE.single    ? 'block' : 'none';
+    if (sibling)   sibling.style.display   = mode === INV_MODE.sibling   ? 'block' : 'none';
+    if (selfstudy) selfstudy.style.display = mode === INV_MODE.selfstudy ? 'block' : 'none';
 
-    // Early bird discount is irrelevant for flat-rate self-study.
     var earlyBird = document.getElementById('inv-early-bird-section');
-    if (earlyBird) earlyBird.style.display = mode === 'selfstudy' ? 'none' : 'block';
+    if (earlyBird) earlyBird.style.display = mode === INV_MODE.sibling ? 'block' : 'none';
 
     var btn = document.getElementById('inv-submit-btn');
     if (btn) {
-      btn.textContent = mode === 'sibling' ? 'Create Sibling Invoice' : 'Create Invoice';
+      btn.textContent = mode === INV_MODE.sibling ? 'Create Sibling Invoice' : 'Create Invoice';
     }
-    if (mode === 'selfstudy') _updateSelfStudyAmount();
-  }
-
-  function _toggleEarlyBird() {
-    var cb = document.getElementById('early-bird-cb');
-    var fields = document.getElementById('early-bird-fields');
-    if (fields) fields.style.display = cb && cb.checked ? 'block' : 'none';
-    _updateNetAmount();
-  }
-
-  function _updateNetAmount() {
-    var preview = document.getElementById('net-amount-preview');
-    if (!preview) return;
-    // Base is the positive subtotal — from the package line items in single
-    // mode, or the legacy amount field if one is present.
-    var base = parseFloat((document.getElementById('inv-base-amount') || {}).value) || 0;
-    if (base === 0) {
-      base = _lineItems.reduce(function(a, li) { var amt = _lineItemAmount(li); return a + (amt > 0 ? amt : 0); }, 0);
-    }
-    var cb = document.getElementById('early-bird-cb');
-    var rmEl = document.getElementById('discount-rm');
-    if (cb && cb.checked && rmEl && base > 0) {
-      // Flat ringgit, clamped so a large discount can't drive a negative total.
-      var off = Math.min(parseFloat(rmEl.value) || 0, base);
-      preview.textContent = 'After early bird: RM ' + (base - off).toFixed(2) + ' (saving RM ' + off.toFixed(2) + ')';
-    } else {
-      preview.textContent = '';
-    }
-    // The early-bird control is shared, and sibling invoices now apply it too,
-    // so keep that preview in sync when the checkbox or percentage changes.
-    if (_currentInvMode === 'sibling') _updateSiblingTotal();
+    if (mode === INV_MODE.selfstudy) _updateSelfStudyAmount();
+    if (mode === INV_MODE.sibling) _updateSiblingTotal();
   }
 
   function _updateSelfStudyAmount() {
@@ -1903,15 +1879,7 @@
       createdOn: fd.get('invoiceDate') || App.Utils.today(),
       paidOn: null
     };
-    App.Utils.hideModal(true);
-    App.Api.post('/api/invoices', newInvoice).then(function() {
-      return App.Api.loadSnapshot();
-    }).then(function() {
-      App.Utils.showToast('Self-study invoice created', 'success');
-      App.Router.refresh();
-    }).catch(function() {
-      // Error already toasted by App.Api wrapper.
-    });
+    _postInvoice(newInvoice, 'Self-study invoice created');
   }
 
   // _siblingInvoiceModal merged into _createModal (Sibling tab)
@@ -1944,12 +1912,7 @@
     if (count === 0) { preview.style.display = 'none'; return; }
     const discounted = parseFloat((perChild * (1 - discount / 100)).toFixed(2));
     let total = parseFloat((discounted * count).toFixed(2));
-    // Early bird is a shared control that stays visible in sibling mode and IS
-    // applied on submit — the preview has to show it or the admin reads a
-    // different figure than the invoice they create.
-    const ebOn = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked;
-    const ebRM = ebOn ? (parseFloat((document.getElementById('discount-rm') || {}).value) || 0) : 0;
-    const eb = Math.min(ebRM, total);
+    const eb = _siblingEarlyBird(count, total);
     total = parseFloat((total - eb).toFixed(2));
     preview.style.display = 'block';
     preview.innerHTML = count + ' child' + (count !== 1 ? 'ren' : '') + ' × RM ' + discounted.toFixed(2)
@@ -1989,14 +1952,10 @@
       const totalDisc = parseFloat(((perChild - discounted) * children.length).toFixed(2));
       if (totalDisc > 0) lineItems.push({ kind: 'discount', name: 'Sibling discount (' + discount + '%)', qty: 1, unitPrice: totalDisc, amount: -totalDisc });
     }
-    // Early bird (shared checkbox, visible in sibling mode) applies to the net
-    // subtotal after the sibling discount — same rule as the single-invoice flow.
-    var earlyBirdOn = document.getElementById('early-bird-cb') && document.getElementById('early-bird-cb').checked;
-    var ebRM = earlyBirdOn ? (parseFloat(fd.get('discountRM')) || 0) : 0;
-    if (ebRM > 0) {
-      var ebBase = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
-      var eb = Math.min(ebRM, ebBase);
-      if (eb > 0) lineItems.push({ kind: 'discount', name: EARLY_BIRD_LINE_NAME, qty: 1, unitPrice: eb, amount: -eb });
+    const eb = _siblingEarlyBird(children.length, lineItems.reduce(function(a, li) { return a + li.amount; }, 0));
+    if (eb > 0) {
+      lineItems.push({ kind: 'discount', name: EARLY_BIRD_LINE_NAME, descriptor: 'RM' + EARLY_BIRD_RM + ' x ' + children.length + ' children',
+        qty: 1, unitPrice: eb, amount: -eb });
     }
     const finalTotal = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
 
@@ -2010,23 +1969,20 @@
       type: 'Monthly',
       lineItems: lineItems,
       siblingDiscount: discount || undefined,
-      earlyBirdCutoff: fd.get('earlyBirdCutoff') || undefined,
       dueDate: dueDate,
       status: 'Unpaid',
-      createdOn: App.Utils.today(),
+      createdOn: fd.get('invoiceDate') || App.Utils.today(),
       paidOn: null
     };
 
-    App.Api.post('/api/invoices', newInvoice).then(function() {
-      return App.Api.loadSnapshot();
-    }).then(function() {
-      App.Utils.hideModal(true);
-      App.Utils.showToast('Sibling invoice created — RM ' + finalTotal.toFixed(2) + ' for ' + childNames, 'success');
-      App.Router.refresh();
-    }).catch(function() {
-      // Keep the modal open on failure so the selected children and amounts
-      // aren't lost. App.Api already toasted the error.
-    });
+    _postInvoice(newInvoice, 'Sibling invoice created — RM ' + finalTotal.toFixed(2) + ' for ' + childNames);
+  }
+
+  // RM10 per child, on one line so the clawback restores all of it; never more than the bill.
+  function _siblingEarlyBird(childCount, subtotal) {
+    var cb = document.getElementById('early-bird-cb');
+    if (!cb || !cb.checked) return 0;
+    return Math.min(EARLY_BIRD_RM * childCount, subtotal);
   }
 
   function _field(label, inputHtml) {
@@ -2117,8 +2073,6 @@
     _draftMonth: _draftMonth,
     _dropDraft: _dropDraft,
     _issueMonth: _issueMonth,
-    _toggleEarlyBird: _toggleEarlyBird,
-    _updateNetAmount: _updateNetAmount,
     _addLineItem: _addLineItem,
     _addEarlyBirdLine: _addEarlyBirdLine,
     _buildFromCatalogue: _buildFromCatalogue,
