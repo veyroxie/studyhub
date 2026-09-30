@@ -31,20 +31,29 @@ type querier interface {
 	Query(query string, args ...any) (*sql.Rows, error)
 }
 
-const familyBillSelect = `SELECT i.id, COALESCE(i.invoice_no,''), i.student_id,
+const parentMonthSelect = `SELECT i.id, COALESCE(i.invoice_no,''), i.student_id,
 	COALESCE(s.first_name,'')||' '||COALESCE(s.last_name,''), i.status, i.amount, COALESCE(i.due_date,''),
 	COALESCE(i.payment_method,''), COALESCE(i.reference_no,''), COALESCE(s.parent_name,'')
 	FROM invoices i JOIN students s ON s.id=i.student_id AND s.tenant_id=i.tenant_id
 	WHERE i.tenant_id=? AND s.contact=? AND i.period=? AND i.type='Monthly'
-	  AND i.deleted_at IS NULL AND s.deleted_at IS NULL` + ParentVisibleInvoiceSQL +
-	` ORDER BY s.first_name, i.id`
+	  AND i.deleted_at IS NULL AND s.deleted_at IS NULL`
 
 // FamilyBillMembers lists a bill's invoices. Pass a transaction to lock them for a payment.
 func FamilyBillMembers(q querier, tenantID int, contact, period string, forUpdate bool) ([]FamilyBillMember, error) {
-	query := familyBillSelect
+	query := parentMonthSelect + ParentVisibleInvoiceSQL + ` ORDER BY s.first_name, i.id`
 	if forUpdate {
 		query += " FOR UPDATE OF i"
 	}
+	return scanParentMonth(q, query, tenantID, contact, period)
+}
+
+// ParentMonthDrafts lists one parent's unissued Monthly drafts for a period.
+func ParentMonthDrafts(q querier, tenantID int, contact, period string) ([]FamilyBillMember, error) {
+	query := parentMonthSelect + ` AND i.status='` + models.InvoiceStatusDraft + `' ORDER BY s.first_name, i.id`
+	return scanParentMonth(q, query, tenantID, contact, period)
+}
+
+func scanParentMonth(q querier, query string, tenantID int, contact, period string) ([]FamilyBillMember, error) {
 	rows, err := q.Query(query, tenantID, contact, period)
 	if err != nil {
 		return nil, err

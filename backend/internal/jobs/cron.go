@@ -319,6 +319,12 @@ func RunMonthlyInvoicesFor(db *store.DB, now time.Time, c *core.Claims) int {
 	return generateMonthlyInvoices(db, now, c)
 }
 
+// RunMonthlyInvoicesForParent drafts the month for one parent's children only, priced
+// by exactly the rules the monthly run applies (sibling, referral, early bird).
+func RunMonthlyInvoicesForParent(db *store.DB, now time.Time, c *core.Claims, contact string) int {
+	return generateMonthlyInvoicesWhere(db, now, c, contact)
+}
+
 // generateMonthlyInvoices is the core of the monthly subscription cycle.
 // Returns the number of invoices created. Safe to call repeatedly: an
 // existing Monthly invoice for the current month blocks duplicates.
@@ -328,6 +334,12 @@ func RunMonthlyInvoicesFor(db *store.DB, now time.Time, c *core.Claims) int {
 // per-student loop ran ~3 queries × N students; for N=200 that's 600 round
 // trips. The bulk version is 3 setup queries + N inserts in one transaction.
 func generateMonthlyInvoices(db *store.DB, now time.Time, c *core.Claims) int {
+	return generateMonthlyInvoicesWhere(db, now, c, "")
+}
+
+// generateMonthlyInvoicesWhere is generateMonthlyInvoices limited to one parent's
+// children when onlyContact is set. The sibling roster still counts the whole family.
+func generateMonthlyInvoicesWhere(db *store.DB, now time.Time, c *core.Claims, onlyContact string) int {
 	monthPrefix := now.Format("2006-01")
 
 	// Key by (tenant_id, student_id) so a colliding STU_<ts> across tenants
@@ -358,6 +370,10 @@ func generateMonthlyInvoices(db *store.DB, now time.Time, c *core.Claims) int {
 	enrolmentsByStudent := store.LoadEnrolments(db, c, priceOn)
 
 	studentScope, studentScopeArgs := store.ScopeTenant(c, "s")
+	if onlyContact != "" {
+		studentScope += " AND s.contact = ?"
+		studentScopeArgs = append(studentScopeArgs, onlyContact)
+	}
 	rows, err := db.Query(`
 		SELECT s.id, s.tenant_id, s.first_name, s.last_name, s.family_id, s.package_amount,
 		       COALESCE(s.contact,''), COALESCE(s.parent_name,''), COALESCE(s.enrolled_classes,'[]'),

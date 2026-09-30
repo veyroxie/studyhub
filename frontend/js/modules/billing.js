@@ -15,10 +15,11 @@
   var EARLY_BIRD_RM = 10;
   var EARLY_BIRD_LINE_NAME = 'Early bird discount';
   var EARLY_BIRD_LINE_PREFIX = 'Early bird';
+  var SIBLING_DISCOUNT_RM = 10; // mirrors jobs.SiblingMonthlyRM, for the Family tab's description only
   var EARLY_BIRD_LAST_DAY = 7; // the cutoff is the 7th of the invoice's month
 
   // The Create Invoice popup's tabs. Values travel in the form's hidden `mode` field.
-  var INV_MODE = Object.freeze({ single: 'single', sibling: 'sibling', selfstudy: 'selfstudy' });
+  var INV_MODE = Object.freeze({ single: 'single', family: 'family', selfstudy: 'selfstudy' });
 
   var SELF_STUDY_SESSION_RATE = 10; // RM per self-study session (manual drop-in billing)
   var SELF_STUDY_HOUR_RATE = 10;    // RM per self-study hour (member included value / add-on)
@@ -1782,7 +1783,7 @@
     var lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     var defaultDue = lastDay.getFullYear() + '-' + String(lastDay.getMonth() + 1).padStart(2,'0') + '-' + String(lastDay.getDate()).padStart(2,'0');
 
-    // Families with 2+ children for sibling option
+    // Parents with 2+ children, keyed by the email a family bill groups on
     var byParent = {};
     students.forEach(function(s) { if (s.contact) { byParent[s.contact] = byParent[s.contact] || []; byParent[s.contact].push(s); } });
     var families = Object.keys(byParent).filter(function(e) { return byParent[e].length >= 2; });
@@ -1800,7 +1801,7 @@
       + '<div id="inv-mode-tabs" style="display:flex;gap:0.5rem;margin-bottom:1.25rem;">'
       + '<button type="button" data-mode="single" onclick="App.Billing._setInvMode(\'single\')" style="' + modeTabStyle + modeActiveStyle + '">Single</button>'
       + (families.length > 0
-          ? '<button type="button" data-mode="sibling" onclick="App.Billing._setInvMode(\'sibling\')" style="' + modeTabStyle + modeInactiveStyle + '">Sibling</button>'
+          ? '<button type="button" data-mode="family" onclick="App.Billing._setInvMode(\'family\')" style="' + modeTabStyle + modeInactiveStyle + '">Family</button>'
           : '')
       + '<button type="button" data-mode="selfstudy" onclick="App.Billing._setInvMode(\'selfstudy\')" style="' + modeTabStyle + modeInactiveStyle + '">Self-Study</button>'
       + '</div>'
@@ -1831,11 +1832,11 @@
       + '<div id="line-items-total" style="text-align:right;font-size:0.9rem;color:#111;margin-top:0.35rem"></div>'
       + '</div>'
 
-      // ── SIBLING fields ──
-      + '<div id="inv-sibling-fields" style="display:none">'
-      + '<p class="text-xs text-slate-500 mb-3">Create one combined invoice covering multiple children from the same family.</p>'
+      // ── FAMILY fields: the monthly run for one parent, reviewed before it is issued ──
+      + '<div id="inv-family-fields" style="display:none">'
+      + '<p class="text-xs text-slate-500 mb-3">Drafts each child\'s monthly invoice with the same pricing as Run the month (catalogue price, RM' + SIBLING_DISCOUNT_RM + ' sibling discount each, early bird in the first week). You check the drafts, then issue them as one family bill with one email.</p>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Family</label>'
-      + '<select id="sibling-family-select" name="parentEmail" class="form-input" onchange="App.Billing._updateSiblingChildren(this.value)">'
+      + '<select name="parentEmail" class="form-input">'
       + '<option value="">Select family...</option>'
       + families.map(function(email) {
           var children = byParent[email];
@@ -1843,16 +1844,7 @@
           return '<option value="' + App.Utils.esc(email) + '">' + App.Utils.esc(label) + '</option>';
         }).join('')
       + '</select></div>'
-      + '<div id="sibling-children-list" style="display:none;background:#fafaf8;border:1px solid #f0ede8;border-radius:0;padding:0.75rem">'
-      +   '<p class="text-xs font-semibold text-slate-500 mb-2">Include children:</p>'
-      +   '<div id="sibling-children-checks"></div>'
-      + '</div>'
-      + _field('Description', '<input name="sibDescription" class="form-input" value="' + now.toLocaleDateString('en-MY', { month: 'long', year: 'numeric' }) + ' Tuition">')
-      + '<div class="grid grid-cols-2 gap-4">'
-      + _field('Amount per child (RM)', '<input id="sibling-per-child" name="amountPerChild" type="number" min="0" step="0.01" class="form-input" value="150" oninput="App.Billing._updateSiblingTotal()">')
-      + _field('Sibling Discount %', '<input id="sibling-discount" name="siblingDiscount" type="number" min="0" max="100" step="1" class="form-input" value="10" oninput="App.Billing._updateSiblingTotal()">')
-      + '</div>'
-      + '<div id="sibling-total-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:0;padding:0.65rem;font-size:0.82rem;color:#166534;display:none"></div>'
+      + _field('Month', '<input name="familyMonth" type="month" class="form-input" value="' + App.Utils.today().slice(0, 7) + '">')
       + '</div>'
 
       // ── SELF-STUDY (flat per-session, drop-ins only) fields ──
@@ -1874,16 +1866,8 @@
             + '<div id="selfstudy-amount-preview" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:0;padding:0.65rem;font-size:0.82rem;color:#166534;margin-top:0.5rem"></div>')
       + '</div>'
 
-      // ── Sibling only: early bird. Single invoices carry it as a line item. ──
-      + '<div id="inv-early-bird-section" style="display:none;background:#fafaf8;border:1px solid #f0ede8;border-radius:0;padding:0.85rem">'
-      +   '<div style="display:flex;align-items:center;gap:0.6rem">'
-      +     '<input type="checkbox" id="early-bird-cb" onchange="App.Billing._updateSiblingTotal()" style="width:16px;height:16px;accent-color:var(--gold);cursor:pointer">'
-      +     '<label for="early-bird-cb" style="font-size:0.83rem;font-weight:600;color:#374151;cursor:pointer">Early bird: RM' + EARLY_BIRD_RM + ' off per child</label>'
-      +   '</div>'
-      +   '<p class="text-xs text-slate-400 mt-1">Put back automatically if unpaid after the ' + EARLY_BIRD_LAST_DAY + 'th of the invoice month.</p>'
-      + '</div>'
-
-      + '<div class="grid grid-cols-2 gap-4">'
+      // The family tab takes its dates from the monthly run, so these do not apply there.
+      + '<div id="inv-date-fields" class="grid grid-cols-2 gap-4">'
       + _field('Invoice Date', '<input name="invoiceDate" type="date" class="form-input" value="' + App.Utils.today() + '" required>')
       + _field('Due Date', '<input name="dueDate" type="date" class="form-input" value="' + defaultDue + '" required>')
       + '</div>'
@@ -1898,17 +1882,15 @@
 
     _renderLineItems();
 
-    // Inside the window the discount starts on; removing the line (or unticking, for siblings) drops it.
+    // Inside the window the discount starts on; removing its line drops it.
     _syncEarlyBirdToType('Monthly');
-    var cb = document.getElementById('early-bird-cb');
-    if (cb) cb.checked = _isEarlyBirdWindow(App.Utils.today());
 
     document.getElementById('create-invoice-form').addEventListener('submit', function(e) {
       e.preventDefault();
       var fd = new FormData(e.target);
       var submitters = {};
       submitters[INV_MODE.single] = _doSingleInvoice;
-      submitters[INV_MODE.sibling] = _doSiblingInvoice;
+      submitters[INV_MODE.family] = _doFamilyInvoice;
       submitters[INV_MODE.selfstudy] = _doSelfStudyInvoice;
       submitters[fd.get('mode')](fd);
     });
@@ -1959,21 +1941,19 @@
       btn.style.borderColor = m === mode ? 'var(--gold)' : '#e2e8f0';
     });
     var single    = document.getElementById('inv-single-fields');
-    var sibling   = document.getElementById('inv-sibling-fields');
+    var family    = document.getElementById('inv-family-fields');
+    var dates     = document.getElementById('inv-date-fields');
     var selfstudy = document.getElementById('inv-selfstudy-fields');
     if (single)    single.style.display    = mode === INV_MODE.single    ? 'block' : 'none';
-    if (sibling)   sibling.style.display   = mode === INV_MODE.sibling   ? 'block' : 'none';
+    if (family)    family.style.display    = mode === INV_MODE.family    ? 'block' : 'none';
+    if (dates)     dates.style.display     = mode === INV_MODE.family    ? 'none' : 'grid';
     if (selfstudy) selfstudy.style.display = mode === INV_MODE.selfstudy ? 'block' : 'none';
-
-    var earlyBird = document.getElementById('inv-early-bird-section');
-    if (earlyBird) earlyBird.style.display = mode === INV_MODE.sibling ? 'block' : 'none';
 
     var btn = document.getElementById('inv-submit-btn');
     if (btn) {
-      btn.textContent = mode === INV_MODE.sibling ? 'Create Sibling Invoice' : 'Create Invoice';
+      btn.textContent = mode === INV_MODE.family ? 'Draft family invoices' : 'Create Invoice';
     }
     if (mode === INV_MODE.selfstudy) _updateSelfStudyAmount();
-    if (mode === INV_MODE.sibling) _updateSiblingTotal();
   }
 
   function _updateSelfStudyAmount() {
@@ -2058,107 +2038,55 @@
     _postInvoice(newInvoice, 'Self-study invoice created');
   }
 
-  // _siblingInvoiceModal merged into _createModal (Sibling tab)
-
-  function _updateSiblingChildren(email) {
-    const { students } = App.Store.get();
-    const children = App.Utils.childrenOf(students, email);
-    const list = document.getElementById('sibling-children-list');
-    const checksDiv = document.getElementById('sibling-children-checks');
-    if (!list || !checksDiv) return;
-    if (children.length === 0) { list.style.display = 'none'; return; }
-    checksDiv.innerHTML = children.map(function(s) {
-      return '<label style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;font-size:0.84rem;cursor:pointer">'
-        + '<input type="checkbox" name="childIds" value="' + s.id + '" checked style="width:15px;height:15px;accent-color:var(--gold);cursor:pointer" onchange="App.Billing._updateSiblingTotal()">'
-        + '<span class="font-medium">' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</span>'
-        + '<span style="color:#94a3b8;font-size:0.75rem">(' + App.Utils.esc(s.status) + ')</span>'
-        + '</label>';
-    }).join('');
-    list.style.display = 'block';
-    _updateSiblingTotal();
-  }
-
-  function _updateSiblingTotal() {
-    const preview = document.getElementById('sibling-total-preview');
-    if (!preview) return;
-    const perChild = parseFloat((document.getElementById('sibling-per-child') || {}).value) || 0;
-    const discount = parseFloat((document.getElementById('sibling-discount') || {}).value) || 0;
-    const checked  = document.querySelectorAll('#sibling-children-checks input[type="checkbox"]:checked');
-    const count    = checked.length;
-    if (count === 0) { preview.style.display = 'none'; return; }
-    const discounted = parseFloat((perChild * (1 - discount / 100)).toFixed(2));
-    let total = parseFloat((discounted * count).toFixed(2));
-    const eb = _siblingEarlyBird(count, total);
-    total = parseFloat((total - eb).toFixed(2));
-    preview.style.display = 'block';
-    preview.innerHTML = count + ' child' + (count !== 1 ? 'ren' : '') + ' × RM ' + discounted.toFixed(2)
-      + (discount > 0 ? ' (' + discount + '% sibling discount applied)' : '')
-      + (eb > 0 ? ' − RM ' + eb.toFixed(2) + ' early bird' : '')
-      + ' = <strong>RM ' + total.toFixed(2) + ' total</strong>';
-  }
-
-  function _doSiblingInvoice(fd) {
-    const state = App.Store.get();
-    const email = fd.get('parentEmail');
-    if (!email) { App.Utils.showToast('Select a family', 'warning'); return; }
-    const description = fd.get('sibDescription') || fd.get('description');
-    const perChild = parseFloat(fd.get('amountPerChild')) || 0;
-    const discount = parseFloat(fd.get('siblingDiscount')) || 0;
-    const dueDate  = fd.get('dueDate');
-    const discounted = parseFloat((perChild * (1 - discount / 100)).toFixed(2));
-
-    // Get checked child IDs from the form
-    const childIds = Array.from(document.querySelectorAll('#sibling-children-checks input[type="checkbox"]:checked')).map(function(cb) { return cb.value; });
-
-    if (childIds.length < 1) {
-      App.Utils.showToast('Select at least one child.', 'warning');
-      return;
-    }
-
-    const children = state.students.filter(function(s) { return childIds.indexOf(s.id) > -1; });
-    const childNames = children.map(function(c) { return c.firstName; }).join(' + ');
-    const desc = description + ' — ' + childNames + (discount > 0 ? ' (' + discount + '% sibling discount)' : '');
-
-    // Itemize: one tuition line per child at the full per-child rate, then a
-    // single sibling-discount line. The server derives the total from these.
-    const lineItems = children.map(function(c) {
-      return { kind: 'item', name: 'Monthly tuition', descriptor: c.firstName + ' ' + c.lastName, qty: 1, unitPrice: perChild, amount: perChild };
+  // Drafts through the monthly run, then shows them for review before one issue.
+  function _doFamilyInvoice(fd) {
+    var parentEmail = fd.get('parentEmail');
+    var month = fd.get('familyMonth');
+    if (!parentEmail) { App.Utils.showToast('Select a family', 'warning'); return; }
+    if (!month) { App.Utils.showToast('Choose the month to bill', 'warning'); return; }
+    App.Utils.withLoading('#inv-submit-btn', function() {
+      return App.Api.post('/api/billing/family-invoice', { parentEmail: parentEmail, month: month });
+    }).then(function(res) {
+      return App.Api.loadSnapshot().then(function() { _familyDraftReview(parentEmail, month, (res && res.drafts) || []); });
+    }).catch(function() {
+      // App.Api already toasted why (e.g. already invoiced this month); the popup stays open.
     });
-    if (discount > 0) {
-      const totalDisc = parseFloat(((perChild - discounted) * children.length).toFixed(2));
-      if (totalDisc > 0) lineItems.push({ kind: 'discount', name: 'Sibling discount (' + discount + '%)', qty: 1, unitPrice: totalDisc, amount: -totalDisc });
-    }
-    const eb = _siblingEarlyBird(children.length, lineItems.reduce(function(a, li) { return a + li.amount; }, 0));
-    if (eb > 0) {
-      lineItems.push({ kind: 'discount', name: EARLY_BIRD_LINE_NAME, descriptor: 'RM' + EARLY_BIRD_RM + ' x ' + children.length + ' children',
-        qty: 1, unitPrice: eb, amount: -eb });
-    }
-    const finalTotal = lineItems.reduce(function(a, li) { return a + li.amount; }, 0);
-
-    // Create a single combined invoice linked to the first child, with
-    // siblings listed in the description. Persisted to backend so it shows
-    // up consistently for both the parent and admin views.
-    const newInvoice = {
-      studentId: children[0].id,  // primary child
-      siblingIds: JSON.stringify(children.slice(1).map(function(c) { return c.id; })),
-      description: desc,
-      type: 'Monthly',
-      lineItems: lineItems,
-      siblingDiscount: discount || undefined,
-      dueDate: dueDate,
-      status: 'Unpaid',
-      createdOn: fd.get('invoiceDate') || App.Utils.today(),
-      paidOn: null
-    };
-
-    _postInvoice(newInvoice, 'Sibling invoice created — RM ' + finalTotal.toFixed(2) + ' for ' + childNames);
   }
 
-  // RM10 per child, on one line so the clawback restores all of it; never more than the bill.
-  function _siblingEarlyBird(childCount, subtotal) {
-    var cb = document.getElementById('early-bird-cb');
-    if (!cb || !cb.checked) return 0;
-    return Math.min(EARLY_BIRD_RM * childCount, subtotal);
+  function _familyDraftReview(parentEmail, month, drafts) {
+    App.Utils.hideModal(true);
+    var rows = drafts.map(function(d) {
+      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;padding:0.45rem 0;border-bottom:1px solid #f1f5f9;font-size:0.85rem">'
+        + '<span>' + App.Utils.esc(d.studentName) + '</span>'
+        + '<span style="display:flex;gap:0.75rem;align-items:center"><strong>' + App.Utils.formatCurrency(d.amount) + '</strong>'
+        + '<button onclick="App.Billing._editModal(\'' + d.invoiceId + '\')" style="font-size:0.72rem;color:#4f46e5;background:none;border:none;cursor:pointer">Edit</button></span>'
+        + '</div>';
+    }).join('');
+    App.Utils.showModal(
+      '<div class="p-6" style="min-width:min(440px,92vw);max-width:520px">'
+      + '<h2 class="text-lg font-bold mb-1">Family invoices drafted</h2>'
+      + '<p class="text-sm text-slate-500 mb-3">' + App.Utils.esc(_periodLabel(month)) + '. Nothing has reached the parent yet. Check each child, then issue them together.</p>'
+      + rows
+      + '<div style="display:flex;justify-content:space-between;padding-top:0.5rem;font-weight:800"><span>Family total</span><span>' + App.Utils.formatCurrency(_sumAmounts(drafts)) + '</span></div>'
+      + '<div class="flex justify-end gap-3 pt-4">'
+      +   '<button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50" title="They stay as drafts in Run the month">Keep as drafts</button>'
+      // The email travels as a data attribute: esc() protects an attribute, not an inline JS string.
+      +   '<button data-parent="' + App.Utils.esc(parentEmail) + '" data-month="' + App.Utils.esc(month) + '" onclick="App.Billing._issueFamilyDrafts(this)" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Issue family bill</button>'
+      + '</div></div>'
+    );
+  }
+
+  function _issueFamilyDrafts(btn) {
+    var payload = { parentEmail: btn.getAttribute('data-parent'), month: btn.getAttribute('data-month') };
+    App.Utils.withLoading(btn, function() {
+      return App.Api.post('/api/billing/family-invoice/issue', payload).then(function() { return App.Api.loadSnapshot(); });
+    }).then(function() {
+      App.Utils.hideModal(true);
+      App.Utils.showToast('Family bill issued — one email is on its way to the parent', 'success');
+      App.Router.refresh();
+    }).catch(function() {
+      // App.Api already toasted; the drafts are untouched and the popup stays for a retry.
+    });
   }
 
   function _field(label, inputHtml) {
@@ -2265,8 +2193,7 @@
     _addBlankLine: _addBlankLine,
     _editLineItem: _editLineItem,
     _updateSelfStudyAmount: _updateSelfStudyAmount,
-    _updateSiblingChildren: _updateSiblingChildren,
-    _updateSiblingTotal: _updateSiblingTotal,
+    _issueFamilyDrafts: _issueFamilyDrafts,
     _exportCSV: _exportCSV,
     _setPage: _setBillingPage
   };

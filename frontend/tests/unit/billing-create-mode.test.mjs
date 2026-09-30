@@ -63,9 +63,9 @@ describe('create invoice popup: the tab on screen is the tab that submits', () =
     sandbox.App.Utils.today = () => '2026-09-20'; // outside the early-bird window unless a test says otherwise
   });
 
-  test('a single invoice opened after the Sibling tab was used still submits as single', () => {
+  test('a single invoice opened after the Family tab was used still submits as single', () => {
     openCreateModal(sandbox, {});
-    sandbox.App.Billing._setInvMode('sibling');
+    sandbox.App.Billing._setInvMode('family');
     sandbox.App.Utils.hideModal = () => {};
 
     const form = openCreateModal(sandbox, { studentId: 'STU_Z', type: 'Adhoc' });
@@ -90,9 +90,9 @@ describe('create invoice popup: the tab on screen is the tab that submits', () =
     assert.equal(posts[0].body.studentId, 'STU_L');
   });
 
-  test('choosing the Sibling tab in the open popup does route to the sibling invoice', () => {
+  test('choosing the Family tab in the open popup routes to the family invoice', () => {
     const form = openCreateModal(sandbox, {});
-    sandbox.App.Billing._setInvMode('sibling');
+    sandbox.App.Billing._setInvMode('family');
     submit(form);
 
     assert.ok(toasts.includes('Select a family'), 'toasts: ' + JSON.stringify(toasts));
@@ -109,22 +109,16 @@ describe('create invoice popup: the tab on screen is the tab that submits', () =
     assert.match(urls[0], /month=2026-08/);
   });
 
-  test('a sibling invoice takes RM10 early bird per child, on one line, dated by the invoice date', () => {
-    sandbox.document.querySelectorAll = (sel) => sel.includes('sibling-children-checks')
-      ? [{ value: 'STU_Z' }, { value: 'STU_L' }] : [];
-    const earlyBirdBox = { checked: false };
-    const form = openCreateModal(sandbox,
-      { parentEmail: 'parent@example.com', amountPerChild: '240', siblingDiscount: '0', invoiceDate: '2026-10-02', dueDate: '2026-10-07' },
-      { 'early-bird-cb': earlyBirdBox });
-    sandbox.App.Billing._setInvMode('sibling');
-    earlyBirdBox.checked = true;
+  test('the Family tab drafts that parent\'s month through the monthly run', () => {
+    sandbox.App.Api.post = (path, body) => { posts.push({ path, body }); return new Promise(() => {}); };
+    const form = openCreateModal(sandbox, { parentEmail: 'parent@example.com', familyMonth: '2026-10' });
+    sandbox.App.Billing._setInvMode('family');
     submit(form);
 
     assert.equal(posts.length, 1);
-    const earlyBird = posts[0].body.lineItems.filter((li) => li.name.startsWith('Early bird'));
-    assert.equal(earlyBird.length, 1);
-    assert.equal(earlyBird[0].amount, -20);
-    assert.equal(posts[0].body.createdOn, '2026-10-02');
+    assert.equal(posts[0].path, '/api/billing/family-invoice');
+    assert.equal(posts[0].body.parentEmail, 'parent@example.com');
+    assert.equal(posts[0].body.month, '2026-10');
   });
 
   test('inside the window the early bird starts on, and leaves when the type is not Monthly', () => {

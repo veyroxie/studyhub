@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"studyhub/internal/core"
+	"studyhub/internal/jobs"
 	"studyhub/internal/mailer"
 	"studyhub/internal/models"
 	"studyhub/internal/store"
@@ -275,4 +276,78 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+type familyInvoiceReq struct {
+	ParentEmail string `json:"parentEmail"`
+	Month       string `json:"month"`
+}
+
+func decodeFamilyInvoice(w http.ResponseWriter, r *http.Request, c *core.Claims) (familyInvoiceReq, int, bool) {
+	var req familyInvoiceReq
+	if !core.IsAdminRole(c) {
+		core.RespondError(w, "admin only", http.StatusForbidden)
+		return req, 0, false
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ParentEmail == "" || !monthPattern.MatchString(req.Month) {
+		core.RespondError(w, "parentEmail and a YYYY-MM month are required", http.StatusBadRequest)
+		return req, 0, false
+	}
+	tid, ok := writeTenant(w, c)
+	return req, tid, ok
+}
+
+// HandleFamilyInvoiceDraft drafts one parent's month through the monthly run itself,
+// so sibling, referral and early-bird rules are the ones every other invoice gets.
+//
+// POST /api/billing/family-invoice
+func HandleFamilyInvoiceDraft(db *store.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := core.ClaimsFrom(r)
+		req, tid, ok := decodeFamilyInvoice(w, r, c)
+		if !ok {
+			return
+		}
+		jobs.RunMonthlyInvoicesForParent(db, draftClock(req.Month), c, req.ParentEmail)
+		drafts, err := store.ParentMonthDrafts(db, tid, req.ParentEmail, req.Month)
+		if err != nil {
+			core.RespondError(w, "could not read the drafts", http.StatusInternalServerError)
+			return
+		}
+		if len(drafts) == 0 {
+			core.RespondError(w, "nothing new to bill for "+req.Month+": every child already has a monthly invoice, or a class could not be priced (Run the month lists why)", http.StatusConflict)
+			return
+		}
+		core.LogAudit(db, tid, c.Email, "family_invoice_drafted", "invoice", req.Month, "parent="+req.ParentEmail)
+		core.Respond(w, map[string]any{"month": req.Month, "drafts": drafts})
+	}
+}
+
+// HandleFamilyInvoiceIssue issues one parent's drafts for the month together, with one email.
+//
+// POST /api/billing/family-invoice/issue
+func HandleFamilyInvoiceIssue(db *store.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c := core.ClaimsFrom(r)
+		req, tid, ok := decodeFamilyInvoice(w, r, c)
+		if !ok {
+			return
+		}
+		groups, err := store.MonthDraftGroups(db, " AND i.tenant_id=? AND s.contact=?", []any{tid, req.ParentEmail}, req.Month)
+		if err != nil {
+			core.RespondError(w, "could not read the drafts", http.StatusInternalServerError)
+			return
+		}
+		if len(groups) == 0 {
+			core.RespondError(w, "no drafts to issue for this family and month", http.StatusConflict)
+			return
+		}
+		issued, failed := issueDraftGroups(r, db, c, groups)
+		if failed > 0 {
+			core.RespondError(w, "could not issue the family's invoices — nothing was sent", http.StatusInternalServerError)
+			return
+		}
+		store.SnapshotCacheInvalidateAll()
+		core.Respond(w, map[string]any{"month": req.Month, "issued": issued})
+	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"studyhub/internal/core"
 	"studyhub/internal/jobs"
 	"studyhub/internal/models"
 	"studyhub/internal/store"
@@ -365,5 +366,78 @@ func TestTheMonthReviewCountsAReissuedInvoiceOnce(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("STU001 listed %d times as issued, want once", count)
+	}
+}
+
+// "Invoice this family" is the monthly run for one parent: the same sibling
+// discount, drafted for review, then issued together with one email.
+func TestInvoiceThisFamilyPricesLikeTheMonthlyRunAndIssuesTogether(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	db := store.InitDB(testDSN())
+	defer db.Close()
+	admin := getAdminToken(t, r)
+
+	const month, parent, family = "2027-06", "famrun@example.com", "FAM_FAMRUN"
+	classID := core.GenerateID("CLS")
+	kids := []string{core.GenerateID("STU"), core.GenerateID("STU")}
+	wipe := func() {
+		db.Exec(`DELETE FROM outbox`)
+		db.Exec(`DELETE FROM applied_discounts WHERE invoice_id IN (SELECT id FROM invoices WHERE period=?)`, month)
+		db.Exec(`DELETE FROM invoices WHERE period=?`, month)
+		for _, k := range kids {
+			db.Exec(`DELETE FROM enrollments WHERE student_id=?`, k)
+			db.Exec(`DELETE FROM students WHERE id=?`, k)
+		}
+		db.Exec(`DELETE FROM classes WHERE id=?`, classID)
+	}
+	wipe()
+	t.Cleanup(wipe)
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,classroom,class_type,level_band,pricing_category_id,default_tier_name,monthly_fee_override)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, classID, 1, "Fam Level 3 & 4", "Monday", "16:00", "17:00", "R1", "Group", "", "PC_group", "Level 3-4", 0)
+	for i, k := range kids {
+		db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,contact,status,subscription_status,package_amount,package_self_study_hours,family_id,enrolled_classes,registered_on)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, k, 1, []string{"Zayden", "Lucy"}[i], "Fam", parent, "Active", "active", 0, 0, family,
+			models.JSONArr([]string{classID}), "2027-01-01")
+		db.Exec(`INSERT INTO enrollments(id,tenant_id,student_id,class_id,started_on,tier_name,created_by,created_on)
+			VALUES(?,?,?,?,?,?,?,?)`, core.GenerateID("ENR"), 1, k, classID, "2027-01-01", "", "test", "2027-01-01")
+	}
+
+	w := doRequest(r, "POST", "/api/billing/family-invoice", admin, map[string]string{"parentEmail": parent, "month": month})
+	if w.Code != http.StatusOK {
+		t.Fatalf("draft the family: %d %s", w.Code, w.Body.String())
+	}
+	var drafted struct {
+		Drafts []store.FamilyBillMember `json:"drafts"`
+	}
+	json.NewDecoder(w.Body).Decode(&drafted)
+	if len(drafted.Drafts) != 2 {
+		t.Fatalf("%d drafts, want one per child", len(drafted.Drafts))
+	}
+	for _, d := range drafted.Drafts {
+		var items string
+		db.QueryRow(`SELECT line_items FROM invoices WHERE id=?`, d.InvoiceID).Scan(&items)
+		if !strings.Contains(items, "Sibling discount") {
+			t.Errorf("%s has no sibling discount: %s", d.StudentName, items)
+		}
+	}
+
+	if w := doRequest(r, "POST", "/api/billing/family-invoice/issue", admin, map[string]string{"parentEmail": parent, "month": month}); w.Code != http.StatusOK {
+		t.Fatalf("issue the family: %d %s", w.Code, w.Body.String())
+	}
+	for _, d := range drafted.Drafts {
+		if got := readBillRow(t, db, d.InvoiceID).status; got != models.InvoiceStatusUnpaid {
+			t.Errorf("%s: status %q, want issued", d.InvoiceID, got)
+		}
+	}
+	var rows int
+	db.QueryRow(`SELECT count(*) FROM outbox WHERE topic=?`, store.OutboxTopicFamilyBillIssued).Scan(&rows)
+	if rows != 1 {
+		t.Fatalf("%d family outbox rows, want 1", rows)
+	}
+
+	again := doRequest(r, "POST", "/api/billing/family-invoice", admin, map[string]string{"parentEmail": parent, "month": month})
+	if again.Code != http.StatusConflict {
+		t.Fatalf("drafting an invoiced family again: got %d, want 409", again.Code)
 	}
 }
