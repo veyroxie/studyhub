@@ -131,19 +131,8 @@
     var students = s.students || [];
     var staff    = s.staff    || [];
     var reports  = s.progressReports || [];
-    var isTeacher = App.currentRole === 'teacher';
 
-    // Teachers only see students enrolled in their classes — match calendar
-    // and students-module behaviour.
-    var visibleStudents = students;
-    if (isTeacher && App.currentTeacher) {
-      var teacherClassIds = (s.classes || [])
-        .filter(function(c) { return (c.teacherIds || []).indexOf(App.currentTeacher) > -1; })
-        .map(function(c) { return c.id; });
-      visibleStudents = students.filter(function(st) {
-        return (st.enrolledClasses || []).some(function(cid) { return teacherClassIds.indexOf(cid) > -1; });
-      });
-    }
+    var visibleStudents = _reportableStudents(s);
     var visibleIds = visibleStudents.map(function(st) { return st.id; });
 
     var filtered = reports.filter(function(pr) {
@@ -198,16 +187,54 @@
         ? '<button onclick="App.Progress._clearFilters()" class="text-xs text-slate-500 border border-slate-200 rounded-lg px-3 py-1.5">Clear</button>'
         : '')
       + '</div>'
+      + (canEdit ? _stillToWriteHtml(visibleStudents, reports) : '')
       + rows
       + '</div>';
+  }
+
+  // A teacher reports on the students in their own classes (as calendar and students
+  // modules scope them); anyone else with access reports on everyone.
+  function _reportableStudents(s) {
+    var students = s.students || [];
+    if (App.currentRole !== 'teacher' || !App.currentTeacher) return students;
+    var mine = {};
+    (s.classes || []).forEach(function(c) {
+      if ((c.teacherIds || []).indexOf(App.currentTeacher) > -1) mine[c.id] = true;
+    });
+    return students.filter(function(st) {
+      return (st.enrolledClasses || []).some(function(cid) { return mine[cid]; });
+    });
+  }
+
+  // Active students with no report yet for the term, so nobody is missed at term end.
+  function _stillToWrite(students, reports, term) {
+    var done = {};
+    reports.forEach(function(pr) { if (pr.term === term) done[pr.studentId] = true; });
+    return students.filter(function(st) { return st.status === 'Active' && !done[st.id]; });
+  }
+
+  function _stillToWriteHtml(students, reports) {
+    var term = _currentTerm();
+    var todo = _stillToWrite(students, reports, term);
+    if (todo.length === 0) return '';
+    return '<div style="border:1px solid #f0ede8;background:#fffdf7;padding:0.8rem 1rem;margin-bottom:1.25rem">'
+      + '<div style="font-size:0.82rem;font-weight:700;color:#111;margin-bottom:0.5rem">Still to write for ' + App.Utils.esc(_termLabel(term)) + ' (' + todo.length + ')</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:0.4rem">'
+      + todo.map(function(st) {
+          return '<button onclick="App.Progress._newModal(\'' + st.id + '\')" style="padding:0.25rem 0.65rem;font-size:0.76rem;background:#fff;border:1px solid #e2e8f0;cursor:pointer">'
+            + App.Utils.esc(st.firstName + ' ' + st.lastName) + '</button>';
+        }).join('')
+      + '</div></div>';
   }
 
   function _setTermFilter(v) { _filterTerm = v; App.Router.refresh(); }
   function _setStudentFilter(v) { _filterStudent = v; App.Router.refresh(); }
   function _clearFilters() { _filterTerm = ''; _filterStudent = ''; App.Router.refresh(); }
 
-  function _newModal() {
-    _showForm({ term: _currentTerm(), published: false });
+  // A teacher writing a report is its teacher; studentId comes from the still-to-write list.
+  function _newModal(studentId) {
+    _showForm({ term: _currentTerm(), published: false, studentId: studentId || '',
+      teacherId: App.currentRole === 'teacher' ? (App.currentTeacher || '') : '' });
   }
 
   function _editModal(prId) {
@@ -218,18 +245,8 @@
 
   function _showForm(pr) {
     var s = App.Store.get();
-    var students = s.students || [];
+    var students = _reportableStudents(s);
     var staff    = s.staff || [];
-    var isTeacher = App.currentRole === 'teacher';
-
-    if (isTeacher && App.currentTeacher) {
-      var teacherClassIds = (s.classes || [])
-        .filter(function(c) { return (c.teacherIds || []).indexOf(App.currentTeacher) > -1; })
-        .map(function(c) { return c.id; });
-      students = students.filter(function(st) {
-        return (st.enrolledClasses || []).some(function(cid) { return teacherClassIds.indexOf(cid) > -1; });
-      });
-    }
 
     var studentOpts = students.map(function(st) {
       return '<option value="' + st.id + '"' + (st.id === pr.studentId ? ' selected' : '') + '>' + App.Utils.esc(st.firstName + ' ' + st.lastName) + '</option>';
