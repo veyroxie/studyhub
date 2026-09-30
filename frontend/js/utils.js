@@ -293,7 +293,9 @@
         'Notice':'blue','Reminder':'yellow','Urgent':'red',
         'Pending':'yellow'
       };
-      return App.Utils.badge(status, map[status] || 'gray');
+      // Stored statuses stay as they are; this is only what people read.
+      const label = { 'Pending Verification': 'Awaiting confirmation' }[status] || status;
+      return App.Utils.badge(label, map[status] || 'gray');
     },
     colorClasses(color) {
       const map = {

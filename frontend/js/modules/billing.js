@@ -652,7 +652,7 @@
             const active = f === _filter;
             const isArchive = f === 'Archive';
             const isPending = f === 'Pending';
-            const label = isArchive ? 'Paid' : isPending ? 'Awaiting Confirmation' + (pendingVerifCount > 0 ? ' (' + pendingVerifCount + ')' : '') : f;
+            const label = isArchive ? 'Paid' : isPending ? 'Awaiting confirmation' + (pendingVerifCount > 0 ? ' (' + pendingVerifCount + ')' : '') : f;
             const activeClass = isArchive ? 'bg-slate-600 text-white' : isPending ? 'bg-purple-600 text-white' : 'bg-blue-600 text-white';
             return '<button onclick="App.Billing._setFilter(\'' + f + '\')" class="px-3 py-1.5 text-sm rounded-lg font-medium transition-colors '
               + (active ? activeClass : 'text-slate-600 hover:bg-slate-100')

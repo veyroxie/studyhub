@@ -378,7 +378,7 @@
             ? '<button onclick="App.Attendance._toggleAllClasses()" style="font-size:0.75rem;font-weight:600;color:var(--gold);background:none;border:none;cursor:pointer;white-space:nowrap;min-height:48px">'
               + (_showAllClasses ? 'Scheduled only' : 'All classes') + '</button>'
             : '')
-      +     '<button onclick="App.Attendance._markAllPresent()" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Mark All Present</button>'
+      +     '<button onclick="App.Attendance._checkAllIn(this)" style="padding:0.45rem 0.85rem;font-size:0.78rem;font-weight:600;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Check all in</button>'
       +   '</div>'
       +   (selectedClass
           ? '<div style="margin-top:0.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem">'
@@ -1143,7 +1143,7 @@
       +     '<select onchange="App.Attendance._setClass(this.value)" style="padding:0.6rem 0.9rem;font-size:0.9rem;border:1px solid #e2e8f0;border-radius:4px;outline:none;min-height:48px;background:#fff">'
       +     dayClasses.map(function(c) { return '<option value="' + c.id + '" ' + (c.id === selectedClass.id ? 'selected' : '') + '>' + App.Utils.esc(c.name) + ' — ' + App.Utils.formatTime(App.Utils.scheduleOn(c, App.Store.get().scheduleVersions, _attDate).time) + '</option>'; }).join('')
       +     '</select>'
-      +     '<button onclick="App.Attendance._checkAllIn()" style="padding:0.5rem 0.9rem;font-size:0.82rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:4px;cursor:pointer;min-height:48px;white-space:nowrap;transition:opacity 0.15s" onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check All In</button>'
+      +     '<button onclick="App.Attendance._checkAllIn(this)" style="padding:0.5rem 0.9rem;font-size:0.82rem;font-weight:700;background:#22c55e;color:#fff;border:none;border-radius:4px;cursor:pointer;min-height:48px;white-space:nowrap;transition:opacity 0.15s" onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check all in</button>'
       +   '</div>'
       +   '<div style="margin-top:0.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.4rem">'
       +     '<span style="font-size:0.78rem;color:#94a3b8">' + enrolledStudents.length + ' enrolled  ·  <span style="color:#15803d;font-weight:600">' + presentCount + ' checked in</span></span>'
@@ -1162,39 +1162,36 @@
         + '</div>');
   }
 
-  function _checkAllIn() {
+  // One bulk check-in for admin and teacher. The roster is the one on screen (rosterFor
+  // honours start dates), saves run together, and the page updates from the server, so
+  // a failed save is reported rather than shown as checked in.
+  async function _checkAllIn(btn) {
     var state = App.Store.get();
-    var selectedClass = state.classes.find(function(c) { return c.id === _attClassId; });
-    if (!selectedClass) return;
-    var enrolledStudents = App.Utils.rosterFor(state.students, _attClassId, _attDate, state.enrollments, state.attendance);
-    var now = App.Utils.nowTime();
-    // Deliberately the picker's date, not _eventDate(): this is a bulk edit of
-    // the day being viewed, which is why the roster above is scoped to it too.
-    var today = _attDate || App.Utils.today();
-    var newAtt = state.attendance.slice();
-    var toCheckIn = [];
-    enrolledStudents.forEach(function(s) {
-      var existing = newAtt.find(function(a) { return a.personId === s.id && a.classId === _attClassId && a.date === today; });
-      if (!existing) {
-        newAtt.push({ id: App.Utils.generateId('ATT'), personId: s.id, personType: 'student', date: today, classId: _attClassId, checkIn: now, checkOut: null, status: 'Present' });
-        toCheckIn.push(s.id);
-      }
-    });
-    if (toCheckIn.length === 0) {
-      App.Utils.showToast('All students already checked in', 'info');
+    var day = _attDate || App.Utils.today();
+    var todo = App.Utils.rosterFor(state.students, _attClassId, day, state.enrollments, state.attendance)
+      .filter(function(s) {
+        var rec = state.attendance.find(function(a) { return a.personId === s.id && a.classId === _attClassId && a.date === day; });
+        return !rec || !(rec.checkIn || rec.status === 'Absent');
+      });
+    if (todo.length === 0) {
+      App.Utils.showToast('Everyone is already checked in or marked absent', 'info');
       return;
     }
-    App.Store.set({ attendance: newAtt });
-    App.Utils.showToast(toCheckIn.length + ' student' + (toCheckIn.length !== 1 ? 's' : '') + ' checked in', 'success');
-    App.Router.refresh();
-    // Persist each row so the bulk check-in survives a reload AND fires the
-    // parent notifications (push/email/in-app) — the optimistic store update
-    // above does neither on its own. Independent POSTs run together.
-    Promise.all(toCheckIn.map(function(id) {
-      return App.Api.post('/api/attendance', { personId: id, personType: 'student', date: today, classId: _attClassId, checkIn: now, status: 'Present' }, { silent: true });
-    })).catch(function() {
-      App.Utils.showToast('Some check-ins did not sync — please retry', 'warning');
+    var now = App.Utils.nowTime();
+    var results = await App.Utils.withLoading(btn, function() {
+      return Promise.all(todo.map(function(s) {
+        return App.Api.post('/api/attendance', { personId: s.id, personType: 'student', date: day, classId: _attClassId, checkIn: now, status: 'Present' }, { silent: true })
+          .then(function() { return true; }, function() { return false; });
+      }));
     });
+    var failed = results.filter(function(ok) { return !ok; }).length;
+    await App.Api.loadSnapshot();
+    App.Router.refresh();
+    if (failed > 0) {
+      App.Utils.showToast((todo.length - failed) + ' checked in, ' + failed + ' could not be saved. Try again for those.', 'warning', 8000);
+      return;
+    }
+    App.Utils.showToast(todo.length + ' student' + (todo.length !== 1 ? 's' : '') + ' checked in', 'success');
   }
 
   async function _undoAttendance(recId, studentId, wasAbsent) {
@@ -1336,42 +1333,6 @@
     App.Router.refresh();
   }
 
-  async function _markAllPresent() {
-    var state = App.Store.get();
-    var students = state.students.filter(function(s) { return s.enrolledClasses.indexOf(_attClassId) > -1; });
-    var attendance = state.attendance;
-    var now = App.Utils.nowTime();
-    var count = 0;
-
-    for (var i = 0; i < students.length; i++) {
-      var s = students[i];
-      var existing = attendance.find(function(a) {
-        return a.personId === s.id && a.classId === _attClassId && a.date === _attDate;
-      });
-      // Skip if already checked in or marked absent
-      if (existing && (existing.checkIn || existing.status === 'Absent')) continue;
-
-      try {
-        await App.Api.post('/api/attendance', {
-          personId: s.id,
-          personType: 'student',
-          date: _attDate,
-          classId: _attClassId,
-          checkIn: now,
-          status: 'Present'
-        });
-        count++;
-      } catch(e) {}
-    }
-
-    if (count > 0) {
-      App.Utils.showToast(count + ' student' + (count !== 1 ? 's' : '') + ' checked in', 'success');
-      await App.Api.refresh();
-    } else {
-      App.Utils.showToast('All students already checked in', 'info');
-    }
-  }
-
   async function _quickFeedback() {
     var state = App.Store.get();
     var cls = state.classes.find(function(c) { return c.id === _attClassId; });
@@ -1442,5 +1403,5 @@
     }
   }
 
-  App.Attendance = { render: render, focusClass: focusClass, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit, _markAbsentNoCredit: _markAbsentNoCredit, _undoAttendance: _undoAttendance, _undoStaffAttendance: _undoStaffAttendance, _markAllPresent: _markAllPresent, _quickFeedback: _quickFeedback, _savePostAttFeedback: _savePostAttFeedback };
+  App.Attendance = { render: render, focusClass: focusClass, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit, _markAbsentNoCredit: _markAbsentNoCredit, _undoAttendance: _undoAttendance, _undoStaffAttendance: _undoStaffAttendance, _quickFeedback: _quickFeedback, _savePostAttFeedback: _savePostAttFeedback };
 })();
