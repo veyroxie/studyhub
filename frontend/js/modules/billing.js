@@ -254,7 +254,10 @@
       +   '<div style="font-size:1.15rem;font-weight:800;color:#111">' + App.Utils.formatCurrency(_sumAmounts(owed)) + '</div>'
       + '</div>'
       + _familyBillLinesHtml(owed)
-      + '<div style="display:flex;justify-content:flex-end;gap:0.75rem;align-items:center;margin-top:0.75rem">' + action + '</div>'
+      + '<div style="display:flex;justify-content:flex-end;gap:0.75rem;align-items:center;margin-top:0.75rem">'
+      +   '<a href="/api/family-bills/' + owed[0].id + '/pdf" target="_blank" style="font-size:0.75rem;color:#475569;text-decoration:underline">Family bill PDF</a>'
+      +   action
+      + '</div>'
       + '</div>';
   }
 
@@ -664,6 +667,7 @@
                           : '<button onclick="App.Billing._markPaid(\'' + payKey + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">' + (billTag ? 'Mark family bill paid' : 'Mark as Paid') + '</button>')
                   +     '<button onclick="App.Billing._editModal(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Edit</button>'
                   +     '<a href="/api/invoices/' + inv.id + '/pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download invoice</a>'
+                  +     (billTag ? '<a href="/api/family-bills/' + inv.id + '/pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download family bill</a>' : '')
                   +     (inv.status === 'Paid' ? '<a href="/api/invoices/' + inv.id + '/receipt.pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download receipt</a>' : '')
                   +     '<div class="my-1 border-t border-slate-100"></div>'
                   +     '<button onclick="App.Billing._deleteInvoice(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-red-50 text-red-600">Delete</button>'

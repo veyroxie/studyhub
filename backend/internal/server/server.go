@@ -200,6 +200,8 @@ func Build(db *store.DB) http.Handler {
 		})
 
 		r.Post("/api/family-bills/pay", handlers.HandleFamilyBillPay(db))
+		r.Get("/api/family-bills/{invoiceId}/pdf", pdf.HandleFamilyBillPDF(db, false))
+		r.Get("/api/family-bills/{invoiceId}/receipt.pdf", pdf.HandleFamilyBillPDF(db, true))
 		r.Route("/api/invoices", func(r chi.Router) {
 			r.Get("/", handlers.HandleInvoices(db))
 			r.Post("/", handlers.HandleInvoices(db))

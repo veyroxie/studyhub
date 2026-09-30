@@ -217,3 +217,46 @@ func TestABankTransferClaimNeedsAReference(t *testing.T) {
 		t.Fatalf("no reference: got %d, want 400", code)
 	}
 }
+
+func TestTheFamilyBillPDFIsTheParentsAndOnlyTheirs(t *testing.T) {
+	f := newBillFixture(t)
+	defer f.cleanup()
+
+	w := doRequest(f.r, "GET", "/api/family-bills/"+f.zayden+"/pdf", f.parent, nil)
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/pdf" {
+		t.Fatalf("parent bill PDF: got %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+	if w := doRequest(f.r, "GET", "/api/family-bills/"+f.lucy+"/pdf", f.admin, nil); w.Code != http.StatusOK {
+		t.Fatalf("admin bill PDF: got %d", w.Code)
+	}
+	other := monthlyInvoice(t, f.r, f.admin, "STU003", 240, "")
+	if w := doRequest(f.r, "GET", "/api/family-bills/"+other+"/pdf", f.parent, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("another family's bill: got %d, want 403", w.Code)
+	}
+}
+
+func TestTheFamilyReceiptWaitsUntilEveryChildIsPaid(t *testing.T) {
+	f := newBillFixture(t)
+	defer f.cleanup()
+	if w := doRequest(f.r, "GET", "/api/family-bills/"+f.zayden+"/receipt.pdf", f.parent, nil); w.Code != http.StatusBadRequest {
+		t.Fatalf("receipt for an unpaid bill: got %d, want 400", w.Code)
+	}
+	confirm := map[string]any{"parentEmail": billParent, "invoiceIds": []string{f.zayden, f.lucy}, "expectedTotal": 500,
+		"status": "Paid", "paymentMethod": "Cash"}
+	if code := f.pay(f.admin, confirm); code != http.StatusOK {
+		t.Fatalf("mark bill paid: %d", code)
+	}
+	if w := doRequest(f.r, "GET", "/api/family-bills/"+f.zayden+"/receipt.pdf", f.parent, nil); w.Code != http.StatusOK {
+		t.Fatalf("receipt for a paid bill: got %d", w.Code)
+	}
+}
+
+func TestADraftHasNoFamilyBillPDFForTheParent(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	admin, parent := getAdminToken(t, r), getParentToken(t, r)
+	draft := monthlyInvoice(t, r, admin, "STU001", 240, models.InvoiceStatusDraft)
+	if w := doRequest(r, "GET", "/api/family-bills/"+draft+"/pdf", parent, nil); w.Code != http.StatusNotFound {
+		t.Fatalf("draft bill PDF: got %d, want 404", w.Code)
+	}
+}
