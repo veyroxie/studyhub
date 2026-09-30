@@ -72,6 +72,10 @@ func HandleInvoiceReissue(db *store.DB) http.HandlerFunc {
 		if len(next.LineItems) > 0 {
 			next.Amount = models.NormalizeLineItems(next.LineItems)
 		}
+		if msg := earlyBirdLineError(next.Type, next.LineItems); msg != "" {
+			core.RespondError(w, msg, http.StatusBadRequest)
+			return
+		}
 		if !core.ValidAmount(next.Amount) {
 			core.RespondError(w, "an invoice needs an amount above zero", http.StatusBadRequest)
 			return

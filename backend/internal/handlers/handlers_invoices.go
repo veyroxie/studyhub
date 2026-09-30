@@ -130,6 +130,10 @@ func HandleInvoices(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, msg, 400)
 				return
 			}
+			if msg := earlyBirdLineError(inv.Type, inv.LineItems); msg != "" {
+				core.RespondError(w, msg, http.StatusBadRequest)
+				return
+			}
 			if !core.ValidAmount(inv.Amount) {
 				core.RespondError(w, "amount must be greater than 0", 400)
 				return
@@ -294,6 +298,28 @@ func earlyBirdFromLines(invoiceType, period string, items []models.InvoiceLineIt
 	return "", 0
 }
 
+// earlyBirdLineError refuses the early-bird shapes the clawback cannot undo; "" means acceptable.
+func earlyBirdLineError(invoiceType string, items []models.InvoiceLineItem) string {
+	count := 0
+	for _, it := range items {
+		if it.Kind == models.LineItemKindDiscount && strings.HasPrefix(it.Name, models.EarlyBirdLinePrefix) {
+			count++
+		}
+	}
+	if count == 0 {
+		return ""
+	}
+	// Only a Monthly invoice has a period, and without one no cutoff is armed.
+	if invoiceType != "Monthly" {
+		return "the early bird applies to monthly invoices only — remove its line or set the type to Monthly"
+	}
+	// earlyBirdFromLines arms the first line only, so a second would never be put back.
+	if count > 1 {
+		return "an invoice can carry only one early bird line"
+	}
+	return ""
+}
+
 func monthlyPeriod(invoiceType, createdOn string) string {
 	if invoiceType != "Monthly" || len(createdOn) < 7 {
 		return ""
@@ -365,6 +391,13 @@ func HandleInvoiceUpdate(db *store.DB) http.HandlerFunc {
 			inv.Type != curType || inv.DueDate != curDueDate || inv.CreatedOn != curCreatedOn) {
 			core.RespondError(w, "this invoice has been issued — reissue it to change the money or the dates, or edit only its description", http.StatusConflict)
 			return
+		}
+		// Drafts only: an issued invoice resubmits its frozen lines on every wording edit.
+		if editingItems && curStatus == models.InvoiceStatusDraft {
+			if msg := earlyBirdLineError(inv.Type, inv.LineItems); msg != "" {
+				core.RespondError(w, msg, http.StatusBadRequest)
+				return
+			}
 		}
 		// period is the monthly run's dedup key. It still has to follow a TYPE
 		// change, or an invoice reclassified as Monthly would be invisible to the

@@ -111,3 +111,52 @@ func TestRemovingTheEarlyBirdLineDisarmsTheClawback(t *testing.T) {
 		t.Errorf("removing the line left the clawback armed (%q/%.2f)", cutoff, discount)
 	}
 }
+
+func postInvoice(t *testing.T, r *chi.Mux, token, invType string, items []models.InvoiceLineItem) int {
+	t.Helper()
+	inv := models.Invoice{
+		StudentID: "STU001", Description: "Oct fees", Type: invType,
+		DueDate: "2026-10-07", CreatedOn: "2026-10-01", LineItems: items,
+		Status: models.InvoiceStatusDraft,
+	}
+	return doRequest(r, "POST", "/api/invoices", token, inv).Code
+}
+
+// The clawback restores only the first early-bird line, so a second RM10 would
+// stay off for good when the parent pays late.
+func TestAnInvoiceCannotCarryTwoEarlyBirdLines(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+
+	code := postInvoice(t, r, token, "Monthly", []models.InvoiceLineItem{baseLine(), earlyBirdLine(), earlyBirdLine()})
+	if code != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400 for a second early-bird line", code)
+	}
+}
+
+// A non-Monthly invoice has no billing period, so no cutoff is armed and the
+// RM10 could never be put back.
+func TestTheEarlyBirdIsRefusedOnANonMonthlyInvoice(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+
+	code := postInvoice(t, r, token, "Adhoc", []models.InvoiceLineItem{baseLine(), earlyBirdLine()})
+	if code != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400 for an early bird on an Adhoc invoice", code)
+	}
+}
+
+func TestADraftCannotBeEditedIntoTwoEarlyBirdLines(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	token := getAdminToken(t, r)
+	id := createInvoiceWithLines(t, r, token, []models.InvoiceLineItem{baseLine(), earlyBirdLine()})
+
+	edit := models.Invoice{Description: "Sept fees", Type: "Monthly", DueDate: "2026-09-07", CreatedOn: "2026-09-01",
+		LineItems: []models.InvoiceLineItem{baseLine(), earlyBirdLine(), earlyBirdLine()}}
+	if w := doRequest(r, "PUT", "/api/invoices/"+id, token, edit); w.Code != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400: %s", w.Code, w.Body.String())
+	}
+}
