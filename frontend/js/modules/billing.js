@@ -1658,7 +1658,7 @@
       + '<td style="padding:0.5rem 0.6rem">' + App.Utils.esc(d.studentName || d.studentId) + '</td>'
       + '<td style="padding:0.5rem 0.6rem;text-align:right;font-variant-numeric:tabular-nums">' + App.Utils.formatCurrency(d.amount) + '</td>'
       + '<td style="padding:0.5rem 0.6rem;text-align:right">'
-      +   '<button onclick="App.Billing._editModal(\'' + d.invoiceId + '\')" style="font-size:0.72rem;color:#4f46e5;background:none;border:none;cursor:pointer">Edit</button>'
+      +   '<button onclick="App.Billing._editModal(\'' + d.invoiceId + '\',\'monthRun\')" style="font-size:0.72rem;color:#4f46e5;background:none;border:none;cursor:pointer">Edit</button>'
       +   '<button onclick="App.Billing._dropDraft(\'' + d.invoiceId + '\')" style="font-size:0.72rem;color:#dc2626;background:none;border:none;cursor:pointer;margin-left:0.5rem">Remove</button>'
       + '</td></tr>';
   }
@@ -1837,8 +1837,11 @@
     App.Router.refresh();
   }
 
-  function _editModal(invoiceId) {
+  // returnTo names the list the edit was opened from ('monthRun' or 'familyReview'),
+  // so Save and Cancel go back to it instead of dropping Nadine on the billing page.
+  function _editModal(invoiceId, returnTo) {
     const state = App.Store.get();
+    const back = RETURN_TO[returnTo] ? returnTo : '';
     const inv = state.invoices.find(function(i) { return i.id === invoiceId; });
     if (!inv) return;
     const stu = state.students.find(function(s) { return s.id === inv.studentId; });
@@ -1885,7 +1888,7 @@
       + _field('Due Date', '<input name="dueDate" type="date" class="form-input" value="' + inv.dueDate + '" required>')
       + '</div>'
       + '<div class="flex justify-end gap-3 pt-2" style="flex-wrap:wrap">'
-      + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      + '<button type="button" onclick="' + (back ? 'App.Billing._afterEdit(\'' + back + '\')' : 'App.Utils.hideModal()') + '" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       // An issued invoice is frozen: its money and dates cannot be edited
       // (ADR-016), so Save Changes can only alter the wording. Changing a
       // figure means replacing the document, which is what Reissue does.
@@ -1928,11 +1931,22 @@
         return App.Api.loadSnapshot();
       }).then(function() {
         App.Utils.showToast('Invoice updated', 'success');
+        if (back) { _afterEdit(back); return; }
         App.Router.refresh();
       }).catch(function() {
         // Error already toasted by App.Api wrapper.
       });
     });
+  }
+
+  var RETURN_TO = {
+    monthRun: function() { _refreshMonthRun(); },
+    familyReview: function() { _reopenFamilyReview(); }
+  };
+
+  function _afterEdit(returnTo) {
+    App.Router.refresh();
+    RETURN_TO[returnTo]();
   }
 
   function _createModal() {
@@ -2233,14 +2247,28 @@
       });
   }
 
+  // The review an edit returns to. Overwritten every time a review opens, and read
+  // only by an edit opened from that review, so it cannot point at a stale family.
+  var _familyReviewFor = null;
+
+  // Drafting again is safe: children already drafted are skipped and the drafts come back.
+  function _reopenFamilyReview() {
+    if (!_familyReviewFor) return;
+    var f = _familyReviewFor;
+    App.Api.post('/api/billing/family-invoice', f).then(function(res) {
+      _familyDraftReview(f.parentEmail, f.month, (res && res.drafts) || []);
+    }).catch(function() { /* App.Api already toasted */ });
+  }
+
   function _familyDraftReview(parentEmail, month, drafts) {
+    _familyReviewFor = { parentEmail: parentEmail, month: month };
     App.Utils.hideModal(true);
     var skipped = _undraftedChildren(parentEmail, month, drafts);
     var rows = drafts.map(function(d) {
       return '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;padding:0.45rem 0;border-bottom:1px solid #f1f5f9;font-size:0.85rem">'
         + '<span>' + App.Utils.esc(d.studentName) + '</span>'
         + '<span style="display:flex;gap:0.75rem;align-items:center"><strong>' + App.Utils.formatCurrency(d.amount) + '</strong>'
-        + '<button onclick="App.Billing._editModal(\'' + d.invoiceId + '\')" style="font-size:0.72rem;color:#4f46e5;background:none;border:none;cursor:pointer">Edit</button></span>'
+        + '<button onclick="App.Billing._editModal(\'' + d.invoiceId + '\',\'familyReview\')" style="font-size:0.72rem;color:#4f46e5;background:none;border:none;cursor:pointer">Edit</button></span>'
         + '</div>';
     }).join('');
     App.Utils.showModal(
@@ -2382,6 +2410,7 @@
     _editLineItem: _editLineItem,
     _updateSelfStudyAmount: _updateSelfStudyAmount,
     _issueFamilyDrafts: _issueFamilyDrafts,
+    _afterEdit: _afterEdit,
     _emailParent: _emailParent,
     _sendWhatsApp: _sendWhatsApp,
     _whatsAppMessage: function(payKey) { var p = _payable(payKey); return p ? _whatsAppMessage(p) : null; },
