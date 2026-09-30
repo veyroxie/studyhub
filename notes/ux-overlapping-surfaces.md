@@ -1,5 +1,9 @@
 # Where the system offers more than one way to do one thing
 
+> 2026-09-30: #1's dead end is closed: the class popup has Add a student
+> (through the same `App.Students.saveEnrolment` the profile uses), Take
+> attendance, Edit class and Close.
+
 Audit requested 2026-09-08 after Aria turned out to simply not be enrolled.
 Findings only; nothing changed.
 

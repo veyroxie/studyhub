@@ -638,8 +638,67 @@
                 }).join('')
               + '</div></div>';
           })())
+      + _classModalActions(c, state, isAdmin)
       + '</div>'
     );
+  }
+
+  // The class popup used to be a dead end: no Close, and nothing you could do from it.
+  function _classModalActions(c, state, isAdmin) {
+    var btn = 'padding:0.5rem 1rem;font-size:0.82rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#374151;cursor:pointer';
+    var runsToday = App.Utils.runsOnDate(c, App.Utils.today(), state);
+    var canMark = runsToday && App.currentRole !== 'client';
+    return '<div style="display:flex;justify-content:flex-end;gap:0.5rem;flex-wrap:wrap;border-top:1px solid #f1f5f9;padding-top:1rem">'
+      + (canMark ? '<button onclick="App.Calendar._takeAttendance(\'' + c.id + '\')" style="' + btn + '">Take attendance</button>' : '')
+      + (isAdmin ? '<button onclick="App.Calendar._addStudentModal(\'' + c.id + '\')" style="' + btn + '">Add a student</button>' : '')
+      + (isAdmin ? '<button onclick="App.Utils.hideModal(true);App.Calendar._editClassModal(\'' + c.id + '\')" style="' + btn + '">Edit class</button>' : '')
+      + '<button onclick="App.Utils.hideModal()" style="' + btn.replace('background:#fff;color:#374151', 'background:var(--gold);color:#0a0a0a;border-color:var(--gold)') + '">Close</button>'
+      + '</div>';
+  }
+
+  function _takeAttendance(classId) {
+    App.Utils.hideModal(true);
+    App.Attendance.focusClass(classId);
+    App.Router.navigate('attendance');
+  }
+
+  // Enrol from the class, the way people think about it; the save is the student's own.
+  function _addStudentModal(classId) {
+    var state = App.Store.get();
+    var c = (state.classes || []).find(function(x) { return x.id === classId; });
+    if (!c) return;
+    var candidates = (state.students || []).filter(function(s) {
+      return (s.status === 'Active' || s.status === 'New') && (s.enrolledClasses || []).indexOf(classId) === -1;
+    }).sort(function(a, b) { return (a.firstName + a.lastName).localeCompare(b.firstName + b.lastName); });
+    App.Utils.showModal('<div class="p-6" style="width:min(440px,92vw)">'
+      + '<h2 class="text-lg font-bold mb-1">Add a student</h2>'
+      + '<p class="text-sm text-slate-500 mb-4">' + App.Utils.esc(c.name) + ' · ' + c.enrolled + '/' + c.capacity + '</p>'
+      + '<form id="add-to-class-form" class="space-y-3">'
+      +   App.Utils.filterFor('add-to-class-student', 'Search students')
+      +   '<select id="add-to-class-student" name="studentId" class="form-input" required><option value="">Choose a student</option>'
+      +   candidates.map(function(s) { return '<option value="' + s.id + '">' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</option>'; }).join('')
+      +   '</select>'
+      +   '<div><label class="block text-sm font-medium text-slate-700 mb-1">Starting from</label>'
+      +   '<input name="enrolledFrom" type="date" class="form-input" value="' + App.Utils.today() + '" required></div>'
+      +   '<div class="flex justify-end gap-3 pt-2">'
+      +     '<button type="button" onclick="App.Calendar._classModal(\'' + classId + '\')" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Back</button>'
+      +     '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add to class</button>'
+      +   '</div>'
+      + '</form></div>');
+    document.getElementById('add-to-class-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var fd = new FormData(e.target);
+      var student = candidates.find(function(s) { return s.id === fd.get('studentId'); });
+      if (!student) return;
+      try {
+        await App.Utils.withLoading(e.target.querySelector('button[type="submit"]'), function() {
+          return App.Students.saveEnrolment(student.id, (student.enrolledClasses || []).concat([classId]), fd.get('enrolledFrom'));
+        });
+        App.Utils.showToast(student.firstName + ' added to ' + c.name, 'success');
+        App.Router.refresh();
+        _classModal(classId);
+      } catch (err) { /* App.Api already toasted, e.g. the class is full */ }
+    });
   }
 
   var _starRating = {}; // classId -> chosen rating
@@ -1540,5 +1599,7 @@
   }
 
   App.Calendar = {
-    isOpenToParent: isOpenToParent, render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _refreshFeeHint: _refreshFeeHint, _refreshCatalogueTiers: _refreshCatalogueTiers, _categoryOptions: _categoryOptions, _tierOptionsFor: _tierOptionsFor, _pricedAsLabel: _pricedAsLabel, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _moveSessionModal: _moveSessionModal, _undoMove: _undoMove, _undoCancellation: _undoCancellation };
+    isOpenToParent: isOpenToParent,
+    _takeAttendance: _takeAttendance,
+    _addStudentModal: _addStudentModal, render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _refreshFeeHint: _refreshFeeHint, _refreshCatalogueTiers: _refreshCatalogueTiers, _categoryOptions: _categoryOptions, _tierOptionsFor: _tierOptionsFor, _pricedAsLabel: _pricedAsLabel, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _moveSessionModal: _moveSessionModal, _undoMove: _undoMove, _undoCancellation: _undoCancellation };
 })();

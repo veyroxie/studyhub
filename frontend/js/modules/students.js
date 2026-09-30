@@ -352,16 +352,10 @@
     document.getElementById('enroll-classes-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       var fd = new FormData(e.target);
-      var newClasses = fd.getAll('classIds');
-      var updated = Object.assign({}, s, {
-        enrolledClasses: newClasses,
-        enrolledFrom: fd.get('enrolledFrom') || ''
-      });
       var submitBtn = e.target.querySelector('button[type="submit"]');
       try {
-        await App.Utils.withLoading(submitBtn, async function() {
-          await App.Api.put('/api/students/' + studentId, updated);
-          await App.Api.loadSnapshot();
+        await App.Utils.withLoading(submitBtn, function() {
+          return saveEnrolment(studentId, fd.getAll('classIds'), fd.get('enrolledFrom') || '');
         });
         App.Utils.showToast('Classes updated', 'success');
         App.Router.refresh();
@@ -369,6 +363,15 @@
         _switchTab('classes');
       } catch (err) { /* auto-toasted */ }
     });
+  }
+
+  // saveEnrolment sets a student's classes from a start date. One path for every place a
+  // student joins a class: PUT /api/students validates capacity and recounts classes.
+  async function saveEnrolment(studentId, classIds, enrolledFrom) {
+    var s = (App.Store.get().students || []).find(function(x) { return x.id === studentId; });
+    if (!s) throw new Error('student not found');
+    await App.Api.put('/api/students/' + studentId, Object.assign({}, s, { enrolledClasses: classIds, enrolledFrom: enrolledFrom }));
+    await App.Api.loadSnapshot();
   }
 
   function _onSearch(val) {
@@ -1872,6 +1875,7 @@
   }
 
   App.Students = {
+    saveEnrolment: saveEnrolment,
     _refreshTierOptions: _refreshTierOptions,
     _tierNamesFor: _tierNamesFor,
     _viewInvoice: _viewInvoice,
