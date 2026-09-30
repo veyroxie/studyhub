@@ -29,13 +29,13 @@ function fakeForm(html, typed) {
   };
 }
 
-function openCreateModal(sandbox, typed) {
+function openCreateModal(sandbox, typed, elements = {}) {
   let html = '';
   let form = null;
   sandbox.App.Utils.showModal = (h) => { html = h; form = null; };
   sandbox.document.getElementById = (id) => {
     if (id === 'create-invoice-form') return form || (form = fakeForm(html, typed));
-    return null;
+    return elements[id] || null;
   };
   sandbox.App.Billing._createModal();
   return sandbox.document.getElementById('create-invoice-form');
@@ -60,6 +60,7 @@ describe('create invoice popup: the tab on screen is the tab that submits', () =
     sandbox.App.Api = { post: (path, body) => { posts.push({ path, body }); return Promise.resolve({}); }, loadSnapshot: () => Promise.resolve() };
     sandbox.App.Router = { refresh() {} };
     sandbox.confirm = () => true;
+    sandbox.App.Utils.today = () => '2026-09-20'; // outside the early-bird window unless a test says otherwise
   });
 
   test('a single invoice opened after the Sibling tab was used still submits as single', () => {
@@ -96,5 +97,57 @@ describe('create invoice popup: the tab on screen is the tab that submits', () =
 
     assert.ok(toasts.includes('Select a family'), 'toasts: ' + JSON.stringify(toasts));
     assert.equal(posts.length, 0);
+  });
+
+  test('Build from catalogue prices the month the invoice is dated in, not the current one', () => {
+    const urls = [];
+    sandbox.App.Api.get = (url) => { urls.push(url); return Promise.resolve(null); };
+    openCreateModal(sandbox, { studentId: 'STU_Z', invoiceDate: '2026-08-15' });
+    sandbox.App.Billing._buildFromCatalogueForForm('create-invoice-form');
+
+    assert.equal(urls.length, 1);
+    assert.match(urls[0], /month=2026-08/);
+  });
+
+  test('a sibling invoice takes RM10 early bird per child, on one line, dated by the invoice date', () => {
+    sandbox.document.querySelectorAll = (sel) => sel.includes('sibling-children-checks')
+      ? [{ value: 'STU_Z' }, { value: 'STU_L' }] : [];
+    const earlyBirdBox = { checked: false };
+    const form = openCreateModal(sandbox,
+      { parentEmail: 'parent@example.com', amountPerChild: '240', siblingDiscount: '0', invoiceDate: '2026-10-02', dueDate: '2026-10-07' },
+      { 'early-bird-cb': earlyBirdBox });
+    sandbox.App.Billing._setInvMode('sibling');
+    earlyBirdBox.checked = true;
+    submit(form);
+
+    assert.equal(posts.length, 1);
+    const earlyBird = posts[0].body.lineItems.filter((li) => li.name.startsWith('Early bird'));
+    assert.equal(earlyBird.length, 1);
+    assert.equal(earlyBird[0].amount, -20);
+    assert.equal(posts[0].body.createdOn, '2026-10-02');
+  });
+
+  test('inside the window the early bird starts on, and leaves when the type is not Monthly', () => {
+    sandbox.App.Utils.today = () => '2026-10-01';
+    const form = openCreateModal(sandbox, { studentId: 'STU_Z', type: 'Adhoc' });
+    sandbox.App.Billing._addLineItem('reg-fee');
+    sandbox.App.Billing._syncEarlyBirdToType('Adhoc');
+    submit(form);
+
+    assert.equal(posts.length, 1);
+    assert.ok(!posts[0].body.lineItems.some((li) => li.name.startsWith('Early bird')));
+  });
+
+  test('switching back to Monthly inside the window puts exactly one early bird back', () => {
+    sandbox.App.Utils.today = () => '2026-10-01';
+    const form = openCreateModal(sandbox, { studentId: 'STU_Z', type: 'Monthly' });
+    sandbox.App.Billing._addLineItem('reg-fee');
+    sandbox.App.Billing._syncEarlyBirdToType('Adhoc');
+    sandbox.App.Billing._syncEarlyBirdToType('Monthly');
+    sandbox.App.Billing._syncEarlyBirdToType('Monthly');
+    submit(form);
+
+    const earlyBird = posts[0].body.lineItems.filter((li) => li.name.startsWith('Early bird'));
+    assert.equal(earlyBird.length, 1);
   });
 });

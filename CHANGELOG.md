@@ -50,7 +50,8 @@ dated section when you cut a deploy.
 - An invoice can no longer get the early bird twice. The "+ Early bird" line
   and a checkbox that ticked itself on the 1st to 7th stacked into RM20 off,
   and only RM10 was ever clawed back. Single invoices now carry the early bird
-  as one line (added automatically in the window), and the server refuses a
+  as one line (added automatically in the window, and dropped when the type
+  is not Monthly), and the server refuses a
   second early-bird line or one on a non-monthly invoice.
 - Sibling invoices take RM10 early bird per child, as the monthly run does,
   and use the invoice date entered rather than today.

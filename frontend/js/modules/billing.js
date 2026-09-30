@@ -228,6 +228,16 @@
     return li.kind === 'discount' && (li.name || '').indexOf(EARLY_BIRD_LINE_PREFIX) === 0;
   }
 
+  // The early bird exists only on Monthly invoices; the server refuses it on any other type.
+  function _syncEarlyBirdToType(type) {
+    if (type !== 'Monthly') {
+      _lineItems = _lineItems.filter(function(li) { return !_isEarlyBirdLine(li); });
+      _renderLineItems();
+      return;
+    }
+    if (_isEarlyBirdWindow(App.Utils.today()) && !_lineItems.some(_isEarlyBirdLine)) _addEarlyBirdLine();
+  }
+
   function _isEarlyBirdWindow(isoDate) {
     return parseInt(isoDate.slice(8, 10), 10) <= EARLY_BIRD_LAST_DAY;
   }
@@ -1636,7 +1646,7 @@
           return '<option value="' + s.id + '"' + (s.id === _studentFilter ? ' selected' : '') + '>' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</option>';
         }).join('')
       + '</select></div>'
-      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input"><option>Monthly</option><option>Adhoc</option></select></div>'
+      + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Type</label><select name="type" class="form-input" onchange="App.Billing._syncEarlyBirdToType(this.value)"><option>Monthly</option><option>Adhoc</option></select></div>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Add package</label>'
       +   '<select id="pkg-catalog" class="form-input" onchange="App.Billing._addLineItem(this.value); this.selectedIndex=0;">'
       +   _packageCatalogOptions()
@@ -1717,11 +1727,9 @@
     _renderLineItems();
 
     // Inside the window the discount starts on; removing the line (or unticking, for siblings) drops it.
-    if (_isEarlyBirdWindow(App.Utils.today())) {
-      _addEarlyBirdLine();
-      var cb = document.getElementById('early-bird-cb');
-      if (cb) cb.checked = true;
-    }
+    _syncEarlyBirdToType('Monthly');
+    var cb = document.getElementById('early-bird-cb');
+    if (cb) cb.checked = _isEarlyBirdWindow(App.Utils.today());
 
     document.getElementById('create-invoice-form').addEventListener('submit', function(e) {
       e.preventDefault();
@@ -1738,10 +1746,6 @@
     if (!fd.get('studentId')) { App.Utils.showToast('Select a student', 'warning'); return; }
     if (_lineItems.length === 0) { App.Utils.showToast('Add at least one package', 'warning'); return; }
     var lineItems = _lineItems.map(_lineItemPayload);
-    if (fd.get('type') !== 'Monthly' && lineItems.some(_isEarlyBirdLine)) {
-      App.Utils.showToast('The early bird is for monthly invoices only. Remove its line or set the type to Monthly.', 'warning');
-      return;
-    }
     if (!_confirmMissingTuition(fd.get('type'), lineItems)) return;
     // The server derives the total from the lines, so no amount is sent.
     _postInvoice({
@@ -2075,6 +2079,7 @@
     _issueMonth: _issueMonth,
     _addLineItem: _addLineItem,
     _addEarlyBirdLine: _addEarlyBirdLine,
+    _syncEarlyBirdToType: _syncEarlyBirdToType,
     _buildFromCatalogue: _buildFromCatalogue,
     _reissueInvoice: _reissueInvoice,
     // Exported for the unit test: a monthly invoice with no tuition on it is
