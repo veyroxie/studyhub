@@ -489,7 +489,7 @@
       + qtyInput
       + priceInput
       + '<div id="li-amt-' + li.id + '" style="width:88px;text-align:right;font-size:0.82rem;font-weight:600;color:' + (isDiscount ? '#166534' : '#111') + '"></div>'
-      + '<button type="button" onclick="App.Billing._removeLineItem(' + li.id + ')" title="Remove" style="background:none;border:none;color:#cbd5e1;cursor:pointer;font-size:1rem;line-height:1">&#10005;</button>'
+      + '<button type="button" onclick="App.Billing._removeLineItem(' + li.id + ')" title="Remove line" aria-label="Remove line" style="background:none;border:none;color:#cbd5e1;cursor:pointer;font-size:1rem;line-height:1">&#10005;</button>'
       + '</div>';
   }
 
@@ -711,7 +711,7 @@
                 + '</td>'
                 + (isAdmin ? '<td class="td">'
                   + '<div class="relative flex justify-center">'
-                  +   '<button onclick="App.Billing._toggleMenu(event,\'' + inv.id + '\')" class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none font-bold">&#8942;</button>'
+                  +   '<button onclick="App.Billing._toggleMenu(event,\'' + inv.id + '\')" aria-label="Invoice actions" aria-haspopup="menu" class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none font-bold">&#8942;</button>'
                   +   '<div id="inv-menu-' + inv.id + '" class="inv-menu hidden absolute right-0 top-8 z-20 bg-white border border-slate-200 shadow-xl rounded-xl py-1 min-w-40">'
                   // A Draft is not yet a bill and a Void has been replaced: neither takes payment.
                   +     (inv.status === 'Draft' || inv.status === 'Void'

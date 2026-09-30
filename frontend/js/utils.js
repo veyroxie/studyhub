@@ -51,6 +51,13 @@
     _modalDirtyListeners = [];
   }
 
+  function _setBackgroundInert(on) {
+    var app = document.getElementById('app');
+    if (!app) return;
+    app.inert = on;
+    if (on) app.setAttribute('aria-hidden', 'true'); else app.removeAttribute('aria-hidden');
+  }
+
   App.Utils = {
     showModal(html) {
       // Cancel a still-pending hideModal fade-out so its delayed cleanup can't
@@ -65,8 +72,10 @@
       overlay.classList.add('flex');
       document.body.style.overflow = 'hidden';
 
-      // ARIA attributes
-      overlay.setAttribute('aria-hidden', 'true');
+      // The page behind goes inert while the dialog is open. The overlay itself used to be
+      // aria-hidden, and the dialog lives inside it, so screen readers skipped every popup.
+      overlay.removeAttribute('aria-hidden');
+      _setBackgroundInert(true);
       content.setAttribute('role', 'dialog');
       content.setAttribute('aria-modal', 'true');
       var titleEl = content.querySelector('h2');
@@ -106,6 +115,8 @@
       }
       _modalDirty = false;
       _detachDirtyListeners();
+      // Before any focus restore: focus cannot land on a control inside an inert page.
+      _setBackgroundInert(false);
       // Remove focus trap listener
       if (_trapFocusHandler) {
         document.removeEventListener('keydown', _trapFocusHandler);

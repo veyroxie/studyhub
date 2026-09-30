@@ -556,9 +556,9 @@
     const isAdmin = App.currentRole === 'admin';
     const adminBtns = isAdmin
       ? '<div style="display:flex;gap:2px;position:absolute;top:3px;right:3px">'
-        + '<button onclick="event.stopPropagation();App.Calendar._editClassModal(\'' + c.id + '\')" style="width:20px;height:20px;border:none;background:rgba(255,255,255,0.85);border-radius:4px;cursor:pointer;font-size:0.6rem;line-height:1;display:flex;align-items:center;justify-content:center;color:#64748b" title="Edit">&#9998;</button>'
-        + '<button onclick="event.stopPropagation();App.Calendar._deleteClass(\'' + c.id + '\')" style="width:20px;height:20px;border:none;background:rgba(255,255,255,0.85);border-radius:4px;cursor:pointer;font-size:0.6rem;line-height:1;display:flex;align-items:center;justify-content:center;color:#ef4444" title="Delete">&#10005;</button>'
-        + (dateStr ? '<button onclick="event.stopPropagation();App.Calendar._moveSessionModal(\'' + c.id + '\',\'' + dateStr + '\')" style="width:20px;height:20px;border:none;background:rgba(255,255,255,0.85);border-radius:4px;cursor:pointer;font-size:0.6rem;line-height:1;display:flex;align-items:center;justify-content:center;color:#0369a1" title="Reschedule this session">&#8631;</button>' : '')
+        + '<button onclick="event.stopPropagation();App.Calendar._editClassModal(\'' + c.id + '\')" style="width:20px;height:20px;border:none;background:rgba(255,255,255,0.85);border-radius:4px;cursor:pointer;font-size:0.6rem;line-height:1;display:flex;align-items:center;justify-content:center;color:#64748b" title="Edit" aria-label="Edit">&#9998;</button>'
+        + '<button onclick="event.stopPropagation();App.Calendar._deleteClass(\'' + c.id + '\')" style="width:20px;height:20px;border:none;background:rgba(255,255,255,0.85);border-radius:4px;cursor:pointer;font-size:0.6rem;line-height:1;display:flex;align-items:center;justify-content:center;color:#ef4444" title="Delete" aria-label="Delete">&#10005;</button>'
+        + (dateStr ? '<button onclick="event.stopPropagation();App.Calendar._moveSessionModal(\'' + c.id + '\',\'' + dateStr + '\')" style="width:20px;height:20px;border:none;background:rgba(255,255,255,0.85);border-radius:4px;cursor:pointer;font-size:0.6rem;line-height:1;display:flex;align-items:center;justify-content:center;color:#0369a1" title="Reschedule this session" aria-label="Reschedule this session">&#8631;</button>' : '')
         + '</div>'
       : '';
 
@@ -1114,7 +1114,7 @@
         + '</div>'
         + '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:4px;background:' + (ws.status==='completed'?'#f1f5f9':ws.status==='cancelled'?'#fef2f2':'#f0fdf4') + ';color:' + statusColor + ';flex-shrink:0">' + ws.status + '</span>'
         + '<span style="font-size:0.78rem;font-weight:700;color:var(--gold);flex-shrink:0">RM ' + ws.fee + '</span>'
-        + (isAdmin ? '<button onclick="App.Calendar._deleteWorkshop(\'' + ws.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Delete">&#10005;</button>' : '')
+        + (isAdmin ? '<button onclick="App.Calendar._deleteWorkshop(\'' + ws.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Delete" aria-label="Delete">&#10005;</button>' : '')
         + '</div>';
     }).join('');
 
@@ -1140,8 +1140,8 @@
         + '</div>'
         + '<span style="font-size:0.62rem;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:4px;background:' + typeBg + ';color:' + typeColor + ';flex-shrink:0">' + App.Utils.esc(h.type) + '</span>'
         + (isAdmin ? '<div style="display:flex;gap:0.3rem;flex-shrink:0">'
-          + '<button onclick="App.Calendar._editHolidayModal(\'' + h.id + '\')" style="font-size:0.68rem;color:#64748b;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Edit">&#9998;</button>'
-          + '<button onclick="App.Calendar._deleteHoliday(\'' + h.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Delete">&#10005;</button>'
+          + '<button onclick="App.Calendar._editHolidayModal(\'' + h.id + '\')" style="font-size:0.68rem;color:#64748b;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Edit" aria-label="Edit">&#9998;</button>'
+          + '<button onclick="App.Calendar._deleteHoliday(\'' + h.id + '\')" style="font-size:0.7rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0 0.2rem" title="Delete" aria-label="Delete">&#10005;</button>'
           + '</div>' : '')
         + '</div>';
     }).join('');
@@ -1158,7 +1158,7 @@
       return '<td style="padding:0.7rem 1rem;text-align:center">'
         + '<span style="font-weight:800;color:#111">RM ' + (t.monthlyFee || 0) + '</span>'
         + '<span style="display:block;font-size:0.68rem;color:#94a3b8">RM ' + (t.hourlyRate || 0) + '/hr</span>'
-        + (isAdmin ? ' <button onclick="App.Calendar._editPricingModal(\'' + t.id + '\')" style="font-size:0.68rem;color:#64748b;background:none;border:none;cursor:pointer" title="Edit">&#9998;</button>' : '')
+        + (isAdmin ? ' <button onclick="App.Calendar._editPricingModal(\'' + t.id + '\')" style="font-size:0.68rem;color:#64748b;background:none;border:none;cursor:pointer" title="Edit" aria-label="Edit">&#9998;</button>' : '')
         + '</td>';
     };
     const pricingTable = '<table style="width:100%;border-collapse:collapse;font-size:0.85rem">'
