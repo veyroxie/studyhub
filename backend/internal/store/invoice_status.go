@@ -33,3 +33,12 @@ func DisplayStatus(status, dueDate, today string) string {
 func DisplayStatusLocal(status, dueDate string) string {
 	return DisplayStatus(status, dueDate, core.Today())
 }
+
+// ParentVisibleInvoiceSQL keeps a parent's invoice reads (aliased i) to real bills:
+// a Draft is still under Nadine's review and a Void has been replaced.
+const ParentVisibleInvoiceSQL = ` AND i.status NOT IN ('` + models.InvoiceStatusDraft + `','` + models.InvoiceStatusVoid + `')`
+
+// IsParentVisibleStatus is ParentVisibleInvoiceSQL for a row already loaded.
+func IsParentVisibleStatus(status string) bool {
+	return status != models.InvoiceStatusDraft && status != models.InvoiceStatusVoid
+}

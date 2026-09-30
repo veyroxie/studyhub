@@ -674,6 +674,10 @@ func HandleInvoicePDF(db *store.DB, receipt bool) http.HandlerFunc {
 			core.RespondError(w, "not your invoice", 403)
 			return
 		}
+		if c.Role == "parent" && !store.IsParentVisibleStatus(d.Status) {
+			core.RespondError(w, "invoice not found", 404)
+			return
+		}
 		if receipt && !strings.EqualFold(d.Status, "Paid") {
 			core.RespondError(w, "invoice is not paid yet", 400)
 			return

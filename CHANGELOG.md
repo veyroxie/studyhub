@@ -43,6 +43,10 @@ dated section when you cut a deploy.
   rather than claiming it was delivered.
 
 ### Fixed
+- Parents no longer see draft or voided invoices. The monthly run drafts every
+  invoice on the 1st for review, and those unreviewed figures were already in
+  the parent's billing page, invoice list and PDF; a reissued invoice showed
+  twice, the voided original beside its replacement.
 - Create Invoice no longer answers "Select a family" (or "Select a student")
   for an ordinary single invoice. The popup remembered the last tab used even
   though it always reopened showing Single; the tab now lives in the form, so
