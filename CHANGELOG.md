@@ -9,6 +9,18 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- Search from anywhere for admins (top bar, or press /): students by name,
+  phone or parent email, invoices by number, classes by name.
+- Parents: enrol another child from the dashboard; add their children's
+  classes to Google, Apple or Outlook calendar; read progress reports in the
+  app.
+- Teachers: their own hours this month and last month's pay on the dashboard;
+  undo a mis-tapped check-in the same day; a still-to-write list of progress
+  reports for the term, with the teacher filled in.
+- The class popup can add a student, take attendance, edit the class and close.
+- Admins see the Set up your centre checklist.
+- On a phone the week schedule is a day-by-day list, popups fit the screen,
+  the bottom menu is solid and readable, and dashboards fold to fewer columns.
 - The parent's "I've paid" popup shows the exact amount, the centre's bank
   account (with a Copy button) and the invoice number to put in the transfer
   reference. "Pay Online" appears only when a payment gateway is fully set up,
@@ -25,6 +37,18 @@ dated section when you cut a deploy.
   their password and typed twice. They are signed out and sign in again.
 
 ### Fixed
+- The Settings page opens (it was a dead click), and only for admins.
+- Parents and teachers no longer see the role switch; it is a developer tool.
+- A parent's own child's class no longer disappears from the schedule when full.
+- A session moved to another day shows there, and a parent never sees another
+  class's moved session.
+- Dashboard links open on what they were about (for example, payments awaiting
+  confirmation open that tab).
+- A parent who owes no longer receives report text in the background; reports
+  stay paused until the invoice is settled, as intended.
+- Absent + Replacement asks before granting credits and shows the 3-hour rule.
+- Check all in uses the roster on screen and reports failed saves.
+- Screen readers can read popups; icon buttons have names.
 - Changing a parent's email (by an admin, or at first sign-in) no longer cuts
   them off from their children: the children, family record and pending
   enrolment requests move with the login.
