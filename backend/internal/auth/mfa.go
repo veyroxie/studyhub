@@ -321,7 +321,7 @@ func HandleMFAVerify(db *store.DB) http.HandlerFunc {
 		if err := store.IssueRefreshToken(db, w, r, t.userID, t.tenantID, ""); err != nil {
 			core.LogFromReq(r).Error("issue refresh token failed", "err", err, "user_id", t.userID)
 		}
-		base := LoginResponse{Role: t.role, Name: t.name, Email: t.email}
+		base := newLoginResponse(t.role, t.name, t.email)
 		if t.role == "teacher" {
 			db.QueryRow(`SELECT id FROM staff WHERE email=? AND tenant_id=? AND deleted_at IS NULL LIMIT 1`, t.email, t.tenantID).Scan(&base.StaffID)
 		}

@@ -688,7 +688,6 @@
   // switcher itself writes. Client-side gating is a courtesy, not a control:
   // anyone can unhide the element with devtools. What actually protects the
   // data is that the backend ignores the client's claimed role.
-  var DEV_TOOLBAR_EMAILS = ['admin@studyhub.com'];
 
   // uiRoleFor maps the server's role to one of the UI's three views; a superadmin works in the admin one.
   function uiRoleFor(serverRole) {
@@ -697,15 +696,17 @@
   }
   App.uiRoleFor = uiRoleFor;
 
-  // Previewing another role's screens is for admins and developers, never a parent or teacher.
+  // Previewing another role's screens is a developer tool: admins run the centre and do not need it.
   App.canPreviewRoles = function() {
-    return App.isDevMode() || uiRoleFor(App.actualRole) === 'admin';
+    return App.isDevMode();
   };
 
   App.isDevMode = function() {
     var h = window.location.hostname;
     if (h === 'localhost' || h === '127.0.0.1') return true;
-    return DEV_TOOLBAR_EMAILS.indexOf((App.actualEmail || '').toLowerCase()) > -1;
+    // The server decides who the developer is (DEVELOPER_EMAILS), so no email lives in this file.
+    var user = App.Api && App.Api.currentUser && App.Api.currentUser();
+    return !!(user && user.developer);
   };
 
   // ========================

@@ -52,6 +52,7 @@ services:
       # everything else is dropped (not redirected — one parent's invoice must
       # never land in another's inbox). Leave empty for normal operation.
       OUTBOUND_ALLOWLIST: ${OUTBOUND_ALLOWLIST:-}
+      DEVELOPER_EMAILS: ${DEVELOPER_EMAILS:-}
       # Email (Resend) — leave blank to run in dev mode (emails logged to stdout)
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       # Dev-safe defaults: production values (live sender, real domain) are set

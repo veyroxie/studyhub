@@ -47,6 +47,18 @@ func AllowedRecipient(to string) bool {
 	return false
 }
 
+// IsDeveloper reports whether email belongs to the technical owner (DEVELOPER_EMAILS,
+// comma-separated). Admins run the centre; developer screens are for this list only.
+func IsDeveloper(email string) bool {
+	for _, dev := range strings.Split(os.Getenv("DEVELOPER_EMAILS"), ",") {
+		dev = strings.TrimSpace(dev)
+		if dev != "" && strings.EqualFold(dev, strings.TrimSpace(email)) {
+			return true
+		}
+	}
+	return false
+}
+
 // SendEmail delivers a message via the registered mailer. When no mailer has
 // been registered yet (e.g. a test that didn't wire one) it is a no-op that
 // reports success, matching the previous dev-mode behaviour.

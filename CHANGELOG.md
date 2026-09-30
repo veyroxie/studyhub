@@ -9,6 +9,10 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- `DEVELOPER_EMAILS` (new env var, forwarded in docker-compose): the technical
+  owner's sign-in. Only that account sees developer screens such as role
+  preview; admins run the centre and no longer get them. Set it to your own
+  email on the droplet.
 - "Email to parent" in the admin invoice menu ("Email family bill" for a
   family's invoices). Invoices made by hand send nothing on their own, so this
   is how the parent gets one. While outbound email is limited to the allowlist

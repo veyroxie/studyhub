@@ -77,6 +77,12 @@ type LoginResponse struct {
 	// (auth.RequireSetupComplete), so a client that ignores this gets 428 on
 	// everything except the setup endpoint.
 	MustCompleteSetup bool `json:"mustCompleteSetup,omitempty"`
+	// Developer gates technical screens (role preview, dev tools); see core.IsDeveloper.
+	Developer bool `json:"developer,omitempty"`
+}
+
+func newLoginResponse(role, name, email string) LoginResponse {
+	return LoginResponse{Role: role, Name: name, Email: email, Developer: core.IsDeveloper(email)}
 }
 
 // dummyPasswordHash is a valid argon2id hash verified against on the
@@ -233,7 +239,7 @@ func HandleLogin(db *store.DB) http.HandlerFunc {
 		// Return role/name/email — NOT the token itself.
 		// For teachers, also look up their staff ID so the frontend can
 		// populate App.currentTeacher and render the teacher dashboard.
-		base := LoginResponse{Role: role, Name: name, Email: req.Email}
+		base := newLoginResponse(role, name, req.Email)
 		db.QueryRow(`SELECT COALESCE(must_change_credentials,FALSE) FROM users WHERE id=?`, id).Scan(&base.MustCompleteSetup)
 		if role == "teacher" {
 			// Look up the staff row in the same tenant as the user we
@@ -381,7 +387,7 @@ func HandleMe(db *store.DB) http.HandlerFunc {
 			LoginResponse
 			MustAcceptToS bool `json:"mustAcceptTos"`
 		}{
-			LoginResponse: LoginResponse{Role: c.Role, Name: c.Name, Email: c.Email},
+			LoginResponse: newLoginResponse(c.Role, c.Name, c.Email),
 			MustAcceptToS: tosV < core.CurrentToSVersion,
 		}
 		if c.Role == "teacher" {
