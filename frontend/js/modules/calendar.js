@@ -48,6 +48,13 @@
   let _filterTeacher = ''; // '' = all
   let _filterSearch  = ''; // text search on class name
 
+  // Nadine's rule: a full class disappears from what a parent can browse. Their own
+  // child's class is not browsing, so it always shows, full or not.
+  function isOpenToParent(cls, ownClassIds) {
+    if (ownClassIds && ownClassIds[cls.id]) return true;
+    return cls.enrolled < cls.capacity;
+  }
+
   function render(container) {
     const { classes, staff, students, cancelledClasses, holidays, scheduleVersions } = App.Store.get();
     const _cancelledClasses = cancelledClasses || [];
@@ -88,7 +95,7 @@
         .filter(function(c) {
           if (App.Utils.scheduleOn(c, _schedVersions, colDate).day !== day) return false;
           if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
-          if (isClient && c.enrolled >= c.capacity) return false; // hide full classes from parents
+          if (isClient && !isOpenToParent(c, enrolledClassIds)) return false;
           if (teacherClassIds !== null && !teacherClassIds[c.id]) return false;
           if (_filterTeacher && !c.teacherIds.includes(_filterTeacher)) return false;
           if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
@@ -1519,5 +1526,6 @@
     });
   }
 
-  App.Calendar = { render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _refreshFeeHint: _refreshFeeHint, _refreshCatalogueTiers: _refreshCatalogueTiers, _categoryOptions: _categoryOptions, _tierOptionsFor: _tierOptionsFor, _pricedAsLabel: _pricedAsLabel, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _moveSessionModal: _moveSessionModal, _undoMove: _undoMove, _undoCancellation: _undoCancellation };
+  App.Calendar = {
+    isOpenToParent: isOpenToParent, render: render, _prevWeek: _prevWeek, _nextWeek: _nextWeek, _addClassModal: _addClassModal, _setView: _setView, _prevMonth: _prevMonth, _nextMonth: _nextMonth, _onTypeChange: _onTypeChange, _refreshFeeHint: _refreshFeeHint, _refreshCatalogueTiers: _refreshCatalogueTiers, _categoryOptions: _categoryOptions, _tierOptionsFor: _tierOptionsFor, _pricedAsLabel: _pricedAsLabel, _setSearch: _setSearch, _setTeacher: _setTeacher, _clearFilters: _clearFilters, _classModal: _classModal, _dayScheduleModal: _dayScheduleModal, _addWorkshopModal: _addWorkshopModal, _deleteWorkshop: _deleteWorkshop, _editClassModal: _editClassModal, _deleteClass: _deleteClass, _addHolidayModal: _addHolidayModal, _editHolidayModal: _editHolidayModal, _deleteHoliday: _deleteHoliday, _editPricingModal: _editPricingModal, _moveSessionModal: _moveSessionModal, _undoMove: _undoMove, _undoCancellation: _undoCancellation };
 })();
