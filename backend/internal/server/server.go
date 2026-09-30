@@ -199,6 +199,7 @@ func Build(db *store.DB) http.Handler {
 			r.Delete("/{id}", handlers.HandleStaffByID(db))
 		})
 
+		r.Post("/api/family-bills/pay", handlers.HandleFamilyBillPay(db))
 		r.Route("/api/invoices", func(r chi.Router) {
 			r.Get("/", handlers.HandleInvoices(db))
 			r.Post("/", handlers.HandleInvoices(db))

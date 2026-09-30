@@ -325,7 +325,9 @@ type Invoice struct {
 	ReferenceNo       string  `json:"referenceNo"`
 	// InvoiceNo is the gapless per-year number assigned at issue (0067). Blank
 	// on everything issued before that migration; those keep their id.
-	InvoiceNo         string            `json:"invoiceNo,omitempty"`
+	InvoiceNo string `json:"invoiceNo,omitempty"`
+	// Period is the billing month of a Monthly invoice (YYYY-MM); it keys the family bill.
+	Period            string            `json:"period,omitempty"`
 	IssuedAt          string            `json:"issuedAt,omitempty"`
 	EarlyBirdCutoff   string            `json:"earlyBirdCutoff"`
 	EarlyBirdDiscount float64           `json:"earlyBirdDiscount"`

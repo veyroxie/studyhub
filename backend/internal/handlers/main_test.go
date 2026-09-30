@@ -81,6 +81,7 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		r.Put("/api/invoices/{id}", HandleInvoiceUpdate(db))
 		r.Post("/api/invoices/{id}/reissue", HandleInvoiceReissue(db))
 		r.Post("/api/invoices/{id}/issue", HandleInvoiceIssue(db))
+		r.Post("/api/family-bills/pay", HandleFamilyBillPay(db))
 		r.Get("/api/invoices/{id}/pdf", pdf.HandleInvoicePDF(db, false))
 		r.Get("/api/invoices/{id}/receipt.pdf", pdf.HandleInvoicePDF(db, true))
 		r.Put("/api/users/{id}/credentials", HandleUserCredentials(db))
