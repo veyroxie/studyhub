@@ -1039,6 +1039,14 @@ func teacherHoursWorkedAll(db *store.DB, staffIDs []string, start, end string) m
 	return out
 }
 
+// TeacherHoursInMonth is the hours payroll would count for one staff member in a
+// YYYY-MM month, by the same rule, so a teacher's own view and their pay agree.
+func TeacherHoursInMonth(db *store.DB, staffID, month string) float64 {
+	start := month + "-01"
+	end := month + "-31" // attendance dates are text; "-31" bounds every month
+	return teacherHoursWorkedAll(db, []string{staffID}, start, end)[staffID]
+}
+
 // teacherHoursWorked sums hours from teacher attendance check-in rows in
 // the [start, end] window. Falls back to the scheduled class duration
 // (end_time − time) when check_out is missing — covers the case where a

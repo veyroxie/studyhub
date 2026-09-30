@@ -26,7 +26,39 @@
 
     var dashContent = isTeacher ? _teacherDash() : (isAdmin && _dashView === 'ops') ? _opsDash() : isAdmin ? _adminDash() : _parentDash();
     container.innerHTML = viewToggle + dashContent;
+    if (isTeacher) _loadMyHours();
     setTimeout(_runCountUp, 80);
+  }
+
+  // ── My hours (teacher) ─────────────────────────────────────────────────────
+  // Payroll runs in arrears, so this month shows hours so far and last month
+  // shows the pay once it has been worked out.
+  function _loadMyHours() {
+    var now = new Date(App.Utils.today() + 'T00:00:00');
+    var thisMonth = App.Utils.today().slice(0, 7);
+    var last = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var lastMonth = last.getFullYear() + '-' + String(last.getMonth() + 1).padStart(2, '0');
+    Promise.all([
+      App.Api.get('/api/me/hours?month=' + thisMonth, { silent: true }),
+      App.Api.get('/api/me/hours?month=' + lastMonth, { silent: true })
+    ]).then(function(res) {
+      var body = document.querySelector('#my-hours-card .dash-card-body');
+      if (body) body.innerHTML = _myHoursHtml(res[0], res[1]);
+    }).catch(function() {
+      var card = document.getElementById('my-hours-card');
+      if (card) card.remove(); // no staff record for this login: nothing useful to show
+    });
+  }
+
+  function _myHoursHtml(current, previous) {
+    var fmtHours = function(h) { return (Math.round((h || 0) * 10) / 10) + ' h'; };
+    var pay = previous && previous.pay
+      ? App.Utils.formatCurrency(previous.pay.total) + ' (' + App.Utils.esc(previous.pay.status) + ')'
+      : 'not worked out yet';
+    return '<div style="display:flex;gap:1.5rem;flex-wrap:wrap;color:#374151">'
+      + '<div><div style="font-size:1.3rem;font-weight:800">' + fmtHours(current.hours) + '</div><div style="font-size:0.72rem;color:#94a3b8">this month so far</div></div>'
+      + '<div><div style="font-size:1.3rem;font-weight:800">' + fmtHours(previous.hours) + '</div><div style="font-size:0.72rem;color:#94a3b8">last month · pay ' + pay + '</div></div>'
+      + '</div>';
   }
 
   // ── Count-up ─────────────────────────────────────────────────────────────────
@@ -1068,6 +1100,8 @@
             }).join(''))
       +   '</div>'
       + '</div>'
+
+      + '<div id="my-hours-card" class="dash-card" style="margin-bottom:1rem"><div class="dash-card-header">My hours</div><div class="dash-card-body" style="font-size:0.82rem;color:#94a3b8">Loading…</div></div>'
 
       // Quick links
       + '<div class="sh-cols-4" style="gap:0.75rem">'

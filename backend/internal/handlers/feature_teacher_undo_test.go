@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -71,5 +72,38 @@ func TestATeacherCanUndoOnlyTheirOwnSameDayCheckIn(t *testing.T) {
 		if w := doRequest(r, "DELETE", "/api/attendance/"+id, teacher, nil); w.Code != tc.want {
 			t.Errorf("%s: got %d, want %d (%s)", tc.name, w.Code, tc.want, w.Body.String())
 		}
+	}
+}
+
+// A teacher sees their own hours by payroll's rule, and nobody else's.
+func TestATeacherSeesTheirOwnHoursAndPay(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	db := store.InitDB(testDSN())
+	defer db.Close()
+	var staffID string
+	db.QueryRow(`SELECT id FROM staff WHERE email=?`, undoTeacher).Scan(&staffID)
+	const month = "2026-08"
+	db.Exec(`DELETE FROM attendance WHERE person_id=? AND date LIKE ?`, staffID, month+"%")
+	db.Exec(`DELETE FROM payroll WHERE staff_id=? AND month=?`, staffID, month)
+	db.Exec(`INSERT INTO attendance(id,tenant_id,person_id,person_type,date,check_in,check_out,status) VALUES(?,?,?,?,?,?,?,?)`,
+		core.GenerateID("ATT"), 1, staffID, "staff", month+"-12", "16:00", "18:30", "Present")
+	db.Exec(`INSERT INTO payroll(id,tenant_id,staff_id,month,total,status) VALUES(?,?,?,?,?,?)`, core.GenerateID("PAY"), 1, staffID, month, 312.5, "Paid")
+
+	teacher := getToken(t, r, undoTeacher, "Teacher123!")
+	w := doRequest(r, "GET", "/api/me/hours?month="+month, teacher, nil)
+	var got struct {
+		Hours float64 `json:"hours"`
+		Pay   *struct {
+			Total  float64 `json:"total"`
+			Status string  `json:"status"`
+		} `json:"pay"`
+	}
+	json.NewDecoder(w.Body).Decode(&got)
+	if w.Code != http.StatusOK || got.Hours != 2.5 || got.Pay == nil || got.Pay.Total != 312.5 || got.Pay.Status != "Paid" {
+		t.Fatalf("code %d, got %+v pay %+v", w.Code, got, got.Pay)
+	}
+	if w := doRequest(r, "GET", "/api/me/hours", getAdminToken(t, r), nil); w.Code != http.StatusForbidden {
+		t.Fatalf("admin: got %d, want 403", w.Code)
 	}
 }
