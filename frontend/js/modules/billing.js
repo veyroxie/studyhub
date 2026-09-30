@@ -538,7 +538,10 @@
                   + '<div class="relative flex justify-center">'
                   +   '<button onclick="App.Billing._toggleMenu(event,\'' + inv.id + '\')" class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 text-lg leading-none font-bold">&#8942;</button>'
                   +   '<div id="inv-menu-' + inv.id + '" class="inv-menu hidden absolute right-0 top-8 z-20 bg-white border border-slate-200 shadow-xl rounded-xl py-1 min-w-40">'
-                  +     (inv.status === 'Pending Verification'
+                  // A Draft is not yet a bill and a Void has been replaced: neither takes payment.
+                  +     (inv.status === 'Draft' || inv.status === 'Void'
+                          ? ''
+                          : inv.status === 'Pending Verification'
                           ? '<button onclick="App.Billing._verifyPaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-green-50 text-green-700 font-semibold">Verify Payment</button>'
                             + '<button onclick="App.Billing._markPaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Override &amp; Mark Paid</button>'
                             + '<button onclick="App.Billing._markUnpaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Reject (Mark Unpaid)</button>'

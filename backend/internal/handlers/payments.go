@@ -16,6 +16,7 @@ import (
 	"strings"
 	"studyhub/internal/core"
 	"studyhub/internal/mailer"
+	"studyhub/internal/models"
 	"studyhub/internal/store"
 	"time"
 
@@ -73,8 +74,8 @@ func HandlePaymentCheckout(db *store.DB) http.HandlerFunc {
 		var studentID, description string
 		var amount float64
 		readArgs := append([]any{id}, twArgs...)
-		if err := db.QueryRow(`SELECT student_id, description, amount FROM invoices WHERE id=? AND deleted_at IS NULL AND status<>'Paid'`+tw, readArgs...).Scan(&studentID, &description, &amount); err != nil {
-			core.RespondError(w, "invoice not found or already paid", http.StatusNotFound)
+		if err := db.QueryRow(`SELECT student_id, description, amount FROM invoices WHERE id=? AND deleted_at IS NULL AND status NOT IN ('Paid','Draft','Void')`+tw, readArgs...).Scan(&studentID, &description, &amount); err != nil {
+			core.RespondError(w, "invoice not found, already paid, or not payable", http.StatusNotFound)
 			return
 		}
 		if c.Role == "parent" {
@@ -204,24 +205,20 @@ func HandleBillplzWebhook(db *store.DB) http.HandlerFunc {
 		}
 		// Mark invoice paid. We don't have a Claims context here — system action.
 		now := core.Today()
-		res, err := db.Exec(
-			`UPDATE invoices SET status='Paid', paid_on=?, payment_method='Billplz', reference_no=? WHERE id=? AND deleted_at IS NULL AND status<>'Paid'`,
-			now, billID, invoiceID,
-		)
+		changed, err := store.RecordInvoicePayment(db, "", nil, invoiceID, store.PaymentChange{
+			Status: models.InvoiceStatusPaid, Method: "Billplz", Reference: billID, Today: now,
+		})
 		if err != nil {
 			core.Logger.Error("billplz webhook update failed", "err", err, "invoice_id", invoiceID)
 			core.RespondError(w, "db error", 500)
 			return
 		}
-		if n, _ := res.RowsAffected(); n > 0 {
+		if !changed {
+			warnUnrecordedGatewayPayment(db, "billplz", invoiceID)
+		}
+		if changed {
 			core.Logger.Info("billplz webhook: invoice marked paid", "invoice_id", invoiceID, "bill_id", billID)
 			core.LogAudit(db, store.TenantOfInvoice(db, invoiceID), "billplz", "invoice_paid", "invoice", invoiceID, "via webhook")
-			// Assign a receipt number now that the invoice is Paid — same
-			// idempotent guard as the admin/parent pay paths. No tenant scope
-			// here (system webhook, no Claims); the invoice id is unique.
-			if _, err := db.Exec(`UPDATE invoices SET receipt_no='RCPT-'||lpad(nextval('receipt_no_seq')::text,6,'0') WHERE id=? AND status='Paid' AND (receipt_no IS NULL OR receipt_no='')`, invoiceID); err != nil {
-				core.Logger.Error("billplz webhook: receipt number assign failed", "err", err, "invoice_id", invoiceID)
-			}
 			var studentID string
 			db.QueryRow(`SELECT student_id FROM invoices WHERE id=?`, invoiceID).Scan(&studentID)
 			if studentID != "" {
@@ -370,24 +367,20 @@ func HandleStripeWebhook(db *store.DB) http.HandlerFunc {
 			return
 		}
 		now := core.Today()
-		res, err := db.Exec(
-			`UPDATE invoices SET status='Paid', paid_on=?, payment_method='Stripe', reference_no=? WHERE id=? AND deleted_at IS NULL AND status<>'Paid'`,
-			now, evt.Data.Object.ID, invoiceID,
-		)
+		changed, err := store.RecordInvoicePayment(db, "", nil, invoiceID, store.PaymentChange{
+			Status: models.InvoiceStatusPaid, Method: "Stripe", Reference: evt.Data.Object.ID, Today: now,
+		})
 		if err != nil {
 			core.Logger.Error("stripe webhook update failed", "err", err, "invoice_id", invoiceID)
 			core.RespondError(w, "db error", 500)
 			return
 		}
-		if n, _ := res.RowsAffected(); n > 0 {
+		if !changed {
+			warnUnrecordedGatewayPayment(db, "stripe", invoiceID)
+		}
+		if changed {
 			core.Logger.Info("stripe webhook: invoice marked paid", "invoice_id", invoiceID, "session_id", evt.Data.Object.ID)
 			core.LogAudit(db, store.TenantOfInvoice(db, invoiceID), "stripe", "invoice_paid", "invoice", invoiceID, "via webhook")
-			// Assign a receipt number now that the invoice is Paid — same
-			// idempotent guard as the admin/parent pay paths. No tenant scope
-			// here (system webhook, no Claims); the invoice id is unique.
-			if _, err := db.Exec(`UPDATE invoices SET receipt_no='RCPT-'||lpad(nextval('receipt_no_seq')::text,6,'0') WHERE id=? AND status='Paid' AND (receipt_no IS NULL OR receipt_no='')`, invoiceID); err != nil {
-				core.Logger.Error("stripe webhook: receipt number assign failed", "err", err, "invoice_id", invoiceID)
-			}
 			var studentID string
 			db.QueryRow(`SELECT student_id FROM invoices WHERE id=?`, invoiceID).Scan(&studentID)
 			if studentID != "" {
@@ -443,4 +436,16 @@ func jsonReader(v any) (io.Reader, error) {
 		return nil, err
 	}
 	return bytes.NewReader(b), nil
+}
+
+// A gateway charge that changed nothing is either a duplicate callback (already Paid)
+// or money taken against a Draft or Void invoice, which someone must reconcile by hand.
+func warnUnrecordedGatewayPayment(db *store.DB, gateway, invoiceID string) {
+	var status string
+	db.QueryRow(`SELECT status FROM invoices WHERE id=?`, invoiceID).Scan(&status)
+	if status == models.InvoiceStatusPaid {
+		return
+	}
+	core.Logger.Error("gateway payment NOT recorded: invoice cannot take payment — reconcile by hand",
+		"gateway", gateway, "invoice_id", invoiceID, "status", status)
 }

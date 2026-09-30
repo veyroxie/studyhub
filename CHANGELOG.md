@@ -43,6 +43,10 @@ dated section when you cut a deploy.
   rather than claiming it was delivered.
 
 ### Fixed
+- A draft or voided invoice can no longer be marked paid, from the admin menu,
+  a parent's "I've paid", or an online payment; checkout refuses them too. A
+  parent can no longer reopen a payment the centre has already confirmed,
+  which used to leave a receipt number on an unpaid invoice.
 - Parents no longer see draft or voided invoices. The monthly run drafts every
   invoice on the 1st for review, and those unreviewed figures were already in
   the parent's billing page, invoice list and PDF; a reissued invoice showed

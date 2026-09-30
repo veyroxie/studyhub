@@ -298,6 +298,18 @@ func earlyBirdFromLines(invoiceType, period string, items []models.InvoiceLineIt
 	return "", 0
 }
 
+func payConflictMessage(status string) string {
+	switch status {
+	case models.InvoiceStatusDraft:
+		return "this invoice is still a draft — issue it before taking payment"
+	case models.InvoiceStatusVoid:
+		return "this invoice was replaced — take payment on its replacement"
+	case models.InvoiceStatusPaid:
+		return "this invoice is already paid"
+	}
+	return "this invoice cannot take that payment"
+}
+
 // earlyBirdLineError refuses the early-bird shapes the clawback cannot undo; "" means acceptable.
 func earlyBirdLineError(invoiceType string, items []models.InvoiceLineItem) string {
 	count := 0
@@ -560,11 +572,11 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 		tw, twArgs := store.ScopeTenant(c, "")
 
 		// Verify invoice exists in caller's tenant and check ownership for parents.
-		var studentID string
+		var studentID, curStatus string
 		var amount float64
 		var existingMethod, existingRef string
 		invArgs := append([]any{id}, twArgs...)
-		if err := db.QueryRow(`SELECT student_id, amount, COALESCE(payment_method,''), COALESCE(reference_no,'') FROM invoices WHERE id=? AND deleted_at IS NULL`+tw, invArgs...).Scan(&studentID, &amount, &existingMethod, &existingRef); err != nil {
+		if err := db.QueryRow(`SELECT student_id, status, amount, COALESCE(payment_method,''), COALESCE(reference_no,'') FROM invoices WHERE id=? AND deleted_at IS NULL`+tw, invArgs...).Scan(&studentID, &curStatus, &amount, &existingMethod, &existingRef); err != nil {
 			core.RespondError(w, "invoice not found", 404)
 			return
 		}
@@ -645,58 +657,25 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 			return
 		}
 
+		if !store.PayableFrom(curStatus, c.Role == "parent") {
+			core.RespondError(w, payConflictMessage(curStatus), http.StatusConflict)
+			return
+		}
+
 		t := core.Today()
-		// Re-paying an already-Paid invoice must be a no-op: guard the Paid
-		// transition on status<>'Paid' so the original paid_on/reference survive
-		// and the referral milestone below fires at most once.
-		paidGuard := ""
-		if newStatus == "Paid" {
-			paidGuard = " AND status<>'Paid'"
-		}
-		// Only stamp paid_on when actually transitioning to Paid. Otherwise a
-		// parent's "Pending Verification" submission (or an admin setting
-		// Overdue) would give an unpaid invoice a paid date.
-		// Record that the parent themselves claimed this payment. Nothing else
-		// ever set submitted_by_parent, so the confirmation email below (which
-		// gates on it) could never fire, and admin had no way to tell a parent
-		// claim apart from an admin-entered payment.
-		submitClause := ""
-		if c.Role == "parent" {
-			submitClause = ", submitted_by_parent=TRUE"
-		}
-		// Reversing out of Paid has to undo what becoming Paid did. Widening
-		// the whitelist alone would have left an "Unpaid" invoice still
-		// carrying its paid date, its receipt number and the payment method --
-		// and the receipt PDF renders off those. The number is surrendered, not
-		// reused: the next Paid transition draws a fresh one from the sequence,
-		// so a receipt number is never issued twice for different money.
-		args := append([]any{newStatus, newStatus, t, newStatus, newStatus, newStatus, body.PaymentMethod, newStatus, body.ReferenceNo, id}, twArgs...)
-		res, err := db.Exec(`UPDATE invoices SET status=?,
-			paid_on=CASE WHEN ?='Paid' THEN ? WHEN ?='Unpaid' THEN NULL ELSE paid_on END,
-			receipt_no=CASE WHEN ?='Unpaid' THEN '' ELSE receipt_no END,
-			payment_method=CASE WHEN ?='Unpaid' THEN '' ELSE COALESCE(NULLIF(?,''),payment_method) END,
-			reference_no=CASE WHEN ?='Unpaid' THEN '' ELSE COALESCE(NULLIF(?,''),reference_no) END`+submitClause+` WHERE id=?`+tw+paidGuard, args...)
+		changed, err := store.RecordInvoicePayment(db, tw, twArgs, id, store.PaymentChange{
+			Status: newStatus, Method: body.PaymentMethod, Reference: body.ReferenceNo, Today: t, ByParent: c.Role == "parent",
+		})
 		if err != nil {
 			core.RespondError(w, "could not update invoice", 500)
 			return
 		}
-		rowsChanged, _ := res.RowsAffected()
 
-		// Assign a receipt number the first time an invoice becomes Paid. Drawn
-		// from receipt_no_seq so numbers are monotonic (RCPT-000001, ...). The
-		// guard on status='Paid' AND empty receipt_no makes this idempotent —
-		// re-paying an already-paid invoice keeps the original receipt number.
-		if newStatus == "Paid" {
-			rcptArgs := append([]any{id}, twArgs...)
-			if _, err := db.Exec(`UPDATE invoices SET receipt_no='RCPT-'||lpad(nextval('receipt_no_seq')::text,6,'0') WHERE id=? AND status='Paid' AND (receipt_no IS NULL OR receipt_no='')`+tw, rcptArgs...); err != nil {
-				core.LogFromReq(r).Error("failed to assign receipt number", "err", err, "invoice_id", id)
-			}
-		}
 		// The audit row has to say what happened, not that the endpoint ran.
 		// This logged "invoice_paid" with today as paidOn for every status,
 		// so reversing a payment recorded a payment, and a no-op re-pay
 		// recorded a second one.
-		if rowsChanged > 0 {
+		if changed {
 			detail := map[string]any{
 				"studentId": studentID,
 				"amount":    amount,
@@ -712,8 +691,8 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 
 		// Referral milestone: re-derive the referred student's progress. Both
 		// directions, because reversing the invoice that completed a milestone
-		// has to re-open it. Gated on rowsChanged so a no-op cannot move it.
-		if rowsChanged > 0 && (newStatus == invoiceStatusPaid || newStatus == invoiceStatusUnpaid) {
+		// has to re-open it. Gated on changed so a no-op cannot move it.
+		if changed && (newStatus == invoiceStatusPaid || newStatus == invoiceStatusUnpaid) {
 			store.ReferralReconcile(db, studentID, c)
 		}
 
@@ -722,7 +701,7 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 		// "did you get my money?" loop. Admin marking cash paid directly, and
 		// bulk mark-paid, are NOT parent-submitted, so they stay silent and don't
 		// blast every parent when reconciling. Recipient is the owning parent.
-		if newStatus == "Paid" && rowsChanged > 0 {
+		if newStatus == "Paid" && changed {
 			var parentEmail, parentName, description string
 			var submittedByParent bool
 			stuArgs := append([]any{studentID}, twArgs...)
