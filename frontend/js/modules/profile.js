@@ -122,6 +122,40 @@
     );
   }
 
+  // The feed already exists; this is the way in. The link is fetched on request,
+  // not rendered on load, because it works without signing in.
+  function _calendarCard() {
+    return _card(
+      _heading('Class calendar', 'Your children\'s classes in Google, Apple or Outlook calendar, kept up to date')
+      + '<div id="pf-calendar-body" style="margin-top:1rem">'
+      +   '<button type="button" id="pf-calendar-btn" style="padding:0.5rem 1.1rem;font-size:0.8rem;font-weight:600;background:#fff;color:#374151;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Add to my calendar</button>'
+      + '</div>'
+    );
+  }
+
+  function _calendarLinksHtml(urls) {
+    var google = 'https://calendar.google.com/calendar/render?cid=' + encodeURIComponent(urls.webcalUrl);
+    var look = 'padding:0.5rem 1rem;font-size:0.8rem;font-weight:600;border:1px solid #e2e8f0;border-radius:4px;color:#374151;text-decoration:none;display:inline-block';
+    var link = 'style="' + look + '"';
+    return '<div style="display:flex;gap:0.5rem;flex-wrap:wrap">'
+      + '<a href="' + App.Utils.esc(google) + '" target="_blank" rel="noopener" ' + link + '>Google Calendar</a>'
+      + '<a href="' + App.Utils.esc(urls.webcalUrl) + '" ' + link + '>Apple / Outlook</a>'
+      + '<button type="button" data-copy="' + App.Utils.esc(urls.httpsUrl) + '" onclick="App.Utils.copyFrom(this, \'Calendar link copied\')" style="' + look + ';cursor:pointer;background:#fff">Copy link</button>'
+      + '</div>'
+      + '<p style="font-size:0.75rem;color:#94a3b8;margin:0.6rem 0 0">This link is private to you: anyone who has it can see your children\'s class times.</p>';
+  }
+
+  function _wireCalendar() {
+    var btn = document.getElementById('pf-calendar-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async function() {
+      try {
+        var urls = await App.Api.get('/api/account/calendar-url');
+        if (urls && urls.webcalUrl) document.getElementById('pf-calendar-body').innerHTML = _calendarLinksHtml(urls);
+      } catch (err) { /* App.Api already toasted the error */ }
+    });
+  }
+
   function _helpCard() {
     var items = FAQ.map(function(f) {
       return '<details style="border-bottom:1px solid #f1f5f9;padding:0.7rem 0">'
@@ -136,6 +170,7 @@
     return '<div style="max-width:680px;margin:0 auto;display:flex;flex-direction:column;gap:1rem">'
       + _accountCard(profile)
       + (isParent ? _childrenCard() : '')
+      + (isParent ? _calendarCard() : '')
       + _notificationsCard(profile, isParent)
       + _securityCard(profile)
       + (isParent ? _helpCard() : '')
@@ -149,6 +184,7 @@
     _wireAccount(profile);
     _wirePassword();
     _wireEmail();
+    _wireCalendar();
     _wireToggles(profile);
     _wirePush();
     var replay = document.getElementById('pf-replay-tour');
