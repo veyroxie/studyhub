@@ -108,7 +108,9 @@
               + '</div>'
               + (hasUnpaid
                   ? '<span style="font-size:0.72rem;color:#94a3b8;font-style:italic">paused</span>'
-                  : '<a href="/api/progress-reports/' + pr.id + '/pdf" target="_blank" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border-radius:4px;text-decoration:none">Download PDF</a>')
+                  // Read follows the same unpaid-invoice pause as the PDF, so it is no way around it.
+                  : '<button onclick="App.Progress._readModal(\'' + pr.id + '\')" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:700;background:#fff;color:#0a0a0a;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer;margin-right:0.4rem">Read</button>'
+                  + '<a href="/api/progress-reports/' + pr.id + '/pdf" target="_blank" style="padding:0.4rem 0.85rem;font-size:0.78rem;font-weight:700;background:var(--gold);color:#0a0a0a;border-radius:4px;text-decoration:none">Download PDF</a>')
               + '</div>';
           });
           body += '</div>';
@@ -227,6 +229,30 @@
       + '</div></div>';
   }
 
+  // A report readable on a phone, not only as a PDF download.
+  function _readModal(prId) {
+    var s = App.Store.get();
+    var pr = (s.progressReports || []).find(function(x) { return x.id === prId; });
+    if (!pr) return;
+    var st = (s.students || []).find(function(x) { return x.id === pr.studentId; }) || {};
+    var section = function(label, text) {
+      if (!text) return '';
+      return '<div style="margin-top:0.9rem"><div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em">' + label + '</div>'
+        + '<p style="font-size:0.88rem;color:#1f2937;line-height:1.55;margin:0.25rem 0 0;white-space:pre-wrap">' + App.Utils.esc(text) + '</p></div>';
+    };
+    App.Utils.showModal('<div class="p-6" style="width:min(560px,92vw)">'
+      + '<h2 class="text-lg font-bold mb-1">' + App.Utils.esc((st.firstName || '') + ' ' + (st.lastName || '')) + '</h2>'
+      + '<p class="text-sm text-slate-500">' + App.Utils.esc(_termLabel(pr.term)) + (pr.subject ? ' · ' + App.Utils.esc(pr.subject) : '') + (pr.grade ? ' · Grade ' + App.Utils.esc(pr.grade) : '') + '</p>'
+      + section('Strengths', pr.strengths)
+      + section('Areas to improve', pr.areasToImprove)
+      + section('Teacher\'s comment', pr.teacherComment)
+      + section('Focus for next term', pr.nextTermFocus)
+      + '<div class="flex justify-end gap-3 pt-5">'
+      +   '<a href="/api/progress-reports/' + pr.id + '/pdf" target="_blank" class="px-4 py-2 text-sm border border-slate-200 rounded-lg" style="text-decoration:none;color:#374151">Download PDF</a>'
+      +   '<button onclick="App.Utils.hideModal()" style="padding:0.5rem 1rem;font-size:0.85rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">Close</button>'
+      + '</div></div>');
+  }
+
   function _setTermFilter(v) { _filterTerm = v; App.Router.refresh(); }
   function _setStudentFilter(v) { _filterStudent = v; App.Router.refresh(); }
   function _clearFilters() { _filterTerm = ''; _filterStudent = ''; App.Router.refresh(); }
@@ -339,7 +365,7 @@
     }
   }
 
-  App.Progress = {
+  App.Progress = { _readModal: _readModal,
     render: render,
     _setTermFilter: _setTermFilter,
     _setStudentFilter: _setStudentFilter,

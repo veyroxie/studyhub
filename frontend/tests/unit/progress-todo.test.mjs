@@ -41,3 +41,27 @@ test('a new report from the list is for that student, by this teacher', () => {
   assert.match(modal(), /<option value="B" selected>/);
   assert.match(modal(), /<option value="T1" selected>/);
 });
+
+test('a parent can read a report in the app, but not while a monthly invoice is unpaid', () => {
+  const view = (invoices) => {
+    const sandbox = loadSandbox(['js/utils.js', 'js/modules/progress.js']);
+    let modal = '';
+    sandbox.App.currentRole = 'client';
+    sandbox.App.clientParent = 'p@example.com';
+    sandbox.App.Store = { get: () => ({
+      students: [{ id: 'A', firstName: 'Aiden', lastName: 'Lim', contact: 'p@example.com', status: 'Active' }],
+      progressReports: [{ id: 'PR1', studentId: 'A', term: '2026-T3', published: true, strengths: 'Fractions <3', teacherComment: 'Keep going' }],
+      invoices,
+    }) };
+    sandbox.App.Utils.showModal = (h) => { modal = h; };
+    const container = { innerHTML: '' };
+    sandbox.App.Progress.render(container);
+    return { html: container.innerHTML, P: sandbox.App.Progress, modal: () => modal };
+  };
+  const paid = view([]);
+  assert.match(paid.html, /_readModal\('PR1'\)/);
+  paid.P._readModal('PR1');
+  assert.match(paid.modal(), /Fractions &lt;3/);
+  const owing = view([{ id: 'I1', studentId: 'A', type: 'Monthly', status: 'Unpaid' }]);
+  assert.doesNotMatch(owing.html, /_readModal/);
+});
