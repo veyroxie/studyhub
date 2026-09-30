@@ -232,7 +232,7 @@
   function _familyBillLinesHtml(invs) {
     return invs.map(function(m) {
       return '<div style="display:flex;justify-content:space-between;gap:0.75rem;padding:0.3rem 0;border-bottom:1px solid #f1f5f9;font-size:0.82rem">'
-        + '<span>' + App.Utils.esc(_studentFirstName(m.studentId)) + ' <span style="color:#94a3b8">' + App.Utils.esc(m.invoiceNo || m.id) + '</span></span>'
+        + '<span>' + App.Utils.esc(_studentFirstName(m.studentId)) + ' <span style="color:#94a3b8">' + App.Utils.esc(m.invoiceNo || m.id) + '</span> ' + App.Utils.statusBadge(m.status) + '</span>'
         + '<span style="font-weight:600">' + App.Utils.formatCurrency(m.amount) + '</span>'
         + '</div>';
     }).join('')
@@ -485,6 +485,9 @@
       displayInvoices = invoices.filter(function(inv) { return myStudentIds.indexOf(inv.studentId) > -1; });
     }
 
+    // Bills are grouped before the student filter: filtering to one child must not split its bill.
+    const billInvoices = displayInvoices;
+
     // Student filter
     if (_studentFilter) {
       displayInvoices = displayInvoices.filter(function(i) { return i.studentId === _studentFilter; });
@@ -552,7 +555,7 @@
 
     var paged = filtered.slice(_billingPage * _PAGE_SIZE, (_billingPage + 1) * _PAGE_SIZE);
 
-    var familyBills = _familyBills(displayInvoices, students);
+    var familyBills = _familyBills(billInvoices, students);
     var inFamilyBill = {};
     familyBills.forEach(function(b) { b.members.forEach(function(m) { inFamilyBill[m.id] = true; }); });
     var familyBillCards = isClient ? familyBills.map(_familyBillCard).join('') : '';
@@ -1318,6 +1321,8 @@
       : payable.inv;
     const stu = state.students.find(function(s) { return s.id === inv.studentId; });
     const stuName = payable.isBill ? payable.title : (stu ? stu.firstName + ' ' + stu.lastName : inv.studentId);
+    // A sibling issued after the claim is in the bill but was never claimed: say so before it is confirmed.
+    const unclaimed = payable.isBill ? payable.targets.filter(function(m) { return m.status !== 'Pending Verification'; }) : [];
 
     var proofSection = '';
     if (inv.paymentProof) {
@@ -1358,6 +1363,11 @@
       +   (payable.isBill ? _familyBillLinesHtml(payable.targets) : _invoiceBreakdownHtml(inv))
       + '</div>'
       + proofSection
+      + (unclaimed.length
+        ? '<div style="margin-bottom:0.75rem;padding:0.6rem 0.75rem;background:#fef2f2;border:1px solid #fecaca;font-size:0.8rem;color:#991b1b">'
+          + 'Not claimed by the parent: ' + App.Utils.esc(unclaimed.map(function(m) { return _studentFirstName(m.studentId); }).join(', '))
+          + '. Confirming marks these paid too, so only do it if the payment covers them.</div>'
+        : '')
       // Older invoices can sit in Pending Verification with a non-cash method
       // and no reference (submitted before the reference became mandatory).
       // The server rejects confirming those, so let the admin supply the
@@ -1365,7 +1375,7 @@
       + '<div style="margin-bottom:0.75rem"><p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.4rem">Reference number' + ((inv.paymentMethod && inv.paymentMethod !== 'Cash') ? ' <span style="color:#dc2626">*required for ' + App.Utils.esc(inv.paymentMethod) + '</span>' : '') + '</p>'
       +   '<input id="verify-ref" class="form-input" value="' + App.Utils.esc(inv.referenceNo || '') + '" placeholder="From the receipt or bank statement"></div>'
       + '<div style="display:flex;gap:0.5rem">'
-      +   '<button onclick="App.Billing._confirmVerify(\'' + invId + '\')" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer">Confirm Payment</button>'
+      +   '<button onclick="App.Billing._confirmVerify(\'' + invId + '\')" style="flex:1;padding:0.55rem;font-size:0.85rem;font-weight:700;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer">' + (unclaimed.length ? 'Confirm all, including unclaimed' : 'Confirm Payment') + '</button>'
       +   '<button onclick="App.Billing._markUnpaid(\'' + invId + '\')" style="padding:0.55rem 1rem;font-size:0.83rem;border:1px solid #fca5a5;border-radius:4px;background:#fff;cursor:pointer;color:#dc2626;font-weight:600">Reject</button>'
       + '</div>'
       + '<button onclick="App.Utils.hideModal()" style="width:100%;padding:0.5rem;font-size:0.83rem;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;color:#64748b;margin-top:0.5rem">Cancel</button>'
@@ -2053,8 +2063,23 @@
     });
   }
 
+  // Why a parent's child has no draft: the monthly run skips inactive, frozen and unpriceable students.
+  function _undraftedChildren(parentEmail, month, drafts) {
+    var state = App.Store.get();
+    var drafted = {};
+    drafts.forEach(function(d) { drafted[d.studentId] = true; });
+    return App.Utils.childrenOf(state.students || [], parentEmail).filter(function(s) { return !drafted[s.id]; })
+      .map(function(s) {
+        var invoiced = (state.invoices || []).some(function(i) {
+          return i.studentId === s.id && i.type === 'Monthly' && i.period === month && i.status !== 'Void';
+        });
+        return { name: s.firstName + ' ' + s.lastName, reason: invoiced ? 'already invoiced this month' : 'not drafted: inactive, frozen, or a class with no price' };
+      });
+  }
+
   function _familyDraftReview(parentEmail, month, drafts) {
     App.Utils.hideModal(true);
+    var skipped = _undraftedChildren(parentEmail, month, drafts);
     var rows = drafts.map(function(d) {
       return '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;padding:0.45rem 0;border-bottom:1px solid #f1f5f9;font-size:0.85rem">'
         + '<span>' + App.Utils.esc(d.studentName) + '</span>'
@@ -2068,6 +2093,11 @@
       + '<p class="text-sm text-slate-500 mb-3">' + App.Utils.esc(_periodLabel(month)) + '. Nothing has reached the parent yet. Check each child, then issue them together.</p>'
       + rows
       + '<div style="display:flex;justify-content:space-between;padding-top:0.5rem;font-weight:800"><span>Family total</span><span>' + App.Utils.formatCurrency(_sumAmounts(drafts)) + '</span></div>'
+      + (skipped.length
+        ? '<div style="margin-top:0.75rem;padding:0.6rem 0.75rem;background:#fffbeb;border:1px solid #fde68a;font-size:0.78rem;color:#92400e">'
+          + skipped.map(function(k) { return App.Utils.esc(k.name) + ': ' + App.Utils.esc(k.reason); }).join('<br>')
+          + '</div>'
+        : '')
       + '<div class="flex justify-end gap-3 pt-4">'
       +   '<button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50" title="They stay as drafts in Run the month">Keep as drafts</button>'
       // The email travels as a data attribute: esc() protects an attribute, not an inline JS string.
@@ -2194,6 +2224,7 @@
     _editLineItem: _editLineItem,
     _updateSelfStudyAmount: _updateSelfStudyAmount,
     _issueFamilyDrafts: _issueFamilyDrafts,
+    _familyDraftReview: _familyDraftReview,
     _exportCSV: _exportCSV,
     _setPage: _setBillingPage
   };

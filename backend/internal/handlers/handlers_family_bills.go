@@ -315,7 +315,7 @@ func HandleFamilyInvoiceDraft(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if len(drafts) == 0 {
-			core.RespondError(w, "nothing new to bill for "+req.Month+": every child already has a monthly invoice, or a class could not be priced (Run the month lists why)", http.StatusConflict)
+			core.RespondError(w, "nothing drafted for "+req.Month+": each child already has a monthly invoice, is frozen or inactive, or has a class with no price", http.StatusConflict)
 			return
 		}
 		core.LogAudit(db, tid, c.Email, "family_invoice_drafted", "invoice", req.Month, "parent="+req.ParentEmail)

@@ -117,3 +117,38 @@ describe('admin actions on a family bill', () => {
     assert.equal(posts[0].body.expectedTotal, 230);
   });
 });
+
+describe('what admin is shown before acting on a family bill', () => {
+  let sandbox;
+  let html;
+  const load = (invoices, extraStudents = []) => {
+    sandbox = loadSandbox(['js/utils.js', 'js/modules/billing.js']);
+    html = '';
+    sandbox.App.Store = { get: () => ({ students: students.concat(extraStudents), invoices }) };
+    sandbox.App.Utils.showModal = (h) => { html = h; };
+    sandbox.App.Utils.hideModal = () => {};
+  };
+
+  test('verifying a bill names a sibling the parent never claimed', () => {
+    load([monthly('I1', 'STU_Z', 230, 'Pending Verification'), monthly('I2', 'STU_L', 250, 'Unpaid')]);
+    sandbox.App.Billing._verifyPaid('bill:I1');
+    assert.match(html, /Not claimed by the parent: Lucy/);
+    assert.match(html, /Confirm all, including unclaimed/);
+  });
+
+  test('a fully claimed bill verifies without the warning', () => {
+    load([monthly('I1', 'STU_Z', 230, 'Pending Verification'), monthly('I2', 'STU_L', 250, 'Pending Verification')]);
+    sandbox.App.Billing._verifyPaid('bill:I1');
+    assert.doesNotMatch(html, /Not claimed/);
+  });
+
+  test('the family review names a child the monthly run did not draft', () => {
+    const frozen = { id: 'STU_F', firstName: 'Mia', lastName: 'Tan', contact: PARENT };
+    load([], [frozen]);
+    sandbox.App.Billing._familyDraftReview(PARENT, '2026-10', [
+      { invoiceId: 'D1', studentId: 'STU_Z', studentName: 'Zayden Tan', amount: 230 },
+      { invoiceId: 'D2', studentId: 'STU_L', studentName: 'Lucy Tan', amount: 250 },
+    ]);
+    assert.match(html, /Mia Tan: not drafted/);
+  });
+});
