@@ -152,7 +152,8 @@
       container.innerHTML = '<div style="display:flex;flex-direction:column;gap:1rem">'
         + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">'
         +   '<h1 style="font-size:1.4rem;font-weight:800;color:#0d0d0d;letter-spacing:-0.03em;margin:0">Attendance</h1>'
-        +   (isClient ? '<div style="font-size:0.78rem;color:#94a3b8;background:#f1f5f9;padding:0.4rem 0.85rem;border-radius:4px">Viewing: ' + (App.clientParent || 'Your child') + '</div>' : '')
+        // Only meaningful while an admin previews a parent; a parent knows whose children these are.
+        +   (isClient && App.canPreviewRoles() ? '<div style="font-size:0.78rem;color:#94a3b8;background:#f1f5f9;padding:0.4rem 0.85rem;border-radius:4px">Viewing: ' + App.Utils.esc(App.clientParent || 'Your child') + '</div>' : '')
         + '</div>'
         + (isClient ? _renderClientView() : isTeacher ? _renderTeacherView() : _renderAdminView())
         + '</div>';

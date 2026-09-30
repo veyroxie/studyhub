@@ -180,6 +180,7 @@
   function _syncDockRole() {
     var btn = document.getElementById('dock-role-btn');
     if (!btn) return;
+    btn.style.display = App.canPreviewRoles && App.canPreviewRoles() ? '' : 'none';
     var isAdmin   = App.currentRole === 'admin';
     var isTeacher = App.currentRole === 'teacher';
     var labels = { admin: 'Admin', teacher: 'Teacher', client: 'Parent' };
@@ -218,8 +219,9 @@
     // Mirror selectors to dock topbar
     var dockParentWrap = document.getElementById('dock-parent-selector-wrap');
     var dockTeacherWrap = document.getElementById('dock-teacher-selector-wrap');
-    if (dockParentWrap) dockParentWrap.style.display = App.currentRole === 'client' ? 'flex' : 'none';
-    if (dockTeacherWrap) dockTeacherWrap.style.display = isTeacher ? 'flex' : 'none';
+    var canPreview = App.canPreviewRoles && App.canPreviewRoles();
+    if (dockParentWrap) dockParentWrap.style.display = App.currentRole === 'client' && canPreview ? 'flex' : 'none';
+    if (dockTeacherWrap) dockTeacherWrap.style.display = isTeacher && canPreview ? 'flex' : 'none';
 
     // Mirror the parent/teacher selects
     var mainParentSel = document.getElementById('parent-select');

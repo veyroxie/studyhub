@@ -228,7 +228,7 @@
         App.actualEmail = data.email || '';
         sessionStorage.setItem('sh_actual_role', App.actualRole);
         sessionStorage.setItem('sh_actual_email', App.actualEmail);
-        App.currentRole = data.role === 'admin' ? 'admin' : (data.role === 'teacher' ? 'teacher' : 'client');
+        App.currentRole = uiRoleFor(data.role);
         sessionStorage.setItem('sh_role', App.currentRole);
         if (data.role === 'parent') {
           App.clientParent = data.email;
@@ -370,8 +370,9 @@
     // Selector visibility
     const parentSel  = document.getElementById('parent-selector-wrap');
     const teacherSel = document.getElementById('teacher-selector-wrap');
-    if (parentSel)  parentSel.classList.toggle('hidden',  !isClient);
-    if (teacherSel) teacherSel.classList.toggle('hidden', !isTeacher);
+    const canPreview = App.canPreviewRoles();
+    if (parentSel)  parentSel.classList.toggle('hidden',  !(isClient && canPreview));
+    if (teacherSel) teacherSel.classList.toggle('hidden', !(isTeacher && canPreview));
 
     // Nav visibility per role
     // admin:   all pages
@@ -427,6 +428,7 @@
   }
 
   function toggleRole() {
+    if (!App.canPreviewRoles()) return;
     const cycle = ['admin', 'teacher', 'client'];
     const next  = cycle[(cycle.indexOf(App.currentRole) + 1) % cycle.length];
     App.currentRole = next;
@@ -636,7 +638,12 @@
     App.Api.isLoggedIn().then(async function(loggedIn) {
       if (loggedIn) {
         const user = App.Api.currentUser();
-        App.currentRole = (user && user.role === 'admin') ? 'admin' : (user && user.role === 'teacher') ? 'teacher' : 'client';
+        App.currentRole = uiRoleFor(user && user.role);
+        // A new tab has no sessionStorage, so the server's answer is the only source.
+        App.actualRole  = (user && user.role) || '';
+        App.actualEmail = (user && user.email) || '';
+        sessionStorage.setItem('sh_actual_role', App.actualRole);
+        sessionStorage.setItem('sh_actual_email', App.actualEmail);
         if (user && user.role === 'parent') App.clientParent = user.email;
         if (user && user.role === 'teacher') { App.currentTeacher = user.staffId || ''; sessionStorage.setItem('sh_teacher', App.currentTeacher); }
         if (user && user.mustAcceptTos) {
@@ -682,6 +689,18 @@
   // anyone can unhide the element with devtools. What actually protects the
   // data is that the backend ignores the client's claimed role.
   var DEV_TOOLBAR_EMAILS = ['admin@studyhub.com'];
+
+  // uiRoleFor maps the server's role to one of the UI's three views; a superadmin works in the admin one.
+  function uiRoleFor(serverRole) {
+    if (serverRole === 'admin' || serverRole === 'superadmin') return 'admin';
+    return serverRole === 'teacher' ? 'teacher' : 'client';
+  }
+  App.uiRoleFor = uiRoleFor;
+
+  // Previewing another role's screens is for admins and developers, never a parent or teacher.
+  App.canPreviewRoles = function() {
+    return App.isDevMode() || uiRoleFor(App.actualRole) === 'admin';
+  };
 
   App.isDevMode = function() {
     var h = window.location.hostname;
