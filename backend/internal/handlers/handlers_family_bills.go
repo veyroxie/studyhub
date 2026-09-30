@@ -27,6 +27,7 @@ type familyBillPayReq struct {
 	PaymentMethod string   `json:"paymentMethod"`
 	ReferenceNo   string   `json:"referenceNo"`
 	PaymentProof  string   `json:"paymentProof"`
+	Note          string   `json:"note"` // why a rejection sent the bill back, for the parent
 }
 
 // HandleFamilyBillPay records one payment across every child's invoice in a family bill.
@@ -85,6 +86,9 @@ func familyBillPayRequestError(c *core.Claims, req familyBillPayReq) string {
 	}
 	if c.Role != "parent" && req.ParentEmail == "" {
 		return "parentEmail is required"
+	}
+	if len(strings.TrimSpace(req.Note)) > store.PaymentNoteMaxLen {
+		return "keep the reason under 300 characters"
 	}
 	allowed := req.Status == models.InvoiceStatusPaid || req.Status == models.InvoiceStatusPendingVerification ||
 		req.Status == models.InvoiceStatusUnpaid
@@ -172,7 +176,7 @@ func proofBelongsToBill(path string, targets []store.FamilyBillMember) bool {
 func recordFamilyBillTargets(tx *store.Tx, c *core.Claims, tid int, targets []store.FamilyBillMember, req familyBillPayReq) error {
 	tw, twArgs := " AND tenant_id=?", []any{tid}
 	change := store.PaymentChange{Status: req.Status, Method: req.PaymentMethod, Reference: req.ReferenceNo,
-		Today: core.Today(), ByParent: c.Role == "parent"}
+		Today: core.Today(), ByParent: c.Role == "parent", Note: strings.TrimSpace(req.Note)}
 	for _, m := range targets {
 		changed, err := store.RecordInvoicePayment(tx, tw, twArgs, m.InvoiceID, change)
 		if err != nil {

@@ -495,3 +495,35 @@ func TestEmailingAParentOutsideTheAllowlistQueuesNothing(t *testing.T) {
 		t.Fatalf("code %d queued=%v rows=%d, want 200, not queued, nothing in the outbox", w.Code, res.Queued, rows)
 	}
 }
+
+// A rejected claim used to go back to Unpaid in silence; the parent now sees why,
+// and the reason clears the moment they claim again.
+func TestARejectionReasonReachesTheParentAndClearsOnTheNextClaim(t *testing.T) {
+	f := newBillFixture(t)
+	defer f.cleanup()
+	if code := f.pay(f.parent, f.parentClaim()); code != http.StatusOK {
+		t.Fatalf("claim: %d", code)
+	}
+	reject := map[string]any{"parentEmail": billParent, "invoiceIds": []string{f.zayden, f.lucy}, "expectedTotal": 500,
+		"status": "Unpaid", "note": "No transfer of RM500 in the bank on 3 Oct"}
+	if code := f.pay(f.admin, reject); code != http.StatusOK {
+		t.Fatalf("reject: %d", code)
+	}
+	noteFor := func(id string) string {
+		for _, inv := range parentSnapshot(t, f.r, f.parent).Invoices {
+			if inv.ID == id {
+				return inv.PaymentNote
+			}
+		}
+		return "<missing>"
+	}
+	if got := noteFor(f.lucy); got != "No transfer of RM500 in the bank on 3 Oct" {
+		t.Fatalf("parent sees note %q", got)
+	}
+	if code := f.pay(f.parent, f.parentClaim()); code != http.StatusOK {
+		t.Fatalf("claim again: %d", code)
+	}
+	if got := noteFor(f.lucy); got != "" {
+		t.Fatalf("stale reason %q still shown beside a new claim", got)
+	}
+}

@@ -327,7 +327,9 @@ type Invoice struct {
 	// on everything issued before that migration; those keep their id.
 	InvoiceNo string `json:"invoiceNo,omitempty"`
 	// Period is the billing month of a Monthly invoice (YYYY-MM); it keys the family bill.
-	Period            string            `json:"period,omitempty"`
+	Period string `json:"period,omitempty"`
+	// PaymentNote is why the last payment was sent back to Unpaid, shown to the parent.
+	PaymentNote       string            `json:"paymentNote,omitempty"`
 	IssuedAt          string            `json:"issuedAt,omitempty"`
 	EarlyBirdCutoff   string            `json:"earlyBirdCutoff"`
 	EarlyBirdDiscount float64           `json:"earlyBirdDiscount"`

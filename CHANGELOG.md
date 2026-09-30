@@ -9,6 +9,10 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- Rejecting a parent's payment asks for a reason, and the parent sees it next
+  to the invoice ("Payment not confirmed: ..."); it clears when they submit
+  again. Mark unpaid on a recorded payment asks too, with the reason optional.
+  Migration 0070 adds `invoices.payment_note`.
 - Anyone can change their own sign-in email from My Profile, confirmed with
   their password and typed twice. They are signed out and sign in again.
 

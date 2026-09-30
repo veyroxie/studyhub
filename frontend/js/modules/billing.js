@@ -159,6 +159,7 @@
   // month. Derived, never stored, and shown as a bill only with two or more children.
   var FAMILY_BILL_KEY = 'bill:'; // "bill:<member invoice id>" names a bill in onclick strings without an email in them
   var FAMILY_BILL_MIN_CHILDREN = 2;
+  var PAYMENT_NOTE_MAX = 300; // mirrors store.PaymentNoteMaxLen
 
   function _familyBills(invoices, students) {
     var contactOf = {};
@@ -229,6 +230,13 @@
       + '</div>';
   }
 
+  // Why the last payment was not accepted, as the admin wrote it for the parent.
+  function _paymentNoteHtml(note) {
+    if (!note) return '';
+    return '<div style="margin-top:0.6rem;padding:0.5rem 0.7rem;background:#fef2f2;border:1px solid #fecaca;font-size:0.78rem;color:#991b1b">'
+      + '<strong>Payment not confirmed:</strong> ' + App.Utils.esc(note) + '</div>';
+  }
+
   function _familyBillLinesHtml(invs) {
     return invs.map(function(m) {
       return '<div style="display:flex;justify-content:space-between;gap:0.75rem;padding:0.3rem 0;border-bottom:1px solid #f1f5f9;font-size:0.82rem">'
@@ -255,6 +263,7 @@
       +   '<div style="font-size:1.15rem;font-weight:800;color:#111">' + App.Utils.formatCurrency(_sumAmounts(owed)) + '</div>'
       + '</div>'
       + _familyBillLinesHtml(owed)
+      + _paymentNoteHtml(owed.map(function(m) { return m.paymentNote; }).filter(Boolean)[0])
       + '<div style="display:flex;justify-content:flex-end;gap:0.75rem;align-items:center;margin-top:0.75rem">'
       +   '<a href="/api/family-bills/' + owed[0].id + '/pdf" target="_blank" style="font-size:0.75rem;color:#475569;text-decoration:underline">Family bill PDF</a>'
       +   action
@@ -654,6 +663,7 @@
                 +   (inv.paymentProof ? '<a href="/api/' + App.Utils.esc(inv.paymentProof) + '" target="_blank" title="View receipt" style="display:inline-flex;align-items:center;color:#94a3b8;hover:color:#374151"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></a>' : '')
                 +   '</div>'
                 +   (inv.status === 'Pending Verification' && inv.paymentMethod ? '<div style="font-size:0.68rem;color:#94a3b8;margin-top:3px">' + App.Utils.esc(inv.paymentMethod) + (inv.paidOn ? ' · ' + App.Utils.formatDate(inv.paidOn) : '') + '</div>' : '')
+                +   (inv.paymentNote && (inv.status === 'Unpaid' || inv.status === 'Overdue') ? '<div style="font-size:0.68rem;color:#b91c1c;margin-top:3px;max-width:14rem">Not confirmed: ' + App.Utils.esc(inv.paymentNote) + '</div>' : '')
                 + '</td>'
                 + (isAdmin ? '<td class="td">'
                   + '<div class="relative flex justify-center">'
@@ -1098,12 +1108,42 @@
     return payable.isBill ? payable.targets.map(function(m) { return m.studentId; }) : [payable.inv.studentId];
   }
 
-  // For a family bill this is "Reject": it reopens only the invoices the parent claimed.
+  // Reject (a parent's claim) or reverse (a recorded payment), always with a reason
+  // the parent can read; for a claim the reason is required. For a family bill it
+  // reopens only the invoices the parent claimed.
   function _markUnpaid(invoiceId) {
     var payable = _payable(invoiceId, 'Unpaid');
     if (!payable) return;
+    var isClaim = _payableStatus(payable) === 'Pending Verification';
+    App.Utils.showModal('<div class="p-6" style="width:min(460px,92vw)">'
+      + '<h2 class="text-lg font-bold mb-1">' + (isClaim ? 'Reject this payment?' : 'Mark as unpaid?') + '</h2>'
+      + '<p class="text-sm text-slate-500 mb-3">' + App.Utils.esc(payable.title) + '. '
+      +   (isClaim ? 'The parent sees your reason next to the invoice.' : 'The receipt number is withdrawn. The parent sees any reason you give.') + '</p>'
+      + '<label for="unpaid-reason" class="block text-sm font-medium text-slate-700 mb-1">Reason' + (isClaim ? '' : ' (optional)') + '</label>'
+      + '<textarea id="unpaid-reason" rows="2" maxlength="' + PAYMENT_NOTE_MAX + '" class="form-input" placeholder="e.g. No transfer of this amount in the bank yet"></textarea>'
+      + '<div class="flex justify-end gap-3 pt-4">'
+      +   '<button onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
+      +   '<button onclick="App.Billing._confirmMarkUnpaid(\'' + invoiceId + '\')" style="padding:0.5rem 1.1rem;font-size:0.85rem;font-weight:700;background:#dc2626;color:#fff;border:none;border-radius:4px;cursor:pointer">' + (isClaim ? 'Reject payment' : 'Mark unpaid') + '</button>'
+      + '</div></div>');
+  }
+
+  // A family bill moves together, so its first target speaks for the rest.
+  function _payableStatus(payable) {
+    return payable.isBill ? payable.targets[0].status : payable.inv.status;
+  }
+
+  function _confirmMarkUnpaid(invoiceId) {
+    var payable = _payable(invoiceId, 'Unpaid');
+    if (!payable) return;
+    var el = document.getElementById('unpaid-reason');
+    var note = el ? el.value.trim() : '';
+    if (!note && _payableStatus(payable) === 'Pending Verification') {
+      App.Utils.showToast('Tell the parent why the payment was not accepted', 'error');
+      if (el) el.focus();
+      return;
+    }
     App.Utils.hideModal(true);
-    _submitPayment(payable, { status: 'Unpaid' })
+    _submitPayment(payable, { status: 'Unpaid', note: note })
       .then(function() { return App.Api.loadSnapshot(); })
       .then(function() {
         App.Utils.showToast('Invoice marked as unpaid', 'info');
@@ -2211,6 +2251,7 @@
     _adminSubmitWithProof: _adminSubmitWithProof,
     _markUnpaid: _markUnpaid,
     _parentSubmitPaid: _parentSubmitPaid,
+    _confirmMarkUnpaid: _confirmMarkUnpaid,
     _parentConfirmSubmit: _parentConfirmSubmit,
     _showProofUpload: _showProofUpload,
     _showPaymentMethods: _showPaymentMethods,

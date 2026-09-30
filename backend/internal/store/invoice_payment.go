@@ -14,7 +14,12 @@ type PaymentChange struct {
 	Reference string
 	Today     string
 	ByParent  bool
+	// Note is why a payment went back to Unpaid, shown to the parent; other moves clear it.
+	Note string
 }
+
+// PaymentNoteMaxLen keeps a rejection reason to a sentence or two.
+const PaymentNoteMaxLen = 300
 
 type execer interface {
 	Exec(query string, args ...any) (sql.Result, error)
@@ -55,12 +60,17 @@ func RecordInvoicePayment(ex execer, tw string, twArgs []any, invoiceID string, 
 		submitClause = ", submitted_by_parent=TRUE"
 	}
 	// Reversing to Unpaid undoes what becoming Paid did; the receipt number is surrendered, never reused.
-	args := append([]any{p.Status, p.Status, p.Today, p.Status, p.Status, p.Status, p.Method, p.Status, p.Reference, invoiceID}, twArgs...)
+	note := ""
+	if p.Status == models.InvoiceStatusUnpaid {
+		note = p.Note
+	}
+	args := append([]any{p.Status, p.Status, p.Today, p.Status, p.Status, p.Status, p.Method, p.Status, p.Reference, note, invoiceID}, twArgs...)
 	res, err := ex.Exec(`UPDATE invoices SET status=?,
 		paid_on=CASE WHEN ?='Paid' THEN ? WHEN ?='Unpaid' THEN NULL ELSE paid_on END,
 		receipt_no=CASE WHEN ?='Unpaid' THEN '' ELSE receipt_no END,
 		payment_method=CASE WHEN ?='Unpaid' THEN '' ELSE COALESCE(NULLIF(?,''),payment_method) END,
-		reference_no=CASE WHEN ?='Unpaid' THEN '' ELSE COALESCE(NULLIF(?,''),reference_no) END`+submitClause+
+		reference_no=CASE WHEN ?='Unpaid' THEN '' ELSE COALESCE(NULLIF(?,''),reference_no) END,
+		payment_note=?`+submitClause+
 		` WHERE id=? AND deleted_at IS NULL`+tw+paidGuard+payableGuard(p.ByParent), args...)
 	if err != nil {
 		return false, err

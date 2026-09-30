@@ -652,6 +652,7 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 			Status        string `json:"status"`
 			PaymentMethod string `json:"paymentMethod"`
 			ReferenceNo   string `json:"referenceNo"`
+			Note          string `json:"note"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err.Error() != "EOF" {
 			core.RespondError(w, "bad request body", http.StatusBadRequest)
@@ -716,8 +717,14 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 		}
 
 		t := core.Today()
+		body.Note = strings.TrimSpace(body.Note)
+		if len(body.Note) > store.PaymentNoteMaxLen {
+			core.RespondError(w, "keep the reason under 300 characters", http.StatusBadRequest)
+			return
+		}
 		changed, err := store.RecordInvoicePayment(db, tw, twArgs, id, store.PaymentChange{
 			Status: newStatus, Method: body.PaymentMethod, Reference: body.ReferenceNo, Today: t, ByParent: c.Role == "parent",
+			Note: body.Note,
 		})
 		if err != nil {
 			core.RespondError(w, "could not update invoice", 500)

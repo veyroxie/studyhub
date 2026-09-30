@@ -93,7 +93,8 @@ describe('admin actions on a family bill', () => {
       put: () => { throw new Error('a bill must not fall back to one-invoice PUTs'); },
       loadSnapshot: () => Promise.resolve(),
     };
-    sandbox.document.getElementById = (id) => (id === 'cash-confirm-amount' ? { value: typed, focus() {} } : null);
+    sandbox.document.getElementById = (id) => (id === 'cash-confirm-amount' ? { value: typed, focus() {} }
+      : id === 'unpaid-reason' ? { value: 'Not in the bank yet', focus() {} } : null);
   };
 
   test('cash for a family bill must match the bill total, not one child', () => {
@@ -111,7 +112,7 @@ describe('admin actions on a family bill', () => {
 
   test('rejecting a family bill reopens only the claimed invoices', () => {
     load([monthly('I1', 'STU_Z', 230, 'Pending Verification'), monthly('I2', 'STU_L', 250, 'Unpaid')]);
-    sandbox.App.Billing._markUnpaid('bill:I1');
+    sandbox.App.Billing._confirmMarkUnpaid('bill:I1');
     assert.equal(posts.length, 1);
     assert.deepEqual(Array.from(posts[0].body.invoiceIds), ['I1']);
     assert.equal(posts[0].body.expectedTotal, 230);
@@ -175,5 +176,46 @@ describe('emailing a parent from the admin menu', () => {
     await B._emailParent('I1');
     assert.deepEqual(Array.from(calls.posts), ['/api/invoices/I1/email']);
     assert.match(calls.toasts[0], /^Not sent: outbound email is restricted/);
+  });
+});
+
+describe('rejecting a payment needs a reason the parent can read', () => {
+  const load = (invoices) => {
+    const sandbox = loadSandbox(['js/utils.js', 'js/modules/billing.js']);
+    const calls = { posts: [], puts: [], toasts: [] };
+    let reason = '';
+    sandbox.App.Store = { get: () => ({ students, invoices }) };
+    sandbox.App.Utils.showModal = () => {};
+    sandbox.App.Utils.hideModal = () => {};
+    sandbox.App.Utils.showToast = (m) => calls.toasts.push(m);
+    sandbox.App.Router = { refresh() {} };
+    sandbox.App.Api = {
+      post: (path, body) => { calls.posts.push(body); return Promise.resolve({}); },
+      put: (path, body) => { calls.puts.push(body); return Promise.resolve({}); },
+      loadSnapshot: () => Promise.resolve(),
+    };
+    sandbox.document.getElementById = (id) => (id === 'unpaid-reason' ? { value: reason, focus() {} } : null);
+    return { B: sandbox.App.Billing, calls, setReason: (r) => { reason = r; } };
+  };
+
+  test('a claim cannot be rejected without a reason', () => {
+    const { B, calls } = load([monthly('I1', 'STU_Z', 230, 'Pending Verification'), monthly('I2', 'STU_L', 250, 'Pending Verification')]);
+    B._confirmMarkUnpaid('bill:I1');
+    assert.equal(calls.posts.length, 0);
+  });
+
+  test('the reason travels with the rejection', () => {
+    const { B, calls, setReason } = load([monthly('I1', 'STU_Z', 230, 'Pending Verification'), monthly('I2', 'STU_L', 250, 'Pending Verification')]);
+    setReason('  No transfer yet  ');
+    B._confirmMarkUnpaid('bill:I1');
+    assert.equal(calls.posts[0].note, 'No transfer yet');
+    assert.equal(calls.posts[0].status, 'Unpaid');
+  });
+
+  test('reversing a payment the centre recorded may go without a reason', () => {
+    const { B, calls } = load([{ ...monthly('I9', 'STU_O', 240, 'Paid') }]);
+    B._confirmMarkUnpaid('I9');
+    assert.equal(calls.puts.length, 1);
+    assert.equal(calls.puts[0].note, '');
   });
 });
