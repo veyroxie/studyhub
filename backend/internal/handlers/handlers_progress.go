@@ -67,6 +67,9 @@ func listProgressReports(db *store.DB, c *core.Claims) []models.ProgressReport {
 		}
 		out = append(out, pr)
 	}
+	if c != nil && c.Role == "parent" && hasUnpaidMonthlyInvoice(db, c.Email, c) {
+		return withoutReportText(out)
+	}
 	// Teachers may only see reports for students in their own classes. The staff
 	// query above is tenant-wide, so scope it down here (listStudents already
 	// returns only a teacher's students).
@@ -82,6 +85,18 @@ func listProgressReports(db *store.DB, c *core.Claims) []models.ProgressReport {
 			}
 		}
 		return scoped
+	}
+	return out
+}
+
+// withoutReportText keeps a paused parent's reports listed (term and subject, so the
+// page can say they are paused) but sends none of their content: the PDF gate alone
+// left the full text in the snapshot, readable from the browser.
+func withoutReportText(reports []models.ProgressReport) []models.ProgressReport {
+	out := make([]models.ProgressReport, len(reports))
+	for i, pr := range reports {
+		pr.Grade, pr.Strengths, pr.AreasToImprove, pr.TeacherComment, pr.NextTermFocus = "", "", "", "", ""
+		out[i] = pr
 	}
 	return out
 }
