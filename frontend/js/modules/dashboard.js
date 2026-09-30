@@ -145,7 +145,7 @@
                   +     '<div style="font-size:0.8rem;font-weight:700;color:' + (pct >= 100 ? '#dc2626' : '#374151') + '">' + c.enrolled + '/' + c.capacity + '</div>'
                   +     '<div style="width:44px;height:3px;background:#f1f5f9;border-radius:99px;margin-top:3px;overflow:hidden"><div style="width:' + Math.min(pct,100) + '%;height:100%;background:' + (pct>=100?'#ef4444':'var(--gold)') + ';border-radius:99px"></div></div>'
                   +   '</div>'
-                  +   '<button onclick="App.Router.navigate(\'attendance\')" style="font-size:0.7rem;font-weight:600;padding:0.25rem 0.6rem;border:1px solid rgba(201,162,39,0.35);border-radius:4px;background:var(--gold-dim);color:var(--gold);cursor:pointer;white-space:nowrap;transition:all 0.15s" onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" onmouseout="this.style.background=\'var(--gold-dim)\';this.style.color=\'var(--gold)\'">Mark</button>'
+                  +   '<button onclick="App.Dashboard._open(\'attendance\',\'' + c.id + '\')" style="font-size:0.7rem;font-weight:600;padding:0.25rem 0.6rem;border:1px solid rgba(201,162,39,0.35);border-radius:4px;background:var(--gold-dim);color:var(--gold);cursor:pointer;white-space:nowrap;transition:all 0.15s" onmouseover="this.style.background=\'var(--gold)\';this.style.color=\'#0a0a0a\'" onmouseout="this.style.background=\'var(--gold-dim)\';this.style.color=\'var(--gold)\'">Mark</button>'
                   + '</div>'
                   + '</div>';
               }).join(''))
@@ -317,11 +317,11 @@
     if (overdueInvs.length > 0) {
       html += '<div style="padding:0.85rem 1.1rem;background:#fef2f2;border:1px solid #fecaca;border-left:3px solid #dc2626;border-radius:0;display:flex;align-items:center;gap:0.75rem">'
         + '<div style="flex:1;font-size:0.83rem;color:#991b1b"><strong>Payment overdue</strong> — ' + overdueInvs.length + ' invoice' + (overdueInvs.length !== 1 ? 's are' : ' is') + ' past due.</div>'
-        + '<button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#dc2626;background:#fff;border:1px solid #fecaca;border-radius:4px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">Pay Now</button></div>';
+        + '<button onclick="App.Dashboard._open(\'billing\',\'Overdue\')" style="font-size:0.73rem;font-weight:700;color:#dc2626;background:#fff;border:1px solid #fecaca;border-radius:4px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">Pay Now</button></div>';
     } else if (dueSoonInvs.length > 0) {
       html += '<div style="padding:0.85rem 1.1rem;background:#fffbeb;border:1px solid #fde68a;border-left:3px solid #d97706;border-radius:0;display:flex;align-items:center;gap:0.75rem">'
         + '<div style="flex:1;font-size:0.83rem;color:#92400e"><strong>Payment due soon</strong> — ' + dueSoonInvs.length + ' invoice' + (dueSoonInvs.length !== 1 ? 's' : '') + ' due within 7 days.</div>'
-        + '<button onclick="App.Router.navigate(\'billing\')" style="font-size:0.73rem;font-weight:700;color:#d97706;background:#fff;border:1px solid #fde68a;border-radius:4px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">View</button></div>';
+        + '<button onclick="App.Dashboard._open(\'billing\',\'Unpaid\')" style="font-size:0.73rem;font-weight:700;color:#d97706;background:#fff;border:1px solid #fde68a;border-radius:4px;padding:0.3rem 0.7rem;cursor:pointer;white-space:nowrap">View</button></div>';
     }
 
     // ── No children: check for pending enrollments, show register-your-child form ──
@@ -746,16 +746,16 @@
     var pendingOther = pendingRegs - pendingEnrollments - pendingTeachers;
 
     if (pendingEnrollments > 0) attn.push({ sev:'info', title: pendingEnrollments + ' child enrolment' + (pendingEnrollments!==1?'s':'') + ' to review', page:'students' });
-    if (pendingTeachers > 0)    attn.push({ sev:'info', title: pendingTeachers + ' teacher application' + (pendingTeachers!==1?'s':''), page:'students' });
+    if (pendingTeachers > 0)    attn.push({ sev:'info', title: pendingTeachers + ' teacher application' + (pendingTeachers!==1?'s':''), page:'staff' });
     if (pendingOther > 0)       attn.push({ sev:'info', title: pendingOther + ' pending registration' + (pendingOther!==1?'s':''), page:'students' });
 
     // Payments awaiting verification (parent submitted "I've Paid" but admin
     // hasn't confirmed yet).
     var awaitingVerification = (invoices || []).filter(function(i) { return i.status === 'Pending Verification'; });
-    if (awaitingVerification.length > 0) attn.push({ sev:'warning', title: awaitingVerification.length + ' payment' + (awaitingVerification.length!==1?'s':'') + ' awaiting verification', page:'billing' });
+    if (awaitingVerification.length > 0) attn.push({ sev:'warning', title: awaitingVerification.length + ' payment' + (awaitingVerification.length!==1?'s':'') + ' awaiting verification', page:'billing', focus:'Pending' });
 
-    if (overdueInvs.length > 0) attn.push({ sev:'error',  title: overdueInvs.length + ' overdue invoice' + (overdueInvs.length!==1?'s':''), page:'billing' });
-    if (dueSoonInvs.length > 0) attn.push({ sev:'warning',title: dueSoonInvs.length + ' payment' + (dueSoonInvs.length!==1?'s':'') + ' due this week', page:'billing' });
+    if (overdueInvs.length > 0) attn.push({ sev:'error',  title: overdueInvs.length + ' overdue invoice' + (overdueInvs.length!==1?'s':''), page:'billing', focus:'Overdue' });
+    if (dueSoonInvs.length > 0) attn.push({ sev:'warning',title: dueSoonInvs.length + ' payment' + (dueSoonInvs.length!==1?'s':'') + ' due this week', page:'billing', focus:'Unpaid' });
     if (newStudents > 0)        attn.push({ sev:'info',   title: newStudents + ' new student' + (newStudents!==1?'s':'') + ' to activate', page:'students' });
 
     // Orphan parents: families with no active/new students linked. These are
@@ -819,7 +819,7 @@
     return items.map(function(item) {
       var clickAction = item.action
         ? 'App.Dashboard.' + item.action + '()'
-        : 'App.Router.navigate(\'' + item.page + '\')';
+        : 'App.Dashboard._open(\'' + item.page + '\',\'' + (item.focus || '') + '\')';
       return '<div onclick="' + clickAction + '" style="display:flex;align-items:center;gap:0.65rem;padding:0.6rem 0.5rem;margin:0 -0.5rem;border-radius:4px;cursor:pointer;transition:background 0.15s;border-bottom:1px solid #f4f4f2" onmouseover="this.style.background=\'#fafaf8\'" onmouseout="this.style.background=\'transparent\'">'
         + '<span style="width:7px;height:7px;border-radius:50%;background:' + (DOTS[item.sev]||DOTS.info) + ';flex-shrink:0"></span>'
         + '<div style="flex:1;min-width:0">'
@@ -1212,6 +1212,17 @@
     App.Router.refresh();
   }
 
+  // _open lands on a page already showing what the link was about, not its default view.
+  // focus is a billing status tab or an attendance class id; both are fixed literals or ids.
+  var FOCUS = {
+    billing:    function(f) { App.Billing.focus(f); },
+    attendance: function(classId) { App.Attendance.focusClass(classId); }
+  };
+  function _open(page, focus) {
+    if (focus && FOCUS[page]) FOCUS[page](focus);
+    App.Router.navigate(page);
+  }
+
   // _checklistGo marks a setup/explore step visited and navigates to it.
   // The "biz" step used to live inside Calendar → Settings, which is why this
   // needed a special case at all. It has its own page now (#24).
@@ -1481,6 +1492,7 @@
     _setView: _setDashView,
     _profileModal: _profileModal,
     _checklistGo: _checklistGo,
+    _open: _open,
     _dismissChecklist: _dismissChecklist,
     _pendingUsersModal: _pendingUsersModal,
     _enrollChildModal: _enrollChildModal,

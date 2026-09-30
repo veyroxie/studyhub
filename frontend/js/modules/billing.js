@@ -823,6 +823,8 @@
   }
 
   function _setFilter(f) { _filter = f; _billingPage = 0; App.Router.refresh(); }
+  // focus opens the list on one status tab, whole list, first page; the router renders on arrival.
+  function focus(filter) { _filter = filter; _studentFilter = ''; _billingPage = 0; }
   function _setStudentFilter(v) { _studentFilter = v; _billingPage = 0; App.Router.refresh(); }
   function _setBillingPage(n) { _billingPage = Math.max(0, n); App.Router.refresh(); }
 
@@ -2193,6 +2195,7 @@
   }
 
   App.Billing = {
+    focus: focus,
     render: render,
     _setFilter: _setFilter,
     _setStudentFilter: _setStudentFilter,

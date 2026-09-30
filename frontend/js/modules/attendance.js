@@ -741,6 +741,12 @@
     App.Router.refresh();
   }
   function _setClass(classId) { _attClassId = classId; App.Router.refresh(); }
+  // focusClass opens today's student check-in on one class; the router renders on arrival.
+  function focusClass(classId) {
+    _attTab = 'students';
+    _attDate = App.Utils.today();
+    _attClassId = classId;
+  }
   function _toggleAllStaff() { _showAllStaff = !_showAllStaff; App.Router.refresh(); }
   function _toggleAllClasses() { _showAllClasses = !_showAllClasses; App.Router.refresh(); }
 
@@ -1415,5 +1421,5 @@
     }
   }
 
-  App.Attendance = { render: render, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit, _markAbsentNoCredit: _markAbsentNoCredit, _undoAttendance: _undoAttendance, _undoStaffAttendance: _undoStaffAttendance, _markAllPresent: _markAllPresent, _quickFeedback: _quickFeedback, _savePostAttFeedback: _savePostAttFeedback };
+  App.Attendance = { render: render, focusClass: focusClass, _setTab: _setTab, _setDate: _setDate, _setClass: _setClass, _markStaff: _markStaff, _checkInStudent: _checkInStudent, _checkOutStudent: _checkOutStudent, _doCancelClasses: _doCancelClasses, _toggleAllStaff: _toggleAllStaff, _toggleAllClasses: _toggleAllClasses, _kioskScan: _kioskScan, _setKioskClass: _setKioskClass, _logSelfStudy: _logSelfStudy, _teacherCheckIn: _teacherCheckIn, _teacherCheckOut: _teacherCheckOut, _checkAllIn: _checkAllIn, _setClientPage: _setClientPage, _exportCSV: _exportCSV, _markAbsentCredit: _markAbsentCredit, _markAbsentNoCredit: _markAbsentNoCredit, _undoAttendance: _undoAttendance, _undoStaffAttendance: _undoStaffAttendance, _markAllPresent: _markAllPresent, _quickFeedback: _quickFeedback, _savePostAttFeedback: _savePostAttFeedback };
 })();
