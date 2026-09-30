@@ -453,3 +453,45 @@ func pricedFamily(t *testing.T, db *store.DB, month, parent, family string, name
 	}
 	return kids
 }
+
+// Invoices made by hand send nothing on their own; the admin sends them on demand.
+func TestAnAdminCanEmailAnInvoiceOrAWholeFamilyBill(t *testing.T) {
+	f := newBillFixture(t)
+	defer f.cleanup()
+	f.db.Exec(`DELETE FROM outbox`)
+
+	if w := doRequest(f.r, "POST", "/api/invoices/"+f.zayden+"/email", f.admin, nil); w.Code != http.StatusOK {
+		t.Fatalf("email one invoice: %d %s", w.Code, w.Body.String())
+	}
+	if w := doRequest(f.r, "POST", "/api/family-bills/"+f.zayden+"/email", f.admin, nil); w.Code != http.StatusOK {
+		t.Fatalf("email the family bill: %d %s", w.Code, w.Body.String())
+	}
+	var single, family int
+	f.db.QueryRow(`SELECT count(*) FROM outbox WHERE topic=? AND payload=?`, store.OutboxTopicInvoiceIssued, f.zayden).Scan(&single)
+	f.db.QueryRow(`SELECT count(*) FROM outbox WHERE topic=?`, store.OutboxTopicFamilyBillIssued).Scan(&family)
+	if single != 1 || family != 1 {
+		t.Fatalf("outbox single=%d family=%d, want one of each", single, family)
+	}
+	if w := doRequest(f.r, "POST", "/api/invoices/"+f.zayden+"/email", f.parent, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("parent sending: got %d, want 403", w.Code)
+	}
+}
+
+// With the allowlist on, the button must not claim a send the queue would drop.
+func TestEmailingAParentOutsideTheAllowlistQueuesNothing(t *testing.T) {
+	f := newBillFixture(t)
+	defer f.cleanup()
+	f.db.Exec(`DELETE FROM outbox`)
+	t.Setenv("OUTBOUND_ALLOWLIST", "etee3001@gmail.com")
+
+	w := doRequest(f.r, "POST", "/api/invoices/"+f.zayden+"/email", f.admin, nil)
+	var res struct {
+		Queued bool `json:"queued"`
+	}
+	json.NewDecoder(w.Body).Decode(&res)
+	var rows int
+	f.db.QueryRow(`SELECT count(*) FROM outbox`).Scan(&rows)
+	if w.Code != http.StatusOK || res.Queued || rows != 0 {
+		t.Fatalf("code %d queued=%v rows=%d, want 200, not queued, nothing in the outbox", w.Code, res.Queued, rows)
+	}
+}

@@ -374,7 +374,7 @@ unexplained positive leftover is labelled "Early bird discount" only when `disco
 
 **Sibling discount -- RESOLVED 2026-09-30.** Only the cron's flat RM10 per child remains;
 the percentage Sibling tab was removed and its replacement drafts through the cron.
-Whether RM10 per child is Nadine's intended amount is still unconfirmed with her.
+RM10 per child confirmed (Ely, 2026-09-30).
 
 **Self-study allowance -- FIXED 2026-08-26.** The frontend self-study tab now reads each
 student's `packageSelfStudyHours` (default 4), matching the cron's per-student

@@ -669,6 +669,7 @@
                           : inv.status === 'Paid'
                           ? '<button onclick="App.Billing._markUnpaid(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Mark Unpaid</button>'
                           : '<button onclick="App.Billing._markPaid(\'' + payKey + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">' + (billTag ? 'Mark family bill paid' : 'Mark as Paid') + '</button>')
+                  +     (_isEmailable(inv.status) ? '<button onclick="App.Billing._emailParent(\'' + payKey + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">' + (billTag ? 'Email family bill' : 'Email to parent') + '</button>' : '')
                   +     '<button onclick="App.Billing._editModal(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Edit</button>'
                   +     '<a href="/api/invoices/' + inv.id + '/pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download invoice</a>'
                   +     (billTag ? '<a href="/api/family-bills/' + inv.id + '/pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download family bill</a>' : '')
@@ -1409,6 +1410,33 @@
         App.Router.refresh();
       })
       .catch(function() { /* App.Api already toasted; keep the modal open for a retry */ });
+  }
+
+  // Only an issued invoice still owed is worth sending; mirrors invoiceEmailBlocker.
+  function _isEmailable(status) {
+    return status !== 'Draft' && status !== 'Void' && status !== 'Paid';
+  }
+
+  // Invoices made by hand send nothing on their own, so Nadine sends them from here.
+  async function _emailParent(payKey) {
+    var isBill = payKey.indexOf(FAMILY_BILL_KEY) === 0;
+    var invoiceId = isBill ? payKey.slice(FAMILY_BILL_KEY.length) : payKey;
+    var ok = await App.Utils.showConfirm({
+      title: isBill ? 'Email the family bill?' : 'Email this invoice?',
+      message: isBill ? 'The parent gets one email listing every unpaid child in this bill.' : 'The parent gets this invoice by email.',
+      confirmLabel: 'Send',
+    });
+    if (!ok) return;
+    try {
+      var res = await App.Api.post(isBill ? '/api/family-bills/' + invoiceId + '/email' : '/api/invoices/' + invoiceId + '/email', {});
+      if (res && res.queued) {
+        App.Utils.showToast('Sending to ' + res.to + ' — it goes out within a minute', 'success');
+        return;
+      }
+      App.Utils.showToast('Not sent: ' + ((res && res.reason) || 'the email could not be queued'), 'warning', 8000);
+    } catch (err) {
+      // App.Api already toasted why (no email on file, already paid).
+    }
   }
 
   async function _deleteInvoice(invoiceId) {
@@ -2224,6 +2252,7 @@
     _editLineItem: _editLineItem,
     _updateSelfStudyAmount: _updateSelfStudyAmount,
     _issueFamilyDrafts: _issueFamilyDrafts,
+    _emailParent: _emailParent,
     _familyDraftReview: _familyDraftReview,
     _exportCSV: _exportCSV,
     _setPage: _setBillingPage

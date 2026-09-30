@@ -9,6 +9,10 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- "Email to parent" in the admin invoice menu ("Email family bill" for a
+  family's invoices). Invoices made by hand send nothing on their own, so this
+  is how the parent gets one. While outbound email is limited to the allowlist
+  it says "Not sent" and why, instead of pretending it went.
 - Family bills. A parent with two or more children billed for the same month
   sees one bill with one total, pays it with one "I've paid" and one receipt
   upload, and downloads one PDF (and one receipt once it is all paid). Nadine

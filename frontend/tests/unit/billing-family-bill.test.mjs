@@ -152,3 +152,28 @@ describe('what admin is shown before acting on a family bill', () => {
     assert.match(html, /Mia Tan: not drafted/);
   });
 });
+
+describe('emailing a parent from the admin menu', () => {
+  const load = (reply) => {
+    const sandbox = loadSandbox(['js/utils.js', 'js/modules/billing.js']);
+    const calls = { posts: [], toasts: [] };
+    sandbox.App.Utils.showConfirm = () => Promise.resolve(true);
+    sandbox.App.Utils.showToast = (msg) => calls.toasts.push(msg);
+    sandbox.App.Api = { post: (path) => { calls.posts.push(path); return Promise.resolve(reply); } };
+    return { B: sandbox.App.Billing, calls };
+  };
+
+  test('a family bill key sends the whole bill', async () => {
+    const { B, calls } = load({ queued: true, to: PARENT });
+    await B._emailParent('bill:I1');
+    assert.deepEqual(Array.from(calls.posts), ['/api/family-bills/I1/email']);
+    assert.match(calls.toasts[0], /Sending to/);
+  });
+
+  test('an allowlist drop is reported as not sent, never as sent', async () => {
+    const { B, calls } = load({ queued: false, to: PARENT, reason: 'outbound email is restricted to the allowlist' });
+    await B._emailParent('I1');
+    assert.deepEqual(Array.from(calls.posts), ['/api/invoices/I1/email']);
+    assert.match(calls.toasts[0], /^Not sent: outbound email is restricted/);
+  });
+});
