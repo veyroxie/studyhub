@@ -201,6 +201,7 @@ func Build(db *store.DB) http.Handler {
 		})
 
 		r.Post("/api/family-bills/pay", handlers.HandleFamilyBillPay(db))
+		r.Get("/api/payments/details", handlers.HandlePaymentDetails(db))
 		r.Post("/api/family-bills/{invoiceId}/email", handlers.HandleFamilyBillEmail(db))
 		r.Post("/api/invoices/{id}/email", handlers.HandleInvoiceEmail(db))
 		r.Post("/api/billing/family-invoice", handlers.HandleFamilyInvoiceDraft(db))

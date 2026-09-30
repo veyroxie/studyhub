@@ -9,6 +9,10 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- The parent's "I've paid" popup shows the exact amount, the centre's bank
+  account (with a Copy button) and the invoice number to put in the transfer
+  reference. "Pay Online" appears only when a payment gateway is fully set up,
+  including the webhook secret it needs to confirm payments.
 - "Send by WhatsApp" (and "Send family bill by WhatsApp") in the admin invoice
   menu: opens WhatsApp to the parent's number with the amount, due date, early
   bird deadline and a link to pay filled in, so an invoice reaches a parent

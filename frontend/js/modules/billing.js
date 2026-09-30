@@ -154,6 +154,43 @@
     _renderLineItems();
   }
 
+  // ── Where to pay ──────────────────────────────────────────────────────────
+  // Bank details and whether a gateway is live, fetched once per page load. Until it
+  // arrives Pay Online stays hidden: offering a button that can only fail is worse.
+  var _payDetails = null;
+  var _payDetailsLoading = false;
+
+  function _loadPayDetails() {
+    if (_payDetails || _payDetailsLoading) return;
+    _payDetailsLoading = true;
+    App.Api.get('/api/payments/details', { silent: true }).then(function(d) {
+      _payDetails = d || {};
+      App.Router.refresh();
+    }).catch(function() {
+      _payDetails = {}; // no details: the popup falls back to the reference form alone
+    }).then(function() { _payDetailsLoading = false; });
+  }
+
+  function _canPayOnline() {
+    return !!(_payDetails && _payDetails.onlinePayment);
+  }
+
+  // The amount and where to send it, beside the "I've paid" form, so paying and
+  // telling the centre happen in one place.
+  function _payToHtml(amount, reference) {
+    var d = _payDetails || {};
+    if (!d.bankAccountNo) return '';
+    return '<div style="border:1px solid #f0ede8;background:#fffdf7;padding:0.8rem 1rem;margin-bottom:1rem;font-size:0.82rem;color:#374151">'
+      + '<div style="font-weight:700;margin-bottom:0.35rem">Transfer ' + App.Utils.formatCurrency(amount) + ' to</div>'
+      + (d.bankName ? '<div>' + App.Utils.esc(d.bankName) + '</div>' : '')
+      + (d.bankAccountHolder ? '<div>' + App.Utils.esc(d.bankAccountHolder) + '</div>' : '')
+      + '<div style="display:flex;align-items:center;gap:0.5rem"><strong style="font-family:ui-monospace,monospace">' + App.Utils.esc(d.bankAccountNo) + '</strong>'
+      +   '<button type="button" data-copy="' + App.Utils.esc(d.bankAccountNo.replace(/\s+/g, '')) + '" onclick="App.Utils.copyFrom(this, \'Account number copied\')" style="font-size:0.72rem;padding:0.15rem 0.5rem;border:1px solid #e2e8f0;background:#fff;border-radius:4px;cursor:pointer">Copy</button></div>'
+      + (reference ? '<div style="margin-top:0.35rem;color:#64748b">Put <strong>' + App.Utils.esc(reference) + '</strong> in the transfer reference.</div>' : '')
+      + (d.paymentInstructions ? '<div style="margin-top:0.35rem;color:#64748b">' + App.Utils.esc(d.paymentInstructions) + '</div>' : '')
+      + '</div>';
+  }
+
   // ── Family bills ──────────────────────────────────────────────────────────
   // Mirrors store.FamilyBillMembers: one parent's issued Monthly invoices for one
   // month. Derived, never stored, and shown as a bill only with two or more children.
@@ -217,6 +254,12 @@
     if (!targets.length) return null;
     return { isBill: true, bill: bill, targets: targets, total: _sumAmounts(targets),
       title: 'Family bill, ' + _periodLabel(bill.period), uploadInvoiceId: targets[0].id };
+  }
+
+  // What the parent should write in the transfer so Nadine can match it in the bank.
+  function _payableReference(payable) {
+    var invs = payable.isBill ? payable.targets : [payable.inv];
+    return invs.map(function(i) { return i.invoiceNo || i.id; }).join(', ');
   }
 
   function _payableAmount(payable) {
@@ -487,6 +530,7 @@
     students.forEach(function(s) { _studentMap[s.id] = s; });
     const isAdmin = App.currentRole === 'admin';
     const isClient = App.currentRole === 'client';
+    if (isClient) _loadPayDetails();
 
     let displayInvoices = invoices;
     if (isClient && App.clientParent) {
@@ -691,7 +735,7 @@
                   + '</div>'
                   + '</td>'
                   : isClient && (inv.status === 'Unpaid' || inv.status === 'Overdue')
-                  ? '<td class="td"><div style="display:flex;gap:0.5rem;align-items:center;justify-content:flex-end;flex-wrap:wrap"><a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="font-size:0.7rem;color:#475569;text-decoration:underline">Invoice PDF</a><button onclick="App.Billing._payOnline(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:#0a0a0a;color:#ffffff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Pay Online</button>' + (inFamilyBill[inv.id] ? '<span style="font-size:0.7rem;color:#94a3b8">In the family bill above</span>' : '<button onclick="App.Billing._parentSubmitPaid(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">I\'ve Paid</button>') + '</div></td>'
+                  ? '<td class="td"><div style="display:flex;gap:0.5rem;align-items:center;justify-content:flex-end;flex-wrap:wrap"><a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="font-size:0.7rem;color:#475569;text-decoration:underline">Invoice PDF</a>' + (_canPayOnline() ? '<button onclick="App.Billing._payOnline(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:#0a0a0a;color:#ffffff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Pay Online</button>' : '') + (inFamilyBill[inv.id] ? '<span style="font-size:0.7rem;color:#94a3b8">In the family bill above</span>' : '<button onclick="App.Billing._parentSubmitPaid(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">I\'ve Paid</button>') + '</div></td>'
                   : isClient && inv.status === 'Pending Verification'
                   ? '<td class="td"><span style="font-size:0.72rem;color:#7c3aed;font-weight:600">Awaiting confirmation</span></td>'
                   : isClient && inv.status === 'Paid'
@@ -1169,6 +1213,7 @@
       +   '<div style="font-size:0.9rem;font-weight:700;color:#111">' + App.Utils.esc(payable.title) + '</div>'
       +   summary
       + '</div>'
+      + _payToHtml(_payableAmount(payable), _payableReference(payable))
       + '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.6rem">How did you pay?</p>'
       + '<div id="payment-methods-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:1.25rem">'
       // Cash — direct submit (no proof needed)
