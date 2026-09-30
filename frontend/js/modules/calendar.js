@@ -85,6 +85,17 @@
 
     const viewClasses = teacherClassIds !== null ? classes.filter(function(c) { return teacherClassIds[c.id]; }) : classes;
 
+    // Who may see which class on this schedule. Moved-in sessions pass through it too:
+    // they used to skip it, so a parent could see another class's rescheduled session.
+    function isShown(c) {
+      if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
+      if (isClient && !isOpenToParent(c, enrolledClassIds)) return false;
+      if (teacherClassIds !== null && !teacherClassIds[c.id]) return false;
+      if (_filterTeacher && !c.teacherIds.includes(_filterTeacher)) return false;
+      if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
+      return true;
+    }
+
     const classesByDay = {};
     DAYS.forEach(function(day, di) {
       // Resolve each class's schedule for the column's DATE, not just its
@@ -93,13 +104,7 @@
       var timeOn = function(c) { return App.Utils.scheduleOn(c, _schedVersions, colDate).time; };
       classesByDay[day] = classes
         .filter(function(c) {
-          if (App.Utils.scheduleOn(c, _schedVersions, colDate).day !== day) return false;
-          if (enrolledClassIds !== null && !enrolledClassIds[c.id]) return false;
-          if (isClient && !isOpenToParent(c, enrolledClassIds)) return false;
-          if (teacherClassIds !== null && !teacherClassIds[c.id]) return false;
-          if (_filterTeacher && !c.teacherIds.includes(_filterTeacher)) return false;
-          if (_filterSearch && !c.name.toLowerCase().includes(_filterSearch.toLowerCase())) return false;
-          return true;
+          return App.Utils.scheduleOn(c, _schedVersions, colDate).day === day && isShown(c);
         })
         .sort(function(a, b) { return timeOn(a).localeCompare(timeOn(b)); });
     });
@@ -215,16 +220,25 @@
         + '</div>'
       : '';
 
+    // Each day's cards, sessions moved in from another date included: a day holding only
+    // a moved-in session used to render as empty.
+    const weekCards = DAYS.map(function(day, i) {
+      return classesByDay[day].map(function(c) { return _classCard(c, staff, _cancelledClasses, weekDates, i, students); }).join('')
+        + _movedInCards(weekDates, i, staff, students, isShown);
+    });
+
     container.innerHTML = headerHtml + filterBar + weekFilterEmptyBanner
 
       // Calendar grid with vertical dividers between columns
       + '<div class="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">'
-      +   '<div class="grid grid-cols-7 divide-x divide-slate-100">'
+      +   (weekCards.every(function(cards) { return !cards; })
+          ? '<p class="sh-week-note" style="padding:1rem;font-size:0.85rem;color:#94a3b8;text-align:center">No classes this week.</p>' : '')
+      +   '<div class="sh-week">'
       +   DAYS.map(function(day, i) {
-            const dayClasses = classesByDay[day];
+            const cards = weekCards[i];
             const dateLabel = fmtShortDate(weekDates[i]);
             const isToday = weekDates[i].toDateString() === new Date().toDateString();
-            return '<div class="min-w-0">'
+            return '<div class="sh-week-day min-w-0' + (cards ? '' : ' is-empty') + (isToday ? ' is-today' : '') + '">'
               + '<div class="p-3 border-b border-slate-100 bg-slate-50 text-center">'
               +   '<div class="text-xs font-semibold ' + (isToday ? 'text-blue-600' : 'text-slate-500') + ' uppercase tracking-wide">' + day.slice(0,3) + '</div>'
               +   '<div class="mt-1 ' + (isToday ? 'w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center mx-auto text-sm font-bold' : 'text-slate-700 text-sm font-bold text-center') + '">' + weekDates[i].getDate() + '</div>'
@@ -236,9 +250,7 @@
                   return hol ? '<div style="padding:0.25rem 0.5rem">' + _holidayBadge(hol) + '</div>' : '';
                 })()
               + '<div class="p-2 space-y-2 min-h-24">'
-              + (dayClasses.length === 0
-                ? '<div class="border border-dashed border-slate-200 rounded-lg p-2 text-center mt-1"><p class="text-xs text-slate-300">—</p></div>'
-                : dayClasses.map(function(c) { return _classCard(c, staff, _cancelledClasses, weekDates, i, students); }).join('') + _movedInCards(weekDates, i, staff, students))
+              + (cards || '<div class="border border-dashed border-slate-200 rounded-lg p-2 text-center mt-1"><p class="text-xs text-slate-300">—</p></div>')
               + '</div>'
               + '</div>';
           }).join('')
@@ -448,7 +460,7 @@
   }
 
   // Cards for sessions relocated INTO this weekday column.
-  function _movedInCards(weekDates, dayIndex, staff, students) {
+  function _movedInCards(weekDates, dayIndex, staff, students, isShown) {
     if (!weekDates || !weekDates[dayIndex]) return '';
     var d = weekDates[dayIndex];
     var dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -456,7 +468,7 @@
     var mv = App.Utils.movesForDate(state.sessionMoves, dateStr);
     return mv.movedIn.map(function(m) {
       var c = (state.classes || []).find(function(x) { return x.id === m.classId; });
-      if (!c) return '';
+      if (!c || !isShown(c)) return '';
       // Same-weekday move: the natural card already renders (with its
       // moved-from badge) — a second card here would duplicate it.
       if (App.Utils.scheduleOn(c, state.scheduleVersions, dateStr).day === DAYS[dayIndex]) return '';
