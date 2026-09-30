@@ -382,9 +382,12 @@
       staff:      !isAdmin,
       analytics:  !isAdmin,
       students:   isClient,
+      pricing:    !isAdmin,
+      settings:   !isAdmin,
       attendance: false,
       progress:   false
     };
+    App.Router.setHidden(pageHidden);
     Object.keys(pageHidden).forEach(function(page) {
       const btn = document.querySelector('.nav-btn[data-page="' + page + '"]');
       if (!btn) return;

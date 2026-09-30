@@ -12,11 +12,13 @@
     progress:      'Progress Reports',
     analytics:     'Analytics',
     pricing:       'Pricing',
-    profile:       'My Profile'
+    profile:       'My Profile',
+    settings:      'Settings'
   };
 
   const _modules = {};
   let _current = null;
+  let _hidden = {}; // pageId -> true for pages the signed-in role may not open
 
   App.Router = {
     register(pageId, module) {
@@ -26,7 +28,13 @@
     // A refresh used to drop you back on the dashboard, which is a poor trade
     // when the whole workflow is "look at this screen, fix something, reload".
     // The hash also makes back and forward work and makes a page linkable.
+    // setHidden takes applyRole's page map, so a typed or stale #hash cannot open a
+    // page the role's nav hides. The server still refuses the data; this keeps the shell shut too.
+    setHidden(pages) {
+      _hidden = pages || {};
+    },
     navigate(pageId) {
+      if (_hidden[pageId]) pageId = 'dashboard';
       // analytics.js is lazy-loaded — kick the loader before we try to
       // render. The render will run when the module registers via
       // _modules[pageId] once the script has parsed.
