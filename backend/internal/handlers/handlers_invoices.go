@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -475,18 +476,19 @@ func HandleInvoiceDelete(db *store.DB) http.HandlerFunc {
 		// Capture the invoice's state for the audit trail BEFORE soft-delete.
 		var studentID, status string
 		var amount float64
+		var tenantID int
 		readArgs := append([]any{id}, twArgs...)
-		if err := db.QueryRow(`SELECT student_id, COALESCE(status,''), COALESCE(amount,0) FROM invoices WHERE id=? AND deleted_at IS NULL`+tw, readArgs...).Scan(&studentID, &status, &amount); err != nil {
+		if err := db.QueryRow(`SELECT student_id, COALESCE(status,''), COALESCE(amount,0), tenant_id FROM invoices WHERE id=? AND deleted_at IS NULL`+tw, readArgs...).Scan(&studentID, &status, &amount, &tenantID); err != nil {
 			core.RespondError(w, "invoice not found", http.StatusNotFound)
 			return
 		}
-		args := append([]any{id}, twArgs...)
-		res, err := db.Exec(`UPDATE invoices SET deleted_at=NOW() WHERE id=?`+tw+` AND deleted_at IS NULL`, args...)
+		found, err := deleteInvoiceReturningCredit(r.Context(), db, tw, twArgs, id, tenantID, status)
 		if err != nil {
+			core.LogFromReq(r).Error("invoice delete failed", "err", err, "invoice_id", id)
 			core.RespondError(w, "could not delete invoice", http.StatusInternalServerError)
 			return
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
+		if !found {
 			core.RespondError(w, "invoice not found", http.StatusNotFound)
 			return
 		}
@@ -504,6 +506,64 @@ func HandleInvoiceDelete(db *store.DB) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// deleteInvoiceReturningCredit soft-deletes an invoice and, unless it was paid, gives
+// back the referral credit it spent, in one transaction.
+func deleteInvoiceReturningCredit(ctx context.Context, db *store.DB, tw string, twArgs []any, id string, tenantID int, status string) (bool, error) {
+	tx, err := db.BeginTx(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE invoices SET deleted_at=NOW() WHERE id=?`+tw+` AND deleted_at IS NULL`, append([]any{id}, twArgs...)...)
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, nil
+	}
+	if store.IsRefundableOnDelete(status) {
+		if err := store.ReturnReferralCredit(tx, tenantID, id); err != nil {
+			return false, err
+		}
+	}
+	return true, tx.Commit()
+}
+
+// bulkDeleteReturningCredits deletes the open invoices among ids and gives back the
+// referral credits they spent, all or nothing.
+func bulkDeleteReturningCredits(ctx context.Context, db *store.DB, placeholders, tw string, args []any) ([]string, error) {
+	tx, err := db.BeginTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	// RETURNING says which matched the status filter, so the response reports deleted vs kept.
+	rows, err := tx.Query(`UPDATE invoices SET deleted_at=NOW() WHERE id IN (`+placeholders+`) AND status IN ('Unpaid','Overdue') AND deleted_at IS NULL`+tw+` RETURNING id, tenant_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	type deletedRow struct {
+		id       string
+		tenantID int
+	}
+	gone := []deletedRow{}
+	for rows.Next() {
+		var d deletedRow
+		if err := rows.Scan(&d.id, &d.tenantID); err == nil {
+			gone = append(gone, d)
+		}
+	}
+	rows.Close()
+	deleted := make([]string, len(gone))
+	for i, d := range gone {
+		if err := store.ReturnReferralCredit(tx, d.tenantID, d.id); err != nil {
+			return nil, err
+		}
+		deleted[i] = d.id
+	}
+	return deleted, tx.Commit()
 }
 
 // HandleInvoicesBulkDelete soft-deletes several invoices in one request. Only
@@ -534,18 +594,11 @@ func HandleInvoicesBulkDelete(db *store.DB) http.HandlerFunc {
 		args = append(args, twArgs...)
 		// RETURNING id tells us which ones actually matched the status filter, so
 		// the response can report exactly how many were deleted vs kept.
-		rows, err := db.Query(`UPDATE invoices SET deleted_at=NOW() WHERE id IN (`+placeholders+`) AND status IN ('Unpaid','Overdue') AND deleted_at IS NULL`+tw+` RETURNING id`, args...)
+		deleted, err := bulkDeleteReturningCredits(r.Context(), db, placeholders, tw, args)
 		if err != nil {
+			core.LogFromReq(r).Error("bulk invoice delete failed", "err", err)
 			core.RespondError(w, "could not delete invoices", http.StatusInternalServerError)
 			return
-		}
-		defer rows.Close()
-		deleted := []string{}
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err == nil {
-				deleted = append(deleted, id)
-			}
 		}
 		detail, _ := json.Marshal(map[string]any{"ids": deleted, "count": len(deleted)})
 		core.LogAudit(db, store.TenantID(c), c.Email, "invoices_bulk_deleted", "invoice", "", string(detail))

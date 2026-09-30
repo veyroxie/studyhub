@@ -54,6 +54,10 @@ dated section when you cut a deploy.
   rather than claiming it was delivered.
 
 ### Fixed
+- Deleting an unpaid invoice now gives back the referral credit it used. The
+  monthly run spends one credit per child when it drafts, so removing a draft
+  (or deleting an unissued or unpaid invoice) used to lose that month of
+  discount for good. A paid invoice keeps its credit spent.
 - A draft or voided invoice can no longer be marked paid, from the admin menu,
   a parent's "I've paid", or an online payment; checkout refuses them too. A
   parent can no longer reopen a payment the centre has already confirmed,

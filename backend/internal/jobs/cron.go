@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -631,19 +632,12 @@ func generateMonthlyInvoicesWhere(db *store.DB, now time.Time, c *core.Claims, o
 		if n, convErr := strconv.Atoi(s.tenantID); convErr == nil {
 			tenantIDNum = n
 		}
-		// Same transaction as the invoice: a discount row with no invoice, or an
-		// invoice whose discounts were lost, is money either way.
-		if err := store.SaveAppliedDiscounts(tx, tenantIDNum, invID, sp.Discounts); err != nil {
-			core.Logger.Error("could not record applied discounts", "err", err, "invoice_id", invID)
-			tx.Rollback()
-			continue
-		}
 		if referralCredit > 0 && s.familyID != "" {
-			// Decrement the oldest earned referral_rewards row that still has
-			// credits remaining. The CASE flips status to 'exhausted' when
-			// the row hits zero so future cron runs skip it. Tenant-scoped
-			// to keep an id collision across tenants from settling the wrong row.
-			if _, err := tx.Exec(`
+			// Spend the oldest earned reward that still has credits; the CASE flips it to
+			// 'exhausted' at zero. RETURNING names the reward so a deleted invoice can
+			// give that exact credit back. Tenant-scoped against id collisions.
+			var rewardID string
+			err := tx.QueryRow(`
 				UPDATE referral_rewards
 				   SET credits_remaining = credits_remaining - 1,
 				       status = CASE WHEN credits_remaining - 1 <= 0 THEN 'exhausted' ELSE 'earned' END
@@ -651,15 +645,22 @@ func generateMonthlyInvoicesWhere(db *store.DB, now time.Time, c *core.Claims, o
 				   SELECT id FROM referral_rewards
 				    WHERE referrer_family_id=? AND tenant_id=? AND status='earned' AND credits_remaining > 0
 				    ORDER BY created_at ASC LIMIT 1
-				 )`, s.familyID, s.tenantID); err != nil {
-				// Roll the invoice back with it. Falling through, as this did,
-				// bills the student at the discounted price without ever
-				// spending the credit -- so the same discount is handed out
-				// again next month.
+				 ) RETURNING id`, s.familyID, s.tenantID).Scan(&rewardID)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				// Roll the invoice back with it: billing at the discounted price without
+				// spending the credit hands the same discount out again next month.
 				core.Logger.Error("could not decrement referral credit", "err", err, "family_id", s.familyID)
 				tx.Rollback()
 				continue
 			}
+			tagReferralSource(sp.Discounts, rewardID)
+		}
+		// Same transaction as the invoice: a discount row with no invoice, or an
+		// invoice whose discounts were lost, is money either way.
+		if err := store.SaveAppliedDiscounts(tx, tenantIDNum, invID, sp.Discounts); err != nil {
+			core.Logger.Error("could not record applied discounts", "err", err, "invoice_id", invID)
+			tx.Rollback()
+			continue
 		}
 		if err := tx.Commit(); err != nil {
 			core.Logger.Error("monthly invoice commit failed", "err", err, "student_id", s.id)
@@ -763,6 +764,18 @@ type familyTenantPair struct {
 
 // uniqueFamilyIDs collects the distinct non-empty family IDs from a slice
 // without an external dep — keeps the cron file self-contained.
+// tagReferralSource records which reward a referral discount drew its credit from.
+func tagReferralSource(ds []store.AppliedDiscount, rewardID string) {
+	if rewardID == "" {
+		return
+	}
+	for i := range ds {
+		if ds[i].TypeID == rating.TypeReferral {
+			ds[i].Source = store.ReferralSource(rewardID)
+		}
+	}
+}
+
 func uniqueFamilyIDs[T any](items []T, get func(int) string) []string {
 	seen := map[string]bool{}
 	out := make([]string, 0, len(items))

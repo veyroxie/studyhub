@@ -379,29 +379,7 @@ func TestInvoiceThisFamilyPricesLikeTheMonthlyRunAndIssuesTogether(t *testing.T)
 	admin := getAdminToken(t, r)
 
 	const month, parent, family = "2027-06", "famrun@example.com", "FAM_FAMRUN"
-	classID := core.GenerateID("CLS")
-	kids := []string{core.GenerateID("STU"), core.GenerateID("STU")}
-	wipe := func() {
-		db.Exec(`DELETE FROM outbox`)
-		db.Exec(`DELETE FROM applied_discounts WHERE invoice_id IN (SELECT id FROM invoices WHERE period=?)`, month)
-		db.Exec(`DELETE FROM invoices WHERE period=?`, month)
-		for _, k := range kids {
-			db.Exec(`DELETE FROM enrollments WHERE student_id=?`, k)
-			db.Exec(`DELETE FROM students WHERE id=?`, k)
-		}
-		db.Exec(`DELETE FROM classes WHERE id=?`, classID)
-	}
-	wipe()
-	t.Cleanup(wipe)
-	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,classroom,class_type,level_band,pricing_category_id,default_tier_name,monthly_fee_override)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, classID, 1, "Fam Level 3 & 4", "Monday", "16:00", "17:00", "R1", "Group", "", "PC_group", "Level 3-4", 0)
-	for i, k := range kids {
-		db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,contact,status,subscription_status,package_amount,package_self_study_hours,family_id,enrolled_classes,registered_on)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, k, 1, []string{"Zayden", "Lucy"}[i], "Fam", parent, "Active", "active", 0, 0, family,
-			models.JSONArr([]string{classID}), "2027-01-01")
-		db.Exec(`INSERT INTO enrollments(id,tenant_id,student_id,class_id,started_on,tier_name,created_by,created_on)
-			VALUES(?,?,?,?,?,?,?,?)`, core.GenerateID("ENR"), 1, k, classID, "2027-01-01", "", "test", "2027-01-01")
-	}
+	pricedFamily(t, db, month, parent, family, "Zayden", "Lucy")
 
 	w := doRequest(r, "POST", "/api/billing/family-invoice", admin, map[string]string{"parentEmail": parent, "month": month})
 	if w.Code != http.StatusOK {
@@ -440,4 +418,38 @@ func TestInvoiceThisFamilyPricesLikeTheMonthlyRunAndIssuesTogether(t *testing.T)
 	if again.Code != http.StatusConflict {
 		t.Fatalf("drafting an invoiced family again: got %d, want 409", again.Code)
 	}
+}
+
+// pricedFamily seeds children of one parent and family, each in a priced class, and
+// wipes the month afterwards. Returns the student ids.
+func pricedFamily(t *testing.T, db *store.DB, month, parent, family string, names ...string) []string {
+	t.Helper()
+	classID := core.GenerateID("CLS")
+	kids := make([]string, len(names))
+	for i := range names {
+		kids[i] = core.GenerateID("STU")
+	}
+	wipe := func() {
+		db.Exec(`DELETE FROM outbox`)
+		db.Exec(`DELETE FROM applied_discounts WHERE invoice_id IN (SELECT id FROM invoices WHERE period=?)`, month)
+		db.Exec(`DELETE FROM invoices WHERE period=?`, month)
+		for _, k := range kids {
+			db.Exec(`DELETE FROM enrollments WHERE student_id=?`, k)
+			db.Exec(`DELETE FROM students WHERE id=?`, k)
+		}
+		db.Exec(`DELETE FROM classes WHERE id=?`, classID)
+		db.Exec(`DELETE FROM referral_rewards WHERE referrer_family_id=?`, family)
+	}
+	wipe()
+	t.Cleanup(wipe)
+	db.Exec(`INSERT INTO classes(id,tenant_id,name,day,time,end_time,classroom,class_type,level_band,pricing_category_id,default_tier_name,monthly_fee_override)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, classID, 1, "Fam Level 3 & 4", "Monday", "16:00", "17:00", "R1", "Group", "", "PC_group", "Level 3-4", 0)
+	for i, k := range kids {
+		db.Exec(`INSERT INTO students(id,tenant_id,first_name,last_name,contact,status,subscription_status,package_amount,package_self_study_hours,family_id,enrolled_classes,registered_on)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, k, 1, names[i], "Fam", parent, "Active", "active", 0, 0, family,
+			models.JSONArr([]string{classID}), "2027-01-01")
+		db.Exec(`INSERT INTO enrollments(id,tenant_id,student_id,class_id,started_on,tier_name,created_by,created_on)
+			VALUES(?,?,?,?,?,?,?,?)`, core.GenerateID("ENR"), 1, k, classID, "2027-01-01", "", "test", "2027-01-01")
+	}
+	return kids
 }
