@@ -153,6 +153,99 @@
     _renderLineItems();
   }
 
+  // ── Family bills ──────────────────────────────────────────────────────────
+  // Mirrors store.FamilyBillMembers: one parent's issued Monthly invoices for one
+  // month. Derived, never stored, and shown as a bill only with two or more children.
+  var FAMILY_BILL_KEY = 'bill:'; // "bill:<member invoice id>" names a bill in onclick strings without an email in them
+  var FAMILY_BILL_MIN_CHILDREN = 2;
+
+  function _familyBills(invoices, students) {
+    var contactOf = {};
+    students.forEach(function(s) { contactOf[s.id] = s.contact; });
+    var groups = {};
+    invoices.forEach(function(inv) {
+      var contact = contactOf[inv.studentId];
+      if (inv.type !== 'Monthly' || !inv.period || !contact || inv.status === 'Draft' || inv.status === 'Void') return;
+      var key = contact + '|' + inv.period;
+      if (!groups[key]) groups[key] = { contact: contact, period: inv.period, members: [] };
+      groups[key].members.push(inv);
+    });
+    return Object.keys(groups).map(function(k) { return groups[k]; })
+      .filter(function(b) { return b.members.length >= FAMILY_BILL_MIN_CHILDREN; });
+  }
+
+  function _familyBillOf(invoiceId) {
+    var state = App.Store.get();
+    return _familyBills(state.invoices || [], state.students || []).find(function(b) {
+      return b.members.some(function(m) { return m.id === invoiceId; });
+    }) || null;
+  }
+
+  // Mirrors store.FamilyBillTargets: a rejection reopens only the claimed invoices.
+  function _familyBillTargets(bill, action) {
+    return bill.members.filter(function(m) {
+      return action === 'Unpaid' ? m.status === 'Pending Verification' : m.status !== 'Paid';
+    });
+  }
+
+  function _sumAmounts(invs) {
+    return Math.round(invs.reduce(function(a, i) { return a + (i.amount || 0); }, 0) * 100) / 100;
+  }
+
+  function _periodLabel(period) {
+    var parts = period.split('-');
+    return new Date(Number(parts[0]), Number(parts[1]) - 1, 1).toLocaleDateString('en-MY', { month: 'long', year: 'numeric' });
+  }
+
+  function _studentFirstName(studentId) {
+    var s = (App.Store.get().students || []).find(function(x) { return x.id === studentId; });
+    return s ? s.firstName : studentId;
+  }
+
+  // _payable resolves what a pay button is paying: one invoice, or a family bill's outstanding invoices.
+  function _payable(payKey) {
+    if (payKey.indexOf(FAMILY_BILL_KEY) !== 0) {
+      var inv = (App.Store.get().invoices || []).find(function(i) { return i.id === payKey; });
+      return inv ? { isBill: false, inv: inv, title: inv.description, uploadInvoiceId: inv.id } : null;
+    }
+    var bill = _familyBillOf(payKey.slice(FAMILY_BILL_KEY.length));
+    if (!bill) return null;
+    var targets = _familyBillTargets(bill, 'Pending Verification');
+    if (!targets.length) return null;
+    return { isBill: true, bill: bill, targets: targets, total: _sumAmounts(targets),
+      title: 'Family bill, ' + _periodLabel(bill.period), uploadInvoiceId: targets[0].id };
+  }
+
+  function _familyBillLinesHtml(invs) {
+    return invs.map(function(m) {
+      return '<div style="display:flex;justify-content:space-between;gap:0.75rem;padding:0.3rem 0;border-bottom:1px solid #f1f5f9;font-size:0.82rem">'
+        + '<span>' + App.Utils.esc(_studentFirstName(m.studentId)) + ' <span style="color:#94a3b8">' + App.Utils.esc(m.invoiceNo || m.id) + '</span></span>'
+        + '<span style="font-weight:600">' + App.Utils.formatCurrency(m.amount) + '</span>'
+        + '</div>';
+    }).join('')
+      + '<div style="display:flex;justify-content:space-between;padding-top:0.45rem;font-weight:800"><span>Total</span><span>' + App.Utils.formatCurrency(_sumAmounts(invs)) + '</span></div>';
+  }
+
+  // The parent's card for a bill still owed: one amount, one "I've paid".
+  function _familyBillCard(bill) {
+    var owed = _familyBillTargets(bill, 'Pending Verification');
+    if (!owed.length) return '';
+    var awaiting = owed.every(function(m) { return m.status === 'Pending Verification'; });
+    var due = owed.map(function(m) { return m.dueDate; }).sort()[0];
+    var action = awaiting
+      ? '<span style="font-size:0.78rem;color:#7c3aed;font-weight:600">Awaiting confirmation</span>'
+      : '<button onclick="App.Billing._parentSubmitPaid(\'' + FAMILY_BILL_KEY + owed[0].id + '\')" style="padding:0.45rem 1rem;font-size:0.8rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">I\'ve paid the family bill</button>';
+    return '<div style="border:1px solid #f0ede8;background:#fffdf7;padding:1rem 1.1rem;margin-bottom:1rem">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:0.5rem">'
+      +   '<div><div style="font-size:0.95rem;font-weight:700;color:#111">Family bill, ' + App.Utils.esc(_periodLabel(bill.period)) + '</div>'
+      +   '<div style="font-size:0.75rem;color:#94a3b8">One payment covers every child. Due ' + App.Utils.esc(App.Utils.formatDate(due)) + '</div></div>'
+      +   '<div style="font-size:1.15rem;font-weight:800;color:#111">' + App.Utils.formatCurrency(_sumAmounts(owed)) + '</div>'
+      + '</div>'
+      + _familyBillLinesHtml(owed)
+      + '<div style="display:flex;justify-content:flex-end;gap:0.75rem;align-items:center;margin-top:0.75rem">' + action + '</div>'
+      + '</div>';
+  }
+
   // Lines that are NOT tuition. A monthly invoice made only of these is almost
   // certainly missing the month it is billing for -- which is exactly what
   // happened to one September invoice: RM250 registration plus RM260 deposit,
@@ -443,6 +536,11 @@
 
     var paged = filtered.slice(_billingPage * _PAGE_SIZE, (_billingPage + 1) * _PAGE_SIZE);
 
+    var familyBills = _familyBills(displayInvoices, students);
+    var inFamilyBill = {};
+    familyBills.forEach(function(b) { b.members.forEach(function(m) { inFamilyBill[m.id] = true; }); });
+    var familyBillCards = isClient ? familyBills.map(_familyBillCard).join('') : '';
+
     const colCount = isAdmin ? 8 : isClient ? 7 : 6;
 
     container.innerHTML = ''
@@ -461,6 +559,7 @@
       + '</div>'
 
       + notifBanner
+      + familyBillCards
 
       + (isClient
         ? '<div class="grid grid-cols-2 gap-4 mb-6">'
@@ -557,7 +656,7 @@
                   + '</div>'
                   + '</td>'
                   : isClient && (inv.status === 'Unpaid' || inv.status === 'Overdue')
-                  ? '<td class="td"><div style="display:flex;gap:0.5rem;align-items:center;justify-content:flex-end;flex-wrap:wrap"><a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="font-size:0.7rem;color:#475569;text-decoration:underline">Invoice PDF</a><button onclick="App.Billing._payOnline(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:#0a0a0a;color:#ffffff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Pay Online</button><button onclick="App.Billing._parentSubmitPaid(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">I\'ve Paid</button></div></td>'
+                  ? '<td class="td"><div style="display:flex;gap:0.5rem;align-items:center;justify-content:flex-end;flex-wrap:wrap"><a href="/api/invoices/' + inv.id + '/pdf" target="_blank" style="font-size:0.7rem;color:#475569;text-decoration:underline">Invoice PDF</a><button onclick="App.Billing._payOnline(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:#0a0a0a;color:#ffffff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">Pay Online</button>' + (inFamilyBill[inv.id] ? '<span style="font-size:0.7rem;color:#94a3b8">In the family bill above</span>' : '<button onclick="App.Billing._parentSubmitPaid(\'' + inv.id + '\')" style="padding:0.3rem 0.75rem;font-size:0.75rem;font-weight:700;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer;white-space:nowrap">I\'ve Paid</button>') + '</div></td>'
                   : isClient && inv.status === 'Pending Verification'
                   ? '<td class="td"><span style="font-size:0.72rem;color:#7c3aed;font-weight:600">Awaiting confirmation</span></td>'
                   : isClient && inv.status === 'Paid'
@@ -979,17 +1078,22 @@
       });
   }
 
-  function _parentSubmitPaid(invId) {
-    const inv = App.Store.get().invoices.find(function(i) { return i.id === invId; });
-    if (!inv) return;
+  // payKey is an invoice id, or FAMILY_BILL_KEY + a member id for a whole family bill.
+  function _parentSubmitPaid(payKey) {
+    var payable = _payable(payKey);
+    if (!payable) return;
+    var invId = payKey;
+    var summary = payable.isBill
+      ? _familyBillLinesHtml(payable.targets)
+      : (_invoiceBreakdownHtml(payable.inv) || '<div style="font-size:1rem;font-weight:800;color:var(--gold);margin-top:2px">' + App.Utils.formatCurrency(payable.inv.amount) + '</div>');
     App.Utils.showModal(
       '<div class="p-6">'
       + '<h2 style="font-size:1.1rem;font-weight:700;color:#111;margin:0 0 0.25rem">Submit Payment</h2>'
       + '<p style="font-size:0.82rem;color:#94a3b8;margin:0 0 1.25rem">Let admin know you\'ve paid — they\'ll confirm receipt.</p>'
       + '<div style="background:#f8fafc;border-radius:0;padding:0.85rem 1rem;margin-bottom:1.25rem">'
-      +   '<div style="font-size:0.78rem;color:#94a3b8">Invoice</div>'
-      +   '<div style="font-size:0.9rem;font-weight:700;color:#111">' + App.Utils.esc(inv.description) + '</div>'
-      +   (_invoiceBreakdownHtml(inv) || '<div style="font-size:1rem;font-weight:800;color:var(--gold);margin-top:2px">' + App.Utils.formatCurrency(inv.amount) + '</div>')
+      +   '<div style="font-size:0.78rem;color:#94a3b8">' + (payable.isBill ? 'Family bill' : 'Invoice') + '</div>'
+      +   '<div style="font-size:0.9rem;font-weight:700;color:#111">' + App.Utils.esc(payable.title) + '</div>'
+      +   summary
       + '</div>'
       + '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.6rem">How did you pay?</p>'
       + '<div id="payment-methods-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:1.25rem">'
@@ -1105,13 +1209,16 @@
       return;
     }
 
+    var payable = _payable(invId);
+    if (!payable) return;
     if (hasFile) {
       var submitBtn = document.getElementById('proof-submit-btn');
       if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Uploading...'; }
 
+      // A family bill's proof is uploaded once against one member and shared by the rest.
       var formData = new FormData();
       formData.append('proof', fileInput.files[0]);
-      formData.append('invoiceId', invId);
+      formData.append('invoiceId', payable.uploadInvoiceId);
 
       fetch('/api/upload-proof', {
         method: 'POST',
@@ -1124,12 +1231,7 @@
         return res.json();
       })
       .then(function(data) {
-        // Store proof path on local invoice data
-        var state = App.Store.get();
-        App.Store.set({ invoices: state.invoices.map(function(i) {
-          return i.id === invId ? Object.assign({}, i, { paymentProof: data.path }) : i;
-        })});
-        _parentConfirmSubmit(invId, method, refNo);
+        _parentConfirmSubmit(invId, method, refNo, data.path);
       })
       .catch(function() {
         // Receipt is mandatory for non-cash — do NOT submit without it (this
@@ -1143,17 +1245,17 @@
     }
   }
 
-  function _parentConfirmSubmit(invId, method, refNo) {
+  function _parentConfirmSubmit(invId, method, refNo, proofPath) {
+    var payable = _payable(invId);
+    if (!payable) return;
     App.Utils.hideModal(true);
-    // Call the backend so the payment submission actually persists.
-    // Send status="Pending Verification" so admin knows the parent claims
-    // they've paid but it hasn't been confirmed yet.
+    // Pending Verification: the parent claims it, and nothing is paid until admin confirms.
     var payload = {
       status: 'Pending Verification',
       paymentMethod: method
     };
     if (refNo) payload.referenceNo = refNo;
-    App.Api.put('/api/invoices/' + invId + '/pay', payload).then(function() {
+    _submitPayment(payable, payload, proofPath).then(function() {
       return App.Api.loadSnapshot();
     }).then(function() {
       App.Utils.showToast('Payment submitted — admin will verify shortly', 'success');
@@ -1164,6 +1266,19 @@
       // would never see it and the parent would believe it went through.
       App.Utils.showToast('Payment submission failed — please check your connection and try again', 'error');
     });
+  }
+
+  // One call for either payable. A bill carries the invoices and total it showed, so a
+  // bill that changed meanwhile is refused (409) rather than paid at the wrong figure.
+  function _submitPayment(payable, payload, proofPath) {
+    if (!payable.isBill) return App.Api.put('/api/invoices/' + payable.inv.id + '/pay', payload);
+    return App.Api.post('/api/family-bills/pay', Object.assign({}, payload, {
+      period: payable.bill.period,
+      parentEmail: payable.bill.contact,
+      invoiceIds: payable.targets.map(function(m) { return m.id; }),
+      expectedTotal: payable.total,
+      paymentProof: proofPath || ''
+    }));
   }
 
   function _verifyPaid(invId) {
@@ -2088,6 +2203,7 @@
     // Exported for the unit test: a monthly invoice with no tuition on it is
     // the shape that cost a student their September bill.
     _looksLikeMissingTuition: _looksLikeMissingTuition,
+    _familyBills: _familyBills,
     _packageCatalog: _packageCatalog,
     _packageCatalogOptions: _packageCatalogOptions,
     _buildFromCatalogueForForm: _buildFromCatalogueForForm,

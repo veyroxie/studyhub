@@ -1,0 +1,75 @@
+// One parent's issued Monthly invoices for one month are paid as one family bill.
+// The grouping here must match store.FamilyBillMembers, or the server refuses the bill.
+import { test, describe, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { loadSandbox } from './_load.mjs';
+
+const PARENT = 'parent@example.com';
+const students = [
+  { id: 'STU_Z', firstName: 'Zayden', contact: PARENT },
+  { id: 'STU_L', firstName: 'Lucy', contact: PARENT },
+  { id: 'STU_O', firstName: 'Other', contact: 'other@example.com' },
+];
+const monthly = (id, studentId, amount, status = 'Unpaid', period = '2026-10') =>
+  ({ id, studentId, amount, status, period, type: 'Monthly', dueDate: period + '-07', description: 'Oct' });
+
+describe('family bill grouping', () => {
+  const B = loadSandbox(['js/utils.js', 'js/modules/billing.js']).App.Billing;
+
+  test('two children of one parent in one month make one bill', () => {
+    const bills = B._familyBills([monthly('I1', 'STU_Z', 230), monthly('I2', 'STU_L', 250)], students);
+    assert.equal(bills.length, 1);
+    assert.deepEqual(Array.from(bills[0].members, (m) => m.id), ['I1', 'I2']);
+    assert.equal(bills[0].contact, PARENT);
+  });
+
+  test('a single child is not a family bill', () => {
+    assert.equal(B._familyBills([monthly('I1', 'STU_Z', 230), monthly('I3', 'STU_O', 230)], students).length, 0);
+  });
+
+  test('drafts and voids stay out, as they do on the server', () => {
+    const bills = B._familyBills([monthly('I1', 'STU_Z', 230), monthly('I2', 'STU_L', 250, 'Draft'), monthly('I4', 'STU_L', 250, 'Void')], students);
+    assert.equal(bills.length, 0);
+  });
+
+  test('different months are different bills, and non-monthly invoices never join', () => {
+    const bills = B._familyBills([
+      monthly('I1', 'STU_Z', 230), monthly('I2', 'STU_L', 250),
+      monthly('I5', 'STU_Z', 230, 'Unpaid', '2026-11'), { ...monthly('I6', 'STU_L', 250, 'Unpaid', '2026-11'), type: 'Adhoc' },
+    ], students);
+    assert.equal(bills.length, 1);
+    assert.equal(bills[0].period, '2026-10');
+  });
+});
+
+describe('paying a family bill', () => {
+  let sandbox;
+  let posts;
+  beforeEach(() => {
+    sandbox = loadSandbox(['js/utils.js', 'js/modules/billing.js']);
+    posts = [];
+    sandbox.App.Store = { get: () => ({ students, invoices: [
+      monthly('I1', 'STU_Z', 230), monthly('I2', 'STU_L', 250), monthly('I7', 'STU_L', 999, 'Paid', '2026-10'),
+    ] }) };
+    sandbox.App.Utils.hideModal = () => {};
+    sandbox.App.Utils.showToast = () => {};
+    sandbox.App.Router = { refresh() {} };
+    sandbox.App.Api = {
+      post: (path, body) => { posts.push({ path, body }); return Promise.resolve({}); },
+      put: () => { throw new Error('a bill must not fall back to one-invoice PUTs'); },
+      loadSnapshot: () => Promise.resolve(),
+    };
+  });
+
+  test('the claim carries every outstanding child and the total shown, and skips what is already paid', () => {
+    sandbox.App.Billing._parentConfirmSubmit('bill:I1', 'Bank Transfer', 'MBB1', 'uploads/proof_I1_1.png');
+    assert.equal(posts.length, 1);
+    const { path, body } = posts[0];
+    assert.equal(path, '/api/family-bills/pay');
+    assert.deepEqual(Array.from(body.invoiceIds), ['I1', 'I2']);
+    assert.equal(body.expectedTotal, 480);
+    assert.equal(body.period, '2026-10');
+    assert.equal(body.status, 'Pending Verification');
+    assert.equal(body.paymentProof, 'uploads/proof_I1_1.png');
+  });
+});
