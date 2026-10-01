@@ -67,9 +67,16 @@ superadmins out of routine work and is called out as "a recurring drift across h
 (`handlers.go:18-27`).
 
 Authorization is enforced in **both** places, so route placement tells you nothing on its
-own. `auth.RequireAdmin` wraps only the user-management / import / registrations / audit
-subgroup (`server.go:311-312`); other admin-only endpoints check inside the handler body
+own. `auth.RequireAdmin` wraps only the user-management / import / registrations
+subgroup; other admin-only endpoints check inside the handler body
 (e.g. the monthly cron trigger, `jobs/cron.go:757-758`).
+
+**Developer is not a role.** It is an email list, `DEVELOPER_EMAILS`, read by
+`core.IsDeveloper`. `auth.RequireDeveloper` guards `/api/dev/*` (audit log, failed email
+and stuck outbox jobs, config health), all read-only (`handlers_developer.go`). The login
+response carries `developer: true`, which the frontend uses only to show the page; the
+server check is the control. The old admin-wide `/api/audit-logs` is gone: admins run the
+centre and have no use for technical history.
 
 `HandleUsers` POST accepts only `parent`, `teacher`, `admin` -- rejecting `superadmin`
 explicitly so an admin cannot self-provision a higher-privilege account

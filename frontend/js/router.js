@@ -13,7 +13,8 @@
     analytics:     'Analytics',
     pricing:       'Pricing',
     profile:       'My Profile',
-    settings:      'Settings'
+    settings:      'Settings',
+    developer:     'Developer'
   };
 
   const _modules = {};

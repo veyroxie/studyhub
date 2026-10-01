@@ -591,6 +591,19 @@ func RequireAdmin(next http.Handler) http.Handler {
 	})
 }
 
+// RequireDeveloper admits only DEVELOPER_EMAILS accounts. Admins run the centre;
+// technical history (audit, failed mail, config) is for the person maintaining it.
+func RequireDeveloper(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := core.ClaimsFrom(r)
+		if c == nil || !core.IsDeveloper(c.Email) {
+			core.RespondError(w, "developer only", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // JWTSecret returns the configured signing secret. Used by callers outside the
 // auth package that must validate or derive from the same key (the WS upgrade
 // path and the iCal feed HMAC).

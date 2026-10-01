@@ -113,7 +113,7 @@ type Execer interface {
 // This replaces all bare db.Exec audit inserts — a failed audit write
 // should never crash the request, but it must never be silently swallowed.
 //
-// tenantID stamps the row so audit trails stay tenant-isolated: HandleAuditLogs
+// tenantID stamps the row so audit trails stay tenant-isolated: the developer audit log
 // filters by tenant, so a row written without it would default to tenant 1 and
 // leak across tenants (or vanish for tenant 2). Callers pass store.TenantID(c)
 // for request-scoped actions, or the tenant of the affected row for system /
@@ -203,6 +203,11 @@ func AppEnv() string {
 		return v
 	}
 	return "development"
+}
+
+// JobsEnabled: cron and queues run in production, or locally with ENABLE_JOBS=1.
+func JobsEnabled() bool {
+	return AppEnv() == "production" || os.Getenv("ENABLE_JOBS") == "1"
 }
 
 // BuildVersion is overridden at link time via -ldflags="-X ...core.BuildVersion=..."

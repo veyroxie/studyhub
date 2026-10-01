@@ -83,7 +83,7 @@ func main() {
 	// Jobs fire within milliseconds of boot (reminders, email queue, billing
 	// cron). A dev box must never run them against whatever DB it's pointed
 	// at — production only, or explicit ENABLE_JOBS=1 for local testing.
-	if env == "production" || os.Getenv("ENABLE_JOBS") == "1" {
+	if core.JobsEnabled() {
 		jobs.StartJobs(bgCtx, &bgWG, db)
 		jobs.StartCron(bgCtx, &bgWG, db)
 	} else {

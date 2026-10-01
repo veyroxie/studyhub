@@ -199,16 +199,7 @@
       el.style.display = isAdmin ? '' : 'none';
     });
 
-    // Show/hide role-specific dock buttons
-    var pageHidden = {
-      billing:    isTeacher,
-      staff:      !isAdmin,
-      analytics:  !isAdmin,
-      pricing:    !isAdmin,
-      students:   App.currentRole === 'client',
-      attendance: false,
-      feedback:   false
-    };
+    var pageHidden = App.hiddenPages();
     document.querySelectorAll('.dock-btn').forEach(function(el) {
       var page = el.dataset.page;
       if (pageHidden[page] !== undefined) {

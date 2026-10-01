@@ -376,20 +376,7 @@
     if (parentSel)  parentSel.classList.toggle('hidden',  !(isClient && canPreview));
     if (teacherSel) teacherSel.classList.toggle('hidden', !(isTeacher && canPreview));
 
-    // Nav visibility per role
-    // admin:   all pages
-    // teacher: dashboard, calendar, students, attendance, feedback, communication
-    // client:  dashboard, calendar, communication, billing
-    const pageHidden = {
-      billing:    isTeacher,
-      staff:      !isAdmin,
-      analytics:  !isAdmin,
-      students:   isClient,
-      pricing:    !isAdmin,
-      settings:   !isAdmin,
-      attendance: false,
-      progress:   false
-    };
+    const pageHidden = App.hiddenPages();
     App.Router.setHidden(pageHidden);
     Object.keys(pageHidden).forEach(function(page) {
       const btn = document.querySelector('.nav-btn[data-page="' + page + '"]');
@@ -522,6 +509,7 @@
     // itself with the router on load — registering here would store undefined.
     App.Router.register('profile',       App.Profile);
     App.Router.register('settings',      App.Settings);
+    App.Router.register('developer',     App.Developer);
 
     // Init router (sets up nav button click handlers)
     App.Router.init();
@@ -703,6 +691,24 @@
   App.uiRoleFor = uiRoleFor;
 
   // Previewing another role's screens is a developer tool: admins run the centre and do not need it.
+  // hiddenPages is THE per-role page map: the router, the sidebar and the dock all read it.
+  // The developer page is shown by the server's developer flag; the server also enforces it.
+  App.hiddenPages = function() {
+    const role = App.currentRole;
+    const isAdmin = role === 'admin';
+    return {
+      billing:    role === 'teacher',
+      staff:      !isAdmin,
+      analytics:  !isAdmin,
+      students:   role === 'client',
+      pricing:    !isAdmin,
+      settings:   !isAdmin,
+      developer:  !App.isDevMode(),
+      attendance: false,
+      progress:   false
+    };
+  };
+
   App.canPreviewRoles = function() {
     return App.isDevMode();
   };

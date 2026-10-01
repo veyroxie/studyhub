@@ -118,6 +118,12 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		r.Post("/api/replacement-credits", HandleCreateReplacementCredit(db))
 		r.Delete("/api/replacement-credits/{id}", HandleDeleteReplacementCredit(db))
 		r.Get("/api/replacement-credits/balance", HandleReplacementBalance(db))
+		r.Route("/api/dev", func(r chi.Router) {
+			r.Use(auth.RequireDeveloper)
+			r.Get("/audit-logs", HandleDevAuditLogs(db))
+			r.Get("/failures", HandleDevFailures(db))
+			r.Get("/health", HandleDevHealth(db))
+		})
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAdmin)
 			r.Get("/api/users", HandleUsers(db))

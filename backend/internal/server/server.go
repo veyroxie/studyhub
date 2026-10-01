@@ -352,7 +352,7 @@ func Build(db *store.DB) http.Handler {
 		r.Post("/api/upload-proof", handlers.HandleUploadProof(db))
 		r.Get("/api/uploads/{filename}", handlers.HandleServeUpload(db))
 
-		// Admin-only: user management + registration review + audit logs
+		// Admin-only: user management + registration review
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAdmin)
 			r.Get("/api/users", handlers.HandleUsers(db))
@@ -369,7 +369,14 @@ func Build(db *store.DB) http.Handler {
 			r.Post("/api/admin/clear-seed", handlers.HandleClearSeedData(db))
 			r.Post("/api/registrations/{id}/approve", handlers.HandleRegistrationApprove(db))
 			r.Delete("/api/registrations/{id}", handlers.HandleRegistrationReject(db))
-			r.Get("/api/audit-logs", handlers.HandleAuditLogs(db))
+		})
+
+		// Developer-only, read-only: DEVELOPER_EMAILS, checked on the server.
+		r.Route("/api/dev", func(r chi.Router) {
+			r.Use(auth.RequireDeveloper)
+			r.Get("/audit-logs", handlers.HandleDevAuditLogs(db))
+			r.Get("/failures", handlers.HandleDevFailures(db))
+			r.Get("/health", handlers.HandleDevHealth(db))
 		})
 	})
 

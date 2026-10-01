@@ -36,6 +36,7 @@ services:
       # Throwaway credentials — this stack is local, disposable and offline.
       JWT_SECRET: test-only-secret-not-for-production-use
       SEED_ADMIN_PASSWORD: admin123
+      DEVELOPER_EMAILS: admin@studyhub.com  # the demo admin can open the Developer page here
       SEED_DEMO_DATA: "1"
       ALLOWED_ORIGIN: http://localhost:8081
       APP_URL: http://localhost:8081

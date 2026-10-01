@@ -77,6 +77,7 @@ case "${1:-up}" in
     DATABASE_URL="postgres://studyhub:testonly@localhost:55433/studyhub?sslmode=disable" \
     JWT_SECRET=test-only-secret-not-for-production-use \
     SEED_ADMIN_PASSWORD=admin123 \
+    DEVELOPER_EMAILS=admin@studyhub.com \
     SEED_DEMO_DATA=1 \
     ALLOWED_ORIGIN=http://localhost:8081 \
     APP_URL=http://localhost:8081 \

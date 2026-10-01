@@ -35,12 +35,29 @@ func SetMailer(m Mailer) { activeMailer = m }
 // It lives in core rather than mailer because mailer imports store, so the
 // email queue could not otherwise ask the question before it sends.
 func AllowedRecipient(to string) bool {
-	list := strings.TrimSpace(os.Getenv("OUTBOUND_ALLOWLIST"))
-	if list == "" {
-		return true
+	list := envEmailList("OUTBOUND_ALLOWLIST")
+	return len(list) == 0 || listHasEmail(list, to)
+}
+
+// OutboundRestrictedTo is how many addresses OUTBOUND_ALLOWLIST lets mail reach; 0 means everyone.
+func OutboundRestrictedTo() int {
+	return len(envEmailList("OUTBOUND_ALLOWLIST"))
+}
+
+// envEmailList reads a comma-separated address list from the environment, blanks dropped.
+func envEmailList(key string) []string {
+	out := []string{}
+	for _, e := range strings.Split(os.Getenv(key), ",") {
+		if e = strings.TrimSpace(e); e != "" {
+			out = append(out, e)
+		}
 	}
-	for _, allowed := range strings.Split(list, ",") {
-		if strings.EqualFold(strings.TrimSpace(allowed), strings.TrimSpace(to)) {
+	return out
+}
+
+func listHasEmail(list []string, email string) bool {
+	for _, e := range list {
+		if strings.EqualFold(e, strings.TrimSpace(email)) {
 			return true
 		}
 	}
@@ -50,13 +67,7 @@ func AllowedRecipient(to string) bool {
 // IsDeveloper reports whether email belongs to the technical owner (DEVELOPER_EMAILS,
 // comma-separated). Admins run the centre; developer screens are for this list only.
 func IsDeveloper(email string) bool {
-	for _, dev := range strings.Split(os.Getenv("DEVELOPER_EMAILS"), ",") {
-		dev = strings.TrimSpace(dev)
-		if dev != "" && strings.EqualFold(dev, strings.TrimSpace(email)) {
-			return true
-		}
-	}
-	return false
+	return listHasEmail(envEmailList("DEVELOPER_EMAILS"), email)
 }
 
 // SendEmail delivers a message via the registered mailer. When no mailer has

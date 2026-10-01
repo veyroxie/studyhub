@@ -33,6 +33,16 @@ func SafeName(s string) string {
 //
 // Resend's API is a single POST endpoint, so we don't pull in a third-party
 // SDK — keeps the dependency tree small and the failure modes obvious.
+// liveSendingAllowed: key presence alone is never enough (see Init).
+func liveSendingAllowed() bool {
+	return core.AppEnv() == "production" && os.Getenv("OUTBOUND_ENABLED") == "1"
+}
+
+// IsLive reports whether email really leaves the server rather than being logged.
+func IsLive() bool {
+	return os.Getenv("RESEND_API_KEY") != "" && liveSendingAllowed()
+}
+
 func Init() {
 	apiKey := os.Getenv("RESEND_API_KEY")
 	from := os.Getenv("EMAIL_FROM")
@@ -44,8 +54,7 @@ func Init() {
 	// Key presence alone must never be enough: on 2026-07-31 a dev box with
 	// prod env vars started draining the real email queue at real parents,
 	// stopped only by an unverified sender domain.
-	liveOK := core.AppEnv() == "production" && os.Getenv("OUTBOUND_ENABLED") == "1"
-	if apiKey == "" || !liveOK {
+	if apiKey == "" || !liveSendingAllowed() {
 		if apiKey != "" {
 			core.Logger.Warn("mailer in dev mode — RESEND_API_KEY set but outbound gated (need APP_ENV=production and OUTBOUND_ENABLED=1)")
 		} else {
