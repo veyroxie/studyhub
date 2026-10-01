@@ -9,6 +9,15 @@ dated section when you cut a deploy.
 ## [Unreleased]
 
 ### Added
+- Parents can report an absence from their child's card. Told at least 3 hours
+  before class, it waits for an admin or the class's teacher to approve the
+  make-up credit; told later, it is noted with no credit. Admins and teachers
+  review reports at the top of their dashboard (migration 0071).
+- The bulletin board works: admins tick "Bulletin board policy" when posting or
+  editing an announcement, and it stays at the bottom of every dashboard, for
+  every role, showing when it last changed.
+- A Developer page for the technical owner only (DEVELOPER_EMAILS): audit log
+  with search, failed emails and stuck jobs, and what the server runs with.
 - Search from anywhere for admins (top bar, or press /): students by name,
   phone or parent email, invoices by number, classes by name.
 - Parents: enrol another child from the dashboard; add their children's
@@ -37,6 +46,22 @@ dated section when you cut a deploy.
   their password and typed twice. They are signed out and sign in again.
 
 ### Fixed
+- One make-up credit per student per session: a cancellation, a teacher's
+  "Absent + credit" and an approved absence report can no longer pay twice.
+- A paid invoice only leaves Paid by "Mark unpaid"; it can no longer be pushed
+  back into "awaiting confirmation" with its receipt attached.
+- Invoice PDFs show the invoice number, not the internal id.
+- Self-study minutes are checked on the server (15 minutes to 8 hours); a
+  negative or huge number no longer reaches the monthly invoice.
+- Payment buttons ignore a double click while the first one is still working.
+- The parent preview shows one family, never every child.
+- The Schedule page's price table is gone: it billed nothing. Prices live on
+  the Pricing page.
+- Public health check shows only ok and uptime; /metrics is developer-only; a
+  suspended account's calendar link stops working; MFA codes are rate-limited;
+  a database error never reaches the screen as a message; the brand colour must
+  be a hex colour.
+- Production refuses to start without JWT_SECRET.
 - Parents no longer see the class feed (Quick Notes) or replies; they read progress reports. The feed carried notes on every child in the class, and a parent's data export held the whole centre's feed.
 - Signing out, or being timed out, with a popup open no longer leaves the page unclickable after the next sign-in.
 - The Settings page opens (it was a dead click), and only for admins.
@@ -107,7 +132,6 @@ dated section when you cut a deploy.
   rather than claiming it was delivered.
 
 ### Fixed
-- Parents no longer see the class feed (Quick Notes) or replies; they read progress reports. The feed carried notes on every child in the class, and a parent's data export held the whole centre's feed.
 - Deleting an unpaid invoice now gives back the referral credit it used. The
   monthly run spends one credit per child when it drafts, so removing a draft
   (or deleting an unissued or unpaid invoice) used to lose that month of
@@ -225,7 +249,6 @@ dated section when you cut a deploy.
   and a one-month deposit priced by class type and level band.
 
 ### Fixed
-- Parents no longer see the class feed (Quick Notes) or replies; they read progress reports. The feed carried notes on every child in the class, and a parent's data export held the whole centre's feed.
 - The parent calendar feed now shows a session that was rescheduled into
   its visible window from further back; previously only moves whose
   original date fell inside the window appeared.
@@ -259,7 +282,6 @@ dated section when you cut a deploy.
   self-study credit rows still display).
 
 ### Fixed — class enrolment, and prices that silently came out as RM 0
-- Parents no longer see the class feed (Quick Notes) or replies; they read progress reports. The feed carried notes on every child in the class, and a parent's data export held the whole centre's feed.
 
 - **Enrolling a student into a class works again.** The Add Class form never
   captured a teacher, and the enrolment picker matched a class by slot + type +
@@ -476,7 +498,6 @@ dated section when you cut a deploy.
   `ScopeTenant` (tested).
 
 ### Fixed — Teacher privacy, progress-report scoping, payroll correctness
-- Parents no longer see the class feed (Quick Notes) or replies; they read progress reports. The feed carried notes on every child in the class, and a parent's data export held the whole centre's feed.
 
 - **Teacher privacy (PDPA):** the students API/snapshot now strips parent
   name/email/phone, emergency contact and admin notes for teacher sessions
@@ -570,7 +591,6 @@ dated section when you cut a deploy.
   verification before setting a new one. Both audit-logged.
 
 ### Fixed — Audit-discovered bugs + UX improvements
-- Parents no longer see the class feed (Quick Notes) or replies; they read progress reports. The feed carried notes on every child in the class, and a parent's data export held the whole centre's feed.
 
 #### Critical fixes from codebase audit
 - **Parent invoice query missing `referral_credit` column** — parent users
