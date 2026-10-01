@@ -220,13 +220,16 @@ func HandleFamilyPDPADelete(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "could not anonymise account", 500)
 				return
 			}
-			// An absence reason is free text about the child; the report keeps only that it happened.
-			absArgs := append([]any{contact}, twArgs...)
-			if _, err := tx.Exec(`UPDATE absence_reports SET reported_by='deleted-'||id||'@redacted', reason='' WHERE reported_by=?`+tw, absArgs...); err != nil {
-				core.Logger.Error("pdpa delete: absence report anonymise failed", "err", err, "family_id", famID)
-				core.RespondError(w, "could not anonymise account", 500)
-				return
-			}
+		}
+		// Absence reasons and decision notes are free text about the child; the report keeps only
+		// that it happened. Matched by the family's children, so a report filed under an email
+		// the parent has since changed is covered too.
+		absArgs := append([]any{famID}, twArgs...)
+		if _, err := tx.Exec(`UPDATE absence_reports SET reported_by='deleted-'||id||'@redacted', reason='', decision_note=''
+			WHERE student_id IN (SELECT id FROM students WHERE family_id=?)`+tw, absArgs...); err != nil {
+			core.Logger.Error("pdpa delete: absence report anonymise failed", "err", err, "family_id", famID)
+			core.RespondError(w, "could not anonymise account", 500)
+			return
 		}
 
 		if err := tx.Commit(); err != nil {

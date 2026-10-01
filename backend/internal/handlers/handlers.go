@@ -289,6 +289,16 @@ func HandleSnapshot(db *store.DB) http.HandlerFunc {
 
 			// Hide internal performance reviews from parents
 			snap.PerformanceReviews = []models.PerformanceReview{}
+
+			// Other children's enrolments are not a parent's to hold, and staff emails behind
+			// a credit or a decision were stripped from the staff list for the same reason.
+			snap.Enrollments = enrollmentsOf(snap.Enrollments, stuIDs)
+			for i := range snap.ReplacementCredits {
+				snap.ReplacementCredits[i].CreatedBy = ""
+			}
+			for i := range snap.AbsenceReports {
+				snap.AbsenceReports[i].DecidedBy = ""
+			}
 		}
 
 		// Teachers: scope class/student-linked records to the classes they teach.
@@ -371,4 +381,14 @@ func visibleClassIDs(db *store.DB, c *core.Claims) (map[string]bool, bool) {
 		return teacherClassIDSet(db, c), false
 	}
 	return store.ParentClassIDs(db, c), false
+}
+
+func enrollmentsOf(all []models.Enrollment, students map[string]bool) []models.Enrollment {
+	out := []models.Enrollment{}
+	for _, e := range all {
+		if students[e.StudentID] {
+			out = append(out, e)
+		}
+	}
+	return out
 }

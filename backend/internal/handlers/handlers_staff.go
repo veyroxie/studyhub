@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"studyhub/internal/auth"
 	"studyhub/internal/core"
 	"studyhub/internal/mailer"
@@ -102,7 +103,8 @@ func listStaff(db *store.DB, c *core.Claims) []models.Staff {
 		// Parents see only what they need to recognise the teacher on
 		// the schedule: name + role. Strip personal phone, personal
 		// email, emergency contact, join date and employment metadata.
-		if c != nil && c.Role == "parent" {
+		// A teacher keeps their own row whole; a colleague's personal contacts are not theirs to hold.
+		if c != nil && (c.Role == "parent" || (c.Role == "teacher" && !strings.EqualFold(s.Email, c.Email))) {
 			s.Phone = ""
 			s.Email = ""
 			s.EmergencyName = ""
