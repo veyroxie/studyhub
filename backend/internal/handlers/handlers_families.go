@@ -220,6 +220,13 @@ func HandleFamilyPDPADelete(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "could not anonymise account", 500)
 				return
 			}
+			// An absence reason is free text about the child; the report keeps only that it happened.
+			absArgs := append([]any{contact}, twArgs...)
+			if _, err := tx.Exec(`UPDATE absence_reports SET reported_by='deleted-'||id||'@redacted', reason='' WHERE reported_by=?`+tw, absArgs...); err != nil {
+				core.Logger.Error("pdpa delete: absence report anonymise failed", "err", err, "family_id", famID)
+				core.RespondError(w, "could not anonymise account", 500)
+				return
+			}
 		}
 
 		if err := tx.Commit(); err != nil {
@@ -232,7 +239,7 @@ func HandleFamilyPDPADelete(db *store.DB) http.HandlerFunc {
 		// and the application log, re-introducing the address the transaction
 		// above had just removed. The family id identifies the record; the
 		// admin's own email identifies who acted.
-		core.LogAudit(db, store.TenantID(c), c.Email, "pdpa_account_deleted", "family", famID, "identifiers redacted across 8 tables")
+		core.LogAudit(db, store.TenantID(c), c.Email, "pdpa_account_deleted", "family", famID, "identifiers redacted across 9 tables")
 		core.Logger.Info("PDPA account deleted", "family_id", famID, "admin", c.Email)
 
 		core.Respond(w, map[string]string{"message": "Account and associated data have been anonymised."})
