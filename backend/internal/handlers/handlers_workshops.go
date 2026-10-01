@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"net/http"
 	"studyhub/internal/core"
 	"studyhub/internal/models"
@@ -27,20 +27,20 @@ func checkWorkshopClash(db *store.DB, c *core.Claims, ws models.Workshop) error 
 		var cnt int
 		wsArgs := append([]any{ws.Date, ws.Classroom, ws.ID, ws.EndTime, ws.Time}, twArgs...)
 		if err := db.QueryRow(`SELECT COUNT(*) FROM workshops WHERE date=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`+tw, wsArgs...).Scan(&cnt); err != nil {
-			return errors.New("server error checking workshop conflicts")
+			return fmt.Errorf("check workshop clash: %w", err)
 		}
 		if cnt > 0 {
-			return errors.New("Conflict: " + ws.Classroom + " is already booked at this time")
+			return userError("Conflict: " + ws.Classroom + " is already booked at this time")
 		}
 		// Classroom clash against regular classes on the same weekday.
 		weekday := dateWeekday(ws.Date)
 		if weekday != "" {
 			clsArgs := append([]any{weekday, ws.Classroom, ws.EndTime, ws.Time}, twArgs...)
 			if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND time<? AND end_time>? AND deleted_at IS NULL`+tw, clsArgs...).Scan(&cnt); err != nil {
-				return errors.New("server error checking class conflicts")
+				return fmt.Errorf("check class clash: %w", err)
 			}
 			if cnt > 0 {
-				return errors.New("Conflict: " + ws.Classroom + " has a regular class at this time")
+				return userError("Conflict: " + ws.Classroom + " has a regular class at this time")
 			}
 		}
 	}
@@ -49,10 +49,10 @@ func checkWorkshopClash(db *store.DB, c *core.Claims, ws models.Workshop) error 
 		var cnt int
 		teacherArgs := append([]any{ws.Date, ws.ID, ws.EndTime, ws.Time, tid2}, twArgs...)
 		if err := db.QueryRow(`SELECT COUNT(*) FROM workshops WHERE date=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`+tw, teacherArgs...).Scan(&cnt); err != nil {
-			return errors.New("server error checking teacher conflicts")
+			return fmt.Errorf("check teacher clash: %w", err)
 		}
 		if cnt > 0 {
-			return errors.New("Conflict: teacher " + tid2 + " is already booked at this time")
+			return userError("Conflict: teacher " + tid2 + " is already booked at this time")
 		}
 	}
 	return nil
@@ -129,7 +129,7 @@ func HandleCreateWorkshop(db *store.DB) http.HandlerFunc {
 			ws.Status = "upcoming"
 		}
 		if err := checkWorkshopClash(db, c, ws); err != nil {
-			core.RespondError(w, err.Error(), http.StatusConflict)
+			respondCheckError(w, r, err, http.StatusConflict)
 			return
 		}
 		tid, tOK := writeTenant(w, c)
@@ -173,7 +173,7 @@ func HandleUpdateWorkshop(db *store.DB) http.HandlerFunc {
 			return
 		}
 		if err := checkWorkshopClash(db, c, ws); err != nil {
-			core.RespondError(w, err.Error(), http.StatusConflict)
+			respondCheckError(w, r, err, http.StatusConflict)
 			return
 		}
 		tw, twArgs := store.ScopeTenant(c, "")

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"studyhub/internal/core"
@@ -37,7 +38,7 @@ func resolvePricingCategory(db *store.DB, tenantID int, c *models.Class) error {
 			return err
 		}
 		if n == 0 {
-			return errors.New("unknown pricing category: " + c.PricingCategoryID)
+			return userError("unknown pricing category: " + c.PricingCategoryID)
 		}
 		return nil
 	}
@@ -65,7 +66,7 @@ func resolvePricingCategory(db *store.DB, tenantID int, c *models.Class) error {
 	if total == 0 {
 		return nil
 	}
-	return errors.New("no pricing category named " + name + " for this tenant")
+	return userError("no pricing category named " + name + " for this tenant")
 }
 
 // validateTeacherIDs rejects class create/update payloads referencing staff
@@ -79,17 +80,16 @@ func validateTeacherIDs(db *store.DB, c *core.Claims, ids []string) error {
 	for _, id := range ids {
 		var exists int
 		args := append([]any{id}, twArgs...)
-		db.QueryRow(`SELECT 1 FROM staff WHERE id=? AND deleted_at IS NULL`+tw, args...).Scan(&exists)
-		if exists != 1 {
-			return errClassTeacherNotFound{id: id}
+		err := db.QueryRow(`SELECT 1 FROM staff WHERE id=? AND deleted_at IS NULL`+tw, args...).Scan(&exists)
+		if errors.Is(err, sql.ErrNoRows) {
+			return userError("teacher not found in tenant: " + id)
+		}
+		if err != nil {
+			return fmt.Errorf("check teacher %s: %w", id, err)
 		}
 	}
 	return nil
 }
-
-type errClassTeacherNotFound struct{ id string }
-
-func (e errClassTeacherNotFound) Error() string { return "teacher not found in tenant: " + e.id }
 
 // ── Classes ───────────────────────────────────────────────────────────────────
 
@@ -250,7 +250,7 @@ func HandleClasses(db *store.DB) http.HandlerFunc {
 			}
 
 			if err := validateTeacherIDs(db, cl, c.TeacherIDs); err != nil {
-				core.RespondError(w, err.Error(), http.StatusBadRequest)
+				respondCheckError(w, r, err, http.StatusBadRequest)
 				return
 			}
 
@@ -295,7 +295,7 @@ func HandleClasses(db *store.DB) http.HandlerFunc {
 				return
 			}
 			if err := resolvePricingCategory(db, tid, &c); err != nil {
-				core.RespondError(w, err.Error(), http.StatusBadRequest)
+				respondCheckError(w, r, err, http.StatusBadRequest)
 				return
 			}
 			if _, err := db.Exec(`INSERT INTO classes(id,tenant_id,name,teacher_ids,classroom,day,time,end_time,capacity,enrolled,color,category,class_type,level_band,subject,monthly_fee_override,session_rate,pricing_category_id,default_tier_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -362,7 +362,7 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 			cl.ID = id
 
 			if err := validateTeacherIDs(db, c, cl.TeacherIDs); err != nil {
-				core.RespondError(w, err.Error(), http.StatusBadRequest)
+				respondCheckError(w, r, err, http.StatusBadRequest)
 				return
 			}
 
@@ -433,7 +433,7 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 			// Catches classes that predate the create-path rule as soon as
 			// anyone edits them, so the backlog drains itself.
 			if err := resolvePricingCategory(db, store.TenantID(c), &cl); err != nil {
-				core.RespondError(w, err.Error(), http.StatusBadRequest)
+				respondCheckError(w, r, err, http.StatusBadRequest)
 				return
 			}
 			args := append([]any{cl.Name, models.JSONArr(cl.TeacherIDs), cl.Classroom, cl.Day, cl.Time, cl.EndTime, cl.Capacity, cl.Color, cl.Category, cl.ClassType, cl.LevelBand, cl.Subject, cl.MonthlyFeeOverride, cl.SessionRate, cl.PricingCategoryID, cl.DefaultTierName, id}, twArgs...)
