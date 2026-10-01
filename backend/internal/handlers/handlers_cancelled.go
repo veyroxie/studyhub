@@ -251,14 +251,19 @@ func HandleDeleteCancelledClass(db *store.DB) http.HandlerFunc {
 // credits at the agreed unit of 1 credit = 15 minutes (a 1-hour class = 4).
 // Unparsable or missing times fall back to 4, the standard 1-hour class.
 func creditsForDuration(start, end string) int {
-	s, errS := time.Parse("15:04", start)
-	e, errE := time.Parse("15:04", end)
-	if errS != nil || errE != nil {
-		return 4
-	}
-	mins := int(e.Sub(s).Minutes())
-	if mins < 15 {
+	mins, ok := minutesBetween(start, end)
+	if !ok || mins < 15 {
 		return 4
 	}
 	return mins / 15
+}
+
+// minutesBetween is end minus start for same-day HH:MM times; false when either does not parse.
+func minutesBetween(start, end string) (int, bool) {
+	s, errS := time.Parse("15:04", start)
+	e, errE := time.Parse("15:04", end)
+	if errS != nil || errE != nil {
+		return 0, false
+	}
+	return int(e.Sub(s).Minutes()), true
 }

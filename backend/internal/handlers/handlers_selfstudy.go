@@ -156,6 +156,32 @@ func HandleListSelfStudy(db *store.DB) http.HandlerFunc {
 	}
 }
 
+// The form's range: 15 minutes to a full 8-hour day.
+const (
+	selfStudyMinMinutes = 15
+	selfStudyMaxMinutes = 480
+)
+
+// selfStudyMinutes is the billable length of a session, or a reason to refuse it.
+// An arrival with no end yet counts nothing until it is closed.
+func selfStudyMinutes(s models.SelfStudySession) (int, string) {
+	if s.StartTime != "" && s.EndTime == "" {
+		return 0, ""
+	}
+	mins := s.DurationMin
+	if s.StartTime != "" {
+		between, ok := minutesBetween(s.StartTime, s.EndTime)
+		if !ok || between <= 0 {
+			return 0, "end time must be after start time (HH:MM)"
+		}
+		mins = between
+	}
+	if mins < selfStudyMinMinutes || mins > selfStudyMaxMinutes {
+		return 0, "a self-study session is 15 minutes to 8 hours"
+	}
+	return mins, ""
+}
+
 func HandleCreateSelfStudy(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := core.ClaimsFrom(r)
@@ -176,6 +202,12 @@ func HandleCreateSelfStudy(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "you can only log sessions for students in your own classes", http.StatusForbidden)
 			return
 		}
+		mins, msg := selfStudyMinutes(s)
+		if msg != "" {
+			core.RespondError(w, msg, http.StatusBadRequest)
+			return
+		}
+		s.DurationMin = mins
 		if s.ID == "" {
 			s.ID = core.GenerateID("SS")
 		}
