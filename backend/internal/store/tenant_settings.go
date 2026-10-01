@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strings"
 	"studyhub/internal/core"
 	"sync"
@@ -50,6 +51,22 @@ var (
 )
 
 const tenantSettingsTTL = 10 * time.Minute
+
+var brandColorPattern = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
+
+// ValidBrandColor: the colour is written into style attributes in every email and PDF,
+// so only a hex colour is accepted; anything else could close the attribute.
+func ValidBrandColor(c string) bool {
+	return brandColorPattern.MatchString(c)
+}
+
+// SafePrimaryColor is the colour to render, falling back for a row saved before validation.
+func (s TenantSettings) SafePrimaryColor() string {
+	if ValidBrandColor(s.PrimaryColor) {
+		return s.PrimaryColor
+	}
+	return DefaultTenantSettings.PrimaryColor
+}
 
 // DefaultTenantSettings is the fallback used when a row lookup fails — keeps
 // every code path defensive against a DB outage during PDF/email rendering.
@@ -249,6 +266,10 @@ func HandleAdminSettings(db *DB) http.HandlerFunc {
 			// one SET clause. Building the SQL dynamically rather than always
 			// updating every column means an admin who only set BrandName
 			// doesn't accidentally clear PrimaryColor.
+			if body.PrimaryColor != nil && !ValidBrandColor(*body.PrimaryColor) {
+				core.RespondError(w, "primary colour must be a hex colour like #C9A227", http.StatusBadRequest)
+				return
+			}
 			parts := []string{}
 			args := []any{}
 			add := func(col string, val *string) {

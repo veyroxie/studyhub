@@ -186,7 +186,7 @@ func emailLayoutOpen() string {
 <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:14px;border:1px solid rgba(0,0,0,0.07);box-shadow:0 2px 8px rgba(0,0,0,0.04);overflow:hidden">
 <tr><td style="padding:32px 40px 0">
   ` + emailHeaderMark() + `
-  <div style="height:2px;width:48px;background:` + Brand().PrimaryColor + `;margin:12px 0 24px"></div>
+  <div style="height:2px;width:48px;background:` + Brand().SafePrimaryColor() + `;margin:12px 0 24px"></div>
 </td></tr>
 <tr><td style="padding:0 40px 32px;font-size:15px;line-height:1.6;color:#374151">`
 }
