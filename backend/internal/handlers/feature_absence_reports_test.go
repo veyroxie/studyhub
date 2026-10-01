@@ -326,3 +326,13 @@ func TestAPendingReportStaysInTheQueueHoweverOld(t *testing.T) {
 	}
 	t.Error("a two-month-old pending report vanished from the queue")
 }
+
+// A class predating dated enrolments still lets the parent report, as a cancellation still credits it.
+func TestAClassWithNoEnrolmentRowsCanStillBeReported(t *testing.T) {
+	f := newAbsenceFixture(t, nextWeekAt(16))
+	defer f.cleanup()
+	f.db.Exec(`DELETE FROM enrollments WHERE class_id=?`, f.classID)
+	if code, rep := f.report(t, getParentToken(t, f.r)); code != http.StatusCreated || rep.Status != models.AbsencePending {
+		t.Errorf("reporting on a roster-only class: %d %+v", code, rep)
+	}
+}

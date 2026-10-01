@@ -57,7 +57,7 @@ func findReportableSession(db *store.DB, tid int, studentID, classID, date strin
 		if s.Date != date || !sessionRuns(s) {
 			continue
 		}
-		enrolled, err := store.StudentsEnrolledOn(db, tid, classID, date)
+		enrolled, _, err := store.StudentsInClassOn(db, tid, classID, date)
 		if err != nil {
 			return reportableSession{}, err
 		}
@@ -146,7 +146,7 @@ func upcomingSession(db *store.DB, tid int, studentID, classID, name string, s s
 	if err != nil || !start.After(now) {
 		return reportableSession{}, false
 	}
-	enrolled, err := store.StudentsEnrolledOn(db, tid, classID, s.Date)
+	enrolled, _, err := store.StudentsInClassOn(db, tid, classID, s.Date)
 	if err != nil || !containsString(enrolled, studentID) {
 		return reportableSession{}, false
 	}
@@ -156,9 +156,14 @@ func upcomingSession(db *store.DB, tid int, studentID, classID, name string, s s
 
 // studentClassesFrom: classes the child is enrolled in on or after from, id -> name.
 func studentClassesFrom(db *store.DB, tid int, studentID, from string) (map[string]string, error) {
+	// Dated enrolments, plus the current roster for classes with no enrolment rows (see store.StudentsInClassOn).
 	rows, err := db.Query(`SELECT DISTINCT e.class_id, cl.name FROM enrollments e
 		JOIN classes cl ON cl.id = e.class_id AND cl.tenant_id = e.tenant_id AND cl.deleted_at IS NULL
-		WHERE e.tenant_id=? AND e.student_id=? AND (e.ended_on IS NULL OR e.ended_on > ?)`, tid, studentID, from)
+		WHERE e.tenant_id=? AND e.student_id=? AND (e.ended_on IS NULL OR e.ended_on > ?)
+		UNION
+		SELECT cl.id, cl.name FROM classes cl JOIN students s ON s.tenant_id = cl.tenant_id AND s.id=?
+		WHERE cl.tenant_id=? AND cl.deleted_at IS NULL AND s.enrolled_classes LIKE '%"'||cl.id||'"%'
+		  AND NOT EXISTS (SELECT 1 FROM enrollments e2 WHERE e2.tenant_id=cl.tenant_id AND e2.class_id=cl.id)`, tid, studentID, from, studentID, tid)
 	if err != nil {
 		return nil, fmt.Errorf("student classes: %w", err)
 	}

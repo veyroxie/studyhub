@@ -117,6 +117,31 @@ func StudentsEnrolledOn(db *DB, tenantID int, classID, date string) ([]string, e
 	return out, rows.Err()
 }
 
+// StudentsInClassOn is who was in a class on a date, for crediting a missed
+// session. Dated enrolments first; a class with none on record (one predating
+// 0043's backfill, or a roster written by a path that skipped SyncEnrollments)
+// falls back to the current roster, because these credits are money owed and
+// crediting nobody is the worse answer. fellBack says which answer it gave.
+func StudentsInClassOn(db *DB, tenantID int, classID, date string) (ids []string, fellBack bool, err error) {
+	ids, err = StudentsEnrolledOn(db, tenantID, classID, date)
+	if err != nil || len(ids) > 0 {
+		return ids, false, err
+	}
+	rows, err := db.Query(`SELECT id FROM students WHERE tenant_id=? AND deleted_at IS NULL AND enrolled_classes LIKE '%"'||?||'"%'`, tenantID, classID)
+	if err != nil {
+		return nil, true, fmt.Errorf("roster fallback for %s: %w", classID, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sid string
+		if err := rows.Scan(&sid); err != nil {
+			return nil, true, err
+		}
+		ids = append(ids, sid)
+	}
+	return ids, true, rows.Err()
+}
+
 // EnrollmentWindowsIn returns the classes a student was enrolled in at any
 // point within [from, to], each clipped to the days they were actually
 // enrolled. Billing counts sessions inside these windows rather than over the
