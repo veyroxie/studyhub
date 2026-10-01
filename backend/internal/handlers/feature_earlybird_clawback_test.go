@@ -160,3 +160,39 @@ func TestADraftCannotBeEditedIntoTwoEarlyBirdLines(t *testing.T) {
 		t.Fatalf("got %d, want 400: %s", w.Code, w.Body.String())
 	}
 }
+
+// Paid or claimed by the 7th earns the early bird for good: reversing that payment
+// later (a rejected screenshot, a wrongly recorded method) must not let the hourly
+// job re-price the invoice. A claim made after the 7th earns nothing.
+func TestAnEarlyBirdEarnedOnTimeSurvivesAReversal(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	db := store.InitDB(testDSN())
+	defer db.Close()
+	token := getAdminToken(t, r)
+	pay := func(id, status, today string) {
+		t.Helper()
+		if _, err := store.RecordInvoicePayment(db, "", nil, id, store.PaymentChange{Status: status, Method: "Cash", Today: today, Note: "x"}); err != nil {
+			t.Fatalf("%s: %v", status, err)
+		}
+	}
+	issue := func() string {
+		id := createInvoiceWithLines(t, r, token, []models.InvoiceLineItem{baseLine(), earlyBirdLine()})
+		db.Exec(`UPDATE invoices SET status='Unpaid' WHERE id=?`, id)
+		return id
+	}
+
+	onTime := issue()
+	pay(onTime, "Paid", "2026-09-05")
+	pay(onTime, "Unpaid", "2026-09-10")
+	if cutoff, _ := readEarlyBird(t, db, onTime); cutoff != "" {
+		t.Errorf("paid on the 5th then reversed: cutoff %q still armed, the hourly job would strip the early bird", cutoff)
+	}
+
+	db.Exec(`UPDATE invoices SET deleted_at=NOW() WHERE id=?`, onTime) // one monthly invoice per child
+	late := issue()
+	pay(late, "Pending Verification", "2026-09-09")
+	if cutoff, _ := readEarlyBird(t, db, late); cutoff != "2026-09-07" {
+		t.Errorf("claimed on the 9th: cutoff %q, want it left armed", cutoff)
+	}
+}

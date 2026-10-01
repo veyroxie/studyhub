@@ -94,14 +94,15 @@ func RecordInvoicePayment(ex execer, tw string, twArgs []any, invoiceID string, 
 		note = p.Note
 	}
 	guard, guardArgs := paymentGuard(p.Status, p.ByParent)
-	args := append([]any{p.Status, p.Status, p.Today, p.Status, p.Status, p.Status, p.Method, p.Status, p.Reference, note, invoiceID}, twArgs...)
+	args := append([]any{p.Status, p.Status, p.Today, p.Status, p.Status, p.Status, p.Method, p.Status, p.Reference, note, p.Status, p.Today, invoiceID}, twArgs...)
 	args = append(args, guardArgs...)
 	res, err := ex.Exec(`UPDATE invoices SET status=?,
 		paid_on=CASE WHEN ?='Paid' THEN ? WHEN ?='Unpaid' THEN NULL ELSE paid_on END,
 		receipt_no=CASE WHEN ?='Unpaid' THEN '' ELSE receipt_no END,
 		payment_method=CASE WHEN ?='Unpaid' THEN '' ELSE COALESCE(NULLIF(?,''),payment_method) END,
 		reference_no=CASE WHEN ?='Unpaid' THEN '' ELSE COALESCE(NULLIF(?,''),reference_no) END,
-		payment_note=?`+submitClause+
+		payment_note=?,
+		early_bird_cutoff=CASE WHEN ? IN ('Paid','Pending Verification') AND COALESCE(early_bird_cutoff,'')<>'' AND ? <= early_bird_cutoff THEN '' ELSE early_bird_cutoff END`+submitClause+
 		` WHERE id=? AND deleted_at IS NULL`+tw+paidGuard+guard, args...)
 	if err != nil {
 		return false, err
