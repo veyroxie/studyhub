@@ -78,7 +78,7 @@ jobs:
         run: go test -p 1 ./...
 
   frontend:
-    name: Frontend (lint)
+    name: Frontend (lint + unit tests)
     runs-on: ubuntu-latest
 
     steps:
@@ -88,7 +88,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       # No bundler — just sanity-check that every JS module parses cleanly.
       # node --check is much faster than spinning up eslint and catches the
@@ -100,6 +100,11 @@ jobs:
             node --check "$f"
           done
           echo "All JS files parse cleanly"
+
+      # The glob, not the directory: the directory form also runs the _load.mjs
+      # helper as a test and reports a MODULE_NOT_FOUND failure. TZ matches the container.
+      - name: Unit tests
+        run: TZ=Asia/Kuala_Lumpur node --test frontend/tests/unit/*.test.mjs
 
   # ── CHANGELOG check (PRs only) ──────────────────────────────────────────────
   # Reminds you to update CHANGELOG.md on every PR. Keeps the log honest.

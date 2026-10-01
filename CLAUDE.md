@@ -45,7 +45,7 @@ relying on one; drift here has already caused wrong advice.
 - Nightly DB backup to DigitalOcean Spaces (S3-compatible)
 - GitHub Actions CI: `go vet` + `go mod tidy` check + build + `go test` against a real
   Postgres service container, plus `node --check` on every frontend JS file.
-  CI does NOT run the frontend unit tests in `frontend/tests/unit/` — run those locally
+  CI also runs the frontend unit tests in `frontend/tests/unit/`; locally run them
   with `TZ=Asia/Kuala_Lumpur node --test frontend/tests/unit/*.test.mjs`.
   Use the glob, not the directory: on Node 22 the directory form treats the
   `_load.mjs` helper as a test file and reports `fail 1` with MODULE_NOT_FOUND,
