@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 
 	"studyhub/internal/core"
 	"studyhub/internal/models"
@@ -25,26 +26,54 @@ type execer interface {
 	Exec(query string, args ...any) (sql.Result, error)
 }
 
-// PayableFrom reports whether an invoice stored as `from` may take a payment change.
-func PayableFrom(from string, byParent bool) bool {
-	if from == models.InvoiceStatusDraft || from == models.InvoiceStatusVoid {
-		return false
-	}
-	// A parent claims payment on an open bill; a confirmed one is not theirs to reopen.
-	if byParent {
-		return from == models.InvoiceStatusUnpaid || from == models.InvoiceStatusOverdue ||
-			from == models.InvoiceStatusPendingVerification
-	}
-	return true
+// legacyPendingStatus predates "Pending Verification"; old rows can still be settled, nothing sets it.
+const legacyPendingStatus = "Pending"
+
+// openStatuses are issued and not yet settled. Overdue is derived from the due date, never written.
+var openStatuses = []string{
+	models.InvoiceStatusUnpaid, models.InvoiceStatusOverdue,
+	models.InvoiceStatusPendingVerification, legacyPendingStatus,
 }
 
-// Mirrors PayableFrom in SQL, so a status that moved after it was read still cannot be paid.
-func payableGuard(byParent bool) string {
+// paymentSources lists, per destination, the statuses an invoice may move from.
+// Paid only ever leaves to Unpaid: a reversal, which surrenders the receipt.
+func paymentSources(to string, byParent bool) []string {
 	if byParent {
-		return ` AND status IN ('` + models.InvoiceStatusUnpaid + `','` + models.InvoiceStatusOverdue + `','` +
-			models.InvoiceStatusPendingVerification + `')`
+		if to == models.InvoiceStatusPendingVerification {
+			return openStatuses
+		}
+		return nil
 	}
-	return ` AND status NOT IN ('` + models.InvoiceStatusDraft + `','` + models.InvoiceStatusVoid + `')`
+	switch to {
+	case models.InvoiceStatusPaid, models.InvoiceStatusUnpaid:
+		return append([]string{models.InvoiceStatusPaid}, openStatuses...)
+	case models.InvoiceStatusPendingVerification:
+		return openStatuses
+	}
+	return nil
+}
+
+// PaymentMoveAllowed reports whether an invoice stored as `from` may move to `to`.
+func PaymentMoveAllowed(from, to string, byParent bool) bool {
+	for _, s := range paymentSources(to, byParent) {
+		if s == from {
+			return true
+		}
+	}
+	return false
+}
+
+// paymentGuard mirrors PaymentMoveAllowed in SQL, so a status that moved after it was read still cannot.
+func paymentGuard(to string, byParent bool) (string, []any) {
+	sources := paymentSources(to, byParent)
+	if len(sources) == 0 {
+		return ` AND FALSE`, nil
+	}
+	args := make([]any, len(sources))
+	for i, s := range sources {
+		args[i] = s
+	}
+	return ` AND status IN (?` + strings.Repeat(`,?`, len(sources)-1) + `)`, args
 }
 
 // RecordInvoicePayment applies p to one invoice and reports whether the row changed.
@@ -64,14 +93,16 @@ func RecordInvoicePayment(ex execer, tw string, twArgs []any, invoiceID string, 
 	if p.Status == models.InvoiceStatusUnpaid {
 		note = p.Note
 	}
+	guard, guardArgs := paymentGuard(p.Status, p.ByParent)
 	args := append([]any{p.Status, p.Status, p.Today, p.Status, p.Status, p.Status, p.Method, p.Status, p.Reference, note, invoiceID}, twArgs...)
+	args = append(args, guardArgs...)
 	res, err := ex.Exec(`UPDATE invoices SET status=?,
 		paid_on=CASE WHEN ?='Paid' THEN ? WHEN ?='Unpaid' THEN NULL ELSE paid_on END,
 		receipt_no=CASE WHEN ?='Unpaid' THEN '' ELSE receipt_no END,
 		payment_method=CASE WHEN ?='Unpaid' THEN '' ELSE COALESCE(NULLIF(?,''),payment_method) END,
 		reference_no=CASE WHEN ?='Unpaid' THEN '' ELSE COALESCE(NULLIF(?,''),reference_no) END,
 		payment_note=?`+submitClause+
-		` WHERE id=? AND deleted_at IS NULL`+tw+paidGuard+payableGuard(p.ByParent), args...)
+		` WHERE id=? AND deleted_at IS NULL`+tw+paidGuard+guard, args...)
 	if err != nil {
 		return false, err
 	}

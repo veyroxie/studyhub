@@ -145,7 +145,7 @@ func applyFamilyBillPayment(ctx context.Context, db *store.DB, c *core.Claims, t
 func checkFamilyBillTargets(c *core.Claims, targets []store.FamilyBillMember, req familyBillPayReq) error {
 	byParent := c.Role == "parent"
 	for _, m := range targets {
-		if !store.PayableFrom(m.Status, byParent) {
+		if !store.PaymentMoveAllowed(m.Status, req.Status, byParent) {
 			return familyBillError{http.StatusConflict, payConflictMessage(m.Status)}
 		}
 		method, ref := firstNonEmpty(req.PaymentMethod, m.PaymentMethod), firstNonEmpty(req.ReferenceNo, m.ReferenceNo)

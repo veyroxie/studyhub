@@ -669,12 +669,11 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 			// or a bogus parent payment claim, could never be reversed: this
 			// endpoint was the only route to status, and HandleInvoiceUpdate
 			// deliberately never touches it.
+			// Overdue is derived from the due date and Pending is legacy: neither is ever set.
 			allowed := map[string]bool{
-				invoiceStatusPaid:      true,
-				"Pending Verification": true,
-				"Pending":              true,
-				"Overdue":              true,
-				invoiceStatusUnpaid:    true,
+				invoiceStatusPaid:                       true,
+				models.InvoiceStatusPendingVerification: true,
+				invoiceStatusUnpaid:                     true,
 			}
 			if !allowed[body.Status] {
 				core.RespondError(w, "invalid status", http.StatusBadRequest)
@@ -711,7 +710,7 @@ func HandleInvoicePay(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		if !store.PayableFrom(curStatus, c.Role == "parent") {
+		if !store.PaymentMoveAllowed(curStatus, newStatus, c.Role == "parent") {
 			core.RespondError(w, payConflictMessage(curStatus), http.StatusConflict)
 			return
 		}
