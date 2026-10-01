@@ -219,3 +219,19 @@ describe('rejecting a payment needs a reason the parent can read', () => {
     assert.equal(calls.puts[0].note, '');
   });
 });
+
+describe('a double click sends a payment once', () => {
+  test('a second confirm while the first is in flight sends nothing', () => {
+    const sandbox = loadSandbox(['js/utils.js', 'js/modules/billing.js']);
+    const puts = [];
+    sandbox.App.Store = { get: () => ({ students, invoices: [monthly('I1', 'STU_Z', 230, 'Pending Verification')] }) };
+    sandbox.App.Utils.hideModal = () => {};
+    sandbox.App.Utils.showToast = () => {};
+    sandbox.App.Router = { refresh() {} };
+    sandbox.App.Notifs = { refresh() {} };
+    sandbox.App.Api = { put: (path, body) => { puts.push(body); return new Promise(() => {}); }, loadSnapshot: () => Promise.resolve() };
+    sandbox.App.Billing._confirmPaid('I1', 'Cash');
+    sandbox.App.Billing._confirmPaid('I1', 'Cash');
+    assert.equal(puts.length, 1);
+  });
+});

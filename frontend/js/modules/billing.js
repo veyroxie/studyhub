@@ -809,6 +809,10 @@
   }
 
   function _bulkConfirmPaid(method) {
+    _once('bulk-paid', function() { return _bulkConfirmPaidNow(method); });
+  }
+
+  function _bulkConfirmPaidNow(method) {
     var ids = Object.keys(_selectedInv);
     if (ids.length === 0) return;
     App.Utils.hideModal(true);
@@ -817,7 +821,7 @@
     // Isolate per-invoice failures (silent so we own the messaging) so a
     // transient error on one invoice doesn't abort the batch or falsely
     // report the rest as paid.
-    Promise.all(ids.map(function(id) {
+    return Promise.all(ids.map(function(id) {
       return App.Api.put('/api/invoices/' + id + '/pay', { status: 'Paid', paymentMethod: method }, { silent: true })
         .then(function() { return true; })
         .catch(function() { return false; });
@@ -1099,22 +1103,24 @@
     if (!payable) return;
     var payload = { status: 'Paid', paymentMethod: method };
     if (refNo) payload.referenceNo = refNo;
-    _submitPayment(payable, payload, proofPath)
-      .then(function() {
-        return App.Api.loadSnapshot();
-      }).then(function() {
-        _payableStudentIds(payable).forEach(_checkReferralMilestoneClient);
-        App.Utils.hideModal(true);
-        App.Utils.showToast('Marked paid · ' + method, 'success');
-        App.Notifs.refresh();
-        App.Router.refresh();
-      }).catch(function() {
-        // If this came from the proof-upload flow, its submit button was
-        // disabled and relabelled "Uploading..." — re-enable it so the admin
-        // can retry instead of being stuck. App.Api already toasted the error.
-        var btn = document.getElementById('admin-proof-submit-btn');
-        if (btn) { btn.disabled = false; btn.textContent = 'Confirm Payment'; }
-      });
+    _once(invId, function() {
+      return _submitPayment(payable, payload, proofPath)
+        .then(function() {
+          return App.Api.loadSnapshot();
+        }).then(function() {
+          _payableStudentIds(payable).forEach(_checkReferralMilestoneClient);
+          App.Utils.hideModal(true);
+          App.Utils.showToast('Marked paid · ' + method, 'success');
+          App.Notifs.refresh();
+          App.Router.refresh();
+        }).catch(function() {
+          // If this came from the proof-upload flow, its submit button was
+          // disabled and relabelled "Uploading..." — re-enable it so the admin
+          // can retry instead of being stuck. App.Api already toasted the error.
+          var btn = document.getElementById('admin-proof-submit-btn');
+          if (btn) { btn.disabled = false; btn.textContent = 'Confirm Payment'; }
+        });
+    });
     // No local fallback: when the server rejects (e.g. missing reference
     // number for non-cash), App.Api auto-toasts the error and we leave the
     // status untouched. The previous fallback wrote Paid locally even on a
@@ -1188,12 +1194,14 @@
       return;
     }
     App.Utils.hideModal(true);
-    _submitPayment(payable, { status: 'Unpaid', note: note })
-      .then(function() { return App.Api.loadSnapshot(); })
-      .then(function() {
-        App.Utils.showToast('Invoice marked as unpaid', 'info');
-        App.Router.refresh();
-      });
+    _once(invoiceId, function() {
+      return _submitPayment(payable, { status: 'Unpaid', note: note })
+        .then(function() { return App.Api.loadSnapshot(); })
+        .then(function() {
+          App.Utils.showToast('Invoice marked as unpaid', 'info');
+          App.Router.refresh();
+        });
+    });
   }
 
   // payKey is an invoice id, or FAMILY_BILL_KEY + a member id for a whole family bill.
@@ -1374,21 +1382,35 @@
       paymentMethod: method
     };
     if (refNo) payload.referenceNo = refNo;
-    _submitPayment(payable, payload, proofPath).then(function() {
-      return App.Api.loadSnapshot();
-    }).then(function() {
-      App.Utils.showToast('Payment submitted — admin will verify shortly', 'success');
-      App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
-      App.Router.refresh();
-    }).catch(function() {
-      // Honest failure: never fake a submitted state locally — the admin
-      // would never see it and the parent would believe it went through.
-      App.Utils.showToast('Payment submission failed — please check your connection and try again', 'error');
+    _once(invId, function() {
+      return _submitPayment(payable, payload, proofPath).then(function() {
+        return App.Api.loadSnapshot();
+      }).then(function() {
+        App.Utils.showToast('Payment submitted — admin will verify shortly', 'success');
+        App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
+        App.Router.refresh();
+      }).catch(function() {
+        // Honest failure: never fake a submitted state locally — the admin
+        // would never see it and the parent would believe it went through.
+        App.Utils.showToast('Payment submission failed — please check your connection and try again', 'error');
+      });
     });
   }
 
   // One call for either payable. A bill carries the invoices and total it showed, so a
   // bill that changed meanwhile is refused (409) rather than paid at the wrong figure.
+  // One money action per key at a time: a second click while the first is in flight does nothing.
+  // run must return its whole promise chain, errors already handled or toasted by App.Api.
+  var _inFlight = {};
+  function _once(key, run) {
+    if (_inFlight[key]) return;
+    _inFlight[key] = true;
+    // The executor runs now, so the request leaves on the click itself.
+    new Promise(function(resolve) { resolve(run()); })
+      .catch(function(err) { console.error('billing action failed', key, err); })
+      .then(function() { delete _inFlight[key]; });
+  }
+
   function _submitPayment(payable, payload, proofPath) {
     if (!payable.isBill) return App.Api.put('/api/invoices/' + payable.inv.id + '/pay', payload);
     return App.Api.post('/api/family-bills/pay', Object.assign({}, payload, {
@@ -1489,15 +1511,17 @@
     }
     var payload = { status: 'Paid' };
     if (refNo) payload.referenceNo = refNo;
-    _submitPayment(payable, payload)
-      .then(function() { return App.Api.loadSnapshot(); })
-      .then(function() {
-        App.Utils.hideModal(true);
-        App.Utils.showToast('Payment verified — invoice marked as Paid', 'success');
-        App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
-        App.Router.refresh();
-      })
-      .catch(function() { /* App.Api already toasted; keep the modal open for a retry */ });
+    _once(invId, function() {
+      return _submitPayment(payable, payload)
+        .then(function() { return App.Api.loadSnapshot(); })
+        .then(function() {
+          App.Utils.hideModal(true);
+          App.Utils.showToast('Payment verified — invoice marked as Paid', 'success');
+          App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
+          App.Router.refresh();
+        })
+        .catch(function() { /* App.Api already toasted; keep the modal open for a retry */ });
+    });
   }
 
   // ── WhatsApp ──────────────────────────────────────────────────────────────
@@ -1764,7 +1788,11 @@
     }
   }
 
-  async function _issueMonth() {
+  function _issueMonth() {
+    _once('issue-month', _issueMonthNow);
+  }
+
+  async function _issueMonthNow() {
     var ok = await App.Utils.showConfirm({
       title: 'Issue every draft?',
       message: 'Each one gets an invoice number. Each parent gets one email covering all of their children. An issued invoice cannot be edited — only reissued.',
