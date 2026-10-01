@@ -44,7 +44,7 @@
     if (isClient || isTeacher) _studentsTab = 'students';
 
     let displayStudents = students;
-    if (isClient && App.clientParent) {
+    if (isClient) {
       displayStudents = App.Utils.childrenOf(students, App.clientParent)
         .filter(function(s) { return s.status !== 'Inactive'; });
     }

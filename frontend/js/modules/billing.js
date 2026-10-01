@@ -533,7 +533,7 @@
     if (isClient) _loadPayDetails();
 
     let displayInvoices = invoices;
-    if (isClient && App.clientParent) {
+    if (isClient) {
       const myStudentIds = App.Utils.childrenOf(students, App.clientParent).map(function(s) { return s.id; });
       displayInvoices = invoices.filter(function(inv) { return myStudentIds.indexOf(inv.studentId) > -1; });
     }

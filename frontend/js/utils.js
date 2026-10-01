@@ -426,6 +426,17 @@
       return s && s.fullName ? s.fullName : '';
     },
 
+    // parentsOf maps each parent email to a display name, for the preview pickers.
+    // A student with no email has no parent: listing '' made it the default pick.
+    parentsOf(students) {
+      const out = {};
+      (students || []).forEach(function(s) {
+        const email = (s.contact || '').trim();
+        if (email && !out[email]) out[email] = s.parentName || '';
+      });
+      return out;
+    },
+
     childrenOf(students, parentEmail) {
       if (!parentEmail) return [];  // guard: blank must not match blank
       return (students || []).filter(function(s) { return s.contact === parentEmail; });

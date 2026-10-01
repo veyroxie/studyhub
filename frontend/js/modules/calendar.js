@@ -67,7 +67,7 @@
 
     // Parent filter: only show classes the parent's children are enrolled in
     let enrolledClassIds = null;
-    if (isClient && App.clientParent) {
+    if (isClient) {
       const myKids = App.Utils.childrenOf(students, App.clientParent);
       enrolledClassIds = {};
       myKids.forEach(function(s) {
@@ -380,7 +380,7 @@
       var ccRow = cancelled.find(function(cc) { return cc.classId === c.id && cc.date === dateStr; });
       var isCancelled = !!ccRow;
       var childTags = '';
-      if (isClient && App.clientParent) {
+      if (isClient) {
         var kids = App.Utils.childrenOf(students, App.clientParent).filter(function(st) { return (st.enrolledClasses || []).indexOf(c.id) > -1; });
         if (kids.length > 0) childTags = '<span style="font-size:0.62rem;font-weight:700;color:#92400e;margin-left:0.35rem">(' + kids.map(function(st) { return App.Utils.esc(st.firstName); }).join(', ') + ')</span>';
       }

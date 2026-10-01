@@ -530,8 +530,7 @@
     const parentSelect = document.getElementById('parent-select');
     if (parentSelect) {
       const { students } = App.Store.get();
-      const uniqueParents = {};
-      students.forEach(function(s) { uniqueParents[s.contact] = s.parentName; });
+      const uniqueParents = App.Utils.parentsOf(students);
       parentSelect.innerHTML = Object.keys(uniqueParents).map(function(email) {
         return '<option value="' + App.Utils.esc(email) + '">' + App.Utils.esc(uniqueParents[email] || email) + '</option>';
       }).join('');
@@ -803,8 +802,7 @@
       var tb = document.getElementById('dev-toolbar');
       if (tb) tb.style.display = '';
       const { students, staff } = App.Store.get();
-      const uniqueParents = {};
-      students.forEach(function(s) { uniqueParents[s.contact] = s.parentName; });
+      const uniqueParents = App.Utils.parentsOf(students);
 
       const devSel = document.getElementById('dev-parent-select');
       if (devSel) {

@@ -17,7 +17,7 @@
 
     // Build parent's child class IDs for targetClassIds filtering
     var parentClassIds = null;
-    if (isClient && App.clientParent) {
+    if (isClient) {
       var { students } = App.Store.get();
       parentClassIds = {};
       App.Utils.childrenOf(students, App.clientParent).forEach(function(s) {
