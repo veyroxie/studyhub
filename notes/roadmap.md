@@ -11,7 +11,7 @@ Level 1–3/4–6 = 240/260/480/520); class feedback → **4-monthly progress re
 - Invoice auto-issued; receipt only after payment; PDF download
 - Self-study: round-up RM10/hr + credit-back the unused slice
 - Pricing matrix + Settings screen; non-academic category removed (workshops kept)
-- RLS enforcing via non-superuser role; alerts; deploy/harden tooling
+- Alerts; deploy/harden tooling. (RLS is NOT enforcing: policies exist but the app connects as a superuser and `store/rls.go` is a passthrough. See `notes/rls-activation.md`.)
 
 ## Batch A — quick UX wins
 - Students: clickable stat-cards → filter; remove View button → clickable rows;
