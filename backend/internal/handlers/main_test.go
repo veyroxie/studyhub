@@ -36,7 +36,7 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 
 	// Clean tables before each test to ensure isolation
 	tables := []string{
-		"replacement_credits", "audit_logs", "payroll", "performance_reviews", "self_study_sessions",
+		"absence_reports", "replacement_credits", "audit_logs", "payroll", "performance_reviews", "self_study_sessions",
 		"cancelled_classes", "feedback", "attendance", "invoices",
 		"announcements", "registrations", "students", "classes",
 		"staff", "workshops", "subjects", "holidays", "users",
@@ -66,6 +66,9 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		// the UI, or the tests prove nothing about the gate.
 		r.Use(auth.RequireSetupComplete(db))
 		r.Get("/api/snapshot", HandleSnapshot(db))
+		r.Get("/api/absence-reports/sessions", HandleAbsenceSessions(db))
+		r.Post("/api/absence-reports", HandleCreateAbsenceReport(db))
+		r.Post("/api/absence-reports/{id}/decision", HandleDecideAbsenceReport(db))
 		r.Get("/api/students", HandleStudents(db))
 		r.Post("/api/students", HandleStudents(db))
 		r.Put("/api/students/{id}", HandleStudent(db))

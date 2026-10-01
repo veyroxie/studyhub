@@ -19,7 +19,7 @@ var ErrEmailTaken = errors.New("another account already uses that email")
 // which are history. Every session ends, because the old email is in its token.
 func MoveAccountEmail(tx *Tx, userID, tenantID int, oldEmail, newEmail string) error {
 	if _, err := tx.Exec(`UPDATE users SET email=?, sessions_invalid_before=NOW() WHERE id=?`, newEmail, userID); err != nil {
-		if isUniqueViolation(err) {
+		if IsUniqueViolation(err) {
 			return ErrEmailTaken
 		}
 		return err
@@ -43,8 +43,8 @@ func MoveAccountEmail(tx *Tx, userID, tenantID int, oldEmail, newEmail string) e
 	return nil
 }
 
-// 23505 is Postgres's unique_violation.
-func isUniqueViolation(err error) bool {
+// IsUniqueViolation: 23505 is Postgres's unique_violation.
+func IsUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

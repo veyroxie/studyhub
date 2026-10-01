@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -198,11 +199,9 @@ func applyCancelledClassSideEffects(db *store.DB, c *core.Claims, cc models.Canc
 	}
 	note := "Class cancelled on " + cc.Date
 	for _, sid := range studentIDs {
-		rcID := core.GenerateID("RC")
-		if _, err := db.Exec(
-			`INSERT INTO replacement_credits(id,tenant_id,student_id,type,minutes,note,class_id,date,created_by,category) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-			rcID, tid, sid, "earned", credits, note, cc.ClassID, cc.Date, actor, "class",
-		); err != nil {
+		// A student already credited for this session (an approved absence report) is not paid twice.
+		if _, _, err := grantSessionCreditTx(context.Background(), db, store.SessionCredit{TenantID: tid, StudentID: sid, ClassID: cc.ClassID,
+			Date: cc.Date, Credits: credits, Note: note, CreatedBy: actor}); err != nil {
 			core.Logger.Error("cancellation credit insert failed", "err", err, "student_id", sid)
 		}
 	}

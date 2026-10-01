@@ -200,6 +200,9 @@ func Build(db *store.DB) http.Handler {
 		})
 
 		r.Post("/api/family-bills/pay", handlers.HandleFamilyBillPay(db))
+		r.Get("/api/absence-reports/sessions", handlers.HandleAbsenceSessions(db))
+		r.Post("/api/absence-reports", handlers.HandleCreateAbsenceReport(db))
+		r.Post("/api/absence-reports/{id}/decision", handlers.HandleDecideAbsenceReport(db))
 		r.Get("/api/me/hours", handlers.HandleMyHours(db))
 		r.Get("/api/payments/details", handlers.HandlePaymentDetails(db))
 		r.Post("/api/family-bills/{invoiceId}/email", handlers.HandleFamilyBillEmail(db))

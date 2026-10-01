@@ -259,6 +259,7 @@ func HandleSnapshot(db *store.DB) http.HandlerFunc {
 		run(func() { snap.FeedbackReplies = listFeedbackReplies(db, c) })
 		run(func() { snap.ReferralRewards = listReferralRewards(db, c) })
 		run(func() { snap.ProgressReports = listProgressReports(db, c) })
+		run(func() { snap.AbsenceReports = listAbsenceReports(db, c) })
 		if isAdmin {
 			run(func() { snap.Registrations = listRegistrations(db, c) })
 			run(func() { snap.PendingUsers = listPendingUsers(db, c) })

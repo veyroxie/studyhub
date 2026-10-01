@@ -64,6 +64,7 @@ func HandleDSARExport(db *store.DB) http.HandlerFunc {
 			out["attendance"] = listAttendance(db, c)
 			out["feedback"] = dsarParentFeedback(db, c)
 			out["progressReports"] = dsarParentProgressReports(db, c)
+			out["absenceReports"] = listAbsenceReports(db, c)
 			out["replacementCredits"] = listReplacementCredits(db, c)
 			out["referrals"] = listReferralRewards(db, c)
 		case "teacher":

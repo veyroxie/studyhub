@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Invoice line-item kinds. "item" is a positive charge; "discount" is a
@@ -704,6 +705,7 @@ type Snapshot struct {
 	ReferralRewards    []ReferralReward    `json:"referralRewards"`
 	PendingUsers       []PendingUser       `json:"pendingUsers,omitempty"`
 	ProgressReports    []ProgressReport    `json:"progressReports"`
+	AbsenceReports     []AbsenceReport     `json:"absenceReports"`
 }
 
 // PendingUser is a minimal projection of users with status=pending_verification,
@@ -713,4 +715,32 @@ type PendingUser struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
 	Role  string `json:"role"`
+}
+
+// Absence report statuses (0071). Pending waits for an admin or the class's
+// teacher; Late was told under 3 hours before and never earns a credit.
+const (
+	AbsencePending  = "pending"
+	AbsenceApproved = "approved"
+	AbsenceDeclined = "declined"
+	AbsenceLate     = "late"
+)
+
+// AbsenceReport is a parent telling the centre a child will miss one session.
+type AbsenceReport struct {
+	ID           string     `json:"id"`
+	StudentID    string     `json:"studentId"`
+	ClassID      string     `json:"classId"`
+	SessionDate  string     `json:"sessionDate"`
+	SessionTime  string     `json:"sessionTime"`
+	SessionEnd   string     `json:"sessionEnd"`
+	ReportedAt   time.Time  `json:"reportedAt"`
+	ReportedBy   string     `json:"reportedBy"`
+	Reason       string     `json:"reason"`
+	InTime       bool       `json:"inTime"`
+	Status       string     `json:"status"`
+	DecidedBy    string     `json:"decidedBy,omitempty"`
+	DecidedAt    *time.Time `json:"decidedAt,omitempty"`
+	DecisionNote string     `json:"decisionNote,omitempty"`
+	CreditID     string     `json:"creditId,omitempty"`
 }

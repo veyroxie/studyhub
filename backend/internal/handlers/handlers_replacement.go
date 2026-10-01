@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -180,6 +181,21 @@ func HandleCreateReplacementCredit(db *store.DB) http.HandlerFunc {
 				core.RespondError(w, "server error", 500)
 				return
 			}
+		} else if rc.Category == "class" && rc.ClassID != "" {
+			// A credit for a missed session goes through the one-per-session rule, so a
+			// teacher's "Absent + credit" cannot pay again for an approved absence report.
+			id, granted, err := grantSessionCreditTx(r.Context(), db, store.SessionCredit{TenantID: tid, StudentID: rc.StudentID, ClassID: rc.ClassID,
+				Date: rc.Date, Credits: rc.Minutes, Note: rc.Note, CreatedBy: rc.CreatedBy})
+			if err != nil {
+				core.LogFromReq(r).Error("session credit grant failed", "err", err, "student_id", rc.StudentID)
+				core.RespondError(w, "server error", 500)
+				return
+			}
+			if !granted {
+				core.RespondError(w, "this session already earned a credit for this student", http.StatusConflict)
+				return
+			}
+			rc.ID = id
 		} else {
 			_, err := db.Exec(`INSERT INTO replacement_credits(id,tenant_id,student_id,type,minutes,note,class_id,date,created_by,category) VALUES(?,?,?,?,?,?,?,?,?,?)`,
 				rc.ID, tid, rc.StudentID, rc.Type, rc.Minutes, rc.Note, rc.ClassID, rc.Date, rc.CreatedBy, rc.Category)
@@ -252,4 +268,18 @@ func HandleReplacementBalance(db *store.DB) http.HandlerFunc {
 		})
 
 	}
+}
+
+// grantSessionCreditTx runs store.GrantSessionCredit in a transaction of its own.
+func grantSessionCreditTx(ctx context.Context, db *store.DB, g store.SessionCredit) (string, bool, error) {
+	tx, err := db.BeginTx(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	defer tx.Rollback()
+	id, granted, err := store.GrantSessionCredit(tx, g)
+	if err != nil {
+		return "", false, err
+	}
+	return id, granted, tx.Commit()
 }
