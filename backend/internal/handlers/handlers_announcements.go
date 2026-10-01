@@ -110,6 +110,10 @@ func HandleAnnouncements(db *store.DB) http.HandlerFunc {
 			if !core.IsAdminRole(c) {
 				a.Pinned, a.PinRequested = false, false
 			}
+			// The board is for everyone, so a pinned policy reaches every role and every class.
+			if a.Pinned {
+				a.Audience, a.TargetClassIDs = models.AudienceAll, nil
+			}
 			if a.Category == "" {
 				a.Category = models.AnnouncementCategoryNotice
 			}
@@ -191,8 +195,12 @@ func HandleAnnouncementUpdate(db *store.DB) http.HandlerFunc {
 		// updated_on moves, created_on does not: for a policy the amendment
 		// date is what tells a parent whether they have read the current text.
 		tw, twArgs := store.ScopeTenant(c, "")
-		args := append([]any{body.Title, body.Message, body.Type, body.ArchiveOn, category, pinned, core.Today(), id}, twArgs...)
-		res, err := db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=?,category=COALESCE(?,category),pinned=COALESCE(?,pinned),pin_requested=FALSE,updated_on=? WHERE id=?`+tw, args...)
+		// A post pinned to the board is for everyone, as on create.
+		args := append([]any{body.Title, body.Message, body.Type, body.ArchiveOn, category, pinned, pinned, models.AudienceAll, pinned, core.Today(), id}, twArgs...)
+		res, err := db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=?,category=COALESCE(?,category),pinned=COALESCE(?,pinned),
+			audience=CASE WHEN COALESCE(?::boolean,pinned) THEN ? ELSE audience END,
+			target_class_ids=CASE WHEN COALESCE(?::boolean,pinned) THEN '[]' ELSE target_class_ids END,
+			pin_requested=FALSE,updated_on=? WHERE id=?`+tw, args...)
 		if err != nil {
 			core.RespondError(w, "could not update announcement", 500)
 			return

@@ -78,3 +78,29 @@ func TestOnlyAnAdminCanPin(t *testing.T) {
 		t.Errorf("a teacher editing the board: %d, want 403", code)
 	}
 }
+
+// Posted the way the form posts it: an admin picks "All Staff" and ticks the board box.
+func TestAPolicyPostedFromTheFormReachesEveryRole(t *testing.T) {
+	r, cleanup := setupTestApp(t)
+	defer cleanup()
+	admin := getAdminToken(t, r)
+	w := doRequest(r, "POST", "/api/announcements", admin, map[string]any{"title": "Make-up classes", "message": "Within 30 days", "audience": "staff", "type": "Notice", "pinned": true, "category": "policy"})
+	var created models.Announcement
+	json.NewDecoder(w.Body).Decode(&created)
+	for role, token := range map[string]string{"teacher": getTeacherToken(t, r), "parent": getParentToken(t, r)} {
+		store.SnapshotCacheInvalidateAll()
+		if snapshotAnnouncement(t, doRequest(r, "GET", "/api/snapshot", token, nil).Result(), created.ID) == nil {
+			t.Errorf("the %s never sees the board policy", role)
+		}
+	}
+
+	// Pinning an existing staff-only notice from the edit form opens it to everyone too.
+	w = doRequest(r, "POST", "/api/announcements", admin, map[string]any{"title": "Staff only", "message": "m", "audience": "staff", "type": "Notice"})
+	var notice models.Announcement
+	json.NewDecoder(w.Body).Decode(&notice)
+	doRequest(r, "PUT", "/api/announcements/"+notice.ID, admin, map[string]any{"title": "Staff only", "message": "m", "type": "Notice", "pinned": true, "category": "policy"})
+	store.SnapshotCacheInvalidateAll()
+	if snapshotAnnouncement(t, doRequest(r, "GET", "/api/snapshot", getParentToken(t, r), nil).Result(), notice.ID) == nil {
+		t.Error("a notice pinned from the edit form stayed hidden from parents")
+	}
+}

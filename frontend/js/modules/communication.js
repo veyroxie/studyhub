@@ -277,7 +277,7 @@
   function _boardCheckboxHtml(checked) {
     return '<label style="display:flex;gap:0.6rem;align-items:flex-start;font-size:0.85rem;color:#374151;cursor:pointer">'
       + '<input type="checkbox" name="boardPolicy"' + (checked ? ' checked' : '') + ' style="margin-top:0.2rem">'
-      + '<span><strong>Bulletin board policy</strong><br><span style="font-size:0.75rem;color:#94a3b8">Stays on everyone\'s dashboard until you untick it. Use it for rules parents agree to, like late pickup or make-up classes.</span></span>'
+      + '<span><strong>Bulletin board policy</strong><br><span style="font-size:0.75rem;color:#94a3b8">Every parent, teacher and admin sees it on their dashboard until you untick it, whatever the audience. Use it for rules parents agree to, like late pickup or make-up classes.</span></span>'
       + '</label>';
   }
 
