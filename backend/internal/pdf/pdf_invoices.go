@@ -23,6 +23,7 @@ import (
 // to know about the database.
 type invoicePDFData struct {
 	InvoiceID       string
+	InvoiceNo       string // issued number; blank on a draft
 	ReceiptNo       string
 	Description     string
 	StudentName     string
@@ -43,6 +44,11 @@ type invoicePDFData struct {
 	LogoPath        string
 }
 
+// Number is what the parent was quoted: the issued number, or the id while still a draft.
+func (d invoicePDFData) Number() string {
+	return firstNonBlank(d.InvoiceNo, d.InvoiceID)
+}
+
 func loadInvoicePDFData(db *store.DB, c *core.Claims, invoiceID string) (invoicePDFData, error) {
 	var d invoicePDFData
 	var paidOn sql.NullString
@@ -50,7 +56,7 @@ func loadInvoicePDFData(db *store.DB, c *core.Claims, invoiceID string) (invoice
 	tw, twArgs := store.ScopeTenant(c, "i")
 	args := append([]any{invoiceID}, twArgs...)
 	err := db.QueryRow(`
-		SELECT i.id, COALESCE(i.receipt_no,''), i.description, i.amount, i.due_date, i.created_on, i.paid_on, i.status,
+		SELECT i.id, COALESCE(i.invoice_no,''), COALESCE(i.receipt_no,''), i.description, i.amount, i.due_date, i.created_on, i.paid_on, i.status,
 		       COALESCE(i.payment_method,''), COALESCE(i.reference_no,''),
 		       COALESCE(i.discount_pct,0), COALESCE(i.sibling_discount,0), COALESCE(i.referral_credit,0),
 		       COALESCE(i.line_items,'[]'),
@@ -60,7 +66,7 @@ func loadInvoicePDFData(db *store.DB, c *core.Claims, invoiceID string) (invoice
 		JOIN students s ON s.id = i.student_id
 		WHERE i.id = ? AND i.deleted_at IS NULL`+tw,
 		args...).Scan(
-		&d.InvoiceID, &d.ReceiptNo, &d.Description, &d.Amount, &d.DueDate, &d.CreatedOn, &paidOn, &d.Status,
+		&d.InvoiceID, &d.InvoiceNo, &d.ReceiptNo, &d.Description, &d.Amount, &d.DueDate, &d.CreatedOn, &paidOn, &d.Status,
 		&d.PaymentMethod, &d.ReferenceNo,
 		&d.DiscountPct, &d.SiblingDiscount, &d.ReferralCredit,
 		&lineItems,
@@ -338,7 +344,7 @@ func renderInfoRows(pdf *gofpdf.Fpdf, d invoicePDFData, paid bool) {
 	if paid && d.ReceiptNo != "" {
 		infoRow(pdf, "Receipt number", d.ReceiptNo)
 	}
-	infoRow(pdf, "Invoice number", d.InvoiceID)
+	infoRow(pdf, "Invoice number", d.Number())
 	infoRow(pdf, "Due date", fmtDMY(d.DueDate))
 	infoRow(pdf, "Invoice date", fmtDMY(d.CreatedOn))
 	if d.ReferenceNo != "" {
@@ -694,9 +700,9 @@ func HandleInvoicePDF(db *store.DB, receipt bool) http.HandlerFunc {
 			return
 		}
 
-		filename := "invoice-" + d.InvoiceID + ".pdf"
+		filename := "invoice-" + d.Number() + ".pdf"
 		if receipt {
-			filename = "receipt-" + d.InvoiceID + ".pdf"
+			filename = "receipt-" + d.Number() + ".pdf"
 		}
 		w.Header().Set("Content-Type", "application/pdf")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)

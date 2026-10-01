@@ -108,7 +108,6 @@ func loadFamilyBillPDFData(db *store.DB, c *core.Claims, invoiceID string) (fami
 		if err != nil {
 			return f, http.StatusNotFound, "family bill not found"
 		}
-		d.InvoiceID = firstNonBlank(m.InvoiceNo, m.InvoiceID)
 		f.Children = append(f.Children, d)
 		f.ParentName = firstNonBlank(f.ParentName, d.ParentName)
 	}
@@ -167,6 +166,7 @@ func translateFamilyBillData(f familyBillPDFData, tr func(string) string) family
 	for i, c := range f.Children {
 		c = translateInvoiceData(c, tr)
 		c.InvoiceID = tr(c.InvoiceID)
+		c.InvoiceNo = tr(c.InvoiceNo)
 		children[i] = c
 	}
 	f.Children = children
@@ -228,7 +228,7 @@ func renderFamilyChild(pdf *gofpdf.Fpdf, d invoicePDFData) {
 	if len(items) == 0 {
 		items = synthesizeLineItems(d)
 	}
-	sectionHeading(pdf, joinNonEmpty([]string{d.StudentName, "Invoice " + d.InvoiceID}, " - "))
+	sectionHeading(pdf, joinNonEmpty([]string{d.StudentName, "Invoice " + d.Number()}, " - "))
 	renderItemsTable(pdf, items)
 	for _, it := range items {
 		if it.Kind == models.LineItemKindDiscount && it.Amount < 0 {
