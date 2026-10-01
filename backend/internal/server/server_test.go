@@ -1,7 +1,10 @@
 package server
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"studyhub/internal/core"
@@ -36,5 +39,25 @@ func TestProductionRouterAssembles(t *testing.T) {
 	}()
 	if h := Build(db); h == nil {
 		t.Fatal("server.Build returned no handler")
+	}
+}
+
+// Technical endpoints on the real router: anonymous callers learn nothing.
+func TestTechnicalEndpointsRefuseAnonymousCallers(t *testing.T) {
+	core.InitLogger()
+	db := store.InitDB(testDSN())
+	defer db.Close()
+	h := Build(db)
+	for _, path := range []string{"/metrics", "/api/dev/health", "/api/dev/audit-logs", "/api/dev/failures"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("GET %s anonymously: %d, want 401", path, w.Code)
+		}
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/health", nil))
+	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), "db_pool") {
+		t.Errorf("public health: %d %s", w.Code, w.Body.String())
 	}
 }

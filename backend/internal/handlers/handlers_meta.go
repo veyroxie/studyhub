@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"runtime"
 	"studyhub/internal/core"
 	"studyhub/internal/store"
 	"time"
@@ -13,68 +12,22 @@ import (
 // that nothing ever wrote, so /api/health reported "dev" on every production
 // build and could not answer "is my fix live?".
 
-// handleHealth returns a JSON status payload usable by uptime monitors and
-// container orchestrators. Probes:
-//   - DB liveness (Ping) AND a real round-trip query for latency
-//   - DB connection pool saturation (in-use / open / max)
-//   - Email queue depth + oldest stuck row
-//   - Process uptime + goroutine count
-//
-// The HTTP status is 503 only when something is genuinely broken (DB down
-// or queue critically backed up); soft signals (latency, modest queue
-// depth) come back in the JSON so dashboards can decide.
-//
-// Public route (no auth) — that's intentional. Monitoring agents shouldn't
-// need credentials.
+// HandleHealth is the public liveness answer for the Docker healthcheck, make verify and
+// the deploy workflow: ok, db and uptime only. 503 when the database is unreachable.
+// Pool, queue and runtime details are on the developer page (/api/dev/health); they
+// told anyone on the internet how busy and how configured the server was.
 func HandleHealth(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		dbStatus := "ok"
-		var dbLatencyMs float64
-		t := time.Now()
-		dbErr := db.Ping()
-		dbLatencyMs = float64(time.Since(t).Microseconds()) / 1000.0
-		if dbErr != nil {
-			dbStatus = "down"
-		}
-
-		// Real round-trip query — Ping might just check the pool without
-		// touching Postgres. A SELECT 1 forces an actual query.
 		var one int
-		queryT := time.Now()
-		queryErr := db.QueryRow(`SELECT 1`).Scan(&one)
-		queryLatencyMs := float64(time.Since(queryT).Microseconds()) / 1000.0
-		if queryErr != nil {
-			dbStatus = "query_failed"
-		}
-
-		stats := db.DB.Stats()
-
-		emailQ := store.EmailQueueSummary(db)
-
-		ok := dbErr == nil && queryErr == nil
-		if !ok {
+		if err := db.QueryRow(`SELECT 1`).Scan(&one); err != nil {
+			dbStatus = "down"
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
-
 		core.Respond(w, map[string]any{
-			"ok":         ok,
+			"ok":         dbStatus == "ok",
 			"db":         dbStatus,
-			"version":    core.BuildVersion,
-			"go_version": runtime.Version(),
-			"env":        core.AppEnv(),
 			"uptime_sec": int(time.Since(core.BootTime).Seconds()),
-			"db_pool": map[string]any{
-				"open":          stats.OpenConnections,
-				"in_use":        stats.InUse,
-				"idle":          stats.Idle,
-				"wait_count":    stats.WaitCount,
-				"wait_duration": stats.WaitDuration.String(),
-			},
-			"db_latency_ms":    dbLatencyMs,
-			"query_latency_ms": queryLatencyMs,
-			"goroutines":       runtime.NumGoroutine(),
-			"email_queue":      emailQ,
 		})
-
 	}
 }

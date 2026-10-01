@@ -92,7 +92,9 @@
       ['Email', _yesNo(h.emailLive, 'sent for real', 'logged only, nothing leaves')],
       ['Email reaches', h.emailOnlyTo > 0 ? _yesNo(false, '', h.emailOnlyTo + ' allowed address(es) only') : _yesNo(true, 'everyone', '')],
       ['Email queue', q.pending + ' waiting · ' + q.sent24h + ' sent today · ' + q.failed + ' failed'],
-      ['Online payments', _yesNo(h.onlinePayments, 'configured', 'not configured')]
+      ['Online payments', _yesNo(h.onlinePayments, 'configured', 'not configured')],
+      ['Runtime', App.Utils.esc(h.goVersion || '') + ' · ' + (h.goroutines || 0) + ' goroutines'],
+      ['DB pool', h.dbPool ? h.dbPool.inUse + ' in use of ' + h.dbPool.open + ' open · ' + h.dbPool.waitCount + ' waits' : '-']
     ];
     return '<dl style="display:grid;grid-template-columns:minmax(8rem,auto) 1fr;gap:0.5rem 1rem;font-size:0.82rem;margin:0">'
       + rows.map(function(r) { return '<dt style="color:#64748b">' + r[0] + '</dt><dd style="margin:0;color:#111">' + r[1] + '</dd>'; }).join('')

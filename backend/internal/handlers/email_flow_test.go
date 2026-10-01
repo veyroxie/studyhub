@@ -107,6 +107,15 @@ func TestHealth_OK(t *testing.T) {
 	if body["db"] != "ok" {
 		t.Fatalf("expected db=ok, got %v", body["db"])
 	}
+	// make verify reads uptime_sec; the internals moved to the developer page.
+	if _, ok := body["uptime_sec"]; !ok {
+		t.Error("uptime_sec is what make verify parses")
+	}
+	for _, internal := range []string{"db_pool", "goroutines", "email_queue", "go_version", "env"} {
+		if _, ok := body[internal]; ok {
+			t.Errorf("public health still reveals %s", internal)
+		}
+	}
 }
 
 // ── Parent self-serve registration ──────────────────────────────────────────

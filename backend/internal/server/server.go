@@ -107,7 +107,6 @@ func Build(db *store.DB) http.Handler {
 
 	// ── Public routes (no auth needed) ───────────────────────────────────────
 	r.Get("/api/health", handlers.HandleHealth(db))
-	r.Get("/metrics", core.HandleMetrics)
 	// OpenAPI spec — served from the binary's embedded copy so the schema
 	// always matches the running version of the API.
 	r.Get("/api/openapi.yaml", handlers.HandleOpenAPI)
@@ -378,6 +377,8 @@ func Build(db *store.DB) http.Handler {
 			r.Get("/failures", handlers.HandleDevFailures(db))
 			r.Get("/health", handlers.HandleDevHealth(db))
 		})
+		// Per-route request counts and latencies: technical, so developer-only like /api/dev.
+		r.With(auth.RequireDeveloper).Get("/metrics", core.HandleMetrics)
 	})
 
 	// ── Serve frontend static files ───────────────────────────────────────────

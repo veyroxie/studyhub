@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -252,6 +253,14 @@ func HandleDevHealth(db *store.DB) http.HandlerFunc {
 			"emailOnlyTo":    core.OutboundRestrictedTo(),
 			"onlinePayments": onlinePaymentReady(),
 			"emailQueue":     store.EmailQueueSummary(db),
+			"goVersion":      runtime.Version(),
+			"goroutines":     runtime.NumGoroutine(),
+			"dbPool":         devPoolStats(db),
 		})
 	}
+}
+
+func devPoolStats(db *store.DB) map[string]any {
+	st := db.DB.Stats()
+	return map[string]any{"open": st.OpenConnections, "inUse": st.InUse, "idle": st.Idle, "waitCount": st.WaitCount}
 }
