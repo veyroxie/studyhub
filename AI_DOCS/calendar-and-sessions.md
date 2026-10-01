@@ -145,6 +145,40 @@ which is why the under-grant surfaced as the centre's "insufficient credit" repo
 flow no longer posts its own announcement; the backend cancellation handler's
 auto-created one (`handlers_cancelled.go`) is the single source.
 
+## One credit per student per session
+
+Every path that credits a missed session goes through `store.GrantSessionCredit`
+(`store/session_credit.go`): the cancellation grant (`handlers_cancelled.go`), a teacher's
+"Absent + credit" (`POST /api/replacement-credits` with `category=class` and a `classId`,
+`handlers_replacement.go`), and an approved absence report. Inside the caller's transaction it
+takes an advisory lock on (tenant, student, class, date), returns the existing earned class
+credit if there is one, and inserts otherwise. The staff endpoint answers 409 when the session
+already has a credit; the cancellation skips that student. A new grant path must call it, never
+INSERT into `replacement_credits` for a session directly. Manual adjustments without a class
+(`classId` blank) and redemptions (`used`) are unaffected.
+
+Known edge: cancelling a session whose absence was already credited grants nothing more, so
+undoing that cancellation (which claws back by the cancellation note) leaves the absence
+credit in place. That is the intended outcome.
+
+## Absence reports (migration `0071`, `handlers_absence_reports.go`)
+
+A parent reports that their own child (`parentStudentIDs`) will miss one session.
+`GET /api/absence-reports/sessions?studentId=` lists the next 21 days from
+`store.SessionsInPeriod` (held, or moved in and not cancelled) where the child is enrolled that
+day (`store.StudentsEnrolledOn`, half-open). `POST /api/absence-reports` re-resolves the session
+the same way, refuses one that has started, and stamps `reported_at` from the server clock
+(container TZ). Three hours or more before the start is `pending`; less is `late`, which is
+terminal and never earns a credit. The session's date and times are copied into the row, so
+the credit is sized as scheduled that day: `creditsForDuration(session_time, session_end)`.
+
+`POST /api/absence-reports/{id}/decision` is for an admin or a teacher of that class
+(`teacherClassIDSet`). It locks the row (`FOR UPDATE`), requires `pending`, and on approval
+grants through `GrantSessionCredit`; `credit_id` stays blank when the session was already
+credited. Declining needs a note, shown to the parent. Reports reach the snapshot
+(`absenceReports`) scoped the same way: own children, own classes, or all for an admin, from 30
+days back. They are in the parent's data export and are redacted by the PDPA family delete.
+
 ## Billing does not know about cancellations
 
 `cron.go` never reads `cancelled_classes`, `holidays`, or `class_session_overrides`. Invoices
