@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { loadSandbox } from './_load.mjs';
 
 test('a parent with a child can request enrolment for another, through the same form', async () => {
-  const sandbox = loadSandbox(['js/utils.js', 'js/modules/dashboard.js']);
+  const sandbox = loadSandbox(['js/utils.js', 'js/modules/absence.js', 'js/modules/dashboard.js']);
   let html = '';
   let listener = null;
   let hidden = false;

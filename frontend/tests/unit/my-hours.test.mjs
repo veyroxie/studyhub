@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { loadSandbox } from './_load.mjs';
 
 test('a teacher sees this month\'s hours and last month\'s pay on their dashboard', async () => {
-  const sandbox = loadSandbox(['js/utils.js', 'js/modules/dashboard.js']);
+  const sandbox = loadSandbox(['js/utils.js', 'js/modules/absence.js', 'js/modules/dashboard.js']);
   const body = { innerHTML: '' };
   const asked = [];
   sandbox.App.currentRole = 'teacher';

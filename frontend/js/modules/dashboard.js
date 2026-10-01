@@ -25,8 +25,10 @@
     }
 
     var dashContent = isTeacher ? _teacherDash() : (isAdmin && _dashView === 'ops') ? _opsDash() : isAdmin ? _adminDash() : _parentDash();
-    var board = App.Utils.boardItems(App.Store.get().announcements, App.Utils.today());
-    container.innerHTML = viewToggle + dashContent + _bulletinBoardHtml(board, isAdmin);
+    var st = App.Store.get();
+    var board = App.Utils.boardItems(st.announcements, App.Utils.today());
+    var review = (isAdmin || isTeacher) ? App.Absence.reviewHtml(st.absenceReports || [], st.students || [], st.classes || []) : '';
+    container.innerHTML = viewToggle + review + dashContent + _bulletinBoardHtml(board, isAdmin);
     if (isTeacher) _loadMyHours();
     setTimeout(_runCountUp, 80);
   }
@@ -562,6 +564,9 @@
         +     '<div style="font-size:0.6rem;color:#64748b;margin-top:0.15rem">' + (outstanding > 0 ? 'outstanding' : 'Paid up') + '</div>'
         +   '</div>'
 
+        + '</div>'
+        + '<div style="padding:0 1.5rem 1.15rem">'
+        +   '<button type="button" onclick="event.stopPropagation();App.Absence.reportModal(\'' + stu.id + '\')" style="font-size:0.75rem;font-weight:600;color:#374151;background:#fff;border:1px solid #e2e8f0;border-radius:4px;padding:0.35rem 0.8rem;cursor:pointer">Report an absence</button>'
         + '</div>';
 
       html += '</div>'; // close child card
@@ -600,6 +605,8 @@
       });
       html += '</div>';
     }
+
+    html += App.Absence.parentListHtml(s.absenceReports || [], myStudents, s.classes || []);
 
     // ── Progress reports ────────────────────────────────────────────────────
     html += _latestReportsHtml(s.progressReports || [], myStudents);

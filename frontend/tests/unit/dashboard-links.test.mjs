@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { loadSandbox } from './_load.mjs';
 
 function sandboxWith() {
-  const sandbox = loadSandbox(['js/utils.js', 'js/modules/dashboard.js']);
+  const sandbox = loadSandbox(['js/utils.js', 'js/modules/absence.js', 'js/modules/dashboard.js']);
   const calls = [];
   sandbox.App.Router = { navigate: (p) => calls.push(['navigate', p]) };
   sandbox.App.Billing = { focus: (f) => calls.push(['billing', f]) };

@@ -75,6 +75,7 @@
     replacementCredits: [],
     families: [],
     feedbackReplies: [],
+    absenceReports: [],
     referralRewards: [],
     registrations: [],
     pendingUsers: []

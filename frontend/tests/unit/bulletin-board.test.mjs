@@ -18,7 +18,7 @@ test('the board holds published, pinned, unexpired policies, latest change first
 });
 
 test('the board shows when each policy last changed and escapes it', () => {
-  const D = loadSandbox(['js/utils.js', 'js/modules/dashboard.js']).App.Dashboard;
+  const D = loadSandbox(['js/utils.js', 'js/modules/absence.js', 'js/modules/dashboard.js']).App.Dashboard;
   const html = D._bulletinBoardHtml([{ id: 'A1', title: '<b>Late</b>', message: 'x', updatedOn: '2026-09-20', createdOn: '2026-01-05' }], false);
   assert.match(html, /Bulletin board/);
   assert.match(html, /&lt;b&gt;Late/);
@@ -26,7 +26,7 @@ test('the board shows when each policy last changed and escapes it', () => {
 });
 
 test('only an admin gets an Edit link, and an empty board is invisible to everyone else', () => {
-  const D = loadSandbox(['js/utils.js', 'js/modules/dashboard.js']).App.Dashboard;
+  const D = loadSandbox(['js/utils.js', 'js/modules/absence.js', 'js/modules/dashboard.js']).App.Dashboard;
   assert.match(D._bulletinBoardHtml([{ id: 'A1', title: 't', message: 'm', createdOn: today }], true), /_editModal\('A1'\)/);
   assert.equal(D._bulletinBoardHtml([], false), '');
 });

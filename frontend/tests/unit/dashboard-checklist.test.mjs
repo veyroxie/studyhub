@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { loadSandbox } from './_load.mjs';
 
 function renderAs(role, storage = {}) {
-  const sandbox = loadSandbox(['js/utils.js', 'js/modules/dashboard.js']);
+  const sandbox = loadSandbox(['js/utils.js', 'js/modules/absence.js', 'js/modules/dashboard.js']);
   sandbox.App.currentRole = role;
   sandbox.App.Store = { get: () => ({ students: [], classes: [], invoices: [], staff: [], attendance: [], announcements: [], registrations: [] }) };
   sandbox.localStorage = { getItem: (k) => storage[k] || null, setItem() {} };
@@ -24,7 +24,7 @@ test('a dismissed checklist stays dismissed', () => {
 });
 
 test('a checklist survives storage that throws, as in a private window', () => {
-  const sandbox = loadSandbox(['js/utils.js', 'js/modules/dashboard.js']);
+  const sandbox = loadSandbox(['js/utils.js', 'js/modules/absence.js', 'js/modules/dashboard.js']);
   sandbox.App.currentRole = 'admin';
   sandbox.App.Store = { get: () => ({}) };
   sandbox.localStorage = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };

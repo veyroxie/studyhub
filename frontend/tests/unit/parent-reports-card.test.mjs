@@ -11,7 +11,7 @@ const reports = [
 ];
 
 function card(list) {
-  return loadSandbox(['js/utils.js', 'js/modules/dashboard.js']).App.Dashboard._latestReportsHtml(list, kids);
+  return loadSandbox(['js/utils.js', 'js/modules/absence.js', 'js/modules/dashboard.js']).App.Dashboard._latestReportsHtml(list, kids);
 }
 
 test('lists the children\'s reports newest first, each opening the reader', () => {
