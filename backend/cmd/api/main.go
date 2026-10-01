@@ -49,7 +49,11 @@ func main() {
 	if v := os.Getenv("JWT_SECRET"); v != "" {
 		auth.SetJWTSecret([]byte(v))
 	} else {
-		// Generate a random secret for development — in production, JWT_SECRET must be set
+		// A random secret in production would sign everyone out on every restart.
+		if env == "production" {
+			core.Logger.Error("refusing to start: JWT_SECRET is required in production")
+			os.Exit(1)
+		}
 		b := make([]byte, 32)
 		rand.Read(b)
 		auth.SetJWTSecret(b)
