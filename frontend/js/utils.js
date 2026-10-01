@@ -426,6 +426,16 @@
       return s && s.fullName ? s.fullName : '';
     },
 
+    // boardItems is THE bulletin board: published, pinned, not past their archive
+    // date, most recently changed first (the date a parent needs to see).
+    boardItems(announcements, today) {
+      return (announcements || []).filter(function(a) {
+        return a.pinned && (a.status === 'published' || !a.status) && !(a.archiveOn && a.archiveOn < today);
+      }).sort(function(a, b) {
+        return (b.updatedOn || b.createdOn || '').localeCompare(a.updatedOn || a.createdOn || '');
+      });
+    },
+
     // parentsOf maps each parent email to a display name, for the preview pickers.
     // A student with no email has no parent: listing '' made it the default pick.
     parentsOf(students) {

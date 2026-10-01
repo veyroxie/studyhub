@@ -173,27 +173,13 @@ func ListAnnouncementsRecent(db *DB, c *core.Claims) []models.Announcement {
 	tw, twArgs := ScopeTenant(c, "")
 	vw, vwArgs := AnnounceVisibilityClause(c)
 	args := append(append(append([]any{}, twArgs...), vwArgs...), cutoff)
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on,COALESCE(target_class_ids,'') FROM announcements WHERE 1=1`+tw+vw+` AND (created_on >= ? OR COALESCE(status,'')<>'archived') ORDER BY created_on DESC`, args...)
+	rows, err := db.Query(`SELECT `+AnnouncementColumns+` FROM announcements WHERE 1=1`+tw+vw+` AND (created_on >= ? OR COALESCE(status,'')<>'archived') ORDER BY created_on DESC`, args...)
 	if err != nil {
+		core.Logger.Error("snapshot announcements query failed", "err", err)
 		return []models.Announcement{}
 	}
 	defer rows.Close()
-	out := []models.Announcement{}
-	for rows.Next() {
-		var a models.Announcement
-		var status, archiveOn sql.NullString
-		var targets string
-		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn, &targets); err != nil {
-			continue
-		}
-		a.TargetClassIDs = models.ParseArr(targets)
-		a.Status = models.NullStr(status)
-		if a.Status == "" {
-			a.Status = "published"
-		}
-		a.ArchiveOn = models.NullStr(archiveOn)
-		out = append(out, a)
-	}
+	out := ScanAnnouncements(rows)
 	if c != nil && c.Role == "parent" {
 		out = ParentAnnouncementFilter(out, ParentClassIDs(db, c))
 	}

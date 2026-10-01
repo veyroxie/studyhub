@@ -103,6 +103,7 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		r.Get("/api/announcements", HandleAnnouncements(db))
 		r.Post("/api/announcements", HandleAnnouncements(db))
 		r.Delete("/api/announcements/{id}", HandleAnnouncementDelete(db))
+		r.Put("/api/announcements/{id}", HandleAnnouncementUpdate(db))
 		r.Get("/api/attendance", HandleAttendance(db, hub))
 		r.Post("/api/attendance", HandleAttendance(db, hub))
 		r.Get("/api/feedback", HandleListFeedback(db))

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"studyhub/internal/core"
@@ -17,28 +16,13 @@ func listAnnouncements(db *store.DB, c *core.Claims) []models.Announcement {
 	tw, twArgs := store.ScopeTenant(c, "")
 	vw, vwArgs := store.AnnounceVisibilityClause(c)
 	args := append(append([]any{}, twArgs...), vwArgs...)
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on,COALESCE(target_class_ids,''),COALESCE(category,'notice'),COALESCE(pinned,FALSE),COALESCE(pin_requested,FALSE),COALESCE(updated_on,'') FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT 5000`, args...)
+	rows, err := db.Query(`SELECT `+store.AnnouncementColumns+` FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT 5000`, args...)
 	if err != nil {
 		core.Logger.Error("list query failed", "err", err, "type", "Announcement")
 		return []models.Announcement{}
 	}
 	defer rows.Close()
-	out := []models.Announcement{}
-	for rows.Next() {
-		var a models.Announcement
-		var status, archiveOn sql.NullString
-		var targets string
-		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn, &targets, &a.Category, &a.Pinned, &a.PinRequested, &a.UpdatedOn); err != nil {
-			continue
-		}
-		a.TargetClassIDs = models.ParseArr(targets)
-		a.Status = models.NullStr(status)
-		if a.Status == "" {
-			a.Status = "published"
-		}
-		a.ArchiveOn = models.NullStr(archiveOn)
-		out = append(out, a)
-	}
+	out := store.ScanAnnouncements(rows)
 	if c != nil && c.Role == "parent" {
 		out = store.ParentAnnouncementFilter(out, store.ParentClassIDs(db, c))
 	}
@@ -52,28 +36,13 @@ func listAnnouncementsPaged(db *store.DB, c *core.Claims, p core.Pagination) ([]
 	var total int
 	db.QueryRow(`SELECT COUNT(*) FROM announcements WHERE 1=1`+tw+vw, baseArgs...).Scan(&total)
 	pageArgs := append(append([]any{}, baseArgs...), p.Limit, p.Offset)
-	rows, err := db.Query(`SELECT id,title,message,audience,type,created_on,created_by,status,archive_on,COALESCE(target_class_ids,''),COALESCE(category,'notice'),COALESCE(pinned,FALSE),COALESCE(pin_requested,FALSE),COALESCE(updated_on,'') FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
+	rows, err := db.Query(`SELECT `+store.AnnouncementColumns+` FROM announcements WHERE 1=1`+tw+vw+` ORDER BY created_on DESC LIMIT ? OFFSET ?`, pageArgs...)
 	if err != nil {
 		core.Logger.Error("list query failed", "err", err, "type", "Announcement")
 		return []models.Announcement{}, total
 	}
 	defer rows.Close()
-	out := []models.Announcement{}
-	for rows.Next() {
-		var a models.Announcement
-		var status, archiveOn sql.NullString
-		var targets string
-		if err := rows.Scan(&a.ID, &a.Title, &a.Message, &a.Audience, &a.Type, &a.CreatedOn, &a.CreatedBy, &status, &archiveOn, &targets, &a.Category, &a.Pinned, &a.PinRequested, &a.UpdatedOn); err != nil {
-			continue
-		}
-		a.TargetClassIDs = models.ParseArr(targets)
-		a.Status = models.NullStr(status)
-		if a.Status == "" {
-			a.Status = "published"
-		}
-		a.ArchiveOn = models.NullStr(archiveOn)
-		out = append(out, a)
-	}
+	out := store.ScanAnnouncements(rows)
 	if c != nil && c.Role == "parent" {
 		out = store.ParentAnnouncementFilter(out, store.ParentClassIDs(db, c))
 	}
@@ -136,14 +105,17 @@ func HandleAnnouncements(db *store.DB) http.HandlerFunc {
 				return
 			}
 
-			// Only an admin may pin. A teacher's request is recorded instead,
-			// for the admin to act on when approving — otherwise "request to
-			// pin" would be a way around the approval step.
+			// The board is the centre's policies, so only an admin pins (D2, 2026-10-01).
+			// A teacher's pin request was stored but never read; it is no longer taken.
 			if !core.IsAdminRole(c) {
-				a.PinRequested, a.Pinned = a.Pinned || a.PinRequested, false
+				a.Pinned, a.PinRequested = false, false
 			}
 			if a.Category == "" {
 				a.Category = models.AnnouncementCategoryNotice
+			}
+			if !models.ValidAnnouncementCategory(a.Category) {
+				core.RespondError(w, "unknown category "+a.Category+": expected policy, notice or event", http.StatusBadRequest)
+				return
 			}
 			a.UpdatedOn = a.CreatedOn
 			tid, tOK := writeTenant(w, c)
@@ -188,21 +160,48 @@ func HandleAnnouncementUpdate(db *store.DB) http.HandlerFunc {
 			return
 		}
 		id := chi.URLParam(r, "id")
-		var a models.Announcement
-		if err := json.NewDecoder(r.Body).Decode(&a); err != nil {
+		// Category and pinned are kept when not sent: a wording edit used to unpin a policy.
+		var body struct {
+			Title     string  `json:"title"`
+			Message   string  `json:"message"`
+			Type      string  `json:"type"`
+			ArchiveOn string  `json:"archiveOn"`
+			Category  *string `json:"category"`
+			Pinned    *bool   `json:"pinned"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			core.RespondError(w, "bad body", 400)
 			return
 		}
+		if msg := validationError("title", body.Title, "message", body.Message); msg != "" {
+			core.RespondError(w, msg, http.StatusBadRequest)
+			return
+		}
+		var category, pinned any
+		if body.Category != nil {
+			if !models.ValidAnnouncementCategory(*body.Category) {
+				core.RespondError(w, "unknown category "+*body.Category+": expected policy, notice or event", http.StatusBadRequest)
+				return
+			}
+			category = *body.Category
+		}
+		if body.Pinned != nil {
+			pinned = *body.Pinned
+		}
 		// updated_on moves, created_on does not: for a policy the amendment
 		// date is what tells a parent whether they have read the current text.
-		// Pinning is admin-only, and this handler is already admin-gated.
 		tw, twArgs := store.ScopeTenant(c, "")
-		args := append([]any{a.Title, a.Message, a.Type, a.ArchiveOn, a.Category, a.Pinned, core.Today(), id}, twArgs...)
-		if _, err := db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=?,category=?,pinned=?,pin_requested=FALSE,updated_on=? WHERE id=?`+tw, args...); err != nil {
+		args := append([]any{body.Title, body.Message, body.Type, body.ArchiveOn, category, pinned, core.Today(), id}, twArgs...)
+		res, err := db.Exec(`UPDATE announcements SET title=?,message=?,type=?,archive_on=?,category=COALESCE(?,category),pinned=COALESCE(?,pinned),pin_requested=FALSE,updated_on=? WHERE id=?`+tw, args...)
+		if err != nil {
 			core.RespondError(w, "could not update announcement", 500)
 			return
 		}
-		core.LogAudit(db, store.TenantID(c), c.Email, "announcement_updated", "announcement", id, a.Title)
+		if n, _ := res.RowsAffected(); n == 0 {
+			core.RespondError(w, "announcement not found", http.StatusNotFound)
+			return
+		}
+		core.LogAudit(db, store.TenantID(c), c.Email, "announcement_updated", "announcement", id, body.Title)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

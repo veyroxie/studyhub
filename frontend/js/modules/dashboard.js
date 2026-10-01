@@ -25,7 +25,8 @@
     }
 
     var dashContent = isTeacher ? _teacherDash() : (isAdmin && _dashView === 'ops') ? _opsDash() : isAdmin ? _adminDash() : _parentDash();
-    container.innerHTML = viewToggle + dashContent;
+    var board = App.Utils.boardItems(App.Store.get().announcements, App.Utils.today());
+    container.innerHTML = viewToggle + dashContent + _bulletinBoardHtml(board, isAdmin);
     if (isTeacher) _loadMyHours();
     setTimeout(_runCountUp, 80);
   }
@@ -59,6 +60,28 @@
       + '<div><div style="font-size:1.3rem;font-weight:800">' + fmtHours(current.hours) + '</div><div style="font-size:0.72rem;color:#94a3b8">this month so far</div></div>'
       + '<div><div style="font-size:1.3rem;font-weight:800">' + fmtHours(previous.hours) + '</div><div style="font-size:0.72rem;color:#94a3b8">last month · pay ' + pay + '</div></div>'
       + '</div>';
+  }
+
+  // The centre's standing policies, on every role's dashboard: the answer to "nobody told us".
+  // Shows when each last changed, so a parent can tell whether they read the current text.
+  function _bulletinBoardHtml(items, isAdmin) {
+    if (items.length === 0) {
+      return isAdmin
+        ? '<p style="font-size:0.78rem;color:#94a3b8;margin-top:1rem">No policies on the bulletin board yet. Tick "Bulletin board policy" when posting an announcement.</p>'
+        : '';
+    }
+    return '<section aria-label="Bulletin board" style="background:#fffbeb;border-radius:0;border:1px solid #fde68a;padding:1.25rem 1.5rem;margin-top:1rem">'
+      + '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.25rem">Bulletin board</div>'
+      + '<div style="font-size:0.75rem;color:#b45309;margin-bottom:0.5rem">Centre policies. Please read.</div>'
+      + items.map(function(a) {
+        return '<div style="padding:0.6rem 0;border-top:1px solid #fef3c7">'
+          + '<div style="font-size:0.85rem;font-weight:700;color:#78350f">' + App.Utils.esc(a.title) + '</div>'
+          + '<div style="font-size:0.8rem;color:#92400e;line-height:1.5;margin-top:0.2rem;white-space:pre-line">' + App.Utils.esc(a.message) + '</div>'
+          + '<div style="font-size:0.68rem;color:#b45309;margin-top:0.3rem">Updated ' + App.Utils.formatDate(a.updatedOn || a.createdOn)
+          + (isAdmin ? ' · <button type="button" onclick="App.Communication._editModal(\'' + a.id + '\')" style="background:none;border:none;padding:0;color:#b45309;text-decoration:underline;cursor:pointer;font-size:0.68rem">Edit</button>' : '')
+          + '</div></div>';
+      }).join('')
+      + '</section>';
   }
 
   var LATEST_REPORTS = 5;
@@ -581,29 +604,7 @@
     // ── Progress reports ────────────────────────────────────────────────────
     html += _latestReportsHtml(s.progressReports || [], myStudents);
 
-    // ── Bulletin board ──────────────────────────────────────────────────────
-    // Pinned items (policies) stay at the top in their own colour so they do
-    // not scroll away under dated notices — the whole point of the board, since
-    // the answer to a parent complaint is usually "it is in the policy".
     var published = (announcements || []).filter(function(a) { return a.status === 'published' || !a.status; });
-    var pinnedAnns = published.filter(function(a) { return a.pinned; })
-      .slice().sort(function(a, b) { return (b.updatedOn || b.createdOn).localeCompare(a.updatedOn || a.createdOn); });
-
-    if (pinnedAnns.length > 0) {
-      html += '<div style="background:#fffbeb;border-radius:0;border:1px solid #fde68a;padding:1.25rem 1.5rem;margin-top:1rem">'
-        + '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Please read</div>';
-      pinnedAnns.forEach(function(a) {
-        // Show when the text last CHANGED, not when it was first written — a
-        // parent needs to know whether they have read the current version.
-        var shown = a.updatedOn || a.createdOn;
-        html += '<div style="padding:0.6rem 0;border-bottom:1px solid #fef3c7">'
-          + '<div style="font-size:0.85rem;font-weight:700;color:#78350f">' + App.Utils.esc(a.title) + '</div>'
-          + '<div style="font-size:0.8rem;color:#92400e;line-height:1.5;margin-top:0.2rem">' + App.Utils.esc(a.message) + '</div>'
-          + '<div style="font-size:0.68rem;color:#b45309;margin-top:0.3rem">Updated ' + App.Utils.formatDate(shown) + '</div>'
-          + '</div>';
-      });
-      html += '</div>';
-    }
 
     // ── Announcements (compact, last 3) ─────────────────────────────────────
     var latestAnnounce = published.filter(function(a) { return !a.pinned; })
@@ -1485,6 +1486,7 @@
     _mfaDisable: _mfaDisable,
     _mfaCopyCodes: _mfaCopyCodes,
     _renderMFASection: _renderMFASection,
-    _latestReportsHtml: _latestReportsHtml
+    _latestReportsHtml: _latestReportsHtml,
+    _bulletinBoardHtml: _bulletinBoardHtml
   };
 })();

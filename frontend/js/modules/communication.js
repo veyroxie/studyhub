@@ -37,7 +37,8 @@
         }
         return true;
       })
-      .sort(function(a, b) { return b.createdOn.localeCompare(a.createdOn); });
+      // Policies on the bulletin board stay above dated notices.
+      .sort(function(a, b) { return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.createdOn.localeCompare(a.createdOn); });
     const filtered = _typeFilter === 'All' ? published : published.filter(function(a) { return a.type === _typeFilter; });
 
     const canWrite = isAdmin || isTeacher;
@@ -133,6 +134,7 @@
       +     '<div class="flex items-start justify-between gap-3 flex-wrap">'
       +       '<h3 class="font-semibold text-slate-800">' + App.Utils.esc(ann.title) + '</h3>'
       +       '<div class="flex items-center gap-2 shrink-0">'
+      +         (ann.pinned ? App.Utils.badge('Bulletin board', 'yellow') : '')
       +         App.Utils.statusBadge(ann.type)
       +         App.Utils.badge(ann.audience, 'gray')
       +       '</div>'
@@ -143,6 +145,7 @@
       +     '<div class="flex items-center justify-between mt-3">'
       +       '<span class="text-xs text-slate-400">'
       +         App.Utils.formatDate(ann.createdOn) + ' · ' + App.Utils.esc(ann.createdBy)
+      +         (ann.pinned && ann.updatedOn && ann.updatedOn !== ann.createdOn ? ' · updated ' + App.Utils.formatDate(ann.updatedOn) : '')
       +         (ann.archiveOn ? ' · <span title="Auto-archives on ' + App.Utils.esc(ann.archiveOn) + '" style="color:' + (ann.archiveOn < today ? '#ef4444' : '#94a3b8') + '">expires ' + App.Utils.esc(App.Utils.formatDate(ann.archiveOn)) + '</span>' : '')
       +       '</span>'
       +       (isAdmin ? '<button onclick="App.Communication._editModal(\'' + ann.id + '\')" class="text-xs text-blue-400 hover:text-blue-600 mr-2">Edit</button>' : '')
@@ -224,6 +227,7 @@
       + '</div>'
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Auto-archive on <span class="text-xs text-slate-400 font-normal">(optional — hides from parents after this date)</span></label>'
       + '<input name="archiveOn" type="date" class="form-input" min="' + App.Utils.today() + '"></div>'
+      + (isAdmin ? _boardCheckboxHtml(false) : '')
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm ' + (isTeacher ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700') + ' text-white rounded-lg">' + submitLabel + '</button>'
@@ -255,11 +259,8 @@
         // Persisted server-side (0031); without it "My Class Parents" silently
         // reached every parent in the tenant.
         targetClassIds: targetClassIds || [],
-        category: fd.get('category') || 'notice',
-        // The server ignores this from a teacher and records a pin REQUEST
-        // instead, so this cannot be used to skip approval.
-        pinned: !!fd.get('pinned')
       };
+      if (isAdmin) Object.assign(newAnn, _boardFields(fd));
       App.Api.post('/api/announcements', newAnn).then(function() {
         return App.Api.loadSnapshot();
       }).then(function() {
@@ -270,6 +271,19 @@
         App.Utils.showToast('Failed: ' + e.message, 'error');
       });
     });
+  }
+
+  // The board is "pinned policies", so one admin-only box sets both (D2: only admins edit the board).
+  function _boardCheckboxHtml(checked) {
+    return '<label style="display:flex;gap:0.6rem;align-items:flex-start;font-size:0.85rem;color:#374151;cursor:pointer">'
+      + '<input type="checkbox" name="boardPolicy"' + (checked ? ' checked' : '') + ' style="margin-top:0.2rem">'
+      + '<span><strong>Bulletin board policy</strong><br><span style="font-size:0.75rem;color:#94a3b8">Stays on everyone\'s dashboard until you untick it. Use it for rules parents agree to, like late pickup or make-up classes.</span></span>'
+      + '</label>';
+  }
+
+  function _boardFields(fd) {
+    var onBoard = !!fd.get('boardPolicy');
+    return { pinned: onBoard, category: onBoard ? 'policy' : 'notice' };
   }
 
   function _getTeacherName() {
@@ -302,6 +316,7 @@
       + '<div><label class="block text-sm font-medium text-slate-700 mb-1">Auto-archive on</label>'
       + '<input name="archiveOn" type="date" class="form-input" value="' + (ann.archiveOn || '') + '"></div>'
       + '</div>'
+      + _boardCheckboxHtml(!!ann.pinned)
       + '<div class="flex justify-end gap-3 pt-2">'
       + '<button type="button" onclick="App.Utils.hideModal()" class="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>'
       + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>'
@@ -312,12 +327,12 @@
     document.getElementById('edit-ann-form').addEventListener('submit', function(e) {
       e.preventDefault();
       var fd = new FormData(e.target);
-      App.Api.put('/api/announcements/' + annId, {
+      App.Api.put('/api/announcements/' + annId, Object.assign({
         title: fd.get('title').trim(),
         message: fd.get('message').trim(),
         type: fd.get('type'),
         archiveOn: fd.get('archiveOn') || ''
-      }).then(function() {
+      }, _boardFields(fd))).then(function() {
         return App.Api.loadSnapshot();
       }).then(function() {
         App.Utils.hideModal(true);

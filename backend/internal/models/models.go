@@ -375,6 +375,11 @@ const (
 	AnnouncementCategoryEvent  = "event"
 )
 
+// ValidAnnouncementCategory reports whether c is one of the three categories.
+func ValidAnnouncementCategory(c string) bool {
+	return c == AnnouncementCategoryPolicy || c == AnnouncementCategoryNotice || c == AnnouncementCategoryEvent
+}
+
 // Canonical audience values. The compose UI wrote display strings ("All
 // Parents") that the parent visibility rule never matched, so no manually
 // written announcement reached a parent until 0049.
