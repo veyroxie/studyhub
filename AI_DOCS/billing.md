@@ -254,11 +254,20 @@ and bulk mark-paid stay silent so reconciliation does not blast every parent
 ### Who may pay what (`store/invoice_payment.go`)
 
 Every payment write -- the pay endpoint, the family-bill endpoint and both webhooks --
-goes through `store.RecordInvoicePayment`, which refuses a `Draft` (still under review)
-or `Void` (replaced) invoice, and limits a parent to `Unpaid`, `Overdue` or
-`Pending Verification`. `store.PayableFrom` is the same rule for a row already loaded;
-the handler answers 409 with it before writing. Before 2026-09-30 only a re-pay of `Paid`
-was guarded, so a void could be paid and a parent's claim could reopen a confirmed payment.
+goes through `store.RecordInvoicePayment`. The rule is one transition table,
+`paymentSources(to, byParent)`: for each destination status, the statuses an invoice may
+come from. `store.PaymentMoveAllowed` reads it for a row already loaded (the handler
+answers 409 before writing) and `paymentGuard` turns it into the UPDATE's `status IN (...)`,
+so the two cannot drift.
+
+- Draft and Void take no payment.
+- A parent may only move an open invoice (Unpaid, Overdue, Pending Verification, legacy
+  Pending) to Pending Verification.
+- Staff may move an open invoice to Paid, Unpaid or Pending Verification. **Paid only leaves
+  to Unpaid**: a reversal, which surrenders the receipt. Before 2026-10-01 staff could push
+  a Paid invoice to Pending Verification or Overdue with its receipt still attached.
+- Overdue is derived from the due date (5ca3425) and legacy Pending is never written; the
+  pay endpoint refuses both as targets.
 
 Parents never see `Draft` or `Void` invoices: every parent read (snapshot,
 `/api/invoices`, the PDFs) appends `store.ParentVisibleInvoiceSQL`. The monthly run drafts

@@ -376,8 +376,8 @@ set, so no parent can receive a surprise bill mid-verification.
 
 ## 5. Settings page and the category editor (separate commit, lands after)
 
-`_editPricingModal` and the matrix render currently live in
-`calendar.js:1064-1094, 1208`. Nobody looks for pricing on the Schedule page.
+(Update 2026-10-01: the Schedule-page matrix and `_editPricingModal` were removed, 1574c5c;
+the catalogue on the Pricing page is the only price list.)
 
 The new screen does more than move: it is where Nadine adds a category, names
 its tiers and sets their prices. Editing a rate takes effect from the change

@@ -56,9 +56,9 @@ with the router on load. `main.js:444-445` warns that registering it there "woul
 undefined", and `index.html:640-646` warns the page div otherwise "stays blank (can't see
 stats)". Do not copy either pattern to the other kind of module.
 
-Role-restricted pages need an entry in **both** `pageHidden` maps -- `main.js:310-317` and
-`theme.js:194-201`. They already disagree (one lists `progress`, the other `feedback`), so
-updating one leaves sidebar and dock showing different nav sets.
+Role-restricted pages need one entry in `App.hiddenPages()` (`main.js`). The router, the
+sidebar and the dock (`theme.js`) all read it; until 2026-10-01 there were two copies and
+they had drifted.
 
 Roles on the frontend are `App.currentRole` (`'admin' | 'teacher' | 'client'`),
 `App.clientParent`, `App.currentTeacher`, initialised from sessionStorage
