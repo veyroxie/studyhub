@@ -228,3 +228,101 @@ func TestEachRoleSeesOnlyItsOwnReports(t *testing.T) {
 		t.Error("a teacher of another class sees the report")
 	}
 }
+
+func (f absenceFixture) staffCredit(token string, minutes int) int {
+	return doRequest(f.r, "POST", "/api/replacement-credits", token, map[string]any{
+		"studentId": absenceStudent, "type": "earned", "minutes": minutes, "classId": f.classID, "date": f.date, "category": "class", "note": "Absent"}).Code
+}
+
+func (f absenceFixture) reportStatus(t *testing.T, id string) (status, creditID string) {
+	t.Helper()
+	f.db.QueryRow(`SELECT status, credit_id FROM absence_reports WHERE id=?`, id).Scan(&status, &creditID)
+	return status, creditID
+}
+
+func TestAStaffCreditIsSizedByTheClassNotTheBrowser(t *testing.T) {
+	f := newAbsenceFixture(t, nextWeekAt(16))
+	defer f.cleanup()
+	if code := f.staffCredit(getTeacherToken(t, f.r), 99); code != http.StatusCreated {
+		t.Fatalf("absent + credit: %d", code)
+	}
+	if _, units := f.credits(t); units != 6 {
+		t.Errorf("a 90-minute class credited %d units, want 6 whatever the browser sent", units)
+	}
+}
+
+func TestAStaffCreditForAPendingReportApprovesIt(t *testing.T) {
+	f := newAbsenceFixture(t, nextWeekAt(16))
+	defer f.cleanup()
+	_, rep := f.report(t, getParentToken(t, f.r))
+	if code := f.staffCredit(getTeacherToken(t, f.r), 6); code != http.StatusCreated {
+		t.Fatalf("absent + credit: %d", code)
+	}
+	if status, creditID := f.reportStatus(t, rep.ID); status != models.AbsenceApproved || creditID == "" {
+		t.Errorf("report after the teacher's credit: %s %q, want approved and linked", status, creditID)
+	}
+}
+
+func TestALateReportIsNotCreditedByATeacherButAnAdminCanOverride(t *testing.T) {
+	soon := time.Now().Add(time.Hour).Truncate(time.Minute)
+	if soon.Day() != time.Now().Day() || soon.Add(90*time.Minute).Day() != soon.Day() {
+		t.Skip("too close to midnight to build a same-day class")
+	}
+	f := newAbsenceFixture(t, soon)
+	defer f.cleanup()
+	f.report(t, getParentToken(t, f.r))
+	if code := f.staffCredit(getTeacherToken(t, f.r), 6); code != http.StatusConflict {
+		t.Errorf("teacher crediting a late report: %d, want 409", code)
+	}
+	if code := f.staffCredit(getAdminToken(t, f.r), 6); code != http.StatusCreated {
+		t.Errorf("admin override: %d, want 201", code)
+	}
+}
+
+func TestAChildWhoAttendedCannotBeCreditedForMissingIt(t *testing.T) {
+	f := newAbsenceFixture(t, nextWeekAt(16))
+	defer f.cleanup()
+	_, rep := f.report(t, getParentToken(t, f.r))
+	f.db.Exec(`INSERT INTO attendance(id,tenant_id,person_id,person_type,date,class_id,status) VALUES(?,1,?,'student',?,?,'Present')`,
+		core.GenerateID("ATT"), absenceStudent, f.date, f.classID)
+	if code, _ := f.decide(getAdminToken(t, f.r), rep.ID, true, ""); code != http.StatusConflict {
+		t.Errorf("approving for a child marked present: %d, want 409", code)
+	}
+}
+
+func TestUndoingACancellationKeepsTheCreditAnApprovedReportReliesOn(t *testing.T) {
+	f := newAbsenceFixture(t, nextWeekAt(16))
+	defer f.cleanup()
+	admin := getAdminToken(t, f.r)
+	_, rep := f.report(t, getParentToken(t, f.r))
+	w := doRequest(f.r, "POST", "/api/cancelled-classes", admin, map[string]string{"classId": f.classID, "date": f.date, "reason": "Rain"})
+	var cc models.CancelledClass
+	json.NewDecoder(w.Body).Decode(&cc)
+	f.decide(admin, rep.ID, true, "")
+	if _, creditID := f.reportStatus(t, rep.ID); creditID == "" {
+		t.Fatal("the approved report should name the cancellation's credit it relies on")
+	}
+	if code := doRequest(f.r, "DELETE", "/api/cancelled-classes/"+cc.ID, admin, nil).Code; code >= 300 {
+		t.Fatalf("undo cancellation: %d", code)
+	}
+	if rows, _ := f.credits(t); rows != 1 {
+		t.Errorf("credit rows after undoing the cancellation: %d, want the approved absence's 1", rows)
+	}
+}
+
+func TestAPendingReportStaysInTheQueueHoweverOld(t *testing.T) {
+	f := newAbsenceFixture(t, nextWeekAt(16))
+	defer f.cleanup()
+	old := time.Now().AddDate(0, 0, -60).Format("2006-01-02")
+	f.db.Exec(`INSERT INTO absence_reports(id,tenant_id,student_id,class_id,session_date,session_time,reported_by,in_time,status) VALUES('ABS_OLD',1,?,?,?,'16:00','p@x.com',TRUE,'pending')`,
+		absenceStudent, f.classID, old)
+	store.SnapshotCacheInvalidateAll()
+	var snap models.Snapshot
+	json.NewDecoder(doRequest(f.r, "GET", "/api/snapshot", getAdminToken(t, f.r), nil).Body).Decode(&snap)
+	for _, a := range snap.AbsenceReports {
+		if a.ID == "ABS_OLD" {
+			return
+		}
+	}
+	t.Error("a two-month-old pending report vanished from the queue")
+}

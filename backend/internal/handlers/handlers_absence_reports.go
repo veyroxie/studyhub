@@ -294,13 +294,14 @@ var (
 	errAbsenceNotFound = userError("absence report not found")
 	errAbsenceDecided  = userError("this absence report was already decided")
 	errAbsenceNotYours = userError("only an admin or the class's teacher can decide this")
+	errAbsenceAttended = userError("this child was marked present for that class, so there is nothing to make up")
 )
 
 func absenceDecisionStatus(err error) int {
 	switch {
 	case errors.Is(err, errAbsenceNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, errAbsenceDecided):
+	case errors.Is(err, errAbsenceDecided), errors.Is(err, errAbsenceAttended):
 		return http.StatusConflict
 	case errors.Is(err, errAbsenceNotYours):
 		return http.StatusForbidden
@@ -334,14 +335,19 @@ func decideAbsenceReport(r *http.Request, db *store.DB, c *core.Claims, id strin
 	}
 	status, creditID, credited := models.AbsenceDeclined, "", false
 	if approve {
+		present, err := attendedSession(tx, tid, rep.StudentID, rep.ClassID, rep.SessionDate)
+		if err != nil {
+			return false, fmt.Errorf("attendance check: %w", err)
+		}
+		if present {
+			return false, errAbsenceAttended
+		}
 		status = models.AbsenceApproved
+		// credit_id names the credit this report relies on, new or already there, so undoing a cancellation keeps it.
 		creditID, credited, err = store.GrantSessionCredit(tx, store.SessionCredit{TenantID: tid, StudentID: rep.StudentID, ClassID: rep.ClassID,
-			Date: rep.SessionDate, Credits: creditsForDuration(rep.SessionTime, rep.SessionEnd), Note: "Absence reported for " + rep.SessionDate, CreatedBy: c.Email})
+			Date: rep.SessionDate, Credits: sessionCreditUnits(db, tid, rep.ClassID, rep.SessionDate), Note: "Absence reported for " + rep.SessionDate, CreatedBy: c.Email})
 		if err != nil {
 			return false, err
-		}
-		if !credited {
-			creditID = ""
 		}
 	}
 	if _, err := tx.Exec(`UPDATE absence_reports SET status=?, decided_by=?, decided_at=now(), decision_note=?, credit_id=? WHERE id=?`,
@@ -360,7 +366,7 @@ func listAbsenceReports(db *store.DB, c *core.Claims) []models.AbsenceReport {
 	tw, twArgs := store.ScopeTenant(c, "")
 	since := time.Now().AddDate(0, 0, -absenceHistoryDays).Format("2006-01-02")
 	rows, err := db.Query(`SELECT id,student_id,class_id,session_date,session_time,session_end,reported_at,reported_by,reason,in_time,status,decided_by,decided_at,decision_note,credit_id
-		FROM absence_reports WHERE deleted_at IS NULL AND session_date >= ?`+tw+` ORDER BY session_date, reported_at`, append([]any{since}, twArgs...)...)
+		FROM absence_reports WHERE deleted_at IS NULL AND (session_date >= ? OR status='pending')`+tw+` ORDER BY session_date, reported_at`, append([]any{since}, twArgs...)...)
 	if err != nil {
 		core.Logger.Error("absence reports query failed", "err", err)
 		return []models.AbsenceReport{}

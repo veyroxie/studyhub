@@ -182,17 +182,17 @@ func HandleCreateReplacementCredit(db *store.DB) http.HandlerFunc {
 				return
 			}
 		} else if rc.Category == "class" && rc.ClassID != "" {
-			// A credit for a missed session goes through the one-per-session rule, so a
-			// teacher's "Absent + credit" cannot pay again for an approved absence report.
-			id, granted, err := grantSessionCreditTx(r.Context(), db, store.SessionCredit{TenantID: tid, StudentID: rc.StudentID, ClassID: rc.ClassID,
+			// A missed session is credited once, sized by the class as scheduled that day
+			// (the browser's figure is ignored), and a parent's report for it has its say.
+			rc.Minutes = sessionCreditUnits(db, tid, rc.ClassID, rc.Date)
+			id, granted, err := grantStaffSessionCredit(r.Context(), db, c, store.SessionCredit{TenantID: tid, StudentID: rc.StudentID, ClassID: rc.ClassID,
 				Date: rc.Date, Credits: rc.Minutes, Note: rc.Note, CreatedBy: rc.CreatedBy})
 			if err != nil {
-				core.LogFromReq(r).Error("session credit grant failed", "err", err, "student_id", rc.StudentID)
-				core.RespondError(w, "server error", 500)
+				respondCheckError(w, r, err, http.StatusConflict)
 				return
 			}
 			if !granted {
-				core.RespondError(w, "this session already earned a credit for this student", http.StatusConflict)
+				core.RespondError(w, sessionAlreadyCredited, http.StatusConflict)
 				return
 			}
 			rc.ID = id
@@ -219,6 +219,15 @@ func HandleDeleteReplacementCredit(db *store.DB) http.HandlerFunc {
 		}
 		id := chi.URLParam(r, "id")
 		tw, twArgs := store.ScopeTenant(c, "")
+		var linked int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM absence_reports WHERE credit_id=? AND status='approved' AND deleted_at IS NULL`+tw, append([]any{id}, twArgs...)...).Scan(&linked); err != nil {
+			core.RespondError(w, "server error", 500)
+			return
+		}
+		if linked > 0 {
+			core.RespondError(w, "this credit was given for an approved absence report; it cannot be deleted on its own", http.StatusConflict)
+			return
+		}
 		args := append([]any{id}, twArgs...)
 		if _, err := db.Exec(`DELETE FROM replacement_credits WHERE id=?`+tw, args...); err != nil {
 			core.RespondError(w, "could not delete replacement credit", 500)
@@ -269,6 +278,9 @@ func HandleReplacementBalance(db *store.DB) http.HandlerFunc {
 
 	}
 }
+
+// sessionAlreadyCredited is what staff read when a session already has its make-up credit.
+const sessionAlreadyCredited = "this class already gave this student a make-up credit (from a cancellation or the parent's absence report), so none was added"
 
 // grantSessionCreditTx runs store.GrantSessionCredit in a transaction of its own.
 func grantSessionCreditTx(ctx context.Context, db *store.DB, g store.SessionCredit) (string, bool, error) {

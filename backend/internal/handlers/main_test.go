@@ -118,6 +118,7 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		r.Get("/api/performance-reviews", HandleListPerformanceReviews(db))
 		r.Post("/api/performance-reviews", HandleCreatePerformanceReview(db))
 		r.Post("/api/cancelled-classes", HandleCreateCancelledClass(db))
+		r.Delete("/api/cancelled-classes/{id}", HandleDeleteCancelledClass(db))
 		r.Get("/api/replacement-credits", HandleListReplacementCredits(db))
 		r.Post("/api/replacement-credits", HandleCreateReplacementCredit(db))
 		r.Delete("/api/replacement-credits/{id}", HandleDeleteReplacementCredit(db))

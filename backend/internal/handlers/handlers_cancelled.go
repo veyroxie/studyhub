@@ -117,23 +117,13 @@ func HandleCreateCancelledClass(db *store.DB) http.HandlerFunc {
 // the cancellation row is already committed and the admin will see the
 // outcome in the next snapshot.
 func applyCancelledClassSideEffects(db *store.DB, c *core.Claims, cc models.CancelledClass, tid int) {
-	var className, classDay, classStart, classEnd string
-	db.QueryRow(`SELECT name, COALESCE(day,''), COALESCE(time,''), COALESCE(end_time,'') FROM classes WHERE id=? AND tenant_id=?`, cc.ClassID, tid).Scan(&className, &classDay, &classStart, &classEnd)
+	var className string
+	db.QueryRow(`SELECT name FROM classes WHERE id=? AND tenant_id=?`, cc.ClassID, tid).Scan(&className)
 	if className == "" {
 		className = cc.ClassID
 	}
-	// The credit is the length of the lesson that was actually missed, so the
-	// schedule has to be read as it stood on cc.Date, not as it stands now.
-	// Cancellations are routinely recorded after the fact, and a class whose
-	// hours changed since would otherwise credit the current duration -- 4
-	// credits for a lesson that ran two hours. 1 credit = 15 minutes.
-	current := store.ScheduleVersion{Day: classDay, Time: classStart, EndTime: classEnd}
-	versions, verr := store.ClassScheduleVersions(db, tid, cc.ClassID)
-	if verr != nil {
-		core.Logger.Error("cancellation schedule version lookup failed", "err", verr, "class_id", cc.ClassID)
-	}
-	onDate := store.ScheduleOn(versions, current, cc.Date)
-	credits := creditsForDuration(onDate.Time, onDate.EndTime)
+	// The length of the lesson actually missed, as scheduled on that date (cancellations are often recorded later).
+	credits := sessionCreditUnits(db, tid, cc.ClassID, cc.Date)
 
 	// Announcement — created as published, audience scoped to the class so
 	// only enrolled parents get the notification.
@@ -227,8 +217,10 @@ func HandleDeleteCancelledClass(db *store.DB) http.HandlerFunc {
 		}
 		// Claw back the grants this cancellation created. A credit already
 		// spent leaves the ledger negative — visible, and right for undo-a-mistake.
-		if _, err := db.Exec(`DELETE FROM replacement_credits WHERE tenant_id=? AND class_id=? AND date=? AND type='earned' AND category='class' AND note=?`,
-			tid, classID, date, "Class cancelled on "+date); err != nil {
+		// A credit an approved absence report now relies on stays: the student missed that lesson either way.
+		if _, err := db.Exec(`DELETE FROM replacement_credits WHERE tenant_id=? AND class_id=? AND date=? AND type='earned' AND category='class' AND note=?
+			AND id NOT IN (SELECT credit_id FROM absence_reports WHERE tenant_id=? AND status='approved' AND deleted_at IS NULL)`,
+			tid, classID, date, "Class cancelled on "+date, tid); err != nil {
 			core.Logger.Error("cancellation credit claw-back failed", "err", err, "class_id", classID)
 		}
 		var className string
