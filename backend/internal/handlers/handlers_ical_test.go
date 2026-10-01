@@ -122,3 +122,32 @@ func TestICalFeed_CancelledSessionEmitsStatusCancelled(t *testing.T) {
 		t.Error("moved occurrence lacks the moved-from note")
 	}
 }
+
+// A suspended account cannot sign in; its calendar link must stop working too.
+func TestICalFeed_SuspendedAccountGetsNothing(t *testing.T) {
+	_, db, cleanup := setupFeatureTestApp(t)
+	defer cleanup()
+	r := chi.NewRouter()
+	r.Get("/api/calendar/{userID}/{token}", HandleParentCalendarFeed(db))
+
+	var userID int
+	var email string
+	if err := db.QueryRow(`SELECT id, email FROM users WHERE role='parent' ORDER BY id LIMIT 1`).Scan(&userID, &email); err != nil {
+		t.Skip("no seeded parent user")
+	}
+	path := fmt.Sprintf("/api/calendar/%d/%s.ics", userID, icalToken(userID, email, icalTokenVersion(db, userID)))
+	serve := func() int {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		return w.Code
+	}
+	if code := serve(); code != http.StatusOK {
+		t.Fatalf("active account: %d, want 200", code)
+	}
+	if _, err := db.Exec(`UPDATE users SET status='suspended' WHERE id=?`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if code := serve(); code != http.StatusNotFound {
+		t.Errorf("suspended account: %d, want 404", code)
+	}
+}

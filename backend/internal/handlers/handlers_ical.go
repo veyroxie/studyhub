@@ -101,9 +101,14 @@ func HandleParentCalendarFeed(db *store.DB) http.HandlerFunc {
 			return
 		}
 
-		var email, role string
+		var email, role, status string
 		var tenantID, tokenVersion int
-		if err := db.QueryRow(`SELECT email, COALESCE(role,''), tenant_id, COALESCE(ical_token_version,0) FROM users WHERE id=?`, userID).Scan(&email, &role, &tenantID, &tokenVersion); err != nil {
+		if err := db.QueryRow(`SELECT email, COALESCE(role,''), tenant_id, COALESCE(ical_token_version,0), COALESCE(status,'active') FROM users WHERE id=?`, userID).Scan(&email, &role, &tenantID, &tokenVersion, &status); err != nil {
+			core.RespondError(w, "not found", http.StatusNotFound)
+			return
+		}
+		// Same rule as the session gate: an account that cannot sign in gets no feed either.
+		if status != "active" {
 			core.RespondError(w, "not found", http.StatusNotFound)
 			return
 		}
