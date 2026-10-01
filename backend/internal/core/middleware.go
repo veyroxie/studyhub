@@ -122,6 +122,21 @@ func RateLimitLogin(next http.Handler) http.Handler {
 	})
 }
 
+// RateLimitMFA caps MFA setup, confirm and disable at the login rate: confirm and disable
+// take a 6-digit code, which is guessable without a limit. Its own bucket, so enabling MFA
+// right after signing in does not spend the sign-in allowance.
+var mfaRateLimiter = &rateLimiter{buckets: make(map[string]*ipBucket)}
+
+func RateLimitMFA(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !mfaRateLimiter.allow(RealIP(r)) {
+			RespondError(w, "too many attempts, please wait a minute", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // ── General API Rate Limiter ──────────────────────────────────────────────────
 // 60 requests per minute per IP for writes, 120 for reads
 
