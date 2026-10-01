@@ -107,6 +107,8 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		r.Post("/api/attendance", HandleAttendance(db, hub))
 		r.Get("/api/feedback", HandleListFeedback(db))
 		r.Post("/api/feedback", HandleCreateFeedback(db))
+		r.Post("/api/feedback-replies", HandleCreateFeedbackReply(db))
+		r.Get("/api/account/export-my-data", HandleDSARExport(db))
 		r.Get("/api/self-study", HandleListSelfStudy(db))
 		r.Post("/api/self-study", HandleCreateSelfStudy(db))
 		r.Get("/api/performance-reviews", HandleListPerformanceReviews(db))

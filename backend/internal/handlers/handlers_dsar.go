@@ -62,7 +62,7 @@ func HandleDSARExport(db *store.DB) http.HandlerFunc {
 			out["students"] = dsarParentStudents(db, c)
 			out["invoices"] = listInvoices(db, c)
 			out["attendance"] = listAttendance(db, c)
-			out["feedback"] = listFeedback(db, c) // already parent-scoped + stripped
+			out["feedback"] = dsarParentFeedback(db, c)
 			out["progressReports"] = dsarParentProgressReports(db, c)
 			out["replacementCredits"] = listReplacementCredits(db, c)
 			out["referrals"] = listReferralRewards(db, c)

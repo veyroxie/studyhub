@@ -77,62 +77,23 @@ func stripStudentNotesForParent(rows []models.Feedback, ownIDs map[string]bool) 
 	return rows
 }
 
+// dsarParentFeedback is the class feed as it concerns one parent: their children's classes, their children's notes.
+func dsarParentFeedback(db *store.DB, c *core.Claims) []models.Feedback {
+	own := filterFeedbackForParent(listFeedback(db, c), store.ParentClassIDs(db, c))
+	return stripStudentNotesForParent(own, parentStudentIDs(db, c))
+}
+
 func HandleListFeedback(db *store.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := core.ClaimsFrom(r)
-		isParent := c != nil && c.Role != "admin" && c.Role != "superadmin" && c.Role != "teacher"
+		// Parents read progress reports instead; the feed holds notes on every child in the class.
+		if !core.IsStaffRole(c) {
+			core.Respond(w, []models.Feedback{})
+			return
+		}
 
 		date := r.URL.Query().Get("date")
 		classID := r.URL.Query().Get("classId")
-
-		// Parents use in-memory filtering — skip pagination for them
-		if isParent {
-			ownIDs := parentStudentIDs(db, c)
-			if date == "" && classID == "" {
-				all := listFeedback(db, c)
-				all = filterFeedbackForParent(all, store.ParentClassIDs(db, c))
-				all = stripStudentNotesForParent(all, ownIDs)
-				core.Respond(w, all)
-				return
-			}
-			tw, twArgs := store.ScopeTenant(c, "")
-			q := `SELECT id,class_id,date,teacher_id,topic,mood,notes,student_notes FROM feedback WHERE deleted_at IS NULL` + tw
-			args := append([]any{}, twArgs...)
-			if date != "" {
-				q += ` AND date=?`
-				args = append(args, date)
-			}
-			if classID != "" {
-				q += ` AND class_id=?`
-				args = append(args, classID)
-			}
-			q += ` ORDER BY date DESC`
-			rows, err := db.Query(q, args...)
-			if err != nil {
-				core.Respond(w, []models.Feedback{})
-				return
-			}
-			defer rows.Close()
-			out := []models.Feedback{}
-			for rows.Next() {
-				var f models.Feedback
-				var sn string
-				if err := rows.Scan(&f.ID, &f.ClassID, &f.Date, &f.TeacherID, &f.Topic, &f.Mood, &f.Notes, &sn); err != nil {
-					continue
-				}
-				if sn != "" {
-					json.Unmarshal([]byte(sn), &f.StudentNotes)
-				}
-				if f.StudentNotes == nil {
-					f.StudentNotes = []models.StudentNote{}
-				}
-				out = append(out, f)
-			}
-			out = filterFeedbackForParent(out, store.ParentClassIDs(db, c))
-			out = stripStudentNotesForParent(out, ownIDs)
-			core.Respond(w, out)
-			return
-		}
 
 		// Admin/teacher path — supports pagination
 		p := core.ParsePagination(r)
@@ -433,6 +394,10 @@ func HandleCreateFeedbackReply(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "bad body", 400)
 			return
 		}
+		if !core.IsStaffRole(c) {
+			core.RespondError(w, "only staff can reply to class notes", http.StatusForbidden)
+			return
+		}
 		if reply.FeedbackID == "" || reply.Message == "" {
 			core.RespondError(w, "feedbackId and message are required", 400)
 			return
@@ -448,14 +413,8 @@ func HandleCreateFeedbackReply(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "feedback not found", 404)
 			return
 		}
-		if !core.IsAdminRole(c) {
-			var allowed map[string]bool
-			if c.Role == "teacher" {
-				allowed = teacherClassIDSet(db, c)
-			} else if c.Role == "parent" {
-				allowed = store.ParentClassIDs(db, c)
-			}
-			if !allowed[classID] {
+		if c.Role == "teacher" {
+			if !teacherClassIDSet(db, c)[classID] {
 				core.RespondError(w, "not allowed to reply to this thread", 403)
 				return
 			}

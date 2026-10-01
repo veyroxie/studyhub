@@ -61,6 +61,30 @@
       + '</div>';
   }
 
+  var LATEST_REPORTS = 5;
+
+  // Newest first; a report id is safe in onclick because the server mints it.
+  function _latestReportsHtml(reports, students) {
+    var nameOf = {};
+    students.forEach(function(st) { nameOf[st.id] = st.firstName; });
+    var latest = reports.filter(function(pr) { return nameOf[pr.studentId]; })
+      .sort(function(a, b) { return (b.createdAt || '').localeCompare(a.createdAt || ''); })
+      .slice(0, LATEST_REPORTS);
+    var rows = latest.length === 0
+      ? '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1rem 0">No progress reports yet</p>'
+      : latest.map(function(pr) {
+        return '<button type="button" onclick="App.Progress._readModal(\'' + pr.id + '\')" style="display:block;width:100%;text-align:left;background:none;border:none;border-left:3px solid var(--gold);padding:0.6rem 0 0.6rem 0.85rem;margin-bottom:0.6rem;cursor:pointer">'
+          + '<div style="font-size:0.84rem;font-weight:600;color:#111">' + App.Utils.esc(nameOf[pr.studentId]) + ' · ' + App.Utils.esc(pr.subject || 'Report') + '</div>'
+          + '<div style="font-size:0.68rem;color:#94a3b8;margin-top:0.2rem">' + App.Utils.esc(pr.term || '') + '</div>'
+          + '</button>';
+      }).join('');
+    return '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
+      + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Progress reports</div>'
+      + rows
+      + '<button onclick="App.Router.navigate(\'progress\')" class="dash-link" style="display:block;margin-top:0.5rem">All progress reports →</button>'
+      + '</div>';
+  }
+
   // ── Count-up ─────────────────────────────────────────────────────────────────
   function _runCountUp() {
     document.querySelectorAll('[data-count]').forEach(function(el) {
@@ -286,7 +310,6 @@
     var invoices      = s.invoices      || [];
     var announcements = s.announcements || [];
     var attendance    = s.attendance    || [];
-    var feedbacks     = s.feedback      || [];
     var repCredits    = s.replacementCredits || [];
     var staff         = s.staff         || [];
 
@@ -433,33 +456,6 @@
       var outstanding = stuInvoices.filter(function(i) { return i.status === 'Overdue' || i.status === 'Unpaid'; })
         .reduce(function(a, i) { return a + i.amount; }, 0);
 
-      // Latest feedback for any class this child is enrolled in
-      var latestFb = null;
-      var latestFbTeacher = '';
-      var latestFbNote = '';
-      // Check studentNotes first for personalized feedback
-      feedbacks.filter(function(fb) { return stuClassIds.indexOf(fb.classId) > -1; })
-        .sort(function(a, b) { return b.date.localeCompare(a.date); })
-        .some(function(fb) {
-          // Look for a note specific to this child
-          var childNote = (fb.studentNotes || []).find(function(sn) { return sn.studentId === stu.id && sn.note && sn.note.trim(); });
-          if (childNote) {
-            latestFb = fb;
-            latestFbNote = childNote.note;
-            return true;
-          }
-          // Fall back to general class notes
-          if (!latestFb && fb.notes && fb.notes.trim()) {
-            latestFb = fb;
-            latestFbNote = fb.notes;
-          }
-          return false;
-        });
-      if (latestFb) {
-        var fbTeacher = staff.find(function(t) { return t.id === latestFb.teacherId; });
-        latestFbTeacher = fbTeacher ? App.Utils.esc(fbTeacher.name) : 'Teacher';
-      }
-
       // Subjects list from enrolled classes
       var subjects = stuClasses.map(function(c) { return App.Utils.esc(c.name); }).slice(0, 3).join(', ');
       if (stuClasses.length > 3) subjects += ' +' + (stuClasses.length - 3);
@@ -545,17 +541,6 @@
 
         + '</div>';
 
-      // Latest feedback
-      if (latestFb) {
-        var notePreview = latestFbNote.length > 120 ? latestFbNote.slice(0, 120) + '...' : latestFbNote;
-        html += '<div style="padding:0 1.5rem 1.15rem">'
-          + '<div style="background:linear-gradient(135deg,#fef9ec 0%,#fff 70%);border:1px solid #fef3c7;border-radius:0;padding:0.75rem 0.9rem">'
-          +   '<div style="font-size:0.8rem;color:#44403c;line-height:1.45;font-style:italic">"' + App.Utils.esc(notePreview) + '"</div>'
-          +   '<div style="font-size:0.68rem;color:#94a3b8;margin-top:0.4rem">— ' + latestFbTeacher + ', ' + App.Utils.formatDate(latestFb.date) + '</div>'
-          + '</div>'
-          + '</div>';
-      }
-
       html += '</div>'; // close child card
     });
 
@@ -593,46 +578,8 @@
       html += '</div>';
     }
 
-    // ── Teacher Notes ───────────────────────────────────────────────────────────
-    var allEnrolledIds = [];
-    myStudents.forEach(function(st) { (st.enrolledClasses || []).forEach(function(id) { if (allEnrolledIds.indexOf(id) === -1) allEnrolledIds.push(id); }); });
-
-    var recentFeedbacks = feedbacks.filter(function(fb) { return allEnrolledIds.indexOf(fb.classId) > -1 && (fb.notes || (fb.studentNotes && fb.studentNotes.length)); })
-      .sort(function(a, b) { return b.date.localeCompare(a.date); })
-      .slice(0, 5);
-
-    html += '<div style="background:#fff;border-radius:0;border:1px solid rgba(0,0,0,0.07);padding:1.25rem 1.5rem;margin-top:1rem">'
-      + '<div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.75rem">Teacher Notes</div>';
-
-    if (recentFeedbacks.length === 0) {
-      html += '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1rem 0">No teacher notes yet</p>';
-    } else {
-      recentFeedbacks.forEach(function(fb) {
-        var cls = classes.find(function(c) { return c.id === fb.classId; });
-        var teacher = staff.find(function(t) { return t.id === fb.teacherId; });
-        var teacherName = teacher ? App.Utils.esc(teacher.name) : 'Teacher';
-        var clsName = cls ? App.Utils.esc(cls.name) : '';
-
-        // Prefer student-specific notes for parent's children, fall back to general notes
-        var noteText = '';
-        myStudents.some(function(st) {
-          var childNote = (fb.studentNotes || []).find(function(sn) { return sn.studentId === st.id && sn.note && sn.note.trim(); });
-          if (childNote) { noteText = childNote.note; return true; }
-          return false;
-        });
-        if (!noteText) noteText = fb.notes || '';
-        if (!noteText.trim()) return;
-
-        var preview = noteText.length > 100 ? noteText.slice(0, 100) + '...' : noteText;
-
-        html += '<div style="border-left:3px solid var(--gold);padding:0.6rem 0 0.6rem 0.85rem;margin-bottom:0.6rem">'
-          + '<div style="font-size:0.8rem;color:#44403c;line-height:1.45;font-style:italic">"' + App.Utils.esc(preview) + '"</div>'
-          + '<div style="font-size:0.68rem;color:#94a3b8;margin-top:0.3rem">' + teacherName + ' · ' + clsName + ' · ' + App.Utils.formatDate(fb.date) + '</div>'
-          + '</div>';
-      });
-    }
-    html += '<button onclick="App.Router.navigate(\'progress\')" class="dash-link" style="display:block;margin-top:0.5rem">View progress reports →</button>'
-      + '</div>';
+    // ── Progress reports ────────────────────────────────────────────────────
+    html += _latestReportsHtml(s.progressReports || [], myStudents);
 
     // ── Bulletin board ──────────────────────────────────────────────────────
     // Pinned items (policies) stay at the top in their own colour so they do
@@ -1537,6 +1484,7 @@
     _mfaStart: _mfaStart,
     _mfaDisable: _mfaDisable,
     _mfaCopyCodes: _mfaCopyCodes,
-    _renderMFASection: _renderMFASection
+    _renderMFASection: _renderMFASection,
+    _latestReportsHtml: _latestReportsHtml
   };
 })();

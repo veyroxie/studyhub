@@ -273,8 +273,9 @@ func HandleSnapshot(db *store.DB) http.HandlerFunc {
 		// Parents: filter to their children's data only (post-load so the heavy
 		// queries above can run in parallel).
 		if isParent && c != nil {
-			classIDs := store.ParentClassIDs(db, c)
-			snap.Feedback = filterFeedbackForParent(snap.Feedback, classIDs)
+			// Parents read progress reports, not the class feed: it holds notes on every child in the class.
+			snap.Feedback = []models.Feedback{}
+			snap.FeedbackReplies = []models.FeedbackReply{}
 
 			stuIDs := parentStudentIDs(db, c)
 			filtered := []models.SelfStudySession{}

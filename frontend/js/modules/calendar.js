@@ -591,19 +591,7 @@
       return s ? s.fullName : tid;
     }).join(', ');
     var enrolled  = state.students.filter(function(s) { return s.enrolledClasses.indexOf(classId) > -1; });
-    var feedbackList = (state.feedback || []).filter(function(f) { return f.classId === classId; });
-    var avgRating = feedbackList.length > 0
-      ? (feedbackList.reduce(function(a,f){ return a+(f.rating||0); },0)/feedbackList.length).toFixed(1)
-      : null;
     var colors = App.Utils.colorClasses(c.color);
-
-    var canLeaveFeedback = isClient; // parents can rate
-    var parentStudentIds = isClient && App.clientParent
-      ? App.Utils.childrenOf(state.students, App.clientParent).map(function(s){ return s.id; })
-      : [];
-    var alreadyReviewed = isClient && feedbackList.some(function(f) {
-      return parentStudentIds.indexOf(f.studentId) > -1;
-    });
 
     App.Utils.showModal(
       '<div class="p-6">'
@@ -698,39 +686,6 @@
         App.Router.refresh();
         _classModal(classId);
       } catch (err) { /* App.Api already toasted, e.g. the class is full */ }
-    });
-  }
-
-  var _starRating = {}; // classId -> chosen rating
-
-  function _setStar(classId, n) {
-    _starRating[classId] = n;
-    var row = document.getElementById('star-row-' + classId);
-    if (!row) return;
-    row.querySelectorAll('[data-star]').forEach(function(btn) {
-      btn.style.color = parseInt(btn.dataset.star) <= n ? '#f59e0b' : '#d1d5db';
-    });
-  }
-
-  function _submitFeedback(classId) {
-    var rating = _starRating[classId];
-    if (!rating) { App.Utils.showToast('Please select a star rating', 'warning'); return; }
-    var comment = (document.getElementById('feedback-comment-' + classId)||{}).value || '';
-    var state = App.Store.get();
-    var parentStudentIds = App.Utils.childrenOf(state.students, App.clientParent).map(function(s){ return s.id; });
-    var studentId = parentStudentIds[0] || '';
-    var newFeedback = {
-      id: App.Utils.generateId('fb'),
-      classId: classId,
-      studentId: studentId,
-      rating: rating,
-      comment: comment.trim(),
-      createdOn: App.Utils.today()
-    };
-    App.Api.post('/api/feedback', newFeedback).then(function(result) {
-      App.Store.set({ feedback: [...(state.feedback||[]), newFeedback] });
-      App.Utils.hideModal(true);
-      App.Utils.showToast('Thank you for your feedback!', 'success');
     });
   }
 
