@@ -164,7 +164,8 @@
             +   (pr.grade ? '<div style="font-size:0.78rem;color:#92400e;font-weight:600;margin-top:3px">Grade: ' + App.Utils.esc(pr.grade) + '</div>' : '')
             + '</div>'
             + '<div style="display:flex;gap:0.4rem;flex-shrink:0">'
-            +   (canEdit ? '<button onclick="App.Progress._editModal(\'' + pr.id + '\')" style="padding:0.35rem 0.75rem;font-size:0.72rem;font-weight:600;background:#fff;color:#475569;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Edit</button>' : '')
+            // The server lets a teacher edit only what they wrote; a colleague's report is read-only here too.
+            +   (canEdit && (App.currentRole !== 'teacher' || pr.teacherId === App.currentTeacher) ? '<button onclick="App.Progress._editModal(\'' + pr.id + '\')" style="padding:0.35rem 0.75rem;font-size:0.72rem;font-weight:600;background:#fff;color:#475569;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Edit</button>' : '')
             +   '<a href="/api/progress-reports/' + pr.id + '/pdf" target="_blank" style="padding:0.35rem 0.75rem;font-size:0.72rem;font-weight:600;background:var(--gold);color:#0a0a0a;border-radius:4px;text-decoration:none">PDF</a>'
             + '</div>'
             + '</div>';
