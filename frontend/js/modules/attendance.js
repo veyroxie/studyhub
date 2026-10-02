@@ -97,6 +97,8 @@
       ? 'In: ' + App.Utils.formatTime(rec.checkIn) + '  ·  Out: ' + App.Utils.formatTime(rec.checkOut)
       : checkedIn ? 'In: ' + App.Utils.formatTime(rec.checkIn) + '  · still in'
       : 'Not checked in';
+    // Check-in stamps the clock, so it is offered on today's roster only; a past day is fixed by an absence or an admin.
+    var live = !_attDate || _attDate === App.Utils.today();
     var report = _reportFor(s.id);
     var reportNote = report
       ? '<div style="font-size:0.75rem;font-weight:600;color:#b45309;margin-top:3px">' + App.Utils.esc(REPORT_WORDS[report.status] || 'Parent reported absent') + '</div>'
@@ -113,10 +115,11 @@
         + 'background:#fee2e2;border-radius:0;min-height:52px">'
         + '<span style="font-size:0.95rem;font-weight:700;color:#dc2626">Absent</span></div>' + undoBtn;
     } else if (!checkedIn) {
-      actionBtn = '<button onclick="App.Attendance._checkInStudent(\'' + s.id + '\')" style="'
+      actionBtn = (live ? '<button onclick="App.Attendance._checkInStudent(\'' + s.id + '\')" style="'
         + 'min-height:52px;width:100%;padding:0.6rem 1.1rem;background:#22c55e;color:#fff;border:none;'
         + 'border-radius:0;font-size:0.95rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
         + 'onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check In</button>'
+        : '<div style="font-size:0.78rem;color:#94a3b8;padding:0.5rem 0">Check-in is live, for today\'s class only</div>')
         + ((App.currentRole === 'admin' || App.currentRole === 'teacher')
           ? '<button onclick="App.Attendance._markAbsentCredit(\'' + s.id + '\')" style="'
             + 'min-height:36px;width:100%;margin-top:0.35rem;padding:0.35rem 0.75rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;'
@@ -132,10 +135,10 @@
             + '<p style="font-size:0.68rem;color:#94a3b8;margin:0.3rem 0 0;line-height:1.35">Replacement only if the parent told us at least 3 hours before class.</p>'
           : '');
     } else if (!checkedOut) {
-      actionBtn = '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" style="'
+      actionBtn = (live ? '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" style="'
         + 'min-height:52px;width:100%;padding:0.6rem 1.1rem;background:#64748b;color:#fff;border:none;'
         + 'border-radius:0;font-size:0.95rem;font-weight:700;cursor:pointer;transition:opacity 0.15s" '
-        + 'onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check Out</button>' + undoBtn;
+        + 'onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">Check Out</button>' : '') + undoBtn;
     } else {
       actionBtn = '<div style="display:flex;align-items:center;justify-content:center;padding:0.6rem 1rem;'
         + 'background:#dcfce7;border-radius:0;min-height:52px">'
@@ -1183,6 +1186,10 @@
   // honours start dates), saves run together, and the page updates from the server, so
   // a failed save is reported rather than shown as checked in.
   async function _checkAllIn(btn) {
+    if (_attDate && _attDate !== App.Utils.today()) {
+      App.Utils.showToast('Check-in is for today\'s class only', 'info');
+      return;
+    }
     var state = App.Store.get();
     var day = _attDate || App.Utils.today();
     var todo = App.Utils.rosterFor(state.students, _attClassId, day, state.enrollments, state.attendance)
