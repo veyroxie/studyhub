@@ -358,10 +358,25 @@ func teacherMayUndo(db *store.DB, c *core.Claims, id, tw string, twArgs []any) b
 	if c == nil || c.Role != "teacher" {
 		return false
 	}
-	var personType, personID, date, status string
-	if err := db.QueryRow(`SELECT person_type, person_id, date, COALESCE(status,'Present') FROM attendance WHERE id=?`+tw,
-		append([]any{id}, twArgs...)...).Scan(&personType, &personID, &date, &status); err != nil {
+	var personType, personID, date, status, classID string
+	var tid int
+	if err := db.QueryRow(`SELECT person_type, person_id, date, COALESCE(status,'Present'), COALESCE(class_id,''), tenant_id FROM attendance WHERE id=?`+tw,
+		append([]any{id}, twArgs...)...).Scan(&personType, &personID, &date, &status, &classID, &tid); err != nil {
 		return false
 	}
-	return personType == "student" && status != "Absent" && date == core.Today() && teacherMayActOnStudent(db, c, personID)
+	if personType != "student" || date != core.Today() || !teacherMayActOnStudent(db, c, personID) {
+		return false
+	}
+	// Undo never takes back a credit, so an absence that earned one stays an admin's to unwind.
+	return status != "Absent" || !sessionCredited(db, tid, personID, classID, date)
+}
+
+func sessionCredited(db *store.DB, tid int, studentID, classID, date string) bool {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_credits WHERE tenant_id=? AND student_id=? AND class_id=? AND date=? AND type='earned' AND category='class'`,
+		tid, studentID, classID, date).Scan(&n); err != nil {
+		core.Logger.Error("session credit check failed", "err", err)
+		return true
+	}
+	return n > 0
 }

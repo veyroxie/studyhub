@@ -46,8 +46,8 @@ func attendanceRow(t *testing.T, db *store.DB, studentID, date, status string) s
 	return id
 }
 
-// A teacher can take back a mis-tapped check-in on their own class the same day.
-// Absences stay with the admin: undo does not claw back the credits they grant.
+// A teacher can take back a mis-tapped mark on their own class the same day. An
+// absence that earned a make-up credit stays with the admin: undo does not claw it back.
 func TestATeacherCanUndoOnlyTheirOwnSameDayCheckIn(t *testing.T) {
 	r, cleanup := setupTestApp(t)
 	defer cleanup()
@@ -63,7 +63,7 @@ func TestATeacherCanUndoOnlyTheirOwnSameDayCheckIn(t *testing.T) {
 		want                        int
 	}{
 		{"own class, today, present", own, today, "Present", http.StatusNoContent},
-		{"own class, today, absent", own, today, "Absent", http.StatusForbidden},
+		{"own class, today, absent with no credit", own, today, "Absent", http.StatusNoContent},
 		{"another class, today, present", other, today, "Present", http.StatusForbidden},
 		{"own class, yesterday, present", own, yesterday, "Present", http.StatusForbidden},
 	}
@@ -72,6 +72,12 @@ func TestATeacherCanUndoOnlyTheirOwnSameDayCheckIn(t *testing.T) {
 		if w := doRequest(r, "DELETE", "/api/attendance/"+id, teacher, nil); w.Code != tc.want {
 			t.Errorf("%s: got %d, want %d (%s)", tc.name, w.Code, tc.want, w.Body.String())
 		}
+	}
+	credited := attendanceRow(t, db, own, today, "Absent")
+	db.Exec(`INSERT INTO replacement_credits(id,tenant_id,student_id,type,minutes,note,class_id,date,category) VALUES(?,1,?,'earned',4,'Absent','c1',?,'class')`,
+		core.GenerateID("RC"), own, today)
+	if w := doRequest(r, "DELETE", "/api/attendance/"+credited, teacher, nil); w.Code != http.StatusForbidden {
+		t.Errorf("own class, today, absent with a credit: got %d, want 403", w.Code)
 	}
 }
 

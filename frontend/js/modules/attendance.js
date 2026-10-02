@@ -71,6 +71,19 @@
   var NAME_STYLE   = 'font-weight:700;font-size:1rem;color:#111;line-height:1.3';
   var TIME_STYLE   = 'font-size:0.8rem;color:#94a3b8;margin-top:3px;line-height:1.4';
 
+  // A parent's absence report for this child, this class and this day, if any.
+  var REPORT_WORDS = {
+    pending:  'Parent reported absent, make-up credit waiting for approval',
+    approved: 'Parent reported absent, make-up credit given',
+    declined: 'Parent reported absent, make-up credit declined',
+    late:     'Parent reported absent less than 3 hours before, no make-up credit'
+  };
+  function _reportFor(studentId) {
+    return (App.Store.get().absenceReports || []).find(function(r) {
+      return r.studentId === studentId && r.classId === _attClassId && r.sessionDate === _attDate;
+    });
+  }
+
   // ─── shared student row builder ───────────────────────────────────────────
   function _studentRow(s, rec) {
     var checkedIn  = rec && rec.checkIn;
@@ -84,6 +97,10 @@
       ? 'In: ' + App.Utils.formatTime(rec.checkIn) + '  ·  Out: ' + App.Utils.formatTime(rec.checkOut)
       : checkedIn ? 'In: ' + App.Utils.formatTime(rec.checkIn) + '  · still in'
       : 'Not checked in';
+    var report = _reportFor(s.id);
+    var reportNote = report
+      ? '<div style="font-size:0.75rem;font-weight:600;color:#b45309;margin-top:3px">' + App.Utils.esc(REPORT_WORDS[report.status] || 'Parent reported absent') + '</div>'
+      : '';
 
     var undoBtn = (rec && _mayUndo(rec, isAbsent))
       ? '<button onclick="App.Attendance._undoAttendance(\'' + rec.id + '\',\'' + s.id + '\',' + (isAbsent ? 'true' : 'false') + ')" style="'
@@ -132,7 +149,7 @@
       +   '</div>'
       +   '<div style="min-width:0">'
       +     '<div style="' + NAME_STYLE + '">' + App.Utils.esc(s.firstName + ' ' + s.lastName) + '</div>'
-      +     '<div style="' + TIME_STYLE + '">' + timeStr + '</div>'
+      +     '<div style="' + TIME_STYLE + '">' + timeStr + '</div>' + reportNote
       +   '</div>'
       + '</div>'
       + '<div style="flex:0 0 auto;min-width:110px;max-width:160px;align-self:center">'
@@ -1171,7 +1188,8 @@
     var todo = App.Utils.rosterFor(state.students, _attClassId, day, state.enrollments, state.attendance)
       .filter(function(s) {
         var rec = state.attendance.find(function(a) { return a.personId === s.id && a.classId === _attClassId && a.date === day; });
-        return !rec || !(rec.checkIn || rec.status === 'Absent');
+        // A child the parent said would be away is checked in by hand if they turn up.
+        return (!rec || !(rec.checkIn || rec.status === 'Absent')) && !_reportFor(s.id);
       });
     if (todo.length === 0) {
       App.Utils.showToast('Everyone is already checked in or marked absent', 'info');
@@ -1261,9 +1279,13 @@
   var _absenceLock = {};
   // Mirrors the server: an admin may undo any record; a teacher only today's check-in,
   // because undoing an absence would not take back the credits it granted.
+  // Teachers undo today's marks; an absence only while it earned no credit (undo never takes one back).
   function _mayUndo(rec, isAbsent) {
     if (App.currentRole === 'admin') return true;
-    return App.currentRole === 'teacher' && !isAbsent && rec.date === App.Utils.today();
+    if (App.currentRole !== 'teacher' || rec.date !== App.Utils.today()) return false;
+    return !isAbsent || !(App.Store.get().replacementCredits || []).some(function(rc) {
+      return rc.studentId === rec.personId && rc.classId === rec.classId && rc.date === rec.date && rc.type === 'earned';
+    });
   }
 
   async function _markAbsentCredit(studentId) {
@@ -1313,21 +1335,22 @@
       return;
     }
 
-    // Credit the class's duration: 1 credit = 15 minutes, so 1hr = 4.
-    var credits = App.Utils.creditsForClass(cls);
+    // The server sizes the credit (the class as scheduled that day) and gives at most one per session.
     try {
-      await App.Api.post('/api/replacement-credits', {
+      var granted = await App.Api.post('/api/replacement-credits', {
         studentId: studentId,
         type: 'earned',
-        minutes: credits,
+        minutes: App.Utils.creditsForClass(cls), // must be positive; the server re-sizes a session credit itself
         category: 'class',
         note: 'Absent from ' + clsName + ' on ' + _attDate,
         classId: _attClassId,
         date: _attDate
-      });
-      App.Utils.showToast(stuName + ' marked absent — ' + credits + ' credit' + (credits === 1 ? '' : 's') + ' added', 'info');
+      }, { silent: true });
+      var credits = (granted && granted.minutes) || App.Utils.creditsForClass(cls);
+      App.Utils.showToast(stuName + ' marked absent, ' + credits + ' make-up credit' + (credits === 1 ? '' : 's') + ' added', 'success');
     } catch(e) {
-      App.Utils.showToast(stuName + ' marked absent (replacement failed: ' + e.message + ')', 'warning');
+      // 409: already credited, or the parent's report rules it out. The absence itself is saved.
+      App.Utils.showToast(stuName + ' marked absent. ' + (e.status === 409 ? e.message : 'The make-up credit could not be added, please try again.'), e.status === 409 ? 'info' : 'error', 8000);
     }
 
     App.Router.refresh();
