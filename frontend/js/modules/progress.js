@@ -67,9 +67,7 @@
     var invoices = s.invoices || [];
     var reports  = (s.progressReports || []);
 
-    var hasUnpaid = invoices.some(function(i) {
-      return i.type === 'Monthly' && (i.status === 'Unpaid' || i.status === 'Overdue');
-    });
+    var hasUnpaid = App.Utils.reportsPaused(invoices);
 
     var gateBanner = hasUnpaid
       ? '<div style="background:#fef3c7;border:1px solid #fde68a;border-left:4px solid #d97706;border-radius:0;padding:1rem 1.25rem;margin-bottom:1.25rem">'

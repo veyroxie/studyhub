@@ -438,6 +438,13 @@
       return s && s.fullName ? s.fullName : '';
     },
 
+    // reportsPaused mirrors the server's gate: a parent with an unpaid monthly fee gets no report text.
+    reportsPaused(invoices) {
+      return (invoices || []).some(function(i) {
+        return i.type === 'Monthly' && (i.status === 'Unpaid' || i.status === 'Overdue');
+      });
+    },
+
     // boardItems is THE bulletin board: published, pinned, not past their archive
     // date, most recently changed first (the date a parent needs to see).
     boardItems(announcements, today) {

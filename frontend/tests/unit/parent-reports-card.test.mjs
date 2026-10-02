@@ -31,3 +31,10 @@ test('escapes names', () => {
 test('says so when there are no reports yet', () => {
   assert.match(card([]), /No progress reports yet/);
 });
+
+test('a parent who owes sees the reports are paused, not an empty reader', () => {
+  const D = loadSandbox(['js/utils.js', 'js/modules/absence.js', 'js/modules/dashboard.js']).App.Dashboard;
+  const html = D._latestReportsHtml(reports, kids, true);
+  assert.match(html, /paused until this month/);
+  assert.doesNotMatch(html, /_readModal/);
+});

@@ -116,7 +116,7 @@
       +   '<input name="newEmail" type="email" placeholder="New email" class="form-input" required autocomplete="email">'
       +   '<input name="confirmEmail" type="email" placeholder="Type the new email again" class="form-input" required autocomplete="off">'
       +   '<input name="currentPassword" type="password" placeholder="Current password" class="form-input" required autocomplete="current-password">'
-      +   '<p style="font-size:0.75rem;color:#94a3b8;margin:0">You will be signed out and sign in again with the new email.</p>'
+      +   '<p style="font-size:0.75rem;color:#94a3b8;margin:0">You will be signed out and sign in again with the new email. If you added the class calendar to your phone, add it again from here afterwards.</p>'
       +   '<button type="submit" style="align-self:flex-start;padding:0.5rem 1.1rem;font-size:0.8rem;font-weight:600;background:#fff;color:#374151;border:1px solid #e2e8f0;border-radius:4px;cursor:pointer">Change email</button>'
       + '</form>' + mfa
     );

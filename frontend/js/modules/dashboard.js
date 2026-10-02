@@ -28,7 +28,9 @@
     var st = App.Store.get();
     var board = App.Utils.boardItems(st.announcements, App.Utils.today());
     var review = (isAdmin || isTeacher) ? App.Absence.reviewHtml(st.absenceReports || [], st.students || [], st.classes || []) : '';
-    container.innerHTML = viewToggle + review + dashContent + _bulletinBoardHtml(board, isAdmin);
+    // Parents get the board first: it is there so nobody can say they were not told.
+    var boardHtml = _bulletinBoardHtml(board, isAdmin);
+    container.innerHTML = viewToggle + review + (isAdmin || isTeacher ? dashContent + boardHtml : boardHtml + dashContent);
     if (isTeacher) _loadMyHours();
     setTimeout(_runCountUp, 80);
   }
@@ -72,7 +74,7 @@
         ? '<p style="font-size:0.78rem;color:#94a3b8;margin-top:1rem">No policies on the bulletin board yet. Tick "Bulletin board policy" when posting an announcement.</p>'
         : '';
     }
-    return '<section aria-label="Bulletin board" style="background:#fffbeb;border-radius:0;border:1px solid #fde68a;padding:1.25rem 1.5rem;margin-top:1rem">'
+    return '<section aria-label="Bulletin board" style="background:#fffbeb;border-radius:0;border:1px solid #fde68a;padding:1.25rem 1.5rem;margin:1rem 0">'
       + '<div style="font-size:0.72rem;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.25rem">Bulletin board</div>'
       + '<div style="font-size:0.75rem;color:#b45309;margin-bottom:0.5rem">Centre policies. Please read.</div>'
       + items.map(function(a) {
@@ -89,7 +91,7 @@
   var LATEST_REPORTS = 5;
 
   // Newest first; a report id is safe in onclick because the server mints it.
-  function _latestReportsHtml(reports, students) {
+  function _latestReportsHtml(reports, students, paused) {
     var nameOf = {};
     students.forEach(function(st) { nameOf[st.id] = st.firstName; });
     var latest = reports.filter(function(pr) { return nameOf[pr.studentId]; })
@@ -97,6 +99,8 @@
       .slice(0, LATEST_REPORTS);
     var rows = latest.length === 0
       ? '<p style="color:#94a3b8;font-size:0.82rem;text-align:center;padding:1rem 0">No progress reports yet</p>'
+      : paused
+      ? '<p style="color:#92400e;font-size:0.82rem;padding:0.5rem 0">Reports are paused until this month\'s fee is paid.</p>'
       : latest.map(function(pr) {
         return '<button type="button" onclick="App.Progress._readModal(\'' + pr.id + '\')" style="display:block;width:100%;text-align:left;background:none;border:none;border-left:3px solid var(--gold);padding:0.6rem 0 0.6rem 0.85rem;margin-bottom:0.6rem;cursor:pointer">'
           + '<div style="font-size:0.84rem;font-weight:600;color:#111">' + App.Utils.esc(nameOf[pr.studentId]) + ' · ' + App.Utils.esc(pr.subject || 'Report') + '</div>'
@@ -519,11 +523,11 @@
                   return '<div style="font-size:0.72rem;margin-top:3px;display:flex;align-items:center;gap:4px">'
                     + '<span style="width:6px;height:6px;border-radius:50%;background:#ef4444;flex-shrink:0"></span>'
                     + '<span style="color:#dc2626;font-weight:600">Absent today</span></div>';
-                } else {
-                  return '<div style="font-size:0.72rem;margin-top:3px;display:flex;align-items:center;gap:4px">'
-                    + '<span style="width:6px;height:6px;border-radius:50%;background:#f59e0b;flex-shrink:0"></span>'
-                    + '<span style="color:#d97706;font-weight:600">Not checked in yet</span></div>';
                 }
+                var reported = (s.absenceReports || []).some(function(r) { return r.studentId === stu.id && r.sessionDate === today; });
+                return '<div style="font-size:0.72rem;margin-top:3px;display:flex;align-items:center;gap:4px">'
+                  + '<span style="width:6px;height:6px;border-radius:50%;background:' + (reported ? '#94a3b8' : '#f59e0b') + ';flex-shrink:0"></span>'
+                  + '<span style="color:' + (reported ? '#64748b' : '#d97706') + ';font-weight:600">' + (reported ? 'You reported an absence today' : 'Not checked in yet') + '</span></div>';
               })()
         +   '</div>'
         +   '<span style="font-size:0.68rem;font-weight:700;color:' + statusColor + ';background:' + statusBg + ';padding:3px 10px;border-radius:4px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.04em">' + App.Utils.esc(stu.status) + '</span>'
@@ -609,7 +613,7 @@
     html += App.Absence.parentListHtml(s.absenceReports || [], myStudents, s.classes || []);
 
     // ── Progress reports ────────────────────────────────────────────────────
-    html += _latestReportsHtml(s.progressReports || [], myStudents);
+    html += _latestReportsHtml(s.progressReports || [], myStudents, App.Utils.reportsPaused(s.invoices));
 
     var published = (announcements || []).filter(function(a) { return a.status === 'published' || !a.status; });
 

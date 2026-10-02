@@ -18,7 +18,7 @@ func invoiceEmailResult(to string) map[string]any {
 		return map[string]any{"queued": true, "to": to}
 	}
 	return map[string]any{"queued": false, "to": to,
-		"reason": "outbound email is restricted to the allowlist, so this would not reach " + to}
+		"reason": "email to parents is switched off for now, so this would not reach " + to + ". Send it by WhatsApp instead."}
 }
 
 // HandleInvoiceEmail sends the parent an issued invoice on demand, for invoices made

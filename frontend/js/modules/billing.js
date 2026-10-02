@@ -1235,7 +1235,7 @@
       + '<p style="font-size:0.82rem;font-weight:600;color:#374151;margin:0 0 0.6rem">How did you pay?</p>'
       + '<div id="payment-methods-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:1.25rem">'
       // Cash — direct submit (no proof needed)
-      + '<button onclick="App.Billing._parentConfirmSubmit(\'' + invId + '\',\'Cash\')" '
+      + '<button onclick="App.Billing._parentCashClaim(\'' + invId + '\')" '
       +   'style="padding:0.65rem 0.5rem;border:2px solid #e2e8f0;border-radius:0;font-size:0.8rem;font-weight:600;color:#374151;background:#fff;cursor:pointer;text-align:center;transition:all 0.15s" '
       +   'onmouseover="this.style.borderColor=\'var(--gold)\';this.style.color=\'var(--gold)\'" '
       +   'onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.color=\'#374151\'">Cash</button>'
@@ -1382,6 +1382,18 @@
     }
   }
 
+  // A cash claim has no proof to attach, so it asks once: a stray tap must not claim a payment.
+  async function _parentCashClaim(invId) {
+    var payable = _payable(invId);
+    if (!payable) return;
+    var ok = await App.Utils.showConfirm({
+      title: 'Paid in cash?',
+      message: 'I paid ' + App.Utils.esc(App.Utils.formatCurrency(_payableAmount(payable))) + ' in cash at the centre. The centre will confirm it.',
+      confirmLabel: 'Yes, I paid'
+    });
+    if (ok) _parentConfirmSubmit(invId, 'Cash');
+  }
+
   function _parentConfirmSubmit(invId, method, refNo, proofPath) {
     var payable = _payable(invId);
     if (!payable) return;
@@ -1400,9 +1412,8 @@
         App.Notifs && App.Notifs.refresh && App.Notifs.refresh();
         App.Router.refresh();
       }).catch(function() {
-        // Honest failure: never fake a submitted state locally — the admin
-        // would never see it and the parent would believe it went through.
-        App.Utils.showToast('Payment submission failed — please check your connection and try again', 'error');
+        // App.Api already said why (offline, bill changed, already paid); a second, generic toast misled.
+        // Never fake a submitted state locally: the admin would never see it.
       });
     });
   }
@@ -1809,7 +1820,7 @@
   async function _issueMonthNow() {
     var ok = await App.Utils.showConfirm({
       title: 'Issue every draft?',
-      message: 'Each one gets an invoice number. Each parent gets one email covering all of their children. An issued invoice cannot be edited — only reissued.',
+      message: 'Each one gets an invoice number. Each parent is emailed once for all their children, if email to parents is switched on; WhatsApp always works. An issued invoice cannot be edited — only reissued.',
       confirmLabel: 'Issue them',
     });
     if (!ok) return;
@@ -2403,6 +2414,7 @@
     _markPaidModal: _markPaidModal,
     _confirmCash: _confirmCash,
     _confirmCashSubmit: _confirmCashSubmit,
+    _parentCashClaim: _parentCashClaim,
     _confirmPaid: _confirmPaid,
     _showAdminProofUpload: _showAdminProofUpload,
     _showAdminPaymentMethods: _showAdminPaymentMethods,
