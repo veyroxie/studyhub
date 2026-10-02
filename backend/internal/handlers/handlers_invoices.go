@@ -482,6 +482,12 @@ func HandleInvoiceDelete(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "invoice not found", http.StatusNotFound)
 			return
 		}
+		// A payment is undone by "Mark unpaid", which surrenders the receipt and leaves a
+		// reason; deleting a paid invoice used to skip both.
+		if status == invoiceStatusPaid || status == models.InvoiceStatusPendingVerification {
+			core.RespondError(w, "this invoice has a payment on it: mark it unpaid first, then delete it", http.StatusConflict)
+			return
+		}
 		found, err := deleteInvoiceReturningCredit(r.Context(), db, tw, twArgs, id, tenantID, status)
 		if err != nil {
 			core.LogFromReq(r).Error("invoice delete failed", "err", err, "invoice_id", id)
@@ -498,12 +504,6 @@ func HandleInvoiceDelete(db *store.DB) http.HandlerFunc {
 			"amount":    amount,
 		})
 		core.LogAudit(db, store.TenantID(c), c.Email, "invoice_deleted", "invoice", id, string(detailBytes))
-		// Deleting a paid invoice drops the referral count exactly as reversing
-		// one does, so it has to re-derive the reward too. Bulk delete refuses
-		// Paid invoices outright and needs no equivalent.
-		if status == invoiceStatusPaid {
-			store.ReferralReconcile(db, studentID, c)
-		}
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

@@ -194,10 +194,9 @@ func TestRepayNoOpWritesNoAuditRow(t *testing.T) {
 	}
 }
 
-// Deleting a paid invoice drops the referral count exactly as reversing one
-// does. Closing only the reversal path would leave the reward standing for the
-// admin who removes the invoice instead of un-paying it.
-func TestReferralMilestoneUnwindsWhenAPaidInvoiceIsDeleted(t *testing.T) {
+// A paid invoice is not deleted directly; it is marked unpaid first, which drops
+// the referral count, and only then removed. Both steps must leave the reward unwound.
+func TestReferralMilestoneUnwindsWhenAPaidInvoiceIsUnpaidThenDeleted(t *testing.T) {
 	r, cleanup := setupTestApp(t)
 	defer cleanup()
 	token := getAdminToken(t, r)
@@ -218,9 +217,14 @@ func TestReferralMilestoneUnwindsWhenAPaidInvoiceIsDeleted(t *testing.T) {
 		t.Fatalf("setup: want earned before the delete, got %s", got.status)
 	}
 
-	w := doRequest(r, "DELETE", "/api/invoices/"+invoices[2], token, nil)
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("delete invoice: got %d: %s", w.Code, w.Body.String())
+	if w := doRequest(r, "DELETE", "/api/invoices/"+invoices[2], token, nil); w.Code != http.StatusConflict {
+		t.Fatalf("deleting a paid invoice directly: got %d, want 409", w.Code)
+	}
+	if w := doRequest(r, "PUT", "/api/invoices/"+invoices[2]+"/pay", token, map[string]string{"status": "Unpaid", "note": "made in error"}); w.Code != http.StatusOK {
+		t.Fatalf("mark unpaid: %d %s", w.Code, w.Body.String())
+	}
+	if w := doRequest(r, "DELETE", "/api/invoices/"+invoices[2], token, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("delete after unpaying: got %d: %s", w.Code, w.Body.String())
 	}
 
 	after := readReferral(t, db, rewardID)

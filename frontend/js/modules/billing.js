@@ -729,8 +729,9 @@
                   +     '<a href="/api/invoices/' + inv.id + '/pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download invoice</a>'
                   +     (billTag ? '<a href="/api/family-bills/' + inv.id + '/pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download family bill</a>' : '')
                   +     (inv.status === 'Paid' ? '<a href="/api/invoices/' + inv.id + '/receipt.pdf" target="_blank" class="block px-4 py-2 text-sm hover:bg-slate-50 text-slate-700">Download receipt</a>' : '')
-                  +     '<div class="my-1 border-t border-slate-100"></div>'
-                  +     '<button onclick="App.Billing._deleteInvoice(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-red-50 text-red-600">Delete</button>'
+                  // A payment comes off by Mark unpaid, never by deleting the invoice under it.
+                  +     (_hasPayment(inv) ? '' : '<div class="my-1 border-t border-slate-100"></div>'
+                  +       '<button onclick="App.Billing._deleteInvoice(\'' + inv.id + '\')" class="w-full text-left px-4 py-2 text-sm hover:bg-red-50 text-red-600">Delete</button>')
                   +   '</div>'
                   + '</div>'
                   + '</td>'
@@ -813,8 +814,17 @@
   }
 
   function _bulkConfirmPaidNow(method) {
-    var ids = Object.keys(_selectedInv);
-    if (ids.length === 0) return;
+    // A parent's claimed transfer is confirmed one by one, with its reference; bulk Cash would overwrite it.
+    var invoices = App.Store.get().invoices || [];
+    var ids = Object.keys(_selectedInv).filter(function(id) {
+      var inv = invoices.find(function(i) { return i.id === id; });
+      return !inv || inv.status !== 'Pending Verification';
+    });
+    if (ids.length === 0) {
+      App.Utils.hideModal(true);
+      App.Utils.showToast('These are awaiting confirmation: open each one to confirm the parent\'s transfer.', 'info');
+      return;
+    }
     App.Utils.hideModal(true);
     // Persist each invoice to the server. The old version only mutated the
     // local store, so every "paid" reverted on the next snapshot reload.
@@ -1411,6 +1421,10 @@
       .then(function() { delete _inFlight[key]; });
   }
 
+  function _hasPayment(inv) {
+    return inv.status === 'Paid' || inv.status === 'Pending Verification';
+  }
+
   function _submitPayment(payable, payload, proofPath) {
     if (!payable.isBill) return App.Api.put('/api/invoices/' + payable.inv.id + '/pay', payload);
     return App.Api.post('/api/family-bills/pay', Object.assign({}, payload, {
@@ -1592,7 +1606,7 @@
   }
 
   async function _deleteInvoice(invoiceId) {
-    var ok = await App.Utils.showConfirm({ title: 'Delete invoice', message: 'This will be voided and removed from active reports.', confirmLabel: 'Delete', danger: true });
+    var ok = await App.Utils.showConfirm({ title: 'Delete invoice', message: 'The invoice is removed and its number is not reused. To correct an issued invoice, use Reissue in Edit instead.', confirmLabel: 'Delete', danger: true });
     if (!ok) return;
     var prev = App.Api.optimisticRemove('invoices', invoiceId);
     App.Router.refresh();
@@ -1920,7 +1934,10 @@
       // An issued invoice is frozen: its money and dates cannot be edited
       // (ADR-016), so Save Changes can only alter the wording. Changing a
       // figure means replacing the document, which is what Reissue does.
-      + (isIssued
+      + (isIssued && _hasPayment(inv)
+          ? '<span style="font-size:0.75rem;color:#94a3b8;align-self:center">To change the money, mark it unpaid first, then reissue.</span>'
+          : '')
+      + (isIssued && !_hasPayment(inv)
           ? '<button type="button" onclick="App.Billing._reissueInvoice(\'' + inv.id + '\')" class="px-4 py-2 text-sm border border-amber-300 bg-amber-50 text-amber-800 rounded-lg hover:bg-amber-100" title="Cancels this invoice and issues a replacement with these figures, under a new number">Reissue with changes</button>'
           : '')
       + '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">' + (isIssued ? 'Save wording' : 'Save Changes') + '</button>'
