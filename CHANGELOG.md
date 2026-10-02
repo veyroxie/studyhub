@@ -46,6 +46,15 @@ dated section when you cut a deploy.
   their password and typed twice. They are signed out and sign in again.
 
 ### Fixed
+- Reversing a payment after the 7th no longer costs the parent the early bird.
+- Every make-up credit for a missed class is sized by the class as scheduled
+  that day; a late or declined absence report cannot be credited by a teacher;
+  undoing a cancellation keeps a credit an approved absence relies on.
+- An invoice with a payment on it is marked unpaid first, never deleted.
+- Parents no longer receive other families' enrolments or staff emails;
+  teachers no longer receive colleagues' phone numbers and emergency contacts.
+- The attendance roster shows parents' absence reports; check-in is for today's
+  roster only; teachers can undo an absence that earned no credit.
 - One make-up credit per student per session: a cancellation, a teacher's
   "Absent + credit" and an approved absence report can no longer pay twice.
 - A paid invoice only leaves Paid by "Mark unpaid"; it can no longer be pushed
