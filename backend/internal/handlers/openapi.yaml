@@ -107,14 +107,15 @@ paths:
                 properties:
                   ok: { type: boolean }
                   db: { type: string }
-                  version: { type: string }
+                  uptime_sec: { type: integer }
+        '503':
+          description: Database unreachable
 
   /metrics:
     get:
       tags: [meta]
-      security: []
-      summary: Prometheus metrics
-      description: Text-format counters + summaries. Firewall this port from public traffic.
+      summary: Prometheus metrics (developer only)
+      description: Text-format counters + summaries. Requires a DEVELOPER_EMAILS session.
       responses:
         '200':
           description: Prometheus text format

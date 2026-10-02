@@ -128,7 +128,7 @@ structured JSON output and the `background jobs starting` line.
 
 Caddy handles HTTPS via Let's Encrypt automatically.
 
-Health check: `GET /api/health` returns `{ok, db, version, env}`. Point your
+Health check: `GET /api/health` returns `{ok, db, uptime_sec}` (503 when the database is down). Point your
 uptime monitor (UptimeRobot, BetterStack, etc.) at this.
 
 ## Architecture notes

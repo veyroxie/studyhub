@@ -358,8 +358,9 @@ type Announcement struct {
 	// opposite lifecycles: a notice matters for a week, a policy stays true
 	// for a year and gets amended. See migration 0049.
 	Category string `json:"category"`
-	// Pinned is admin-only. PinRequested is what a teacher sets when
-	// submitting, for the admin to act on at approval.
+	// Pinned puts the post on the bulletin board: admin-only, and it opens the
+	// audience to everyone. PinRequested is no longer written (teacher pin
+	// requests were dropped 2026-10-01); old rows may still carry it.
 	Pinned       bool `json:"pinned"`
 	PinRequested bool `json:"pinRequested,omitempty"`
 	// UpdatedOn is when the text last changed, which for a policy is the date

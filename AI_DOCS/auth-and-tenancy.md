@@ -218,7 +218,7 @@ double-submit `sh_csrf` cookie compared constant-time against the `X-CSRF-Token`
 it to set the header. "Hardening" it breaks the whole scheme. There is a fixed exempt-path
 list including the webhooks and pre-session auth endpoints (`csrf.go:43-54`).
 
-Deliberately public (`server.go:108-139`): `/api/health`, `/metrics`, `/api/openapi.yaml`,
+Deliberately public (`server.go:108-139`): `/api/health` (ok, db, uptime only), `/api/openapi.yaml`,
 `/api/branding`, `/api/push/vapid-key`, `/api/calendar/{userID}/{token}` (signed-URL auth),
 the `/api/auth/login|mfa/verify|refresh|logout` set, `/api/register`, `/api/register-teacher`,
 `/api/forgot-password`, `/api/reset-password`, `/api/set-password`, `/api/verify-email`,
