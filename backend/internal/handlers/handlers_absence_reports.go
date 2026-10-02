@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
@@ -215,7 +216,7 @@ func HandleCreateAbsenceReport(db *store.DB) http.HandlerFunc {
 			return
 		}
 		body.Reason = strings.TrimSpace(body.Reason)
-		if len(body.Reason) > absenceReasonMax {
+		if utf8.RuneCountInString(body.Reason) > absenceReasonMax {
 			core.RespondError(w, "keep the reason under 300 characters", http.StatusBadRequest)
 			return
 		}
@@ -282,7 +283,7 @@ func HandleDecideAbsenceReport(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "tell the parent why the credit was not given", http.StatusBadRequest)
 			return
 		}
-		if len(body.Note) > absenceReasonMax {
+		if utf8.RuneCountInString(body.Note) > absenceReasonMax {
 			core.RespondError(w, "keep the note under 300 characters", http.StatusBadRequest)
 			return
 		}

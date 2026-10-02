@@ -1,6 +1,9 @@
 (function() {
   window.App = window.App || {};
   let _modalDirty = false;
+  // A confirm still waiting for an answer. Escape, an outside click or another popup answers it 'no',
+  // or its caller would wait forever (a stuck Issue button).
+  var _pendingConfirm = null;
   let _modalDirtyListeners = [];
   let _previousFocus = null;
   let _trapFocusHandler = null;
@@ -51,6 +54,13 @@
     _modalDirtyListeners = [];
   }
 
+  function _settleConfirm() {
+    if (!_pendingConfirm) return;
+    var answer = _pendingConfirm;
+    _pendingConfirm = null;
+    answer();
+  }
+
   function _setBackgroundInert(on) {
     var app = document.getElementById('app');
     if (!app) return;
@@ -60,6 +70,7 @@
 
   App.Utils = {
     showModal(html) {
+      _settleConfirm();
       // Cancel a still-pending hideModal fade-out so its delayed cleanup can't
       // wipe the modal we're about to show (open-right-after-close race).
       if (_modalExitTimer) { clearTimeout(_modalExitTimer); _modalExitTimer = null; }
@@ -113,6 +124,7 @@
       if (!force && _modalDirty) {
         if (!confirm('You have unsaved changes. Discard?')) return;
       }
+      _settleConfirm();
       _modalDirty = false;
       _detachDirtyListeners();
       // Before any focus restore: focus cannot land on a control inside an inert page.
@@ -676,10 +688,12 @@
       var cancelBtn = document.getElementById(id + '-cancel');
 
       function finish(result) {
+        _pendingConfirm = null;
         mc.classList.remove('sh-confirm-frame');
         App.Utils.hideModal(true);
         resolve(result);
       }
+      _pendingConfirm = function() { mc.classList.remove('sh-confirm-frame'); resolve(false); };
 
       cancelBtn.addEventListener('click', function() { finish(false); });
       okBtn.addEventListener('click', function() { finish(true); });

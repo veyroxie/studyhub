@@ -35,3 +35,17 @@ test('the login screen always hands back a usable page', () => {
   sandbox.App.Login.show('Signed out');
   assert.equal(nodes.app.inert, false);
 });
+
+// Escape or an outside click closed a confirm without answering it, and an action
+// guarded until the answer (Issue every draft) stayed locked until a reload.
+test('a confirm closed without an answer is a no', async () => {
+  const sandbox = loadSandbox(['js/utils.js']);
+  const nodes = { app: el(), 'modal-overlay': el(), 'modal-content': el(), };
+  const buttons = {};
+  sandbox.document.getElementById = (id) => nodes[id] || (buttons[id] = buttons[id] || el());
+  sandbox.document.removeEventListener = () => {};
+  nodes['modal-content'].classList = { add() {}, remove() {}, contains: () => false };
+  const answer = sandbox.App.Utils.showConfirm({ title: 'Issue every draft?', confirmLabel: 'Issue' });
+  sandbox.App.Utils.hideModal();
+  assert.equal(await answer, false);
+});
