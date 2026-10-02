@@ -1336,12 +1336,13 @@
       + '<h2 class="text-lg font-bold mb-1">Mark child absent</h2>'
       + '<p class="text-sm text-slate-500 mb-4">If informed at least 3 hours before class start, the child earns a replacement credit. If informed late, tick "Late absence" to skip the credit.</p>'
       + '<form id="add-credit-form" class="space-y-4">'
-      + _field('Class', App.Utils.filterFor('cred-class', 'Filter classes...') + '<select id="cred-class" name="classId" class="form-input">' + classOpts + '</select>')
+      // The class is required: it is what sizes the credit and what stops one session being credited twice.
+      + _field('Class', App.Utils.filterFor('cred-class', 'Filter classes...') + '<select id="cred-class" name="classId" class="form-input" required>' + classOpts + '</select>')
       + '<label style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;color:#374151;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;padding:0.55rem 0.75rem;cursor:pointer">'
       +   '<input type="checkbox" name="lateAbsence" style="cursor:pointer">'
       +   'Late absence (informed less than 3 hours before — no credit)'
       + '</label>'
-      + _field('Credits <span class="text-slate-400 font-normal">(ignored if late absence)</span>', '<select name="minutes" class="form-input"><option value="1">1 credit</option><option value="2">2 credits</option><option value="3">3 credits</option><option value="4" selected>4 credits</option></select>')
+      + '<p style="font-size:0.75rem;color:#94a3b8;margin:0">The class\'s length sets the make-up credit: 1 credit per 15 minutes.</p>'
 
       + _field('Note', '<input name="note" class="form-input" placeholder="e.g. Sick, family event">')
       + _field('Date', '<input name="date" type="date" class="form-input" value="' + today + '" required>')
@@ -1359,22 +1360,26 @@
       var date = fd.get('date');
       var isLate = fd.get('lateAbsence') === 'on';
       try {
-        // Mark absent in attendance if class selected
-        if (classId) {
-          await App.Api.post('/api/attendance', { personId: studentId, personType: 'student', date: date, classId: classId, status: 'Absent' });
-        }
+        if (!classId) { App.Utils.showToast('Pick the class the child missed', 'error'); return; }
+        await App.Api.post('/api/attendance', { personId: studentId, personType: 'student', date: date, classId: classId, status: 'Absent' });
         if (!isLate) {
-          var cls = classId ? state.classes.find(function(c) { return c.id === classId; }) : null;
-          await App.Api.post('/api/replacement-credits', {
-            studentId: studentId,
-            type: 'earned',
-            minutes: parseInt(fd.get('minutes'), 10),
-            category: fd.get('category') || 'class',
-            note: fd.get('note') || (cls ? 'Absent from ' + cls.name + ' on ' + date : ''),
-            classId: classId,
-            date: date
-          });
-          App.Utils.showToast('Marked absent — replacement credit added', 'success');
+          var cls = state.classes.find(function(c) { return c.id === classId; });
+          try {
+            var granted = await App.Api.post('/api/replacement-credits', {
+              studentId: studentId,
+              type: 'earned',
+              minutes: App.Utils.creditsForClass(cls), // must be positive; the server re-sizes a session credit itself
+              category: 'class',
+              note: fd.get('note') || (cls ? 'Absent from ' + cls.name + ' on ' + date : ''),
+              classId: classId,
+              date: date
+            }, { silent: true });
+            var units = (granted && granted.minutes) || 0;
+            App.Utils.showToast('Marked absent, ' + units + ' make-up credit' + (units === 1 ? '' : 's') + ' added', 'success');
+          } catch (creditErr) {
+            if (creditErr.status !== 409) throw creditErr;
+            App.Utils.showToast('Marked absent. ' + creditErr.message, 'info', 8000);
+          }
         } else {
           App.Utils.showToast('Marked absent — late notice, no credit issued', 'info');
         }

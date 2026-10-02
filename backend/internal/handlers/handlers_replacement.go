@@ -125,6 +125,11 @@ func HandleCreateReplacementCredit(db *store.DB) http.HandlerFunc {
 			core.RespondError(w, "category must be 'class' or 'self-study'", 400)
 			return
 		}
+		// A class credit with no class escapes the one-per-session rule: an admin's manual adjustment only.
+		if rc.Type == "earned" && rc.Category == "class" && rc.ClassID == "" && !core.IsAdminRole(c) {
+			core.RespondError(w, "pick the class the child missed", http.StatusBadRequest)
+			return
+		}
 		if rc.ID == "" {
 			rc.ID = core.GenerateID("RC")
 		}
