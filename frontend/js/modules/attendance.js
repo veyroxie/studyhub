@@ -125,14 +125,14 @@
             + 'min-height:36px;width:100%;margin-top:0.35rem;padding:0.35rem 0.75rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;'
             + 'border-radius:0;font-size:0.75rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
             + 'title="Parent informed at least 3 hours before class"'
-            + '>Absent + Replacement</button>'
+            + '>Absent + make-up credit</button>'
             + '<button onclick="App.Attendance._markAbsentNoCredit(\'' + s.id + '\')" style="'
             + 'min-height:32px;width:100%;margin-top:0.3rem;padding:0.3rem 0.75rem;background:#fff;color:#64748b;border:1px solid #e2e8f0;'
             + 'border-radius:0;font-size:0.72rem;font-weight:600;cursor:pointer;transition:opacity 0.15s" '
             + 'title="Late notice (less than 3 hours) — no credit issued"'
             + '>Absent (no credit)</button>'
             // Shown, not only in a tooltip: phones never hover.
-            + '<p style="font-size:0.68rem;color:#94a3b8;margin:0.3rem 0 0;line-height:1.35">Replacement only if the parent told us at least 3 hours before class.</p>'
+            + '<p style="font-size:0.68rem;color:#94a3b8;margin:0.3rem 0 0;line-height:1.35">A make-up credit only if the parent told us at least 3 hours before class.</p>'
           : '');
     } else if (!checkedOut) {
       actionBtn = (live ? '<button onclick="App.Attendance._checkOutStudent(\'' + s.id + '\')" style="'

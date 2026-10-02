@@ -616,10 +616,10 @@
     const colCount = isAdmin ? 8 : isClient ? 7 : 6;
 
     container.innerHTML = ''
-      + '<div class="flex items-center justify-between mb-6">'
+      + '<div class="flex items-center justify-between mb-6" style="flex-wrap:wrap;gap:0.75rem">'
       +   '<h1 class="text-2xl font-bold text-slate-800">Billing</h1>'
       +   (isAdmin
-          ? '<div class="flex gap-2">'
+          ? '<div class="flex gap-2" style="flex-wrap:wrap">'
           + '<button onclick="App.Billing._monthRunModal()" class="px-4 py-2 text-sm text-white rounded-lg" style="background:#4f46e5" title="Draft the month, review it, then issue the lot">Run the month</button>'
           // Kept alongside: this one also generates payroll and self-study
           // overflow, which the invoice review flow deliberately does not touch.
@@ -694,7 +694,7 @@
               const billTag = inFamilyBill[inv.id] && isAdmin ? ' <span style="font-size:0.65rem;font-weight:700;color:#854d0e;background:#fefce8;border:1px solid #fde68a;padding:0 0.3rem">Family bill</span>' : '';
               return '<tr class="hover:bg-slate-50 transition-colors">'
                 + (isAdmin ? '<td class="td" style="width:36px"><input type="checkbox" class="inv-cb" data-id="' + inv.id + '" onchange="App.Billing._toggleSelectInv(\'' + inv.id + '\',this.checked)" style="cursor:pointer"' + (_selectedInv[inv.id] ? ' checked' : '') + '></td>' : '')
-                + '<td class="td"><div class="font-medium text-slate-800">' + App.Utils.esc(stuName) + billTag + '</div><div class="text-xs text-slate-400">' + inv.id + '</div></td>'
+                + '<td class="td"><div class="font-medium text-slate-800">' + App.Utils.esc(stuName) + billTag + '</div><div class="text-xs text-slate-400">' + App.Utils.esc(inv.invoiceNo || (inv.status === 'Draft' ? 'Draft' : '')) + '</div></td>'
                 + '<td class="td text-sm text-slate-600"><button type="button" onclick="App.Billing._viewInvoiceModal(\'' + inv.id + '\')" title="View breakdown" style="text-align:left;background:none;border:none;padding:0;color:inherit;cursor:pointer;font:inherit;text-decoration:underline;text-decoration-color:#e2e8f0;text-underline-offset:2px">' + App.Utils.esc(inv.description) + '</button></td>'
                 + '<td class="td">' + App.Utils.badge(inv.type, inv.type === 'Monthly' ? 'blue' : 'purple') + '</td>'
                 + '<td class="td text-sm ' + (isNearDue ? 'text-amber-600 font-medium' : 'text-slate-600') + '">'
