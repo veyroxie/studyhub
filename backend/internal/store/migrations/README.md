@@ -23,8 +23,8 @@ Numbered SQL files applied in order on every server boot. Tracked in the
 
 ## Don't edit applied migrations
 
-If you edit a file after it's been applied, the checksum changes and you'll get
-a `WARNING — checksum mismatch` log on every boot. **Don't do this.** Different
+If you edit a file after it's been applied, the checksum changes and the server
+**refuses to boot** (a FATAL checksum mismatch, `migrate.go`). **Don't do this.** Different
 environments will have applied the original version, leaving them out of sync
 in ways that are very hard to debug. Instead, add a new migration that fixes
 or replaces what the old one did.

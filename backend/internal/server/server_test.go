@@ -48,11 +48,19 @@ func TestTechnicalEndpointsRefuseAnonymousCallers(t *testing.T) {
 	db := store.InitDB(testDSN())
 	defer db.Close()
 	h := Build(db)
-	for _, path := range []string{"/metrics", "/api/dev/health", "/api/dev/audit-logs", "/api/dev/failures"} {
+	for _, path := range []string{"/metrics", "/api/dev/health", "/api/dev/audit-logs", "/api/dev/failures", "/api/absence-reports/sessions?studentId=STU001"} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("GET %s anonymously: %d, want 401", path, w.Code)
+		}
+	}
+	// Writes without a session are refused before any handler runs (CSRF or auth, whichever is first).
+	for _, path := range []string{"/api/absence-reports", "/api/absence-reports/ABS_X/decision"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("POST", path, strings.NewReader(`{}`)))
+		if w.Code != http.StatusUnauthorized && w.Code != http.StatusForbidden {
+			t.Errorf("POST %s anonymously: %d, want 401 or 403", path, w.Code)
 		}
 	}
 	w := httptest.NewRecorder()

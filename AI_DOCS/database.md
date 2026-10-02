@@ -108,13 +108,18 @@ number is the separate `student_no` column with a partial unique index per tenan
 **Soft deletes are inconsistent by type.** `deleted_at` is TEXT on `students`, `families`,
 `classes`, `invoices`, `feedback`, `subjects`, `workshops`, `self_study_sessions`,
 `performance_reviews`, `holidays`; TIMESTAMPTZ on `staff`, `progress_reports`, `products`,
-`class_session_overrides`. New tables follow the TIMESTAMPTZ style. Always filter
+`class_session_overrides`, `absence_reports`. New tables follow the TIMESTAMPTZ style. Always filter
 `deleted_at IS NULL` regardless of type -- but never cast or compare it across tables.
 
 **Several tables have no `deleted_at` at all**: `attendance`, `payroll`, `cancelled_classes`,
 `registrations`, `replacement_credits`, `feedback_replies`, `referral_rewards`,
 `announcements`, `users`, `audit_logs`. Adding the filter to their queries errors on a
 nonexistent column; deleting from them is a hard delete.
+
+**`absence_reports` (0071) has no RLS policy**, unlike the tables listed in `0004`/`0015`.
+That costs nothing while RLS is dormant, but activating RLS must add it. One live row per
+(tenant, student, class, session_date) is enforced by a partial unique index; `status` has a
+CHECK constraint (`pending | approved | declined | late`). See `calendar-and-sessions.md`.
 
 **Many date/time fields are TEXT, not date types** -- `students.dob`, `invoices.due_date` /
 `created_on` / `paid_on`, `attendance.date`, `payroll.month`, `holidays.date` -- and window
