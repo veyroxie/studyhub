@@ -46,6 +46,11 @@ dated section when you cut a deploy.
   their password and typed twice. They are signed out and sign in again.
 
 ### Fixed
+- An open tab picks up a deploy by itself: it refreshes at the next page change
+  (never with a popup open), and files from two deploys can no longer mix.
+  Nadine's Ctrl+Shift+R is no longer needed.
+- "Add anyway" on a class clash works: a room or teacher clash is a warning the
+  admin can override, and it names the class and teacher it clashes with.
 - Reversing a payment after the 7th no longer costs the parent the early bird.
 - Every make-up credit for a missed class is sized by the class as scheduled
   that day; a late or declined absence report cannot be credited by a teacher;

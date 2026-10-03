@@ -208,19 +208,17 @@ func SecurityHeaders(next http.Handler) http.Handler {
 				"img-src 'self' data:; "+
 				"frame-ancestors 'none'")
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+		// An open tab compares this with the version it loaded, and refreshes itself after a deploy.
+		h.Set("X-App-Version", BuildVersion)
 		// HTTPS only (enable in production)
 		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
-		// HTML and the SPA root: revalidate every load so the latest shell is
-		// always served. CSS/JS: short browser-cache window (5 min) with
-		// must-revalidate — repeat visits hit disk cache (zero bytes over the
-		// wire, near-instant render) but a deploy propagates within minutes.
+		// HTML is never cached. Scripts and styles are versioned per deploy and
+		// cached by handlers.StaticCacheHandler, which owns that policy.
 		path := r.URL.Path
 		if strings.HasSuffix(path, ".html") || path == "/" {
 			h.Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		} else if strings.HasSuffix(path, ".css") || strings.HasSuffix(path, ".js") {
-			h.Set("Cache-Control", "public, max-age=300, must-revalidate")
 		}
 		next.ServeHTTP(w, r)
 	})

@@ -10,7 +10,7 @@
 // Versioned cache name so a deploy invalidates the old shell. Bump SW_VERSION
 // on every release (release-please can wire this).
 
-const SW_VERSION = 'v2026-08-07-1';
+const SW_VERSION = 'v2026-10-03-1';
 const SHELL_CACHE = 'sh-shell-' + SW_VERSION;
 
 // Files that must be available offline for the app to render its empty shell.
@@ -107,7 +107,11 @@ self.addEventListener('fetch', (event) => {
       fetch(req).then((res) => {
         if (res && res.status === 200) {
           const copy = res.clone();
-          caches.open(SHELL_CACHE).then((c) => c.put(req, copy));
+          // Assets carry ?v=<deploy>; keep only this deploy's copy of each file.
+          caches.open(SHELL_CACHE).then((c) => c.keys().then((keys) => Promise.all(keys
+            .filter((k) => { const u = new URL(k.url); return u.pathname === url.pathname && u.search !== url.search; })
+            .map((k) => c.delete(k))
+          )).then(() => c.put(req, copy)));
         }
         return res;
       }).catch(() => caches.match(req).then((cached) => cached || new Response(

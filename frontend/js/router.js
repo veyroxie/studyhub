@@ -36,6 +36,11 @@
     },
     navigate(pageId) {
       if (_hidden[pageId]) pageId = 'dashboard';
+      // A deploy happened while this tab was open: arrive on the new page with the new code.
+      if (App.Update && App.Update.isPending() && _current && pageId !== _current) {
+        try { history.replaceState(null, '', '#' + pageId); } catch (e) { /* file:// */ }
+        if (App.Update.refreshIfPending()) return;
+      }
       // analytics.js is lazy-loaded — kick the loader before we try to
       // render. The render will run when the module registers via
       // _modules[pageId] once the script has parsed.

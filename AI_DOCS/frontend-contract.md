@@ -241,3 +241,13 @@ only four honoured moves, so a rescheduled class still showed on its old day in
 the dashboard and never appeared on its new one. New code MUST call this rather
 than comparing `c.day` to a weekday name. The server's equivalent is
 `store.SessionsInPeriod`; keep the two in step.
+
+## Deploys reach the browser (2026-10-03)
+
+`index.html` is served by `handlers.StaticCacheHandler` with `__APP_VERSION__` replaced by
+`core.BuildVersion`. Every local script and stylesheet it links carries `?v=__APP_VERSION__`
+(add it to any new tag, and to lazy imports such as the analytics loader), so a versioned URL
+is new per deploy and cached as immutable; unversioned assets get `no-cache`. Every response
+carries `X-App-Version`; `js/update.js` compares it with `window.__appVersion` and refreshes
+the tab at the next page change, or on returning to it with no popup open, with a "Refresh
+now" bar meanwhile. The service worker keeps one cached copy per file.

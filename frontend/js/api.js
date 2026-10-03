@@ -192,6 +192,7 @@
       let res;
       try {
         res = await fetch(BASE + path, init);
+        if (App.Update) App.Update.check(res.headers.get('X-App-Version'));
       } catch (networkErr) {
         // Network failure (offline, DNS, CORS) — synthesise an error.
         const err = new Error('Network error — check your connection and try again');

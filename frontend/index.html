@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- The server fills in the deploy's version; update.js compares it with each API reply. -->
+  <script>window.__appVersion = '__APP_VERSION__';</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -31,7 +33,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Fraunces:wght@400;600&family=Instrument+Sans:wght@500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
 
   <title>Study Hub — Education Manager</title>
-  <link rel="stylesheet" href="tailwind.css">
+  <link rel="stylesheet" href="tailwind.css?v=__APP_VERSION__">
   <script>
     // togglePw flips a password input between hidden/visible and swaps the
     // accompanying eye icon between open and slashed-out variants. Reusable
@@ -50,7 +52,7 @@
       }
     }
   </script>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=__APP_VERSION__">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0a0a">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -631,30 +633,31 @@
   Chart.js (~100KB CDN) and is only useful on the analytics page. A small
   loader below injects it on first navigation to that page.
 -->
-<script src="js/data.js" defer></script>
-<script src="js/store.js" defer></script>
-<script src="js/api.js" defer></script>
-<script src="js/utils.js" defer></script>
-<script src="js/router.js" defer></script>
-<script src="js/theme.js" defer></script>
-<script src="js/notifs.js" defer></script>
-<script src="js/push.js" defer></script>
-<script src="js/tutorial.js" defer></script>
-<script src="js/modules/absence.js" defer></script>
-<script src="js/modules/dashboard.js" defer></script>
-<script src="js/modules/calendar.js" defer></script>
-<script src="js/modules/communication.js" defer></script>
-<script src="js/modules/students.js" defer></script>
-<script src="js/modules/billing.js" defer></script>
-<script src="js/modules/pricing.js" defer></script>
-<script src="js/modules/staff.js" defer></script>
-<script src="js/modules/attendance.js" defer></script>
-<script src="js/modules/progress.js" defer></script>
-<script src="js/modules/profile.js" defer></script>
-<script src="js/modules/settings.js" defer></script>
-<script src="js/modules/developer.js" defer></script>
-<script src="js/modules/search.js" defer></script>
-<script src="js/main.js" defer></script>
+<script src="js/data.js?v=__APP_VERSION__" defer></script>
+<script src="js/store.js?v=__APP_VERSION__" defer></script>
+<script src="js/api.js?v=__APP_VERSION__" defer></script>
+<script src="js/update.js?v=__APP_VERSION__" defer></script>
+<script src="js/utils.js?v=__APP_VERSION__" defer></script>
+<script src="js/router.js?v=__APP_VERSION__" defer></script>
+<script src="js/theme.js?v=__APP_VERSION__" defer></script>
+<script src="js/notifs.js?v=__APP_VERSION__" defer></script>
+<script src="js/push.js?v=__APP_VERSION__" defer></script>
+<script src="js/tutorial.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/absence.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/dashboard.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/calendar.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/communication.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/students.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/billing.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/pricing.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/staff.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/attendance.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/progress.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/profile.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/settings.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/developer.js?v=__APP_VERSION__" defer></script>
+<script src="js/modules/search.js?v=__APP_VERSION__" defer></script>
+<script src="js/main.js?v=__APP_VERSION__" defer></script>
 <script>
   // Lazy-load analytics.js the first time the user navigates to the
   // analytics page. Parents typically never visit Analytics, so loading
@@ -665,7 +668,7 @@
       if (loaded) return;
       loaded = true;
       var s = document.createElement('script');
-      s.src = 'js/modules/analytics.js';
+      s.src = 'js/modules/analytics.js?v=' + window.__appVersion;
       s.async = false;
       // analytics.js is lazy-injected AFTER main.js already ran its module
       // registration, so it must register itself with the router on load —

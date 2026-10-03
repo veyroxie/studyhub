@@ -69,3 +69,38 @@ func TestTechnicalEndpointsRefuseAnonymousCallers(t *testing.T) {
 		t.Errorf("public health: %d %s", w.Code, w.Body.String())
 	}
 }
+
+// A deploy must reach an open browser: the shell names its version, versioned assets
+// are cached for good, anything unversioned is revalidated, and every reply says
+// which version is running.
+func TestADeployAlwaysReachesTheBrowser(t *testing.T) {
+	core.InitLogger()
+	t.Chdir("../..") // the binary runs from backend/, next to ../frontend
+	was := core.BuildVersion
+	core.BuildVersion = "test-build-42"
+	defer func() { core.BuildVersion = was }()
+	db := store.InitDB(testDSN())
+	defer db.Close()
+	h := Build(db)
+	get := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		return w
+	}
+	shell := get("/")
+	if body := shell.Body.String(); !strings.Contains(body, "js/main.js?v=test-build-42") || strings.Contains(body, "__APP_VERSION__") {
+		t.Errorf("shell is not stamped with the build version")
+	}
+	if cc := shell.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Errorf("shell Cache-Control %q, want no-store", cc)
+	}
+	if cc := get("/js/main.js?v=test-build-42").Header().Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+		t.Errorf("versioned asset Cache-Control %q, want immutable", cc)
+	}
+	if cc := get("/sw.js").Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Errorf("unversioned asset Cache-Control %q, want no-cache", cc)
+	}
+	if v := get("/api/health").Header().Get("X-App-Version"); v != "test-build-42" {
+		t.Errorf("X-App-Version %q", v)
+	}
+}

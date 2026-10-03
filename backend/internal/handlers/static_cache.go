@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
@@ -9,28 +10,26 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"studyhub/internal/core"
 )
 
-// staticCacheHandler wraps http.FileServer with:
-//   - Cache-Control: public, max-age=300, must-revalidate
-//   - Weak ETag based on (path, modtime, size). On If-None-Match → 304.
+// StaticCacheHandler serves the frontend so a deploy always reaches the browser:
+//   - index.html is never cached and carries the build version (shellVersionToken);
+//   - every asset it links has ?v=<version>, so a versioned URL is a new URL per
+//     deploy and can be cached for a year without going stale;
+//   - an unversioned asset (sw.js, a lazy import) is revalidated on every use.
 //
-// Cache-Control is the load-time win: returning visitors don't re-download
-// the JS/CSS bundle. The ETag is the deploy-correctness companion: a 5-min
-// max-age means a fresh deploy could be invisible to a returning user for
-// up to 5 minutes; ETag lets the browser revalidate cheaply when the file
-// has actually changed.
-//
-// 5 minutes is short on purpose. Longer max-age (1 hour, 1 day) would need
-// content-hashed filenames to avoid stale-bundle pain after a release.
+// Before this, JS was cached for 5 minutes and the shell mixed old and new
+// modules after a deploy until someone pressed Ctrl+Shift+R.
 func StaticCacheHandler(root string) http.Handler {
 	fs := http.FileServer(http.Dir(root))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip cache-control for the bare path "/" (index.html) — that's the
-		// shell document; we want every navigation to fetch fresh in case
-		// the JS module list changed. The defer/lazy-load pattern in the
-		// shell means index.html is small (~25KB) anyway.
 		path := r.URL.Path
+		if path == "/" || path == "/index.html" {
+			serveVersionedShell(w, r, filepath.Join(root, "index.html"))
+			return
+		}
 		if !shouldCacheStatic(path) {
 			fs.ServeHTTP(w, r)
 			return
@@ -38,7 +37,7 @@ func StaticCacheHandler(root string) http.Handler {
 		full := filepath.Join(root, filepath.Clean(path))
 		etag, ok := staticETag(full)
 		if ok {
-			w.Header().Set("Cache-Control", "public, max-age=300, must-revalidate")
+			w.Header().Set("Cache-Control", assetCacheControl(r))
 			w.Header().Set("ETag", etag)
 			if match := r.Header.Get("If-None-Match"); match == etag {
 				w.WriteHeader(http.StatusNotModified)
@@ -94,4 +93,52 @@ func staticETag(path string) (string, bool) {
 	staticETagCache[path] = staticETagEntry{etag: tag, modTime: info.ModTime(), size: info.Size()}
 	staticETagMu.Unlock()
 	return tag, true
+}
+
+// shellVersionToken in index.html is replaced with core.BuildVersion at serve time.
+const shellVersionToken = "__APP_VERSION__"
+
+func assetCacheControl(r *http.Request) string {
+	if r.URL.Query().Get("v") != "" {
+		return "public, max-age=31536000, immutable"
+	}
+	return "no-cache"
+}
+
+var (
+	shellMu    sync.Mutex
+	shellCache struct {
+		modTime time.Time
+		body    []byte
+	}
+)
+
+func serveVersionedShell(w http.ResponseWriter, r *http.Request, file string) {
+	body, err := versionedShell(file)
+	if err != nil {
+		core.LogFromReq(r).Error("index.html unreadable", "err", err)
+		http.Error(w, "the app could not be loaded, please try again", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Write(body)
+}
+
+func versionedShell(file string) ([]byte, error) {
+	info, err := os.Stat(file)
+	if err != nil {
+		return nil, err
+	}
+	shellMu.Lock()
+	defer shellMu.Unlock()
+	if shellCache.body != nil && shellCache.modTime.Equal(info.ModTime()) {
+		return shellCache.body, nil
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	shellCache.modTime, shellCache.body = info.ModTime(), bytes.ReplaceAll(raw, []byte(shellVersionToken), []byte(core.BuildVersion))
+	return shellCache.body, nil
 }
