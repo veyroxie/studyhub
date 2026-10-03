@@ -883,16 +883,24 @@
         App.Utils.showToast('End time must be after start time', 'error');
         return;
       }
-      const overlaps = function(c) { return time < c.endTime && endTime > c.time; };
-      const roomClash = state.classes.find(function(c) {
-        return c.day === day && c.classroom === classroom && overlaps(c);
+      // The server checks the room and every teacher, and says what overlaps.
+      _makeAddClassCommit(fd, state, { classType: classType, capacity: capacity, day: day, time: time, endTime: endTime, classroom: classroom })();
+    });
+  }
+
+  // A clash is a warning, not a rule: rooms are shared on purpose (Self-Study runs beside
+  // lessons), so the server's 409 offers the override, which resends with allowClash=1.
+  // Resolves once the class is saved. A failure is shown here and the promise stays
+  // pending, so callers only ever run their "saved" step.
+  function _saveClass(send, overrideLabel) {
+    var fail = function(err) { App.Utils.showToast((err && err.message) || 'Could not save the class', 'error'); };
+    return new Promise(function(resolve) {
+      send('').then(resolve, function(err) {
+        if (err.status !== 409) return fail(err);
+        App.Utils.showToast(err.message, 'error', 12000, { action: { label: overrideLabel, onClick: function() {
+          send('?allowClash=1').then(resolve, fail);
+        } } });
       });
-      const commit = _makeAddClassCommit(fd, state, { classType: classType, capacity: capacity, day: day, time: time, endTime: endTime, classroom: classroom });
-      if (roomClash) {
-        App.Utils.showToast('Room clash: ' + classroom + ' already booked ' + App.Utils.formatTime(roomClash.time) + '–' + App.Utils.formatTime(roomClash.endTime) + ' on ' + day, 'error', 8000, { action: { label: 'Add anyway', onClick: commit } });
-        return;
-      }
-      commit();
     });
   }
 
@@ -932,7 +940,7 @@
         createdBy: 'Admin'
       };
 
-      App.Api.post('/api/classes', newClass).then(function(result) {
+      _saveClass(function(query) { return App.Api.post('/api/classes' + query, newClass, { silent: true }); }, 'Add anyway').then(function() {
         App.Store.set({ classes: [...state.classes, newClass] });
         const updatedAnns = [...(App.Store.get().announcements || []), newAnnouncement];
         App.Store.set({ announcements: updatedAnns });
@@ -1336,7 +1344,7 @@
       };
       var scheduleFrom = fd.get('scheduleFrom') || '';
       var payload = Object.assign({ scheduleFrom: scheduleFrom }, updated);
-      App.Api.put('/api/classes/' + classId, payload).then(function() {
+      _saveClass(function(query) { return App.Api.put('/api/classes/' + classId + query, payload, { silent: true }); }, 'Save anyway').then(function() {
         // Re-read classes at write time — the `state` captured at modal open
         // may be stale if a snapshot landed while the modal was open.
         var classes = App.Store.get().classes.map(function(x) { return x.id === classId ? updated : x; });

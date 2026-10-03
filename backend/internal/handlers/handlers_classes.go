@@ -254,35 +254,16 @@ func HandleClasses(db *store.DB) http.HandlerFunc {
 				return
 			}
 
-			// ── Clash detection ────────────────────────────────────────────────
-			// Two intervals [s1,e1) and [s2,e2) overlap when s1<e2 AND s2<e1.
-			// Scoped to the caller's tenant so a teacher booked in tenant A
-			// does not produce a false-positive conflict when tenant B tries
-			// to create a class at the same time.
-			ctw, ctwArgs := store.ScopeTenant(cl, "")
-			for _, tid2 := range c.TeacherIDs {
-				var cnt int
-				clashArgs := append([]any{c.Day, c.ID, c.EndTime, c.Time, tid2}, ctwArgs...)
-				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`+ctw,
-					clashArgs...).Scan(&cnt); err != nil {
-					core.RespondError(w, "server error checking class conflicts", 500)
+			// A clash is a warning: the admin sees what overlaps and may add it anyway.
+			if !clashOverridden(r) {
+				ctw, ctwArgs := store.ScopeTenant(cl, "")
+				clash, err := classClash(db, ctw, ctwArgs, c)
+				if err != nil {
+					respondCheckError(w, r, err, http.StatusInternalServerError)
 					return
 				}
-				if cnt > 0 {
-					core.RespondError(w, "Conflict: teacher "+tid2+" is already booked at this time", http.StatusConflict)
-					return
-				}
-			}
-			if c.Classroom != "" {
-				var cnt int
-				roomArgs := append([]any{c.Day, c.Classroom, c.ID, c.EndTime, c.Time}, ctwArgs...)
-				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`+ctw,
-					roomArgs...).Scan(&cnt); err != nil {
-					core.RespondError(w, "server error checking class conflicts", 500)
-					return
-				}
-				if cnt > 0 {
-					core.RespondError(w, "Conflict: "+c.Classroom+" is already booked at this time", http.StatusConflict)
+				if clash != "" {
+					core.RespondError(w, "Clash: "+clash, http.StatusConflict)
 					return
 				}
 			}
@@ -353,6 +334,7 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 			// so the clash check can tell an edit that moves a class from one
 			// that only renames it.
 			wasDay, wasTime, wasEnd, wasRoom := cl.Day, cl.Time, cl.EndTime, cl.Classroom
+			wasTeachers := append([]string{}, cl.TeacherIDs...)
 			// Decoded OVER the stored row: fields the client omits keep their
 			// saved values rather than being zeroed.
 			if err := json.NewDecoder(r.Body).Decode(&cl); err != nil {
@@ -366,39 +348,20 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 				return
 			}
 
-			// Clash detection (same as create) — tenant-scoped.
+			// Only an edit that moves the class or changes its teachers is checked: rooms and
+			// teachers that already overlap (Self-Study shares a room on purpose) must not
+			// block a rename or a price change. Even then it is a warning the admin can override.
+			slotMoved := cl.Day != wasDay || cl.Time != wasTime || cl.EndTime != wasEnd || cl.Classroom != wasRoom ||
+				!sameStrings(cl.TeacherIDs, wasTeachers)
 			tw, twArgs := store.ScopeTenant(c, "")
-			for _, tid2 := range cl.TeacherIDs {
-				var cnt int
-				clashArgs := append([]any{cl.Day, cl.ID, cl.EndTime, cl.Time, tid2}, twArgs...)
-				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND id!=? AND time<? AND end_time>? AND teacher_ids LIKE '%"'||?||'"%' AND deleted_at IS NULL`+tw,
-					clashArgs...).Scan(&cnt); err != nil {
-					core.RespondError(w, "server error checking class conflicts", 500)
+			if slotMoved && !clashOverridden(r) {
+				clash, err := classClash(db, tw, twArgs, cl)
+				if err != nil {
+					respondCheckError(w, r, err, http.StatusInternalServerError)
 					return
 				}
-				if cnt > 0 {
-					core.RespondError(w, "Conflict: teacher "+tid2+" is already booked at this time", http.StatusConflict)
-					return
-				}
-			}
-			// Only when the edit MOVES the class. Twelve rooms overlap in
-			// production today, several of them Self-Study sessions that share
-			// a room on purpose, and 0062 makes them visible to this check by
-			// normalising the spellings. Re-checking on every edit would then
-			// refuse a rename or a tier change over a conflict the edit did
-			// not create and cannot fix -- blocking the person trying to
-			// resolve it. A move is still refused.
-			slotMoved := cl.Day != wasDay || cl.Time != wasTime || cl.EndTime != wasEnd || cl.Classroom != wasRoom
-			if cl.Classroom != "" && slotMoved {
-				var cnt int
-				roomArgs := append([]any{cl.Day, cl.Classroom, cl.ID, cl.EndTime, cl.Time}, twArgs...)
-				if err := db.QueryRow(`SELECT COUNT(*) FROM classes WHERE day=? AND classroom=? AND id!=? AND time<? AND end_time>? AND deleted_at IS NULL`+tw,
-					roomArgs...).Scan(&cnt); err != nil {
-					core.RespondError(w, "server error checking class conflicts", 500)
-					return
-				}
-				if cnt > 0 {
-					core.RespondError(w, "Conflict: "+cl.Classroom+" is already booked at this time", http.StatusConflict)
+				if clash != "" {
+					core.RespondError(w, "Clash: "+clash, http.StatusConflict)
 					return
 				}
 			}
@@ -481,4 +444,21 @@ func HandleClassByID(db *store.DB) http.HandlerFunc {
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, x := range a {
+		seen[x]++
+	}
+	for _, x := range b {
+		if seen[x] == 0 {
+			return false
+		}
+		seen[x]--
+	}
+	return true
 }

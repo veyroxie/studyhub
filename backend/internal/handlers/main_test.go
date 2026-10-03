@@ -75,6 +75,7 @@ func setupTestApp(t *testing.T) (*chi.Mux, func()) {
 		r.Delete("/api/students/{id}", HandleStudent(db))
 		r.Get("/api/classes", HandleClasses(db))
 		r.Post("/api/classes", HandleClasses(db))
+		r.Put("/api/classes/{id}", HandleClassByID(db))
 		r.Get("/api/staff", HandleStaff(db))
 		r.Post("/api/staff", HandleStaff(db))
 		r.Get("/api/invoices", HandleInvoices(db))
